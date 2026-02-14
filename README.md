@@ -1,4 +1,4 @@
-# FlowZ
+# FlowZ-本软件fork原软件大佬的地址https://github.com/zhangjh/FlowZ
 
 简洁现代的跨平台代理客户端，基于 sing-box 核心，支持 VLESS、Trojan、Shadowsocks 协议和hysteria2协议（当前主流最安全好用的协议），主打配置简单，规则明确，体验优良所见即所得。
 
@@ -103,3 +103,5 @@ macOS Intel 用户需要修改 `electron-builder.json` 中的 `mac.target.arch` 
 ## ⚠️ 免责声明
 
 本软件仅供学习和研究使用，请遵守当地法律法规。使用本软件所产生的任何后果由使用者自行承担。
+
+
