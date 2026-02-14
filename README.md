@@ -2,7 +2,6 @@
 
 简洁现代的跨平台代理客户端，基于 sing-box 核心，支持 VLESS、Trojan和hysteria2协议（当前主流最安全好用的协议），主打配置简单，规则明确，体验优良所见即所得。
 
-<img width="1464" height="941" alt="image" src="https://github.com/user-attachments/assets/fe8709c6-fb80-4084-b73f-8bcb83c9f4b8" />
 
 ## ✨ 功能特性
 
@@ -96,7 +95,6 @@ macOS Intel 用户需要修改 `electron-builder.json` 中的 `mac.target.arch` 
   这种模式体验更佳，所有应用都可以实现代理，不需要手动配置，比如终端环境等。
   如果不希望使用TUN模式，可以进入设置页面手动选择"系统代理模式"。
 
-<img width="1469" height="933" alt="image" src="https://github.com/user-attachments/assets/3d4e8183-27c3-41b8-b95c-18cc4005b497" />
 
 ### 4. 自定义规则
 
