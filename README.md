@@ -16,22 +16,6 @@
 - ✅ 现代化的用户界面（基于 Shadcn UI）
 - ✅ 跨平台支持（Windows / macOS）
 
-## 📸 功能预览
-
-> _请将您的截图拖拽到此处，或上传到 GitHub Issues 并复制链接替换下方占位符_
-
-### 1. 仪表盘与实时测速
-
-![Dashboard Preview](your-dashboard-screenshot-link-here)
-
-### 2. 强大的路由规则
-
-![Rules Preview](your-rules-screenshot-link-here)
-
-### 3. 设置与深色模式
-
-![Settings Preview](your-settings-screenshot-link-here)
-
 ## 📋 系统要求
 
 - Windows 10 (1809+) 或 Windows 11
