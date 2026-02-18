@@ -22,12 +22,13 @@ https://t.me/flowzfork
 
 ## ✨ 功能特性
 
-- ✅ 支持 VLESS、Trojan、Hysteria2、Shadowsocks
+- ✅ 支持 VLESS、Trojan、Hysteria2、Shadowsocks协议。
 - ✅ 强大的路由规则系统（支持 geosite / geoip 规则集）
 - ✅ 多种代理模式（全局 / 智能 / 直连）
 - ✅ TUN 透明代理模式（支持 System / gVisor / Mixed 堆栈）
 - ✅ 系统级代理自动接管
 - ✅ 实时流量统计与测速
+- ✅ 支持前置代理，完美实现代理链功能
 - ✅ 亮色 / 暗色主题切换
 - ✅ 开机自启动与自动连接
 - ✅ 现代化 UI（基于 shadcn/ui）
