@@ -20,12 +20,6 @@ https://t.me/flowzfork
 
 ---
 
-## ⭐ Star 趋势
-
-[![Star History Chart](https://api.star-history.com/svg?repos=zhangjh/FlowZ&type=Date)](https://star-history.com/#zhangjh/FlowZ&Date)
-
----
-
 ## ✨ 功能特性
 
 - ✅ 支持 VLESS、Trojan、Hysteria2、Shadowsocks
@@ -148,3 +142,9 @@ MIT License
 本软件仅供学习与研究使用。  
 请遵守当地法律法规。  
 使用本软件所产生的任何后果由使用者自行承担。
+
+---
+
+## ⭐ Star 趋势
+
+[![Star History Chart](https://api.star-history.com/svg?repos=zhangjh/FlowZ&type=Date)](https://star-history.com/#zhangjh/FlowZ&Date)
