@@ -32,6 +32,7 @@ https://t.me/flowzfork
 - ✅ 亮色 / 暗色主题切换
 - ✅ 开机自启动与自动连接
 - ✅ 现代化 UI（基于 shadcn/ui）
+- ✅ 支持连接拓扑展示功能
 - ✅ 跨平台支持（Windows / macOS）
 
 ---
