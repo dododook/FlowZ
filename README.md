@@ -75,3 +75,10 @@ npm run dev
 # 构建打包
 npm run package:win   # 打包 Windows 版本
 npm run package:mac   # 打包 macOS 版本
+
+
+---
+
+## 📈 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=zhangjh/FlowZ&type=Date)](https://star-history.com/#zhangjh/FlowZ&Date)
