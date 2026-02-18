@@ -79,6 +79,8 @@ npm run package:mac   # 打包 macOS 版本
 
 ---
 
+---
+
 ## 📈 Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=zhangjh/FlowZ&type=Date)](https://star-history.com/#zhangjh/FlowZ&Date)
