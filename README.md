@@ -76,9 +76,6 @@ npm run dev
 npm run package:win   # 打包 Windows 版本
 npm run package:mac   # 打包 macOS 版本
 
-
----
-
 ---
 
 ## 📈 Star History
