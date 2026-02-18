@@ -4,7 +4,7 @@
 > 本软件 Fork 自原作者项目：[zhangjh/FlowZ](https://github.com/zhangjh/FlowZ)  
 > 如有需要可以关注 Telegram 频道获取更新: [https://t.me/flowzfork](https://t.me/flowzfork)
 
-**简洁、现代、跨平台的代理客户端** —— 基于 **sing-box** 核心，专为追求“配置简单、规则明确”的用户打造。
+**简洁、现代、跨平台的代理客户端** —— 基于 **sing-box** 核心，支持 VLESS、Trojan、Shadowsocks 和 Hysteria2 协议。主打配置简单，规则明确，体验优良，所见即所得。
 
 [![License](https://img.shields.io/github/license/zhangjh/FlowZ?color=blue)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/zhangjh/FlowZ?color=green)](../../releases)
@@ -27,7 +27,7 @@
 
 ---
 
-## 📸 界面预览
+## 📸 预览
 
 <p align="center">
   <img src="https://cdn.nodeimage.com/i/ns0xeUtvL7WUqXTcqpIoD9ucKL1oXiOl.webp" width="45%" />
@@ -47,37 +47,9 @@
 * **macOS**: 10.15+ (Catalina 或更高)
 
 ### 快速安装
-前往 [Releases](../../releases) 页面下载对应版本：
-* **Windows**: 下载 `.exe` 安装包运行。
-* **macOS (Apple Silicon)**: 下载 `.dmg` 拖入 Applications。
-* **macOS (Intel)**: 需从源码构建，或在打开提示“软件已损坏”时执行：
-    ```bash
-    xattr -cr /Applications/FLowZ.app
-    ```
-
----
-
-## 🛠️ 源码构建 (Development)
-
-如果你想自行编译或参与贡献：
-
-```bash
-# 克隆仓库
-git clone [https://github.com/zhangjh/FlowZ.git](https://github.com/zhangjh/FlowZ.git)
-cd FlowZ
-
-# 安装依赖
-npm install
-
-# 启动开发环境
-npm run dev
-
-# 构建打包
-npm run package:win   # 打包 Windows 版本
-npm run package:mac   # 打包 macOS 版本
-
----
-
-## 📈 Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=zhangjh/FlowZ&type=Date)](https://star-history.com/#zhangjh/FlowZ&Date)
+从 [Releases](../../releases) 页面下载最新版本：
+* **Windows**: 运行 `.exe` 安装包。
+* **macOS (Apple Silicon)**: 打开 `.dmg` 文件并拖入 Applications。
+* **macOS (Intel)**: 需要从源码构建，或在打开提示“软件已损坏”时执行：
+  ```bash
+  xattr -cr /Applications/FLowZ.app
