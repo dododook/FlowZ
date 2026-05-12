@@ -470,6 +470,7 @@ export class ConfigManager implements IConfigManager {
         domesticDns: 'https://doh.pub/dns-query',
         foreignDns: 'https://dns.google/dns-query',
         enableFakeIp: false,
+        localDevDomains: [],
       },
 
       customRuleSets: [], // 默认空

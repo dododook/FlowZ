@@ -227,6 +227,8 @@ export interface DnsConfig {
   domesticDns: string; // 国内 DNS，默认 https://doh.pub/dns-query
   foreignDns: string; // 海外 DNS，默认 https://dns.google/dns-query
   enableFakeIp: boolean; // 是否启用 FakeIP（TUN 模式）
+  /** 使用系统解析（含 hosts）的域名，每行一条。支持完整域名、*.example.com 后缀通配、.example.com */
+  localDevDomains?: string[];
 }
 
 // 自定义规则集（从 URL 导入）

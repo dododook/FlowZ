@@ -308,6 +308,50 @@ export interface IProxyManager {
   getCoreVersion(): Promise<string>;
 }
 
+/**
+ * 用户「本地开发域名」→ sing-box DNS 规则列表（dns-local，含系统 hosts）。
+ * 完整域名（如 me.dev.com）仅生成 domain 规则；*.x / .x 仅生成 domain_suffix。
+ * 避免「同一条规则里 domain + domain_suffix」在部分版本下对 apex 主机名匹配异常（*.dev.com 仍可用即 suffix 路径正常）。
+ */
+function buildLocalDevDnsRules(localDevDomains: string[] | undefined): SingBoxDnsRule[] {
+  const tokens = (localDevDomains ?? [])
+    .map((d) => d.trim().toLowerCase())
+    .filter((d) => d.length > 0 && !d.startsWith('#'));
+
+  if (tokens.length === 0) {
+    return [];
+  }
+
+  const exact = new Set<string>();
+  const suffix = new Set<string>();
+
+  const addSuffixPair = (base: string) => {
+    suffix.add(base);
+    suffix.add(`.${base}`);
+  };
+
+  for (const t of tokens) {
+    if (t.startsWith('*.')) {
+      const base = t.slice(2);
+      if (base) addSuffixPair(base);
+    } else if (t.startsWith('.')) {
+      const base = t.slice(1);
+      if (base) addSuffixPair(base);
+    } else {
+      exact.add(t);
+    }
+  }
+
+  const rules: SingBoxDnsRule[] = [];
+  if (exact.size > 0) {
+    rules.push({ domain: [...exact], server: 'dns-local' } as SingBoxDnsRule);
+  }
+  if (suffix.size > 0) {
+    rules.push({ domain_suffix: [...suffix], server: 'dns-local' } as SingBoxDnsRule);
+  }
+  return rules;
+}
+
 export class ProxyManager extends EventEmitter implements IProxyManager {
   private singboxProcess: ChildProcess | null = null;
   private startTime: Date | null = null;
@@ -901,6 +945,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       domain_suffix: ['.local', '.arpa', '.lan', '.home.arpa', ...DOMESTIC_BANK_AND_STOCK_DOMAINS],
       server: 'dns-local',
     } as SingBoxDnsRule);
+
+    // 处理本地开发域名
+    const localDevRules = buildLocalDevDnsRules(userDnsConfig.localDevDomains);
+    for (const r of localDevRules) {
+      dnsRules.push(r);
+    }
 
     // 处理自定义规则中的 bypassFakeIP
     if (config.customRules && enableFakeIp) {

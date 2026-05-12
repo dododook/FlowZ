@@ -2,12 +2,24 @@ import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAppStore } from '@/store/app-store';
+import type { DnsConfig } from '../../../shared/types';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { BackupRestoreSection } from './backup-restore-section';
+
+// 获取 DNS 默认配置
+const getDnsDefaultConfig = (): DnsConfig => {
+  return {
+    domesticDns: 'https://doh.pub/dns-query',
+    foreignDns: 'https://dns.google/dns-query',
+    enableFakeIp: false,
+    localDevDomains: [],
+  };
+};
 
 export function AdvancedSettings() {
   const config = useAppStore((state) => state.config);
@@ -95,11 +107,7 @@ export function AdvancedSettings() {
                 onChange={(e) => {
                   const updatedConfig = { ...config };
                   if (!updatedConfig.dnsConfig) {
-                    updatedConfig.dnsConfig = {
-                      domesticDns: '',
-                      foreignDns: '',
-                      enableFakeIp: false,
-                    };
+                    updatedConfig.dnsConfig = getDnsDefaultConfig();
                   }
                   updatedConfig.dnsConfig.domesticDns = e.target.value;
                   saveConfig(updatedConfig);
@@ -120,11 +128,7 @@ export function AdvancedSettings() {
                 onChange={(e) => {
                   const updatedConfig = { ...config };
                   if (!updatedConfig.dnsConfig) {
-                    updatedConfig.dnsConfig = {
-                      domesticDns: '',
-                      foreignDns: '',
-                      enableFakeIp: false,
-                    };
+                    updatedConfig.dnsConfig = getDnsDefaultConfig();
                   }
                   updatedConfig.dnsConfig.foreignDns = e.target.value;
                   saveConfig(updatedConfig);
@@ -146,11 +150,7 @@ export function AdvancedSettings() {
                 onChange={(e) => {
                   const updatedConfig = { ...config };
                   if (!updatedConfig.dnsConfig) {
-                    updatedConfig.dnsConfig = {
-                      domesticDns: 'https://doh.pub/dns-query',
-                      foreignDns: 'https://dns.google/dns-query',
-                      enableFakeIp: false,
-                    };
+                    updatedConfig.dnsConfig = getDnsDefaultConfig();
                   }
                   updatedConfig.dnsConfig.enableFakeIp = e.target.checked;
                   saveConfig(updatedConfig);
@@ -163,6 +163,29 @@ export function AdvancedSettings() {
             <p className="text-xs text-muted-foreground ml-6 mb-2">
               {t('settings.advanced.fakeIpDesc')}
             </p>
+
+            <div className="space-y-2 pt-2">
+              <Label htmlFor="localDevDomains">{t('settings.advanced.localDevDomains')}</Label>
+              <Textarea
+                id="localDevDomains"
+                rows={4}
+                className="max-w-md font-mono text-sm"
+                placeholder={t('settings.advanced.localDevDomainsPlaceholder')}
+                value={(config.dnsConfig?.localDevDomains ?? []).join('\n')}
+                onChange={(e) => {
+                  const lines = e.target.value.split(/\r?\n/).map((line) => line.trim());
+                  const updatedConfig = { ...config };
+                  if (!updatedConfig.dnsConfig) {
+                    updatedConfig.dnsConfig = getDnsDefaultConfig();
+                  }
+                  updatedConfig.dnsConfig.localDevDomains = lines;
+                  saveConfig(updatedConfig);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('settings.advanced.localDevDomainsDesc')}
+              </p>
+            </div>
 
             <div className="flex items-center space-x-2 pt-3 border-t">
               <Checkbox
