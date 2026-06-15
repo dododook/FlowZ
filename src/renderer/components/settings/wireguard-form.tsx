@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AddressField, PortField } from './shared/basic-fields';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { parseWgQuickConf } from '../../../shared/wg-quick';
@@ -168,146 +169,148 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
           </Button>
         </div>
 
-        <AddressField control={form.control} t={t} />
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder="51820" />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="privateKey"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.wgPrivateKey', 'Private Key')}</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="base64 private key" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t('servers.wgPrivateKeyDesc', 'Local interface private key (base64)')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FormField
+              control={form.control}
+              name="peerPublicKey"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.wgPeerPublicKey', 'Peer Public Key')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="base64 peer public key" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="localAddress"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.wgLocalAddress', 'Interface Address')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="10.0.0.2/32, fd00::2/128" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t('servers.wgLocalAddressDesc', 'Local tunnel address(es), comma-separated')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
-        <PortField control={form.control} t={t} placeholder="51820" />
-
-        <FormField
-          control={form.control}
-          name="privateKey"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.wgPrivateKey', 'Private Key')}</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder="base64 private key" {...field} />
-              </FormControl>
-              <FormDescription>
-                {t('servers.wgPrivateKeyDesc', 'Local interface private key (base64)')}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="localAddress"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.wgLocalAddress', 'Interface Address')}</FormLabel>
-              <FormControl>
-                <Input placeholder="10.0.0.2/32, fd00::2/128" {...field} />
-              </FormControl>
-              <FormDescription>
-                {t('servers.wgLocalAddressDesc', 'Local tunnel address(es), comma-separated')}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="peerPublicKey"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.wgPeerPublicKey', 'Peer Public Key')}</FormLabel>
-              <FormControl>
-                <Input placeholder="base64 peer public key" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="preSharedKey"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.wgPreSharedKey', 'Pre-Shared Key (optional)')}</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder="base64 pre-shared key" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="allowedIPs"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.wgAllowedIPs', 'Allowed IPs')}</FormLabel>
-              <FormControl>
-                <Input placeholder="0.0.0.0/0, ::/0" {...field} />
-              </FormControl>
-              <FormDescription>
-                {t('servers.wgAllowedIPsDesc', 'Default 0.0.0.0/0, ::/0 routes all traffic')}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="grid grid-cols-3 gap-4">
-          <FormField
-            control={form.control}
-            name="persistentKeepalive"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.wgKeepalive', 'Keepalive (s)')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t('servers.wgKeepaliveDesc', '25s recommended to avoid NAT disconnects')}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="mtu"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>MTU</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="reserved"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.wgReserved', 'Reserved')}</FormLabel>
-                <FormControl>
-                  <Input placeholder="1,2,3" {...field} />
-                </FormControl>
-                <FormDescription>
-                  {t('servers.wgReservedDesc', 'WARP only, 3 bytes')}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="preSharedKey"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.wgPreSharedKey', 'Pre-Shared Key (optional)')}</FormLabel>
+                  <FormControl>
+                    <Input type="password" placeholder="base64 pre-shared key" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="allowedIPs"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.wgAllowedIPs', 'Allowed IPs')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="0.0.0.0/0, ::/0" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t('servers.wgAllowedIPsDesc', 'Default 0.0.0.0/0, ::/0 routes all traffic')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+          <FieldGrid cols={3}>
+            <FormField
+              control={form.control}
+              name="persistentKeepalive"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.wgKeepalive', 'Keepalive (s)')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('servers.wgKeepaliveDesc', '25s recommended to avoid NAT disconnects')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="mtu"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>MTU</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="reserved"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.wgReserved', 'Reserved')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="1,2,3" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t('servers.wgReservedDesc', 'WARP only, 3 bytes')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

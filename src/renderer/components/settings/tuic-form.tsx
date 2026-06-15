@@ -25,6 +25,7 @@ import { EchField } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, AllowInsecureField, AlpnField } from './shared/tls-fields';
 import { echSchemaShape, echDefaults, readEchDefault } from './shared/field-schemas';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -113,96 +114,104 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <AddressField control={form.control} t={t} />
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder="443" />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="uuid"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>UUID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Enter UUID" {...field} />
+                    </FormControl>
+                    <FormDescription>{t('servers.tuicUuidDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.password')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder={t('servers.passwordPlaceholder')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>{t('servers.passwordDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+          </FieldGrid>
+        </FormSection>
 
-        <PortField control={form.control} t={t} placeholder="443" />
-
-        <FormField
-          control={form.control}
-          name="uuid"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>UUID</FormLabel>
-              <FormControl>
-                <Input placeholder="Enter UUID" {...field} />
-              </FormControl>
-              <FormDescription>{t('servers.tuicUuidDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.password')}</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder={t('servers.passwordPlaceholder')} {...field} />
-              </FormControl>
-              <FormDescription>{t('servers.passwordDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="congestionControl"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.congestionControl')}</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="bbr" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="bbr">bbr</SelectItem>
-                    <SelectItem value="cubic">cubic</SelectItem>
-                    <SelectItem value="new_reno">new_reno</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="udpRelayMode"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.udpRelayMode')}</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="native" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="native">native</SelectItem>
-                    <SelectItem value="quic">quic</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <TlsServerNameField control={form.control} t={t} />
-
-          <AlpnField control={form.control} t={t} placeholder="h3" />
-        </div>
-
-        <AllowInsecureField control={form.control} t={t} />
-
-        <EchField control={form.control} t={t} />
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="congestionControl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.congestionControl')}</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="bbr" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="bbr">bbr</SelectItem>
+                      <SelectItem value="cubic">cubic</SelectItem>
+                      <SelectItem value="new_reno">new_reno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="udpRelayMode"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.udpRelayMode')}</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="native" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="native">native</SelectItem>
+                      <SelectItem value="quic">quic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <TlsServerNameField control={form.control} t={t} />
+            <AlpnField control={form.control} t={t} placeholder="h3" />
+            <FieldSpan>
+              <AllowInsecureField control={form.control} t={t} />
+            </FieldSpan>
+            <FieldSpan>
+              <EchField control={form.control} t={t} />
+            </FieldSpan>
+          </FieldGrid>
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

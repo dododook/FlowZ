@@ -778,6 +778,8 @@
     "enableShadowTlsDesc": "Wrap Shadowsocks with a TLS obfuscation tunnel",
     "congestionControl": "Congestion Control",
     "udpRelayMode": "UDP Relay Mode",
+    "basic": "Basic",
+    "advanced": "Advanced",
     "wgImportConf": "Import from wg-quick .conf (optional)",
     "wgParseAndFill": "Parse & fill",
     "wgConfParseFailed": "Could not parse the .conf — please fill the fields manually",

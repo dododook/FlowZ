@@ -778,6 +778,8 @@
     "enableShadowTlsDesc": "在 Shadowsocks 外层套上 TLS 伪装隧道",
     "congestionControl": "拥塞控制",
     "udpRelayMode": "UDP 转发模式",
+    "basic": "基础",
+    "advanced": "高级",
     "wgImportConf": "从 wg-quick .conf 导入（可选）",
     "wgParseAndFill": "解析并填充",
     "wgConfParseFailed": "无法解析该 .conf，请手动填写字段",

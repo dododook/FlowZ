@@ -30,6 +30,7 @@ import {
   AlpnField,
 } from './shared/tls-fields';
 import { WsPathField, WsHostField } from './shared/transport-fields';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
   echSchemaShape,
   multiplexSchemaShape,
@@ -165,98 +166,103 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <AddressField control={form.control} t={t} />
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder="443" />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.password')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder={t('servers.passwordPlaceholder')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>{t('servers.trojanPasswordDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FormField
+              control={form.control}
+              name="network"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.transport')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectTransport')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="tcp">TCP</SelectItem>
+                      <SelectItem value="ws">WebSocket</SelectItem>
+                      <SelectItem value="httpupgrade">HTTPUpgrade</SelectItem>
+                      <SelectItem value="h2">HTTP/2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.transportDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="security"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.security')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectSecurity')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">{t('servers.none')}</SelectItem>
+                      <SelectItem value="tls">TLS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.securityDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
-        <PortField control={form.control} t={t} placeholder="443" />
-
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.password')}</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder={t('servers.passwordPlaceholder')} {...field} />
-              </FormControl>
-              <FormDescription>{t('servers.trojanPasswordDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="network"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.transport')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectTransport')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="tcp">TCP</SelectItem>
-                  <SelectItem value="ws">WebSocket</SelectItem>
-                  <SelectItem value="httpupgrade">HTTPUpgrade</SelectItem>
-                  <SelectItem value="h2">HTTP/2</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.transportDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="security"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.security')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectSecurity')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="none">{t('servers.none')}</SelectItem>
-                  <SelectItem value="tls">TLS</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.securityDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {isTlsEnabled && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          {isTlsEnabled && (
+            <FieldGrid cols={2}>
               <TlsServerNameField control={form.control} t={t} />
-
               <AlpnField control={form.control} t={t} placeholder="http/1.1" />
-            </div>
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <AllowInsecureField control={form.control} t={t} />
+              </FieldSpan>
+              <FieldSpan>
+                <EchField control={form.control} t={t} />
+              </FieldSpan>
+            </FieldGrid>
+          )}
 
-            <FingerprintField control={form.control} t={t} />
+          {isWebSocketEnabled && (
+            <FieldGrid cols={2}>
+              <WsPathField control={form.control} t={t} />
+              <WsHostField control={form.control} t={t} />
+            </FieldGrid>
+          )}
 
-            <AllowInsecureField control={form.control} t={t} />
-
-            <EchField control={form.control} t={t} />
-          </>
-        )}
-
-        {isWebSocketEnabled && (
-          <>
-            <WsPathField control={form.control} t={t} />
-
-            <WsHostField control={form.control} t={t} />
-          </>
-        )}
-
-        <MultiplexFields control={form.control} t={t} disabled={false} />
+          <MultiplexFields control={form.control} t={t} disabled={false} />
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

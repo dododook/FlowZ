@@ -25,6 +25,7 @@ import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
 import { WsPathField, WsHostField } from './shared/transport-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
   echSchemaShape,
   multiplexSchemaShape,
@@ -185,174 +186,175 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <AddressField control={form.control} t={t} />
-
-        <PortField control={form.control} t={t} placeholder="443" />
-
-        <FormField
-          control={form.control}
-          name="uuid"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>UUID</FormLabel>
-              <FormControl>
-                <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
-              </FormControl>
-              <FormDescription>{t('servers.uuidDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="encryption"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.encryption')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectEncryption')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="none">none</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.vlessEncryptionDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="network"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.transport')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectTransport')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="Tcp">TCP</SelectItem>
-                  <SelectItem value="Ws">WebSocket</SelectItem>
-                  <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
-                  <SelectItem value="H2">HTTP/2</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.transportDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="security"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.security')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectSecurity')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="None">{t('servers.none')}</SelectItem>
-                  <SelectItem value="Tls">TLS</SelectItem>
-                  <SelectItem value="Reality">Reality</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.securityDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {isTlsEnabled && (
-          <>
-            <TlsServerNameField control={form.control} t={t} />
-
-            <FingerprintField control={form.control} t={t} />
-
-            <AllowInsecureField control={form.control} t={t} />
-
-            <EchField control={form.control} t={t} />
-          </>
-        )}
-
-        {isRealityEnabled && (
-          <>
-            <TlsServerNameField
-              control={form.control}
-              t={t}
-              labelKey="servers.realityTarget"
-              descKey="servers.realityTargetDesc"
-              placeholder="www.microsoft.com"
-            />
-
-            <RealityPublicKeyField control={form.control} t={t} />
-
-            <RealityShortIdField control={form.control} t={t} />
-
-            <FingerprintField control={form.control} t={t} />
-
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder="443" />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="uuid"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>UUID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
+                    </FormControl>
+                    <FormDescription>{t('servers.uuidDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
             <FormField
               control={form.control}
-              name="flow"
+              name="encryption"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Flow ({t('servers.optional')})</FormLabel>
-                  <Select
-                    onValueChange={(v) => field.onChange(v === '_none' ? '' : v)}
-                    value={field.value || '_none'}
-                  >
+                  <FormLabel>{t('servers.encryption')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectFlow', 'Select Flow')} />
+                        <SelectValue placeholder={t('servers.selectEncryption')} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="_none">{t('servers.none')}</SelectItem>
-                      <SelectItem value="xtls-rprx-vision">xtls-rprx-vision</SelectItem>
+                      <SelectItem value="none">none</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
-                    {t(
-                      'servers.flowDesc',
-                      'XTLS flow control, Reality recommends xtls-rprx-vision'
-                    )}
-                  </FormDescription>
+                  <FormDescription>{t('servers.vlessEncryptionDesc')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
-          </>
-        )}
+            <FormField
+              control={form.control}
+              name="network"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.transport')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectTransport')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Tcp">TCP</SelectItem>
+                      <SelectItem value="Ws">WebSocket</SelectItem>
+                      <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
+                      <SelectItem value="H2">HTTP/2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.transportDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="security"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.security')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectSecurity')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="None">{t('servers.none')}</SelectItem>
+                      <SelectItem value="Tls">TLS</SelectItem>
+                      <SelectItem value="Reality">Reality</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.securityDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
-        {isWebSocketEnabled && (
-          <>
-            <WsPathField control={form.control} t={t} />
-
-            <WsHostField control={form.control} t={t} />
-          </>
-        )}
-
-        <MultiplexFields
-          control={form.control}
-          t={t}
-          disabled={form.watch('flow') === 'xtls-rprx-vision'}
-          disabledReason={t(
-            'servers.multiplexVisionConflict',
-            'Multiplex 与 xtls-rprx-vision flow 不兼容，已禁用。'
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          {isTlsEnabled && (
+            <FieldGrid cols={2}>
+              <TlsServerNameField control={form.control} t={t} />
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <AllowInsecureField control={form.control} t={t} />
+              </FieldSpan>
+              <FieldSpan>
+                <EchField control={form.control} t={t} />
+              </FieldSpan>
+            </FieldGrid>
           )}
-        />
+
+          {isRealityEnabled && (
+            <FieldGrid cols={2}>
+              <TlsServerNameField
+                control={form.control}
+                t={t}
+                labelKey="servers.realityTarget"
+                descKey="servers.realityTargetDesc"
+                placeholder="www.microsoft.com"
+              />
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <RealityPublicKeyField control={form.control} t={t} />
+              </FieldSpan>
+              <RealityShortIdField control={form.control} t={t} />
+              <FormField
+                control={form.control}
+                name="flow"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Flow ({t('servers.optional')})</FormLabel>
+                    <Select
+                      onValueChange={(v) => field.onChange(v === '_none' ? '' : v)}
+                      value={field.value || '_none'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('servers.selectFlow', 'Select Flow')} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="_none">{t('servers.none')}</SelectItem>
+                        <SelectItem value="xtls-rprx-vision">xtls-rprx-vision</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'servers.flowDesc',
+                        'XTLS flow control, Reality recommends xtls-rprx-vision'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldGrid>
+          )}
+
+          {isWebSocketEnabled && (
+            <FieldGrid cols={2}>
+              <WsPathField control={form.control} t={t} />
+              <WsHostField control={form.control} t={t} />
+            </FieldGrid>
+          )}
+
+          <MultiplexFields
+            control={form.control}
+            t={t}
+            disabled={form.watch('flow') === 'xtls-rprx-vision'}
+            disabledReason={t(
+              'servers.multiplexVisionConflict',
+              'Multiplex 与 xtls-rprx-vision flow 不兼容，已禁用。'
+            )}
+          />
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, AllowInsecureField } from './shared/tls-fields';
+import { FormSection, FieldGrid } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -103,75 +104,74 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <AddressField control={form.control} t={t} />
-
-        <PortField control={form.control} t={t} placeholder={isHttps ? '443' : '80'} />
-
-        <FormField
-          control={form.control}
-          name="username"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                {t('servers.username')} ({t('servers.optional', 'Optional')})
-              </FormLabel>
-              <FormControl>
-                <Input placeholder={t('servers.usernamePlaceholder', 'Username')} {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                {t('servers.password')} ({t('servers.optional', 'Optional')})
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="password"
-                  placeholder={t('servers.passwordPlaceholder', 'Password')}
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="isHttps"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-              <FormControl>
-                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-              </FormControl>
-              <div className="space-y-1 leading-none">
-                <FormLabel>HTTPS/TLS</FormLabel>
-                <FormDescription>Enable TLS security for this proxy</FormDescription>
-              </div>
-            </FormItem>
-          )}
-        />
-
-        {isHttps && (
-          <>
-            <TlsServerNameField
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder={isHttps ? '443' : '80'} />
+            <FormField
               control={form.control}
-              t={t}
-              labelKey="servers.sni"
-              descKey="servers.sniDesc"
-              optional
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('servers.username')} ({t('servers.optional', 'Optional')})
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder={t('servers.usernamePlaceholder', 'Username')} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('servers.password')} ({t('servers.optional', 'Optional')})
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      placeholder={t('servers.passwordPlaceholder', 'Password')}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="isHttps"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                  <div className="space-y-1 leading-none">
+                    <FormLabel>HTTPS/TLS</FormLabel>
+                    <FormDescription>Enable TLS security for this proxy</FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
 
-            <AllowInsecureField control={form.control} t={t} />
-          </>
-        )}
+          {isHttps && (
+            <FieldGrid cols={2}>
+              <TlsServerNameField
+                control={form.control}
+                t={t}
+                labelKey="servers.sni"
+                descKey="servers.sniDesc"
+                optional
+              />
+              <AllowInsecureField control={form.control} t={t} />
+            </FieldGrid>
+          )}
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

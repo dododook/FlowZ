@@ -28,6 +28,8 @@ import { HttpForm } from './http-form';
 import { SshForm } from './ssh-form';
 import { WireGuardForm } from './wireguard-form';
 import { ServerSelectGroups } from './server-select-groups';
+import { FormSection } from './shared/form-layout';
+import { PROTOCOL_OPTIONS } from './shared/protocol-options';
 import type { ServerConfig, ProtocolType } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -99,7 +101,7 @@ export function ServerConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[92vw] max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing
@@ -129,70 +131,36 @@ export function ServerConfigDialog({
         )}
 
         <div className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="serverName">{t('servers.remarks')}</Label>
-            <Input
-              id="serverName"
-              placeholder={t('servers.remarksPlaceholder')}
-              value={serverName}
-              onChange={(e) => setServerName(e.target.value)}
-            />
-            <p className="text-sm text-muted-foreground">{t('servers.remarksDesc')}</p>
-          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="serverName">{t('servers.remarks')}</Label>
+              <Input
+                id="serverName"
+                placeholder={t('servers.remarksPlaceholder')}
+                value={serverName}
+                onChange={(e) => setServerName(e.target.value)}
+              />
+              <p className="text-sm text-muted-foreground">{t('servers.remarksDesc')}</p>
+            </div>
 
-          <div className="space-y-2">
-            <Label>{t('servers.protocol')}</Label>
-            <Select value={selectedProtocol} onValueChange={handleProtocolChange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vless">VLESS</SelectItem>
-                <SelectItem value="trojan">Trojan</SelectItem>
-                <SelectItem value="hysteria2">Hysteria2</SelectItem>
-                <SelectItem value="shadowsocks">Shadowsocks</SelectItem>
-                <SelectItem value="anytls">AnyTLS</SelectItem>
-                <SelectItem value="tuic">TUIC</SelectItem>
-                <SelectItem value="vmess">VMess</SelectItem>
-                <SelectItem value="naive">NaiveProxy</SelectItem>
-                <SelectItem value="socks">SOCKS5</SelectItem>
-                <SelectItem value="http">HTTP(S)</SelectItem>
-                <SelectItem value="ssh">SSH</SelectItem>
-                <SelectItem value="wireguard">WireGuard</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              {t('servers.selectProtocol', 'Select your proxy server protocol')}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label>{t('servers.detour', 'Proxy Chain (Detour)')}</Label>
-            <Select
-              value={detour || 'direct'}
-              onValueChange={(v) => setDetour(v === 'direct' ? undefined : v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={t('servers.directConnection', 'Direct (No Chain)')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="direct">
-                  {t('servers.directConnection', 'Direct (No Chain)')}
-                </SelectItem>
-                <ServerSelectGroups
-                  servers={servers}
-                  excludeId={server?.id}
-                  excludeProtocols={['wireguard']}
-                  selectedId={detour}
-                />
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'servers.detourDesc',
-                'Connect to this node through another proxy server (proxy chain)'
-              )}
-            </p>
+            <div className="space-y-2">
+              <Label>{t('servers.protocol')}</Label>
+              <Select value={selectedProtocol} onValueChange={handleProtocolChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROTOCOL_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                {t('servers.selectProtocol', 'Select your proxy server protocol')}
+              </p>
+            </div>
           </div>
 
           <div className="border-t pt-6">
@@ -329,6 +297,39 @@ export function ServerConfigDialog({
               />
             )}
           </div>
+
+          {/* 前置代理(detour) 收进折叠 opt-in 区：默认关，编辑已有 detour 的节点时默认展开；WG 不作 detour 目标。 */}
+          <FormSection
+            title={t('servers.detour', 'Proxy Chain (Detour)')}
+            collapsible
+            defaultOpen={!!server?.detour}
+          >
+            <Select
+              value={detour || 'direct'}
+              onValueChange={(v) => setDetour(v === 'direct' ? undefined : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={t('servers.directConnection', 'Direct (No Chain)')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="direct">
+                  {t('servers.directConnection', 'Direct (No Chain)')}
+                </SelectItem>
+                <ServerSelectGroups
+                  servers={servers}
+                  excludeId={server?.id}
+                  excludeProtocols={['wireguard']}
+                  selectedId={detour}
+                />
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              {t(
+                'servers.detourDesc',
+                'Connect to this node through another proxy server (proxy chain)'
+              )}
+            </p>
+          </FormSection>
         </div>
       </DialogContent>
     </Dialog>

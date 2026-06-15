@@ -53,25 +53,12 @@ import { api } from '@/ipc/api-client';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
+import { PROTOCOL_OPTIONS } from './shared/protocol-options';
 
 type ServerConfigWithId = ServerConfig;
 type ViewMode = 'card' | 'list';
 type SortKey = 'name' | 'protocol' | 'latency' | 'address';
 type SortOrder = 'asc' | 'desc';
-
-const ALL_PROTOCOLS = [
-  'vless',
-  'trojan',
-  'hysteria2',
-  'shadowsocks',
-  'anytls',
-  'tuic',
-  'naive',
-  'socks',
-  'http',
-  'ssh',
-  'wireguard',
-] as const;
 
 const getCountryCode = (name: string): string | null => {
   const lowerName = name.toLowerCase();
@@ -607,9 +594,9 @@ export function ServerList({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('servers.allProtocols')}</SelectItem>
-            {ALL_PROTOCOLS.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p.toUpperCase()}
+            {PROTOCOL_OPTIONS.map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
               </SelectItem>
             ))}
           </SelectContent>

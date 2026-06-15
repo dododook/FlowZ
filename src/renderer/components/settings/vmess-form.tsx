@@ -24,6 +24,7 @@ import { EchField, MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
 import { WsPathField, WsHostField } from './shared/transport-fields';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
   echSchemaShape,
   multiplexSchemaShape,
@@ -169,142 +170,151 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <AddressField control={form.control} t={t} />
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder="443" />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="uuid"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>UUID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t('servers.vmessUuidDesc', 'VMess 用户 UUID')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FormField
+              control={form.control}
+              name="alterId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>AlterID</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      {...field}
+                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('servers.alterIdDesc', 'V2Ray 兼容属性，通常设为 0')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="vmessSecurity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.encryption')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectEncryption')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="auto">auto</SelectItem>
+                      <SelectItem value="aes-128-gcm">aes-128-gcm</SelectItem>
+                      <SelectItem value="chacha20-poly1305">chacha20-poly1305</SelectItem>
+                      <SelectItem value="none">none</SelectItem>
+                      <SelectItem value="zero">zero</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    {t('servers.vmessSecurityDesc', 'VMess 加密方式')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
-        <PortField control={form.control} t={t} placeholder="443" />
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="network"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.transport')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectTransport')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Tcp">TCP</SelectItem>
+                      <SelectItem value="Ws">WebSocket</SelectItem>
+                      <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
+                      <SelectItem value="H2">HTTP/2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.transportDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="security"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.security')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectSecurity')} />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="None">{t('servers.none')}</SelectItem>
+                      <SelectItem value="Tls">TLS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.securityDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
 
-        <FormField
-          control={form.control}
-          name="uuid"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>UUID</FormLabel>
-              <FormControl>
-                <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
-              </FormControl>
-              <FormDescription>{t('servers.vmessUuidDesc', 'VMess 用户 UUID')}</FormDescription>
-              <FormMessage />
-            </FormItem>
+          {isTlsEnabled && (
+            <FieldGrid cols={2}>
+              <TlsServerNameField control={form.control} t={t} />
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <AllowInsecureField control={form.control} t={t} />
+              </FieldSpan>
+              <FieldSpan>
+                <EchField control={form.control} t={t} />
+              </FieldSpan>
+            </FieldGrid>
           )}
-        />
 
-        <FormField
-          control={form.control}
-          name="alterId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>AlterID</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  placeholder="0"
-                  {...field}
-                  onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                />
-              </FormControl>
-              <FormDescription>
-                {t('servers.alterIdDesc', 'V2Ray 兼容属性，通常设为 0')}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
+          {isWebSocketEnabled && (
+            <FieldGrid cols={2}>
+              <WsPathField control={form.control} t={t} />
+              <WsHostField control={form.control} t={t} />
+            </FieldGrid>
           )}
-        />
 
-        <FormField
-          control={form.control}
-          name="vmessSecurity"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.encryption')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectEncryption')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="auto">auto</SelectItem>
-                  <SelectItem value="aes-128-gcm">aes-128-gcm</SelectItem>
-                  <SelectItem value="chacha20-poly1305">chacha20-poly1305</SelectItem>
-                  <SelectItem value="none">none</SelectItem>
-                  <SelectItem value="zero">zero</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.vmessSecurityDesc', 'VMess 加密方式')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="network"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.transport')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectTransport')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="Tcp">TCP</SelectItem>
-                  <SelectItem value="Ws">WebSocket</SelectItem>
-                  <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
-                  <SelectItem value="H2">HTTP/2</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.transportDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="security"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.security')}</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('servers.selectSecurity')} />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="None">{t('servers.none')}</SelectItem>
-                  <SelectItem value="Tls">TLS</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormDescription>{t('servers.securityDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {isTlsEnabled && (
-          <>
-            <TlsServerNameField control={form.control} t={t} />
-
-            <FingerprintField control={form.control} t={t} />
-
-            <AllowInsecureField control={form.control} t={t} />
-
-            <EchField control={form.control} t={t} />
-          </>
-        )}
-
-        {isWebSocketEnabled && (
-          <>
-            <WsPathField control={form.control} t={t} />
-
-            <WsHostField control={form.control} t={t} />
-          </>
-        )}
-
-        <MultiplexFields control={form.control} t={t} disabled={false} />
+          <MultiplexFields control={form.control} t={t} disabled={false} />
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

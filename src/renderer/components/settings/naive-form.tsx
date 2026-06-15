@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { api } from '@/ipc';
 
@@ -115,69 +115,64 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <Card>
-          <CardContent className="pt-6 space-y-4">
-            {needsCoreUpgrade && (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 space-y-2">
-                <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
-                  {t('servers.naive.versionWarning')}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-100"
-                  onClick={() => {
-                    setSettingsSection('about');
-                    setCurrentView('settings');
-                  }}
-                >
-                  {t('servers.naive.goUpdate')}
-                </Button>
-              </div>
-            )}
+        {needsCoreUpgrade && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 space-y-2">
+            <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+              {t('servers.naive.versionWarning')}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-900 dark:text-amber-100"
+              onClick={() => {
+                setSettingsSection('about');
+                setCurrentView('settings');
+              }}
+            >
+              {t('servers.naive.goUpdate')}
+            </Button>
+          </div>
+        )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="address"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-foreground">{t('servers.serverAddress')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="port"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-foreground">{t('servers.port')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="443"
-                        {...field}
-                        onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="address"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.serverAddress')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="example.com" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="port"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.port')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="443"
+                      {...field}
+                      onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="username"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-foreground">
-                    {t('servers.username', 'Username')}
-                  </FormLabel>
+                  <FormLabel>{t('servers.username', 'Username')}</FormLabel>
                   <FormControl>
                     <Input placeholder="Enter username" {...field} />
                   </FormControl>
@@ -185,15 +180,12 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
                 </FormItem>
               )}
             />
-
             <FormField
               control={form.control}
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-foreground">
-                    {t('servers.password', 'Password')}
-                  </FormLabel>
+                  <FormLabel>{t('servers.password', 'Password')}</FormLabel>
                   <FormControl>
                     <Input type="password" placeholder="Enter password" {...field} />
                   </FormControl>
@@ -201,72 +193,78 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
                 </FormItem>
               )}
             />
+          </FieldGrid>
+        </FormSection>
 
-            <FormField
-              control={form.control}
-              name="tlsServerName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-foreground">{t('servers.sni')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder={t('servers.sniPlaceholder')} {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.sniDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="tlsFingerprint"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-foreground">{t('servers.fingerprint')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          <FieldGrid cols={2}>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="tlsServerName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.sni')}</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={t('servers.selectFingerprint', 'Select TLS Fingerprint')}
-                        />
-                      </SelectTrigger>
+                      <Input placeholder={t('servers.sniPlaceholder')} {...field} />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">{t('servers.none', 'None')}</SelectItem>
-                      <SelectItem value="chrome">Chrome</SelectItem>
-                      <SelectItem value="firefox">Firefox</SelectItem>
-                      <SelectItem value="safari">Safari</SelectItem>
-                      <SelectItem value="edge">Edge</SelectItem>
-                      <SelectItem value="ios">iOS</SelectItem>
-                      <SelectItem value="android">Android</SelectItem>
-                      <SelectItem value="random">{t('servers.random')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>{t('servers.fingerprintDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="useHttp3"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-foreground">
-                      {t('servers.naive.useHttp3', 'HTTP/3 (QUIC)')}
-                    </FormLabel>
-                    <FormDescription>{t('servers.naive.useHttp3Desc')}</FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+                    <FormDescription>{t('servers.sniDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="tlsFingerprint"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.fingerprint')}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={t('servers.selectFingerprint', 'Select TLS Fingerprint')}
+                          />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">{t('servers.none', 'None')}</SelectItem>
+                        <SelectItem value="chrome">Chrome</SelectItem>
+                        <SelectItem value="firefox">Firefox</SelectItem>
+                        <SelectItem value="safari">Safari</SelectItem>
+                        <SelectItem value="edge">Edge</SelectItem>
+                        <SelectItem value="ios">iOS</SelectItem>
+                        <SelectItem value="android">Android</SelectItem>
+                        <SelectItem value="random">{t('servers.random')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>{t('servers.fingerprintDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="useHttp3"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>{t('servers.naive.useHttp3', 'HTTP/3 (QUIC)')}</FormLabel>
+                      <FormDescription>{t('servers.naive.useHttp3Desc')}</FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+          </FieldGrid>
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

@@ -19,6 +19,7 @@ import { EchField } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, AllowInsecureField } from './shared/tls-fields';
 import { echSchemaShape, echDefaults, readEchDefault } from './shared/field-schemas';
+import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -128,156 +129,164 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <AddressField control={form.control} t={t} />
+        <FormSection title={t('servers.basic', 'Basic')}>
+          <FieldGrid cols={2}>
+            <AddressField control={form.control} t={t} />
+            <PortField control={form.control} t={t} placeholder="443" />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.password')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder={t('servers.passwordPlaceholder')}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>{t('servers.passwordDesc')}</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+          </FieldGrid>
+        </FormSection>
 
-        <PortField control={form.control} t={t} placeholder="443" />
-
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('servers.password')}</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder={t('servers.passwordPlaceholder')} {...field} />
-              </FormControl>
-              <FormDescription>{t('servers.passwordDesc')}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="upMbps"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.upMbps')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    placeholder={t('servers.optional')}
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      field.onChange(val ? parseInt(val) : undefined);
-                    }}
-                  />
-                </FormControl>
-                <FormDescription>{t('servers.bbrDesc')}</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="downMbps"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.downMbps')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type="number"
-                    placeholder={t('servers.optional')}
-                    {...field}
-                    value={field.value ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      field.onChange(val ? parseInt(val) : undefined);
-                    }}
-                  />
-                </FormControl>
-                <FormDescription>{t('servers.bbrDesc')}</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-
-        <FormField
-          control={form.control}
-          name="obfsEnabled"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-              <FormControl>
-                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-              </FormControl>
-              <div className="space-y-1 leading-none">
-                <FormLabel>{t('servers.obfsEnabled')}</FormLabel>
-                <FormDescription>{t('servers.obfsEnabledDesc')}</FormDescription>
-              </div>
-            </FormItem>
-          )}
-        />
-
-        {isObfsEnabled && (
-          <FormField
-            control={form.control}
-            name="obfsPassword"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.obfsPassword')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type="password"
-                    placeholder={t('servers.obfsPasswordPlaceholder')}
-                    {...field}
-                  />
-                </FormControl>
-                <FormDescription>{t('servers.obfsPasswordDesc')}</FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-
-        <TlsServerNameField control={form.control} t={t} />
-
-        <AllowInsecureField control={form.control} t={t} />
-
-        <EchField control={form.control} t={t} />
-
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="serverPorts"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.hopPorts', '端口跳跃范围')}</FormLabel>
-                <FormControl>
-                  <Input placeholder="20000:30000,40000:50000" {...field} />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'servers.hopPortsDesc',
-                    '逗号分隔的端口范围，如 20000:30000,40000:50000。留空则不启用。'
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="upMbps"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.upMbps')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder={t('servers.optional')}
+                      {...field}
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val ? parseInt(val) : undefined);
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription>{t('servers.bbrDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="downMbps"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.downMbps')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder={t('servers.optional')}
+                      {...field}
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val ? parseInt(val) : undefined);
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription>{t('servers.bbrDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="obfsEnabled"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>{t('servers.obfsEnabled')}</FormLabel>
+                      <FormDescription>{t('servers.obfsEnabledDesc')}</FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            {isObfsEnabled && (
+              <FieldSpan>
+                <FormField
+                  control={form.control}
+                  name="obfsPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('servers.obfsPassword')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="password"
+                          placeholder={t('servers.obfsPasswordPlaceholder')}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>{t('servers.obfsPasswordDesc')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
+                />
+              </FieldSpan>
             )}
-          />
-
-          <FormField
-            control={form.control}
-            name="hopInterval"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.hopInterval', '跳跃间隔')}</FormLabel>
-                <FormControl>
-                  <Input placeholder="30s" {...field} />
-                </FormControl>
-                <FormDescription>
-                  {t('servers.hopIntervalDesc', '端口跳跃的时间间隔，如 30s。留空使用默认值。')}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+            <TlsServerNameField control={form.control} t={t} />
+            <FieldSpan>
+              <AllowInsecureField control={form.control} t={t} />
+            </FieldSpan>
+            <FieldSpan>
+              <EchField control={form.control} t={t} />
+            </FieldSpan>
+            <FormField
+              control={form.control}
+              name="serverPorts"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.hopPorts', '端口跳跃范围')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="20000:30000,40000:50000" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'servers.hopPortsDesc',
+                      '逗号分隔的端口范围，如 20000:30000,40000:50000。留空则不启用。'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="hopInterval"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.hopInterval', '跳跃间隔')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="30s" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t('servers.hopIntervalDesc', '端口跳跃的时间间隔，如 30s。留空使用默认值。')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>
