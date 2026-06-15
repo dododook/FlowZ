@@ -76,8 +76,12 @@ export function ConnectionTopology() {
 
   // F22：连接数据统一由 main 单一 poller 供给。挂载即用 CONNECTIONS_GET 回填，再订阅 EVENT_CONNECTIONS_UPDATED。
   // 渲染端不再直连 :9090、不再持有 clash secret；停止代理时 main 广播空快照 → 自然落入空态。
+  // 必须注册 watcher（CONNECTIONS_WATCH）：main poller 仅在 connectionsWatchers>0 时才裁剪+推送连接列表（StatsService
+  // 效率门控）；首页拓扑此前只 get()+onUpdated() 不注册 → watcher 恒 0 → poller 不喂 → 需先开「连接」页才有数据。
+  // 与 connections-table 同款 watch/unwatch，使首页拓扑独立实时（不依赖连接页打开）。
   useEffect(() => {
     let mounted = true;
+    void api.connections.watch().catch(() => {});
     api.connections
       .get()
       .then((snap) => {
@@ -96,6 +100,7 @@ export function ConnectionTopology() {
     return () => {
       mounted = false;
       unsub();
+      void api.connections.unwatch().catch(() => {});
     };
   }, []);
 
