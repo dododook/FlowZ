@@ -974,9 +974,12 @@ export class CoreUpdateService {
   /**
    * 获取当前核心版本
    */
-  async getCurrentVersion(): Promise<string> {
+  async getCurrentVersion(force = true): Promise<string> {
+    // 默认 force=true 读活二进制：版本记录/回滚/兼容带(verifiedCeiling)决策等准确性敏感点必须读真实当前核心——
+    // 换核/回滚不经 startInternal 的 force 刷新，若吃 getCoreVersion 缓存会读到陈旧失败版本 → 记错版本、回滚 fail-safe 失效。
+    // 仅「关于」页显示(version-handlers)显式传 false 走缓存，避免高频进入时 spawn 内核子进程致加载转圈。
     if (this.proxyManager) {
-      return await this.proxyManager.getCoreVersion();
+      return await this.proxyManager.getCoreVersion(force);
     }
     return '未知';
   }

@@ -34,7 +34,8 @@ export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): 
       let currentSingBoxVersion = BUNDLED_CORE_VERSION;
       if (coreUpdateService) {
         try {
-          const version = await coreUpdateService.getCurrentVersion();
+          // About 页显示：force=false 读缓存（启动已预热）→ 避免每次进入 spawn 内核子进程致加载转圈。
+          const version = await coreUpdateService.getCurrentVersion(false);
           if (version && version !== '未知') {
             currentSingBoxVersion = version;
           }
