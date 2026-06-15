@@ -42,7 +42,8 @@ export type ProtocolType =
   | 'naive'
   | 'socks'
   | 'http'
-  | 'ssh';
+  | 'ssh'
+  | 'wireguard';
 
 // 兼容旧代码的类型别名
 export type ServerConfigWithId = import('../../shared/types').ServerConfig;

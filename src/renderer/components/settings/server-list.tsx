@@ -70,6 +70,7 @@ const ALL_PROTOCOLS = [
   'socks',
   'http',
   'ssh',
+  'wireguard',
 ] as const;
 
 const getCountryCode = (name: string): string | null => {
@@ -107,7 +108,7 @@ const getCountryCode = (name: string): string | null => {
 /** 传输层显示标签：QUIC 系协议(hysteria2/tuic/naive-HTTP3)统一显示 udp，其余按 network；缺省 tcp。 */
 const getTransportLabel = (server: ServerConfigWithId): string => {
   const p = server.protocol?.toLowerCase();
-  if (p === 'hysteria2' || p === 'tuic') return 'udp';
+  if (p === 'hysteria2' || p === 'tuic' || p === 'wireguard') return 'udp';
   if (p === 'naive') return server.naiveSettings?.useHttp3 ? 'udp' : 'tcp';
   return server.network || 'tcp';
 };
@@ -281,9 +282,10 @@ export function ServerList({
 
   const handleBatchCopy = async () => {
     try {
-      // ssh 无分享链接，批量复制时排除（避免 per-server 抛错刷屏 toast）
+      // ssh / wireguard 无分享链接，批量复制时排除（避免 per-server 抛错刷屏 toast）
       const selectedServersList = servers.filter(
-        (s) => selectedIds.has(s.id) && s.protocol?.toLowerCase() !== 'ssh'
+        (s) =>
+          selectedIds.has(s.id) && !['ssh', 'wireguard'].includes(s.protocol?.toLowerCase() || '')
       );
       const urls: string[] = [];
       let successCount = 0;
@@ -389,6 +391,7 @@ export function ServerList({
       socks: 'bg-badge-slate/15 text-badge-slate border-badge-slate/30',
       http: 'bg-badge-sky/15 text-badge-sky border-badge-sky/30',
       ssh: 'bg-badge-amber/15 text-badge-amber border-badge-amber/30',
+      wireguard: 'bg-badge-cyan/15 text-badge-cyan border-badge-cyan/30',
     };
     return colors[protocol.toLowerCase()] || 'bg-muted text-muted-foreground';
   };
@@ -419,8 +422,8 @@ export function ServerList({
           {latencyMap[server.id] === -1 ? t('servers.timeout') : `${latencyMap[server.id]} ms`}
         </span>
       )}
-      {/* ssh 无分享链接(ProtocolParser.generateUrl 无 ssh 分支)，隐藏复制按钮 */}
-      {server.protocol?.toLowerCase() !== 'ssh' && (
+      {/* ssh / wireguard 无分享链接(ProtocolParser.generateUrl 无对应分支)，隐藏复制按钮 */}
+      {!['ssh', 'wireguard'].includes(server.protocol?.toLowerCase() || '') && (
         <Button
           variant="ghost"
           size="sm"

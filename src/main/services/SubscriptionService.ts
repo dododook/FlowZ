@@ -152,6 +152,7 @@ export class SubscriptionService {
       s.shadowsocksSettings?.password ||
       s.username ||
       s.sshSettings?.password ||
+      s.wireguardSettings?.peerPublicKey ||
       '';
     return `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}`;
   }

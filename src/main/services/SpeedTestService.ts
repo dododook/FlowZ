@@ -360,8 +360,9 @@ export class SpeedTestService {
   }
 
   /**
-   * 生成用于测速的 sing-box 配置：每个可用节点一个独立 HTTP 代理入站 → 该节点（预构造）出站。
-   * 出站由 ProxyManager.buildSpeedTestOutbound 预构造（全协议、domain_resolver=dns-direct、已去 detour）。
+   * 生成用于测速的 sing-box 配置：每个可用节点一个独立 HTTP 代理入站 → 该节点（预构造）出站/endpoint。
+   * 由 ProxyManager.buildSpeedTestOutbound 预构造：普通协议→outbound，WireGuard→endpoint（进 endpoints[]）；
+   * route 规则按 tag 指向，两者一致（endpoint tag 当 outbound 用，已实测兼容）。
    */
   private generateProxyTestConfig(
     usable: { server: ServerConfig; tag: string; outbound: Record<string, unknown> }[],
@@ -369,6 +370,7 @@ export class SpeedTestService {
   ): Record<string, unknown> {
     const inbounds: Record<string, unknown>[] = [];
     const outbounds: Record<string, unknown>[] = [];
+    const endpoints: Record<string, unknown>[] = [];
     const routeRules: Record<string, unknown>[] = [];
 
     for (const { server, tag, outbound } of usable) {
@@ -376,14 +378,19 @@ export class SpeedTestService {
       if (!port) continue;
       const inboundTag = `http-in-${server.id.slice(0, 8)}`;
       inbounds.push({ type: 'http', tag: inboundTag, listen: '127.0.0.1', listen_port: port });
-      outbounds.push(outbound); // 预构造的全协议出站（tag 已为 out-<id8>）
+      // endpoint（WireGuard 等）进 endpoints[]，普通协议进 outbounds[]；route 规则均按 tag 指向（一致）。
+      if (outbound.type === 'wireguard') {
+        endpoints.push(outbound);
+      } else {
+        outbounds.push(outbound); // 预构造的出站（tag 已为 out-<id8>）
+      }
       routeRules.push({ inbound: [inboundTag], action: 'route', outbound: tag });
     }
 
     // 必须有 direct 出站（sing-box 启动要求）
     outbounds.push({ type: 'direct', tag: 'direct' });
 
-    return {
+    const config: Record<string, unknown> = {
       log: { level: 'warn' },
       dns: {
         // sing-box 1.13+ 要求显式 type；出站 domain_resolver 与 default_domain_resolver 均指向本 tag
@@ -397,6 +404,8 @@ export class SpeedTestService {
         default_domain_resolver: 'dns-direct',
       },
     };
+    if (endpoints.length > 0) config.endpoints = endpoints; // WireGuard 测速：顶层 endpoints[]
+    return config;
   }
 
   /**

@@ -342,6 +342,31 @@ interface SingBoxOutbound {
   interrupt_exist_connections?: boolean;
 }
 
+interface SingBoxWireGuardPeer {
+  address: string;
+  port: number;
+  public_key: string;
+  pre_shared_key?: string;
+  allowed_ips: string[];
+  persistent_keepalive_interval?: number;
+  reserved?: number[];
+}
+
+// sing-box endpoint（1.11+）：独立于 outbound 的顶层 endpoints[] 元素，其 tag 可被 route/selector 当 outbound 引用。
+// 当前仅 WireGuard（默认 gVisor 用户态栈 system=false，零提权）；Tailscale 后续迭代再加字段。
+interface SingBoxEndpoint {
+  type: string;
+  tag: string;
+  system?: boolean;
+  mtu?: number;
+  address?: string[];
+  private_key?: string;
+  listen_port?: number;
+  peers?: SingBoxWireGuardPeer[];
+  udp_timeout?: string;
+  workers?: number;
+}
+
 interface SingBoxRouteRule {
   protocol?: string;
   network?: string[];
@@ -449,6 +474,7 @@ interface SingBoxConfig {
   dns?: SingBoxDnsConfig;
   inbounds: SingBoxInbound[];
   outbounds: SingBoxOutbound[];
+  endpoints?: SingBoxEndpoint[];
   route?: SingBoxRouteConfig;
   experimental?: SingBoxExperimental & {
     clash_api?: {
@@ -559,6 +585,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     memberTag: string;
     targetServerId?: string;
   }[] = [];
+  // 生成侧暂存：本轮 generateOutbounds 产出的 endpoint（WireGuard 等，sing-box 顶层 endpoints[]）。
+  // 仅 generateOutbounds 写、generateSingBoxConfig 末尾读，注入 SingBoxConfig.endpoints（非持久态）。
+  private pendingEndpoints: SingBoxEndpoint[] = [];
   // 启动前配置校验 gate 标记的非法节点（坏节点会让 sing-box 整体启动 FATAL）：仅会话内存，每次
   // startInternal 清空重判（换核自动复活）。generateOutbounds 据此跳过、不进 selector；checkAndPruneConfig
   // 迭代填充并在末尾推送渲染端标灰。
@@ -2001,6 +2030,12 @@ done
       },
     };
 
+    // WireGuard 等 endpoint 由 generateOutbounds 收进 pendingEndpoints，注入顶层 endpoints[]（其 tag 已在
+    // proxy-selector / rule-sel / route 中作为成员被引用，与 outbound 一视同仁）。
+    if (this.pendingEndpoints.length > 0) {
+      singboxConfig.endpoints = this.pendingEndpoints;
+    }
+
     // 路由规则若指向「已被跳过/不存在的出站」（如缺 libcronet 被跳过的 naive 节点），sing-box 会以
     // "outbound not found" 启动失败。统一把这类死引用修正为 selector（修 review H2：app/custom 分流
     // 指向被跳过 naive 节点的情况）。抽成方法供 gate 剔除后复用（A5 等价重构）。
@@ -2649,6 +2684,10 @@ done
     idToTagMap: Map<string, string>
   ): SingBoxOutbound[] {
     const outbounds: SingBoxOutbound[] = [];
+    // endpoint（WireGuard 等）单独收进 pendingEndpoints（顶层 endpoints[]），但其 tag 仍与节点出站 tag 一同
+    // 进入 nodeTags → proxy-selector / rule-sel / route，与普通节点一视同仁（clash_api 热切换已实测兼容）。
+    this.pendingEndpoints = [];
+    const nodeTags: string[] = [];
 
     if (config) {
       // 生成【全部】节点的 Outbound：selector 需要列出所有可切换节点；detour 前置节点亦在 config.servers
@@ -2656,7 +2695,7 @@ done
       // （app/custom 分流规则指向的固定节点 tag 不变，仍直接命中其节点出站，不经 selector。）
       for (const server of config.servers) {
         const tag = idToTagMap.get(server.id) || `proxy-${server.id}`;
-        if (outbounds.some((o) => o.tag === tag)) continue; // 去重
+        if (nodeTags.includes(tag)) continue; // 去重（含 endpoint）
         // 不可用节点跳过：naive 缺 libcronet 时，sing-box 启动会预初始化全部出站、缺库的 naive 会让
         // 整个代理启动 FATAL（连非 naive 节点也用不了）。跳过后，路由层对该节点 tag 的死引用会在
         // generateSingBoxConfig 末尾被统一修正为 selector（见 H2 修复）。
@@ -2670,6 +2709,19 @@ done
         // 启动前配置校验 gate 已标记为非法的节点：跳过、不进 outbounds/selector（防 onRetry 重生成复活）。
         // 路由层对其 tag 的死引用由 generateSingBoxConfig 末尾 fixRouteDeadReferences 统一修正为 selector。
         if (this.gateInvalidNodes.has(server.id)) {
+          continue;
+        }
+        // WireGuard：endpoint（非 outbound）。建进 pendingEndpoints，tag 仍入 nodeTags 参与选择器/路由。
+        if (server.protocol.toLowerCase() === 'wireguard') {
+          try {
+            this.pendingEndpoints.push(this.buildWireGuardEndpoint(server, tag));
+            nodeTags.push(tag);
+          } catch (e: any) {
+            this.logToManager(
+              'warn',
+              `生成 WireGuard endpoint 失败，已跳过: ${server.name} (${e?.message ?? e})`
+            );
+          }
           continue;
         }
         try {
@@ -2695,10 +2747,22 @@ done
             if (looped) {
               this.logToManager('warn', `检测到代理链成环，已跳过 detour: ${server.name}`);
             } else {
-              ob.detour = idToTagMap.get(server.detour);
+              const detourSrv = config.servers.find((s) => s.id === server.detour);
+              if (detourSrv && detourSrv.protocol.toLowerCase() === 'wireguard') {
+                // WireGuard 是 endpoint，不作为 outbound 的前置代理(detour)目标（dialer detour→endpoint 语义未定，
+                // 且本节点会被下方 detour 死引用预校验误剔）。丢弃 detour（本节点仍直连可用）+ 警告。UI 亦不列 WG 为
+                // detour 候选（route 规则指向 WG 仍合法，仅 detour 不合法——两者语义不同）。
+                this.logToManager(
+                  'warn',
+                  `WireGuard 不支持作为前置代理(detour)目标，已忽略「${server.name}」的代理链`
+                );
+              } else {
+                ob.detour = idToTagMap.get(server.detour);
+              }
             }
           }
           outbounds.push(ob);
+          nodeTags.push(tag);
         } catch (e: any) {
           this.logToManager(
             'warn',
@@ -2724,8 +2788,7 @@ done
       // selector：列出已生成的全部节点 tag，default 指向当前选中节点；interrupt_exist_connections 由用户
       // 开关决定（默认 false=优雅切换，现有连接保留至自然关闭）。clash_api `PUT /proxies/proxy-selector`
       // 据此热切换、无需重启 sing-box（详见 switchMode）。路由的 final 与「→代理」规则统一指向本 selector。
-      const nodeTags = outbounds.map((o) => o.tag).filter((t): t is string => !!t);
-      // 所有节点生成失败 → 空 selector 会让 sing-box 启动报含糊错误；这里提前给出清晰原因
+      // nodeTags 已在节点循环中按序累积（含 endpoint tag）；空=所有节点生成失败/不可用。
       if (nodeTags.length === 0) {
         throw new Error('没有可用的代理节点出站（所有节点配置生成失败）');
       }
@@ -2980,9 +3043,16 @@ done
    *   - 清空 detour：测速每节点独立、不接前置代理链（前置链不可达会污染单节点延迟判定）。
    *   - 解析器用 'dns-direct'（与 SpeedTestService 临时配置的 dns server tag 对齐）。
    */
-  buildSpeedTestOutbound(server: ServerConfig, tag: string): SingBoxOutbound | null {
+  buildSpeedTestOutbound(
+    server: ServerConfig,
+    tag: string
+  ): SingBoxOutbound | SingBoxEndpoint | null {
     try {
       if (!this.isNodeUsable(server)) return null;
+      // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
+      if (server.protocol.toLowerCase() === 'wireguard') {
+        return this.buildWireGuardEndpoint(server, tag);
+      }
       const map = new Map<string, string>([[server.id, tag]]);
       const ob = this.generateProxyOutbound(server, map, 'dns-direct');
       ob.tag = tag;
@@ -2991,6 +3061,39 @@ done
     } catch {
       return null;
     }
+  }
+
+  /**
+   * 构造 WireGuard endpoint（sing-box 1.11+ 顶层 endpoints[]）。单 peer：peer endpoint 用 server.address/port，
+   * 默认 gVisor 用户态栈（system=false，零提权）。base64/CIDR 字段在 UI 表单/.conf 解析已校验，此处直拼。
+   */
+  private buildWireGuardEndpoint(server: ServerConfig, tag: string): SingBoxEndpoint {
+    const s = server.wireguardSettings;
+    if (!s || !s.privateKey || !s.peerPublicKey || !s.localAddress?.length) {
+      throw new Error('WireGuard 配置缺少 privateKey/peerPublicKey/localAddress');
+    }
+    return {
+      type: 'wireguard',
+      tag,
+      system: false,
+      mtu: s.mtu && s.mtu > 0 ? s.mtu : 1408,
+      address: s.localAddress,
+      private_key: s.privateKey,
+      peers: [
+        {
+          address: server.address,
+          port: server.port,
+          public_key: s.peerPublicKey,
+          allowed_ips: s.allowedIPs?.length ? s.allowedIPs : ['0.0.0.0/0', '::/0'],
+          ...(s.preSharedKey ? { pre_shared_key: s.preSharedKey } : {}),
+          // keepalive 缺省强制 25s：WireGuard 是无连接 UDP，client 多在 NAT 后，无 keepalive 则 NAT 映射超时
+          // → 入向不可达、隧道静默断连。故未显式设置时兜 25s 维持映射，避免断连（用户可在表单调大）。
+          persistent_keepalive_interval:
+            s.persistentKeepalive && s.persistentKeepalive > 0 ? s.persistentKeepalive : 25,
+          ...(s.reserved?.length === 3 ? { reserved: s.reserved } : {}),
+        },
+      ],
+    };
   }
 
   /**
@@ -4514,8 +4617,11 @@ done
       throw new Error(`选中节点「${selectedTag}」配置无效或其代理链依赖无效节点，请更换节点后重试`);
     }
 
-    // ② 删 outbound。
+    // ② 删 outbound（含 endpoint）。
     singboxConfig.outbounds = singboxConfig.outbounds.filter((o) => !toRemove.has(o.tag));
+    if (singboxConfig.endpoints) {
+      singboxConfig.endpoints = singboxConfig.endpoints.filter((e) => !toRemove.has(e.tag));
+    }
 
     // ③ group 成员删 tag + default 修正 + proxy-selector 剔空 throw。
     for (const ob of singboxConfig.outbounds) {
@@ -4569,7 +4675,10 @@ done
    */
   private fixRouteDeadReferences(singboxConfig: SingBoxConfig): void {
     const validTags = new Set(
-      singboxConfig.outbounds.map((o) => o.tag).filter((t): t is string => !!t)
+      [
+        ...singboxConfig.outbounds.map((o) => o.tag),
+        ...(singboxConfig.endpoints ?? []).map((e) => e.tag),
+      ].filter((t): t is string => !!t)
     );
     for (const rule of singboxConfig.route?.rules ?? []) {
       const r = rule as { action?: string; outbound?: string };

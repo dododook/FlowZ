@@ -20,7 +20,8 @@ export type Protocol =
   | 'naive'
   | 'socks'
   | 'http'
-  | 'ssh';
+  | 'ssh'
+  | 'wireguard';
 export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type Hysteria2Network = 'tcp' | 'udp';
 export type Security = 'none' | 'tls' | 'reality';
@@ -161,6 +162,21 @@ export interface SubscriptionConfig {
   };
 }
 
+/**
+ * WireGuard endpoint 设置（sing-box 1.11+ endpoint；默认 gVisor 用户态栈、零额外提权）。
+ * 单 peer 模型：peer 的 endpoint 用 ServerConfig.address/port 承载（与其他协议一致），其余 peer 参数在此。
+ */
+export interface WireGuardSettings {
+  privateKey: string; // 本地私钥（base64）
+  localAddress: string[]; // 本地隧道地址（wg-quick [Interface].Address），如 ['10.0.0.2/32','fd00::2/128']
+  peerPublicKey: string; // 对端公钥（base64）
+  preSharedKey?: string; // 可选预共享密钥（base64）
+  allowedIPs?: string[]; // 缺省 ['0.0.0.0/0','::/0']
+  persistentKeepalive?: number; // 保活间隔（秒）
+  reserved?: number[]; // 3 字节 reserved（Cloudflare WARP 等需要）
+  mtu?: number; // 缺省 1408
+}
+
 export interface ServerConfig {
   id: string;
   name: string;
@@ -203,6 +219,9 @@ export interface ServerConfig {
 
   // TUIC 特定
   tuicSettings?: TuicSettings;
+
+  // WireGuard 特定（sing-box endpoint）
+  wireguardSettings?: WireGuardSettings;
 
   // AnyTLS 特定
   anyTlsSettings?: AnyTlsSettings;

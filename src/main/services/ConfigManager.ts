@@ -36,6 +36,7 @@ const ALLOWED_PROTOCOLS: readonly Protocol[] = [
   'socks',
   'http',
   'ssh',
+  'wireguard',
 ];
 
 export interface IConfigManager {
@@ -452,6 +453,14 @@ export class ConfigManager implements IConfigManager {
           typeof server.shadowsocksSettings.password !== 'string'
         ) {
           throw new Error('Shadowsocks server requires password');
+        }
+      }
+
+      // WireGuard 特定验证（fail-fast：缺字段不可存盘，避免运行时 buildWireGuardEndpoint throw 后选中节点静默切换）
+      if (protocolLower === 'wireguard') {
+        const wg = server.wireguardSettings;
+        if (!wg || !wg.privateKey || !wg.peerPublicKey || !wg.localAddress?.length) {
+          throw new Error('WireGuard server requires privateKey, peerPublicKey and localAddress');
         }
       }
     }

@@ -26,6 +26,7 @@ import { VmessForm } from './vmess-form';
 import { SocksForm } from './socks-form';
 import { HttpForm } from './http-form';
 import { SshForm } from './ssh-form';
+import { WireGuardForm } from './wireguard-form';
 import { ServerSelectGroups } from './server-select-groups';
 import type { ServerConfig, ProtocolType } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -157,6 +158,7 @@ export function ServerConfigDialog({
                 <SelectItem value="socks">SOCKS5</SelectItem>
                 <SelectItem value="http">HTTP(S)</SelectItem>
                 <SelectItem value="ssh">SSH</SelectItem>
+                <SelectItem value="wireguard">WireGuard</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">
@@ -177,7 +179,12 @@ export function ServerConfigDialog({
                 <SelectItem value="direct">
                   {t('servers.directConnection', 'Direct (No Chain)')}
                 </SelectItem>
-                <ServerSelectGroups servers={servers} excludeId={server?.id} selectedId={detour} />
+                <ServerSelectGroups
+                  servers={servers}
+                  excludeId={server?.id}
+                  excludeProtocols={['wireguard']}
+                  selectedId={detour}
+                />
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">
@@ -304,6 +311,17 @@ export function ServerConfigDialog({
                 key={currentServerConfig?.id || 'new'}
                 serverConfig={
                   currentServerConfig?.protocol?.toLowerCase() === 'ssh'
+                    ? currentServerConfig
+                    : undefined
+                }
+                onSubmit={handleSave}
+              />
+            )}
+            {selectedProtocol === 'wireguard' && (
+              <WireGuardForm
+                key={currentServerConfig?.id || 'new'}
+                serverConfig={
+                  currentServerConfig?.protocol?.toLowerCase() === 'wireguard'
                     ? currentServerConfig
                     : undefined
                 }
