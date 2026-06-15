@@ -479,7 +479,7 @@ export interface IProxyManager {
     event: 'started' | 'stopped' | 'error' | 'node-hot-switched',
     listener: (...args: any[]) => void
   ): void;
-  getCoreVersion(): Promise<string>;
+  getCoreVersion(force?: boolean): Promise<string>;
   buildPreflightConfigJson(targetVersion: string): string | null;
   closeConnection(id?: string): Promise<{ ok: boolean; status: number }>;
 }
