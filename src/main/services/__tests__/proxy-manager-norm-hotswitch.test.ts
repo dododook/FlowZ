@@ -161,11 +161,12 @@ describe('ProxyManager.configGenerationNorm', () => {
     expect(svc.configGenerationNorm(a)).toBe(svc.configGenerationNorm(b));
   });
 
-  it('direct 模式：换节点 targetServerId → norm 翻转（全量投影含 target）', () => {
+  it('direct 模式：换节点 targetServerId → norm 等价（用户路由仅 smart 影响生成 → direct 不 emit → 不重启）', () => {
     const svc = makeSvc();
     const a = makeConfig({ proxyMode: 'direct', customRules: [extRule('r1', NODE_A)] });
     const b = makeConfig({ proxyMode: 'direct', customRules: [extRule('r1', NODE_B)] });
-    expect(svc.configGenerationNorm(a)).not.toBe(svc.configGenerationNorm(b));
+    // 修正：direct（与 global 同）忽略用户分流，自定义规则任何编辑都不改变生成的 sing-box 配置 → norm 不翻转、不无谓重启。
+    expect(svc.configGenerationNorm(a)).toBe(svc.configGenerationNorm(b));
   });
 
   it('direct 模式：target 不变、仅改 selectedServerId → norm 等价（selectedServerId 移出）', () => {
@@ -295,7 +296,7 @@ describe('ProxyManager.configGenerationNorm', () => {
     expect(rule.values).toEqual(['res:geo-cn']);
   });
 
-  it('direct 投影形态：全量（含 targetServerId），仅 delete remarks', () => {
+  it('direct 投影形态：用户路由投影为空（direct 不 emit 自定义规则 → 内容/换节点不影响生成）', () => {
     const svc = makeSvc();
     const cfg = makeConfig({
       proxyMode: 'direct',
@@ -303,12 +304,8 @@ describe('ProxyManager.configGenerationNorm', () => {
     });
     const norm = svc.configGenerationNorm(cfg);
     const parsed = JSON.parse(norm);
-    const rule = parsed.customRules[0];
-    expect(rule.__ext).toBeUndefined();
-    expect(rule.targetServerId).toBe(NODE_A); // direct 全量保留 target
-    expect(rule.remarks).toBeUndefined();
-    expect(rule.id).toBe('r1');
-    expect(rule.values).toEqual(['example.com']);
+    // 修正：用户路由仅 smart 影响生成；direct（与 global 同）投影为 []，自定义规则任何字段都不进 norm。
+    expect(parsed.customRules).toEqual([]);
   });
 
   it('appRules 投影形态：appId/action/enabled + targetServerId:null', () => {

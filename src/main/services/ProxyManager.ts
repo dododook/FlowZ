@@ -1378,13 +1378,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * 两配置此键相等 ⇔ 生成的 sing-box 配置等价。供 canHotSwitch（判纯切节点）与 switchMode（判生成无关变更 → 免重启 no-op）共用。
    */
   private configGenerationNorm(c: UserConfig): string {
-    // 被启用 ruleSet 规则引用的本地资源 id 集（只有它们影响生成；未引用资源的增删不应阻断热切换）
+    // 用户路由（自定义规则 + 应用分流）仅 smart 模式影响生成（global=真·全局忽略用户分流、direct=全直连，均不 emit）。
+    // 非 smart 下其内容/增删/编辑/换节点都不改变 sing-box 配置 → 不应翻转 norm（否则运行中编辑规则误触重启断流）。
+    const userRoutingActive = (c.proxyMode || 'smart').toLowerCase() === 'smart';
+    // 被启用 ruleSet 规则引用的本地资源 id 集（只有它们影响生成；未引用资源的增删不应阻断热切换）。非 smart → 无引用。
     const ids = new Set<string>();
-    for (const r of c.customRules || []) {
-      if (!r.enabled) continue;
-      for (const cond of ruleConditions(r)) {
-        if (cond.type === 'ruleSet') {
-          for (const v of cond.values) if (v.startsWith('res:')) ids.add(v.slice(4));
+    if (userRoutingActive) {
+      for (const r of c.customRules || []) {
+        if (!r.enabled) continue;
+        for (const cond of ruleConditions(r)) {
+          if (cond.type === 'ruleSet') {
+            for (const v of cond.values) if (v.startsWith('res:')) ids.add(v.slice(4));
+          }
         }
       }
     }
@@ -1405,23 +1410,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       dnsConfig: c.dnsConfig ? { ...c.dnsConfig, fakeIpToggleMigrated: null } : c.dnsConfig,
       // 规则投影：禁用规则不进生成（generateCustomRules / DNS 侧均跳过 disabled）→ 内容/增删不触发重启；
       //   remarks 纯展示元数据，不影响生成。顺序保留（reorder 仍重启，语义正确）。
-      // L3：外化规则（非 direct、全 EXT 可表达）的「值」移出 norm（值变 ⇔ 文件 diff → 热重载、不重启）；
-      //   保留结构位（id/action/target/combineMode/bypassFakeIP/各 cond 的 type 与 ok=有无 matcher）。
-      //   direct 模式 / inline 规则 → 全量投影回退（值仍在 DNS/route inline 消费，值变须重启），与现状一致。
+      // 非 smart（global/direct）：用户路由不进生成 → 整体投影为 []（增删/编辑/换节点都不翻转 norm，免无谓重启）。
+      // smart：外化规则（全 EXT 可表达）的「值」移出 norm（值变 ⇔ 文件 diff → 热重载、不重启），保留结构位
+      //   （id/action/target/combineMode/bypassFakeIP/各 cond 的 type 与 ok=有无 matcher）；inline 规则保留全量值（值变须重启）。
       customRules: (() => {
-        const extProjection = (c.proxyMode || 'smart').toLowerCase() !== 'direct';
+        if (!userRoutingActive) return [];
         return (c.customRules || [])
           .filter((r) => r.enabled)
           .map((r) => {
-            if (!extProjection) {
-              // direct 模式：generateRuleSelectors 跳过（无 rule-sel），规则 outbound 直绑节点
-              // → targetServerId 在 route 消费、改值须重启 → 全量保留
-              const copy: Record<string, unknown> = { ...r };
-              delete copy.remarks;
-              return copy;
-            }
             if (planCustomRule(r).kind === 'inline') {
-              // 非 direct 的 inline 规则：rule-sel 恒存在（default=target 节点或 proxy-selector 跟全局）。
+              // smart inline 规则：rule-sel 恒存在（default=target 节点或 proxy-selector 跟全局）。
               // targetServerId 值变（换节点/节点↔默认）= rule-sel default 变（PUT 热切换）→ 移出 norm。
               // 其余值（域名/IP 等）仍在 inline route 消费、改值须重启 → 保留全量结构。
               const copy: Record<string, unknown> = { ...r };
@@ -1446,14 +1444,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             };
           });
       })(),
-      // appRules 投影：targetServerId 移出 norm（rule-sel-app 恒存在，default=target 节点或 proxy-selector
-      //   跟全局，值变=PUT rule-sel-app default 热切换）；保留 appId/action/enabled 结构位（增删/换 action/换 appId 仍重启）。
-      appRules: (c.appRules || []).map((a) => ({
-        appId: a.appId,
-        action: a.action,
-        enabled: a.enabled,
-        targetServerId: null,
-      })),
+      // appRules 投影：仅 smart 生效。非 smart → []（增删/换 action 都不翻转 norm）。
+      //   smart：targetServerId 移出 norm（rule-sel-app 恒存在，值变=PUT 热切换）；保留 appId/action/enabled 结构位。
+      appRules: !userRoutingActive
+        ? []
+        : (c.appRules || []).map((a) => ({
+            appId: a.appId,
+            action: a.action,
+            enabled: a.enabled,
+            targetServerId: null,
+          })),
       ruleResources: (c.ruleResources || [])
         .filter((rr) => ids.has(rr.id))
         .map((rr) => rr.id)
@@ -2323,13 +2323,15 @@ done
     // 处理自定义规则中的 bypassFakeIP（仅 domain / domainSuffix / domainKeyword 三类域名规则有效）。
     // 可外化规则（smart/global + 已落盘 <base>.dns.json）→ 引用其 <base>-dns rule_set，值不进 DNS 配置
     // （改值原子替换文件 → fswatch 热重载、零重启）；inline / direct 模式 / 文件缺失降级 → 仍按值提取合并（现状）。
-    if (config.customRules && enableFakeIp) {
+    // 用户路由仅 smart 生效（effectiveCustomRules）：global/direct 下 route 侧不 emit 自定义规则，其 bypassFakeIP DNS 也不应注入
+    const dnsCustomRules = this.effectiveCustomRules(config);
+    if (dnsCustomRules.length && enableFakeIp) {
       const bypassDomains: string[] = []; // type 'domain'
       const bypassSuffixes: string[] = []; // type 'domainSuffix'
       const bypassKeywords: string[] = []; // type 'domainKeyword'
       const dnsTags: string[] = [];
-      const externalize = proxyMode !== 'direct'; // direct 不外化（route 侧 generateCustomRules 不执行）
-      for (const rule of config.customRules) {
+      const externalize = proxyMode !== 'direct'; // direct 不外化（route 侧 generateCustomRules 不执行）；此处 dnsCustomRules 已 smart-only
+      for (const rule of dnsCustomRules) {
         if (!rule.enabled || !rule.bypassFakeIP) continue;
         if (externalize) {
           const plan = planCustomRule(rule);
@@ -2957,7 +2959,7 @@ done
       });
     };
 
-    for (const rule of config.customRules || []) {
+    for (const rule of this.effectiveCustomRules(config)) {
       if (!rule.enabled) continue;
       if (rule.action !== 'proxy') continue;
       emit(`custom:${rule.id}`, `rule-sel-${rule.id}`, rule.targetServerId);
@@ -3385,14 +3387,24 @@ done
   }
 
   /**
-   * 应用分流总开关 gate：appRoutingEnabled !== true → 空（默认关；appRules 完全不进 route 生成/TUN 排除/geo 收集）；
-   * 仅显式 true 才启用。单一真值点，4 个消费点统一经此，保证关闭=appRules[] 逐字节等价。
+   * 用户路由规则 gate（单一真值）：自定义路由规则**仅 smart 模式生效**。
+   * global = 真·全局（一律走选中节点，忽略用户分流，仅保留功能性强制直连：防环 / LAN·私网 / 网银 U盾 / 节点排除）；
+   * direct = 全部直连。对齐业内（Clash/Surge/sing-box GUI）——全局模式即忽略所有用户分流规则。
+   * 消费点统一经此（route emit / 规则选择器 / geo 收集 / DNS bypassFakeIP），与 effectiveAppRules 对称。
+   */
+  private effectiveCustomRules(config: UserConfig): import('../../shared/types').Rule[] {
+    if ((config.proxyMode || 'smart').toLowerCase() !== 'smart') return [];
+    return config.customRules || [];
+  }
+
+  /**
+   * 应用分流总开关 gate：appRoutingEnabled !== true → 空（默认关）；非 smart 模式（global/direct）→ 空。
+   * 仅 smart + 显式启用才生效。单一真值点，4 个消费点（route 生成 / 规则选择器 / TUN 排除 / geo 收集）统一经此。
+   * global 忽略应用分流（真·全局走选中节点），与 effectiveCustomRules 对称。
    */
   private effectiveAppRules(config: UserConfig): import('../../shared/types').AppRule[] {
-    // direct 模式：appRules 不进 route 生成（与 generateCustomRules 的 `proxyMode !== 'direct'` 门控对称）；
-    // generateRuleSelectors 在 direct 跳过（无 rule-sel），此处返回 [] 避免 generateRouteConfig emit 死引用 outbound。
     if (config.appRoutingEnabled !== true) return [];
-    if ((config.proxyMode || 'smart').toLowerCase() === 'direct') return [];
+    if ((config.proxyMode || 'smart').toLowerCase() !== 'smart') return [];
     return config.appRules || [];
   }
 
@@ -3644,8 +3656,9 @@ done
     // 第一条 QUIC reject 规则已在上方（生成 routeConfig 之前）添加，此处重复添加会造成规则冗余
     // reject 比 block 更合适（发 TCP RST 让浏览器立即回退到 TCP，而不是静默丢弃造成等待超时）
 
-    // 3. 自定义规则（优先级次之，允许用户覆盖后续默认行为）
-    if (proxyMode !== 'direct') {
+    // 3. 自定义规则 + 应用分流（用户路由）——**仅 smart 模式**：global=真·全局忽略用户分流（一律走选中节点，
+    //    下方 smart geo 也不加、final=proxy），direct=全直连。功能性强制直连（防环/LAN/网银/节点排除）在本块之外、不受影响。
+    if (proxyMode === 'smart') {
       const { rules: customRules, ruleSets: customRuleSets } = this.generateCustomRules(
         config.customRules || [],
         config.customRuleSets || [],
@@ -3901,7 +3914,7 @@ done
     // 添加自定义规则和应用分流所需的 Geosite/GeoIP rule_set
     const { geosite: customGeositeCategories, geoip: customGeoipCategories } =
       this.getRequiredGeoCategories(
-        config.customRules || [],
+        this.effectiveCustomRules(config),
         this.effectiveAppRules(config),
         config.customAppPresets || []
       );

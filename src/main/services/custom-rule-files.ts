@@ -190,12 +190,12 @@ export function usesFakeIp(config: UserConfig): boolean {
 
 /**
  * 当前配置「应存在的外化文件全集」：fileName → JSON 内容。
- * direct 模式不外化（generateCustomRules 在 direct 不执行 → rule_set 不注册 → 文件无消费者）。
- * 启动落盘与孤儿对账清扫都以此为期望集。
+ * 仅 smart 模式外化：global/direct 下 generateCustomRules 不执行（用户路由不生效）→ rule_set 不注册 → 文件无消费者。
+ * 启动落盘与孤儿对账清扫都以此为期望集（非 smart 返空集 → 已存在的外化文件被当孤儿清扫）。
  */
 export function buildCustomRuleFiles(config: UserConfig): Map<string, string> {
   const out = new Map<string, string>();
-  if ((config.proxyMode || 'smart').toLowerCase() === 'direct') return out;
+  if ((config.proxyMode || 'smart').toLowerCase() !== 'smart') return out;
   const fakeIp = usesFakeIp(config);
   for (const rule of config.customRules || []) {
     if (!rule.enabled) continue;
