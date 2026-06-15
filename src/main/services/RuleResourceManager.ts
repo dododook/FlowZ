@@ -236,6 +236,26 @@ export class RuleResourceManager {
     return results;
   }
 
+  /**
+   * 补「磁盘文件缺失」的用户规则资源（重下载），**不受 ruleResourceAutoUpdate 开关 / 更新间隔门控**。
+   * 备份恢复后调用：备份只含 config(ruleResources 元数据)、不含 .srs 本体 → 跨机/全新恢复后这些文件缺失 →
+   * fail-closed 跳过引用规则；此处即时重下，download 内部对「引用中 + 之前缺失」资源触发 core reload → 规则恢复。
+   * 仅补「缺失」（不重下已在的，避免恢复时全量重拉）。内置 geo 不在此：由 startInternal 从随包 bundle seed 补
+   * （离线可用，无需联网）+ scheduler 兜底，故此处只管用户下载的外置资源。
+   */
+  async syncMissingNow(): Promise<{ missing: number; ok: number; failed: number }> {
+    const config = await this.configManager.loadConfig();
+    const dir = this.dir();
+    const missing = (config.ruleResources || []).filter(
+      (r) => !fssync.existsSync(path.join(dir, r.fileName))
+    );
+    if (missing.length === 0) return { missing: 0, ok: 0, failed: 0 };
+    const items = await Promise.all(missing.map((r) => this.buildRedownloadItem(r)));
+    const results = await this.download(items, { silent: true });
+    const ok = results.filter((r) => r.ok).length;
+    return { missing: missing.length, ok, failed: results.length - ok };
+  }
+
   /** 枚举引用该资源的启用规则（路由规则 res:/geo 条件 + 应用分流 geo，单一真值见 shared/rule-resource-refs）。
    *  供 list 的 referencedBy 计数与删除确认分组展开复用——覆盖 geo 类型条件与 app 规则，删除提醒不再漏报。 */
   referencingRules(config: UserConfig, resId: string): RuleResourceRef[] {

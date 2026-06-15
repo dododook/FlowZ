@@ -1209,8 +1209,8 @@ if (gotTheLock) {
     // 注册订阅处理器
     registerSubscriptionHandlers(subscriptionService, configManager);
 
-    // 注册备份与恢复处理器
-    registerBackupHandlers(configManager);
+    // 注册备份与恢复处理器（注入 ruleResourceManager：恢复后补缺失的规则资源 .srs）
+    registerBackupHandlers(configManager, ruleResourceManager);
 
     // 注册提权 helper 处理器（macOS 免提权启停）
     registerHelperHandlers(helperManager, proxyManager);
