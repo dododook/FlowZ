@@ -104,6 +104,28 @@ describe('ProxyManager.applyRuleSetPrune（远程 rule_set 404 剪枝）', () =>
     expect(JSON.stringify(cfg)).toBe(before);
   });
 
+  it('悬空 tag（无 rule_set 定义，fail-closed 本地 geo 缺失）：仍剪掉引用它的规则', () => {
+    // fail-closed 基石：本地 geo 缺失时不注入 rule_set 定义，但引用它的路由规则尚在 → 悬空引用。
+    // applyRuleSetPrune 以 unreachable.size（而非 dropped.length）为闸，故无定义可删时仍能剪规则，杜绝 sing-box FATAL。
+    const cfg: any = {
+      outbounds: [],
+      route: {
+        rule_set: [{ tag: 'geoip-cn', type: 'local', format: 'binary', path: '/b/geoip-cn.srs' }],
+        rules: [
+          { process_name: ['App.exe'], action: 'route', outbound: 'rule-sel-app-x' },
+          { rule_set: ['geosite-amazon'], action: 'route', outbound: 'rule-sel-app-x' },
+          { rule_set: 'geoip-cn', action: 'route', outbound: 'direct' },
+        ],
+      },
+    };
+    const dropped = svc.applyRuleSetPrune(cfg, new Set(['geosite-amazon']));
+    expect(dropped).toEqual([]); // 无定义可删 → dropped 空（关键：剪规则不以 dropped 为闸）
+    expect(cfg.route.rules.some((r: any) => Array.isArray(r.rule_set))).toBe(false); // 悬空引用规则被剪
+    expect(cfg.route.rules.find((r: any) => r.process_name)).toBeTruthy(); // 进程名规则保留
+    expect(cfg.route.rules.find((r: any) => r.rule_set === 'geoip-cn')).toBeTruthy(); // 本地规则保留
+    expect(cfg.route.rule_set.map((r: any) => r.tag)).toEqual(['geoip-cn']); // 定义不动
+  });
+
   it('logical 规则：子条件 rule_set 全缺失 → 整条 logical 丢弃', () => {
     const cfg: any = {
       outbounds: [],
@@ -125,5 +147,30 @@ describe('ProxyManager.applyRuleSetPrune（远程 rule_set 404 剪枝）', () =>
     const dropped = svc.applyRuleSetPrune(cfg, new Set(['geosite-foo']));
     expect(dropped).toEqual(['geosite-foo']);
     expect(cfg.route.rules).toEqual([]); // logical 子条件清空 → 整条丢
+  });
+
+  it('嵌套 AND udp443 reject：内层 geo logical 被剪空 → 整条 AND 丢，不坍缩成无差别全局 reject', () => {
+    // 复现 blockQuic + 全 geo 缺失的 OR logical 自定义代理规则派生的配对 reject 结构（generateRouteConfig）：
+    // 外层 AND = [内层 geo logical, {udp443}]；内层 geo 缺失被剪空 → 外层不可坍缩成裸 {udp443}（否则误 reject 所有 QUIC）。
+    const cfg: any = {
+      outbounds: [],
+      route: {
+        rule_set: [],
+        rules: [
+          {
+            action: 'reject',
+            type: 'logical',
+            mode: 'and',
+            rules: [
+              { type: 'logical', mode: 'or', rules: [{ rule_set: ['geosite-amazon'] }] },
+              { network: ['udp'], port: [443] },
+            ],
+          },
+        ],
+      },
+    };
+    svc.applyRuleSetPrune(cfg, new Set(['geosite-amazon']));
+    // 整条 AND 被丢，绝不残留 {action:'reject', rules:[{network:['udp'],port:[443]}]}
+    expect(cfg.route.rules).toEqual([]);
   });
 });

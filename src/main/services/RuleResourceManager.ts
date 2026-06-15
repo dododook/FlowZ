@@ -18,7 +18,7 @@ import { APP_USER_AGENT } from '../../shared/constants';
 import type { ConfigManager } from './ConfigManager';
 import type {
   UserConfig,
-  Rule,
+  RuleResourceRef,
   RuleResource,
   RuleResourceCatalogItem,
   RuleResourceCatalogResult,
@@ -35,7 +35,7 @@ import {
   builtinTagFromId,
   findBuiltin,
 } from './builtin-geo-rulesets';
-import { ruleConditions } from '../../shared/rules';
+import { enumerateResourceRefs, isResourceReferenced } from '../../shared/rule-resource-refs';
 
 const IDLE_TIMEOUT_MS = 15_000;
 const OVERALL_TIMEOUT_MS = 120_000;
@@ -46,15 +46,6 @@ const GITHUB_HOSTS = ['raw.githubusercontent.com', 'github.com'];
 type FetchResult =
   | { ok: true; buf: Buffer }
   | { ok: false; errorCode: string; statusCode?: number };
-
-/** 已下载 ruleSet 规则是否引用了某资源（被启用规则引用 → 增删改需重启 sing-box 加载/卸载）。 */
-function isResourceReferenced(id: string, rules: Rule[] | undefined): boolean {
-  const ref = `res:${id}`;
-  return (rules || []).some(
-    (r) =>
-      r.enabled && ruleConditions(r).some((c) => c.type === 'ruleSet' && c.values.includes(ref))
-  );
-}
 
 export class RuleResourceManager {
   private inflight = new Set<string>();
@@ -194,11 +185,7 @@ export class RuleResourceManager {
         this.broadcastConfigChanged(fresh);
         // 仅当「被启用 ruleSet 引用 且 下载前文件不存在」才重启——已加载的 local rule_set 内容变更由
         // sing-box ≥1.10 fswatch 热重载，重启徒增断流；缺失补下才需重启挂载该 rule_set 条目。
-        if (
-          successes.some(
-            (s) => !s.existedBefore && isResourceReferenced(s.resource.id, fresh.customRules)
-          )
-        ) {
+        if (successes.some((s) => !s.existedBefore && isResourceReferenced(s.resource.id, fresh))) {
           this.notifyCoreReload(fresh);
         }
       });
@@ -249,22 +236,10 @@ export class RuleResourceManager {
     return results;
   }
 
-  /** 枚举「启用且经 ruleSet 条件引用该资源」的规则，返回 id + 人类可读 label（备注优先，否则首条件摘要）。
-   *  供 list 计数与删除确认展开列出复用（多条件经 ruleConditions 全覆盖）。 */
-  referencingRules(config: UserConfig, resId: string): { id: string; label: string }[] {
-    return (config.customRules || [])
-      .filter(
-        (rule) =>
-          rule.enabled &&
-          ruleConditions(rule).some(
-            (c) => c.type === 'ruleSet' && c.values.includes(`res:${resId}`)
-          )
-      )
-      .map((rule) => {
-        const c0 = ruleConditions(rule)[0];
-        const summary = c0 ? `${c0.type}: ${(c0.values[0] || '').slice(0, 24)}` : rule.type;
-        return { id: rule.id, label: (rule.remarks || '').trim() || summary };
-      });
+  /** 枚举引用该资源的启用规则（路由规则 res:/geo 条件 + 应用分流 geo，单一真值见 shared/rule-resource-refs）。
+   *  供 list 的 referencedBy 计数与删除确认分组展开复用——覆盖 geo 类型条件与 app 规则，删除提醒不再漏报。 */
+  referencingRules(config: UserConfig, resId: string): RuleResourceRef[] {
+    return enumerateResourceRefs(resId, config);
   }
 
   async delete(
@@ -273,7 +248,7 @@ export class RuleResourceManager {
   ): Promise<{
     ok: boolean;
     needConfirm?: boolean;
-    referencingRules?: { id: string; label: string }[];
+    referencingRules?: RuleResourceRef[];
   }> {
     if (isBuiltinId(id)) return { ok: false }; // 内置不可删（UI 已隐藏删除入口；防旁路 IPC）
     return this.withLock(async () => {
@@ -290,7 +265,7 @@ export class RuleResourceManager {
       this.broadcastConfigChanged(config);
       if (res) {
         await fs.unlink(path.join(this.dir(), res.fileName)).catch(() => {});
-        if (isResourceReferenced(id, config.customRules)) this.notifyCoreReload(config);
+        if (isResourceReferenced(id, config)) this.notifyCoreReload(config);
       }
       return { ok: true };
     });

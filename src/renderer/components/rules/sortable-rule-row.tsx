@@ -20,6 +20,7 @@ import {
 import type { Rule } from '@/bridge/types';
 import { ruleConditions } from '../../../shared/rules';
 import { TYPE_TO_CATEGORY, CATEGORY_BADGE_CLASS, RULE_TYPE_NAME } from './rule-type-meta';
+import { getRuleActionStyle } from '@/lib/rule-action-style';
 
 interface SortableRuleRowProps {
   rule: Rule;
@@ -77,13 +78,7 @@ function RuleDetailContent({
         <span className="text-xs text-muted-foreground">{t('rules.policyLabel', '策略')}</span>
         <Badge
           variant="default"
-          className={`whitespace-nowrap ${
-            rule.action === 'direct'
-              ? 'border-transparent bg-green-600 text-white'
-              : rule.action === 'block'
-                ? 'border-transparent bg-red-600 text-white'
-                : ''
-          }`}
+          className={`whitespace-nowrap border-transparent text-white ${getRuleActionStyle(rule.action).badgeBg} ${getRuleActionStyle(rule.action).badgeBgHover}`}
         >
           {rule.action === 'proxy'
             ? t('rules.proxy')
@@ -205,13 +200,7 @@ export function SortableRuleRow({
         <div className="flex flex-col items-start gap-1">
           <Badge
             variant="default"
-            className={`whitespace-nowrap ${
-              rule.action === 'direct'
-                ? 'border-transparent bg-green-600 text-white hover:bg-green-600/90'
-                : rule.action === 'block'
-                  ? 'border-transparent bg-red-600 text-white hover:bg-red-600/90'
-                  : ''
-            }`}
+            className={`whitespace-nowrap border-transparent text-white ${getRuleActionStyle(rule.action).badgeBg} ${getRuleActionStyle(rule.action).badgeBgHover}`}
           >
             {rule.action === 'proxy'
               ? t('rules.proxy')

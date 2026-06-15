@@ -42,6 +42,7 @@ import type {
   RuleResourceDownloadItem,
   RuleResourceListItem,
   RuleResourceProgress,
+  RuleResourceRef,
 } from '@/bridge/types';
 import {
   ResourceCatalogDialog,
@@ -68,7 +69,7 @@ export function RuleResourcesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{
     id: string;
     name: string;
-    rules: { id: string; label: string }[];
+    rules: RuleResourceRef[];
   } | null>(null);
 
   const refresh = useCallback(() => {
@@ -426,9 +427,9 @@ export function RuleResourcesPage() {
                 ))}
                 {/* 失败（临时行） */}
                 {errorRows.map((p) => (
-                  <TableRow key={`err-${p.id}`} className="bg-red-500/5">
+                  <TableRow key={`err-${p.id}`} className="bg-destructive/5">
                     <TableCell className="font-medium">{p.name}</TableCell>
-                    <TableCell colSpan={4} className="text-sm text-red-600 dark:text-red-400">
+                    <TableCell colSpan={4} className="text-sm text-destructive">
                       {t(
                         `ruleResources.error.${p.errorCode}`,
                         t('ruleResources.downloadAllFailed', '下载失败')
@@ -458,7 +459,7 @@ export function RuleResourcesPage() {
                       {!item.fileExists && (
                         <Badge
                           variant="outline"
-                          className="border-transparent bg-red-600/15 text-red-600 dark:text-red-300"
+                          className="border-transparent bg-destructive/15 text-destructive"
                         >
                           {t('ruleResources.missing', '文件缺失')}
                         </Badge>
@@ -540,21 +541,41 @@ export function RuleResourcesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t('ruleResources.deleteTitle', '删除规则资源')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p>
                   {t(
                     'ruleResources.deleteReferencedDesc',
-                    '「{{name}}」正被以下 {{n}} 条规则引用，删除后这些规则将暂时失效（重新下载该资源后自动恢复）：',
+                    '「{{name}}」正被以下 {{n}} 项规则引用，删除后将暂时失效（重新下载该资源后自动恢复）：',
                     { name: deleteConfirm?.name, n: deleteConfirm?.rules.length ?? 0 }
                   )}
                 </p>
-                <ul className="max-h-40 space-y-1 overflow-auto rounded-md border bg-muted/30 p-2 text-sm">
-                  {deleteConfirm?.rules.map((r) => (
-                    <li key={r.id} className="truncate text-muted-foreground">
-                      • {r.label}
-                    </li>
-                  ))}
-                </ul>
+                {/* 分两组、措辞区分后果：路由规则=暂时失效；应用分流=改走智能分流、进程名仍生效（fail-closed 解耦） */}
+                {(['route', 'app'] as const).map((kind) => {
+                  const group = deleteConfirm?.rules.filter((r) => r.kind === kind) ?? [];
+                  if (group.length === 0) return null;
+                  return (
+                    <div key={kind} className="space-y-1">
+                      <p className="text-xs font-medium text-foreground/80">
+                        {kind === 'route'
+                          ? t('ruleResources.deleteGroupRoute', '路由规则（暂时失效·重下恢复）')
+                          : t(
+                              'ruleResources.deleteGroupApp',
+                              '应用分流（改走智能分流·重下恢复·进程名仍生效）'
+                            )}
+                      </p>
+                      <ul className="max-h-32 space-y-1 overflow-auto rounded-md border bg-muted/30 p-2 text-sm">
+                        {group.map((r) => (
+                          <li key={`${r.kind}-${r.id}`} className="truncate text-muted-foreground">
+                            •{' '}
+                            {r.kind === 'app' && r.appBuiltin
+                              ? t(`rules.apps.${r.label}` as any, r.label)
+                              : r.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

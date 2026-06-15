@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, RotateCcw, X, FolderUp } from 'lucide-react';
+import { AlertTriangle, RotateCcw, X, FolderUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { api } from '@/ipc';
@@ -131,7 +131,7 @@ export function CoreVersionBanner() {
               >
                 {isRollingBack ? (
                   <>
-                    <span className="mr-1.5 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                     {t('settings.coreVersion.rollingBack')}
                   </>
                 ) : (
@@ -151,7 +151,7 @@ export function CoreVersionBanner() {
             >
               {isReplacing ? (
                 <>
-                  <span className="mr-1.5 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                   {t('settings.about.updating')}
                 </>
               ) : (

@@ -205,10 +205,7 @@ export function ResourceCatalogDialog({
           {t(`ruleResources.category.${d.category}`, d.category)}
         </Badge>
         {d.present && (
-          <Badge
-            variant="outline"
-            className="border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-          >
+          <Badge variant="outline" className="border-transparent bg-success/15 text-success">
             {tab === 'builtin'
               ? t('ruleResources.builtinMark', '已内置')
               : t('ruleResources.downloaded', '已下载')}
@@ -245,9 +242,9 @@ export function ResourceCatalogDialog({
     return (
       <div key={d.id} className="flex items-start gap-3 px-3 py-2.5">
         {d.present ? (
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
         ) : (
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
         )}
         {meta}
         {badges}

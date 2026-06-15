@@ -388,11 +388,23 @@ export interface RuleResourceListItem extends RuleResource {
   builtin?: boolean;
 }
 
-/** 删除资源结果：被启用规则引用且未 force 时不删，回传 needConfirm + 引用规则明细（供前端展开确认列出）。 */
+/**
+ * 规则资源引用记录（单一真值，见 shared/rule-resource-refs.ts）。
+ * kind 区分来源：'route'=自定义路由规则 / 'app'=应用分流卡片。
+ * label：route=已就绪文案（备注/首条件摘要）；app=内置 labelKey(i18n key) 或自定义 name（由 appBuiltin 决定渲染端是否 i18n）。
+ */
+export interface RuleResourceRef {
+  kind: 'route' | 'app';
+  id: string;
+  label: string;
+  appBuiltin?: boolean;
+}
+
+/** 删除资源结果：被启用规则引用且未 force 时不删，回传 needConfirm + 引用规则明细（供前端分组展开确认列出）。 */
 export interface RuleResourceDeleteResult {
   ok: boolean;
   needConfirm?: boolean;
-  referencingRules?: { id: string; label: string }[];
+  referencingRules?: RuleResourceRef[];
 }
 
 /** 下载入参：catalogId（内置/动态项）或 url（手动，name 可选自动生成）。id/category 仅 redownload 内部用于保留原 id。 */

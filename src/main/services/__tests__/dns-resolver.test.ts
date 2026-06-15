@@ -40,6 +40,22 @@ import {
   NODE_A,
   NODE_B,
 } from './dns-resolver-fixtures';
+import { BUILTIN_GEO_RULESETS, getRuleSetRuntimeDir } from '../builtin-geo-rulesets';
+
+// 测试环境补种 smart 模式 3 件套 geo 的本地 .srs（写 SRS 魔数即过 isValidSrsFile）——与生产一致：
+// startInternal 先 copyRuleSetsToUserData(seed) 再 generateSingBoxConfig，故 smart 模式 geo 路由规则的 rule_set
+// 定义恒存在、不被 generateRouteConfig 末尾「悬空引用剪枝」剪掉（fail-closed 仅在文件真缺失时触发）。
+// 仅种这 3 个（不种 geosite-private 等）：byte-diff 基线为「geosite-private 文件缺失」状态，多种会引入基线外的
+// geosite-private 直连规则、污染 #57 DNS delta 比对。
+{
+  const SMART_GEO_TAGS = new Set(['geosite-cn', 'geosite-geolocation-!cn', 'geoip-cn']);
+  const geoDir = getRuleSetRuntimeDir();
+  fs.mkdirSync(geoDir, { recursive: true });
+  for (const b of BUILTIN_GEO_RULESETS) {
+    if (SMART_GEO_TAGS.has(b.tag))
+      fs.writeFileSync(path.join(geoDir, b.fileName), Buffer.from('SRS'));
+  }
+}
 
 type AnyCfg = any;
 

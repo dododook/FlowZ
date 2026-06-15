@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ServerSelectGroups } from '@/components/settings/server-select-groups';
 import { useAppStore } from '@/store/app-store';
-import { Plus } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 
@@ -221,9 +221,10 @@ export function ConnectionStatusCard() {
           </div>
         ) : !selectedServer ? (
           <div className="space-y-3">
-            <div className="p-4 border border-yellow-500/50 bg-yellow-500/10 rounded-lg">
-              <p className="text-sm text-yellow-600 dark:text-yellow-400 mb-3">
-                ⚠️ {t('home.selectServerHint')}
+            <div className="p-4 border border-warning/50 bg-warning/10 rounded-lg">
+              <p className="text-sm text-warning mb-3 flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {t('home.selectServerHint')}
               </p>
               <Select onValueChange={handleServerChange}>
                 <SelectTrigger className="w-full">
@@ -288,11 +289,11 @@ export function ConnectionStatusCard() {
 
         {/* 仅本地代理特殊提示区 */}
         {(statusInfo as any).isManualNotice && (
-          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg space-y-1">
-            <p className="text-sm font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+          <div className="p-3 bg-info/10 border border-info/20 rounded-lg space-y-1">
+            <p className="text-sm font-medium text-info flex items-center gap-1.5">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-info opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-info"></span>
               </span>
               {t('home.manualModeTip')}
             </p>

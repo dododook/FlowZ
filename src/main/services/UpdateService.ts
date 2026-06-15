@@ -10,6 +10,12 @@ import { LogManager } from './LogManager';
 import type { UpdateInfo, UpdateCheckResult, UpdateProgress } from '../../shared/types/update';
 import { APP_USER_AGENT } from '../../shared/constants';
 import { getUserDataPath } from '../utils/paths';
+import { compareSemver } from '../../shared/version';
+import { GH_PROXY_PRESETS } from '../../shared/gh-proxy';
+
+// 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
+// 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 
 const GITHUB_OWNER = 'dododook';
 const GITHUB_REPO = 'FlowZ';
@@ -612,19 +618,9 @@ open "${installerPath}"
   }
 
   private isNewerVersion(latest: string, current: string): boolean {
-    try {
-      const latestParts = latest.split('.').map(Number);
-      const currentParts = current.split('.').map(Number);
-      for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
-        const l = latestParts[i] || 0;
-        const c = currentParts[i] || 0;
-        if (l > c) return true;
-        if (l < c) return false;
-      }
-      return false;
-    } catch {
-      return false;
-    }
+    // 收口到 shared/version.compareSemver（与 CoreUpdateService 共用单一权威）：原 split('.').map(Number)
+    // 遇 prerelease（"1.2.3-beta"）某段算成 NaN → 比较恒 false 误判「非新版本」漏更新；compareSemver 容忍 -/+ 后缀。
+    return compareSemver(latest, current) > 0;
   }
 
   private async downloadFile(
@@ -633,87 +629,23 @@ open "${installerPath}"
     totalSize: number,
     isRetry = false
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(destPath);
-      let downloadedBytes = 0;
-
-      const handleError = (err: any) => {
-        file.close();
-        if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-
-        if (!isRetry && url.includes('github.com')) {
-          this.logManager.addLog(
-            'warn',
-            `下载出错，尝试使用加速镜像: ${err.message}`,
-            'UpdateService'
-          );
-          const mirrorUrl = `https://mirror.ghproxy.com/${url}`;
+    return this.downloadWithHardening(url, destPath, totalSize, isRetry, {
+      onMirror: () =>
+        this.updateProgress({
+          status: 'downloading',
+          percentage: 0,
+          message: '正在尝试通过镜像下载...',
+        }),
+      onProgress: (downloaded, total) => {
+        if (total > 0) {
+          const percentage = Math.round((downloaded / total) * 100);
           this.updateProgress({
             status: 'downloading',
-            percentage: 0,
-            message: '正在尝试通过镜像下载...',
+            percentage,
+            message: `正在下载更新... ${percentage}%`,
           });
-          this.downloadFile(mirrorUrl, destPath, totalSize, true).then(resolve).catch(reject);
-          return;
         }
-        reject(err);
-      };
-
-      const request = net.request({
-        url: url,
-        method: 'GET',
-      });
-      request.setHeader('User-Agent', APP_USER_AGENT);
-
-      request.on('response', (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          const redirectUrl = response.headers.location;
-          if (redirectUrl) {
-            file.close();
-            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-            this.downloadFile(
-              Array.isArray(redirectUrl) ? redirectUrl[0] : redirectUrl,
-              destPath,
-              totalSize,
-              isRetry
-            )
-              .then(resolve)
-              .catch(reject);
-            return;
-          }
-        }
-
-        if (response.statusCode !== 200) {
-          file.close();
-          if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-          reject(new Error(`下载失败: HTTP ${response.statusCode}`));
-          return;
-        }
-
-        response.on('data', (chunk) => {
-          downloadedBytes += chunk.length;
-          file.write(chunk);
-          if (totalSize > 0) {
-            const percentage = Math.round((downloadedBytes / totalSize) * 100);
-            this.updateProgress({
-              status: 'downloading',
-              percentage,
-              message: `正在下载更新... ${percentage}%`,
-            });
-          }
-        });
-
-        response.on('end', () => {
-          file.end();
-          resolve();
-        });
-
-        response.on('error', handleError);
-      });
-
-      request.on('error', handleError);
-
-      request.end();
+      },
     });
   }
 
@@ -723,11 +655,68 @@ open "${installerPath}"
     totalSize: number,
     isRetry = false
   ): Promise<void> {
+    return this.downloadWithHardening(url, destPath, totalSize, isRetry, {
+      onMirror: () => this.updateProgressWindow(0, '正在尝试通过镜像下载...'),
+      onProgress: (downloaded, total) => {
+        if (total > 0) {
+          const percentage = Math.round((downloaded / total) * 100);
+          const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
+          const totalMB = (total / 1024 / 1024).toFixed(1);
+          this.updateProgressWindow(percentage, `${downloadedMB} MB / ${totalMB} MB`);
+        }
+      },
+    });
+  }
+
+  /**
+   * App 安装包下载的共享实现：两个进度展现（主窗进度 / 独立进度窗）仅 onProgress/onMirror 回调不同，主体复用。
+   * 对齐 CoreUpdateService.downloadFile 的三项加固：
+   *   ① idle/stall 停滞超时——30s 无 data 即 abort，防网络中断/被拦截致永久挂起、更新永不 resolve（转圈不退）。
+   *   ② Content-Length 完整性校验——end 时比对实收字节与响应头 totalSize，被截断的下载 reject（github 链接自动换镜像重试）。
+   *   ③ 背压——file.write 返回 false（写盘慢于收流）时 response.pause()，drain 后 resume，防大包下内存堆积。
+   * mirror 兜底：原 mirror.ghproxy.com 已停服，复用 shared/gh-proxy 内置 preset[0]（末尾带 '/'）。
+   */
+  private async downloadWithHardening(
+    url: string,
+    destPath: string,
+    totalSize: number,
+    isRetry: boolean,
+    cb: {
+      onMirror: () => void;
+      onProgress: (downloadedBytes: number, totalSize: number) => void;
+    }
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(destPath);
       let downloadedBytes = 0;
+      let settled = false;
+      let idleTimer: ReturnType<typeof setTimeout> | null = null;
+      // 完整性校验用：优先响应头 content-length，缺失回落调用方传入的 totalSize（GitHub asset size）。
+      let expectedBytes = NaN;
+
+      const clearIdle = () => {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      };
+      // ① 停滞超时：每收到 data / 连接阶段重置；30s 无进展 → abort + handleError。
+      const armIdle = () => {
+        clearIdle();
+        idleTimer = setTimeout(() => {
+          try {
+            request.abort();
+          } catch {
+            /* ignore */
+          }
+          handleError(new Error('下载停滞超时（30s 无数据，网络中断或被拦截）'));
+        }, DOWNLOAD_IDLE_TIMEOUT_MS);
+      };
 
       const handleError = (err: any) => {
+        if (settled) return;
+        settled = true;
+        clearIdle();
         file.close();
         if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
 
@@ -737,9 +726,10 @@ open "${installerPath}"
             `下载出错，尝试使用加速镜像: ${err.message}`,
             'UpdateService'
           );
-          const mirrorUrl = `https://mirror.ghproxy.com/${url}`;
-          this.updateProgressWindow(0, '正在尝试通过镜像下载...');
-          this.downloadFileWithProgressWindow(mirrorUrl, destPath, totalSize, true)
+          cb.onMirror();
+          // preset[0] 末尾已带 '/'，直接拼完整原 URL（同 gh-proxy 用法）。
+          const mirrorUrl = GH_PROXY_PRESETS[0] + url;
+          this.downloadWithHardening(mirrorUrl, destPath, totalSize, true, cb)
             .then(resolve)
             .catch(reject);
           return;
@@ -757,13 +747,18 @@ open "${installerPath}"
         if (response.statusCode === 302 || response.statusCode === 301) {
           const redirectUrl = response.headers.location;
           if (redirectUrl) {
+            if (settled) return;
+            settled = true;
+            clearIdle();
             file.close();
             if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-            this.downloadFileWithProgressWindow(
+            // 重定向沿用 isRetry（不消耗镜像名额），但重置 settled 由新一轮 Promise 接管
+            this.downloadWithHardening(
               Array.isArray(redirectUrl) ? redirectUrl[0] : redirectUrl,
               destPath,
               totalSize,
-              isRetry
+              isRetry,
+              cb
             )
               .then(resolve)
               .catch(reject);
@@ -772,26 +767,55 @@ open "${installerPath}"
         }
 
         if (response.statusCode !== 200) {
+          if (settled) return;
+          settled = true;
+          clearIdle();
           file.close();
           if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
           reject(new Error(`下载失败: HTTP ${response.statusCode}`));
           return;
         }
 
+        // ② 完整性校验基准：响应头 content-length 优先，缺失回落调用方 totalSize。
+        const lenHeader = response.headers['content-length'];
+        const headerBytes = parseInt(
+          (Array.isArray(lenHeader) ? lenHeader[0] : lenHeader) as string,
+          10
+        );
+        expectedBytes = !isNaN(headerBytes) ? headerBytes : totalSize > 0 ? totalSize : NaN;
+
         response.on('data', (chunk) => {
+          armIdle(); // 每收到数据重置停滞计时
           downloadedBytes += chunk.length;
-          file.write(chunk);
-          if (totalSize > 0) {
-            const percentage = Math.round((downloadedBytes / totalSize) * 100);
-            const downloadedMB = (downloadedBytes / 1024 / 1024).toFixed(1);
-            const totalMB = (totalSize / 1024 / 1024).toFixed(1);
-            this.updateProgressWindow(percentage, `${downloadedMB} MB / ${totalMB} MB`);
+          cb.onProgress(downloadedBytes, totalSize);
+          // ③ 背压：写盘返回 false（缓冲已满）时暂停接收，drain 后恢复，防大文件下内存堆积。
+          // Electron 的 IncomingMessage TS 类型未暴露 pause/resume（运行时是可读流，确有这两方法）→ 窄化断言。
+          if (!file.write(chunk)) {
+            const pausable = response as unknown as {
+              pause: () => void;
+              resume: () => void;
+            };
+            pausable.pause();
+            file.once('drain', () => pausable.resume());
           }
         });
 
         response.on('end', () => {
-          file.end();
-          resolve();
+          clearIdle();
+          file.end(() => {
+            if (settled) return;
+            // ② 截断校验：实收字节与期望不符 → reject（github 链接经 handleError 自动换镜像重试一次）。
+            if (!isNaN(expectedBytes) && downloadedBytes !== expectedBytes) {
+              handleError(
+                new Error(
+                  `下载不完整：收到 ${downloadedBytes} 字节，期望 ${expectedBytes}（可能被截断）`
+                )
+              );
+              return;
+            }
+            settled = true;
+            resolve();
+          });
         });
 
         response.on('error', handleError);
@@ -799,6 +823,7 @@ open "${installerPath}"
 
       request.on('error', handleError);
 
+      armIdle(); // 连接阶段也启动停滞计时（连接挂起 30s 超时）
       request.end();
     });
   }

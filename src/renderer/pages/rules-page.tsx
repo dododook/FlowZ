@@ -163,7 +163,7 @@ export function RulesPage() {
         return (
           <Badge
             variant="outline"
-            className="whitespace-nowrap border-transparent bg-red-600/15 text-xs text-red-600 dark:text-red-300"
+            className="whitespace-nowrap border-transparent bg-red-600/15 text-xs text-destructive"
             title={t('rules.targetMissingTip', '指定节点已删除，运行时回退为跟随全局选中节点')}
           >
             {t('rules.targetMissing', '节点已失效')}

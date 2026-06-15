@@ -112,7 +112,7 @@ export function NetworkInfoCard() {
             {t('home.networkInfo')}
             {ipInfo?.error && !loading && (
               <span
-                className="h-1.5 w-1.5 rounded-full bg-yellow-500"
+                className="h-1.5 w-1.5 rounded-full bg-warning"
                 title={t('home.ipStale', '部分出口 IP 获取失败，显示为上次结果')}
               />
             )}

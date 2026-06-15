@@ -3,7 +3,7 @@
  * sameMajorMinor 是「内核自动更新跨 minor 绝不自动」的硬不变量基础 —— 必须 NaN 失败安全。
  */
 
-import { encodeMajorMinor, sameMajorMinor } from '../version';
+import { encodeMajorMinor, sameMajorMinor, compareSemver } from '../version';
 
 describe('encodeMajorMinor', () => {
   it('编码为 major*1000+minor', () => {
@@ -52,5 +52,43 @@ describe('sameMajorMinor', () => {
     expect(sameMajorMinor('1.13.13', '未知')).toBe(false);
     expect(sameMajorMinor('未知', '未知')).toBe(false);
     expect(sameMajorMinor('', '1.13.13')).toBe(false);
+  });
+});
+
+describe('compareSemver', () => {
+  it('逐段比较：a>b→1、a<b→-1、相等→0', () => {
+    expect(compareSemver('1.2.4', '1.2.3')).toBe(1);
+    expect(compareSemver('1.2.3', '1.2.4')).toBe(-1);
+    expect(compareSemver('1.2.3', '1.2.3')).toBe(0);
+    expect(compareSemver('2.0.0', '1.99.99')).toBe(1); // major 优先
+    expect(compareSemver('1.10.0', '1.9.0')).toBe(1); // "10" 不被当 "1.0"，数字段非字典序
+  });
+
+  it('容忍前导 v', () => {
+    expect(compareSemver('v1.2.4', '1.2.3')).toBe(1);
+    expect(compareSemver('1.2.3', 'v1.2.3')).toBe(0);
+    expect(compareSemver('V2.0.0', 'v1.0.0')).toBe(1);
+  });
+
+  it('容忍 prerelease/build 后缀（核心修复点：原 split.map(Number) 会算成 NaN 误判）', () => {
+    // 后缀在首个 -/+ 处截断后只比数字段
+    expect(compareSemver('1.2.3-beta', '1.2.3')).toBe(0);
+    expect(compareSemver('1.2.3', '1.2.3-beta')).toBe(0);
+    expect(compareSemver('1.2.4-beta', '1.2.3')).toBe(1); // 新版带后缀仍被识别为更新
+    expect(compareSemver('1.2.3+naive', '1.2.3')).toBe(0);
+    expect(compareSemver('1.2.3-rc.1', '1.2.2')).toBe(1);
+    expect(compareSemver('v1.13.14-beta', 'v1.13.13')).toBe(1);
+  });
+
+  it('不同段数：缺失段按 0 计', () => {
+    expect(compareSemver('1.2', '1.2.0')).toBe(0);
+    expect(compareSemver('1.2.1', '1.2')).toBe(1);
+    expect(compareSemver('1', '1.0.0')).toBe(0);
+  });
+
+  it('非数字段按 0（不抛，失败安全）', () => {
+    expect(compareSemver('1.x.0', '1.0.0')).toBe(0); // x→0
+    expect(compareSemver('', '')).toBe(0);
+    expect(compareSemver('1.2.3', '')).toBe(1);
   });
 });

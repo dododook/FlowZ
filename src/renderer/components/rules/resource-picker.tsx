@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Plus, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { X } from 'lucide-react';
 import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import type { RuleResourceListItem } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
 interface ResourcePickerProps {
-  /** ruleSet 规则的 values：res:<id>（本地资源）或 https://...（远程 URL） */
+  /** ruleSet 规则的 values：res:<id>（本地资源，内置随包 + 已在「规则资源」页下载）。
+   *  fail-closed：远程 URL 能力已移除——所有 srs 统一由规则资源管理，运行期零远程下载。 */
   value: string[];
   onChange: (values: string[]) => void;
   /** 选「前往规则资源页」前先关闭弹窗 */
@@ -22,7 +21,6 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
   const { t } = useTranslation();
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const [resources, setResources] = useState<RuleResourceListItem[]>([]);
-  const [urlInput, setUrlInput] = useState('');
 
   useEffect(() => {
     // 内置（随包）+ 外置（已下载）都列出：两者都是本地 .srs，均可经 res:<id> 引用（内置 id=builtin:<tag>，
@@ -36,16 +34,6 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
   const toggleRes = (id: string) => {
     const ref = `res:${id}`;
     onChange(value.includes(ref) ? value.filter((x) => x !== ref) : [...value, ref]);
-  };
-
-  const addUrl = () => {
-    const u = urlInput.trim();
-    if (!/^https?:\/\/.+/i.test(u)) {
-      toast.error(t('ruleResources.urlInvalid', '请输入有效的 https 链接'));
-      return;
-    }
-    if (!value.includes(u)) onChange([...value, u]);
-    setUrlInput('');
   };
 
   const remove = (v: string) => onChange(value.filter((x) => x !== v));
@@ -123,21 +111,18 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
         </div>
       )}
 
-      {/* 添加远程 URL */}
-      <div className="flex gap-2">
-        <Input
-          value={urlInput}
-          onChange={(e) => setUrlInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addUrl())}
-          placeholder={t('ruleResources.picker.addUrl', '添加远程规则集 URL')}
-          className="font-mono text-sm"
-        />
-        <Button type="button" variant="outline" size="icon" onClick={addUrl}>
-          <Plus className="h-4 w-4" />
-        </Button>
-      </div>
+      {/* 更多资源 → 规则资源页（fail-closed：所有 srs 统一在「规则资源」页下载管理） */}
+      {resources.length > 0 && (
+        <button
+          type="button"
+          onClick={goToResources}
+          className="text-xs text-muted-foreground transition-colors hover:text-primary"
+        >
+          {t('ruleResources.picker.manageMore', '前往「规则资源」下载更多 →')}
+        </button>
+      )}
 
-      {/* 已选 chips */}
+      {/* 已选 chips（仅 res:<id> 本地引用；旧配置遗留的裸 URL 值仍可在此移除） */}
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((v) => {

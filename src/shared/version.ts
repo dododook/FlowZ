@@ -42,3 +42,27 @@ export function coreVersionAtLeast(
   if (isNaN(v)) return fallback;
   return v >= major * 1000 + minor;
 }
+
+/**
+ * 健壮三段（及以上）语义版本比较的单一权威：a>b→1、a<b→-1、相等→0。
+ *   容忍前导 `v`（"v1.13.13"）与 prerelease/build 后缀（"1.2.3-beta"、"1.2.3+naive"）——
+ *   后缀在首个 `-`/`+` 处截断后仅比较数字段，避免 `split('.').map(Number)` 把 "3-beta" 算成 NaN
+ *   而误判相等/倒序。每段缺失或非数字按 0 计；不比较 prerelease 优先级（够内核/App 更新判定用）。
+ */
+export function compareSemver(a: string, b: string): number {
+  const norm = (v: string): number[] =>
+    (v || '')
+      .replace(/^v/i, '')
+      .split(/[-+]/)[0]
+      .split('.')
+      .map((p) => parseInt(p, 10) || 0);
+  const pa = norm(a);
+  const pb = norm(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}

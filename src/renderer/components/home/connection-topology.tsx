@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc';
 import { toast } from 'sonner';
 import type { Rule, RuleAction, ConnectionEntry } from '../../../shared/types';
+import { getRuleActionStyle } from '@/lib/rule-action-style';
 
 interface Node {
   id: string;
@@ -613,21 +614,27 @@ export function ConnectionTopology() {
                     className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors"
                     onClick={() => addDomainRule(contextMenu.domain, 'proxy')}
                   >
-                    <span className="h-2 w-2 rounded-full bg-blue-500 inline-block" />
+                    <span
+                      className={`h-2 w-2 rounded-full inline-block ${getRuleActionStyle('proxy').dot}`}
+                    />
                     {t('home.ruleProxy')}
                   </button>
                   <button
                     className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors"
                     onClick={() => addDomainRule(contextMenu.domain, 'direct')}
                   >
-                    <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
+                    <span
+                      className={`h-2 w-2 rounded-full inline-block ${getRuleActionStyle('direct').dot}`}
+                    />
                     {t('home.ruleDirect')}
                   </button>
                   <button
-                    className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors text-destructive"
+                    className={`w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors ${getRuleActionStyle('block').text}`}
                     onClick={() => addDomainRule(contextMenu.domain, 'block')}
                   >
-                    <span className="h-2 w-2 rounded-full bg-red-500 inline-block" />
+                    <span
+                      className={`h-2 w-2 rounded-full inline-block ${getRuleActionStyle('block').dot}`}
+                    />
                     {t('home.ruleBlock')}
                   </button>
                 </div>

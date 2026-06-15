@@ -404,20 +404,6 @@ const DOH_LEAK_DOMAIN_KEYWORDS = [
   'one.one.one.one',
 ];
 
-/**
- * 远程 rule_set 更新周期：显式设定，避免依赖 sing-box 隐式默认（geo 数据约日更，
- * 24h 在新鲜度与启动拉取频次间取平衡）。所有 type:'remote' 的 rule_set 共用此值。
- */
-const REMOTE_RULESET_UPDATE_INTERVAL = '24h';
-
-/**
- * 应用分流/自定义规则的远程 geo rule_set 源：MetaCubeX/meta-rules-dat 的 sing 分支，jsDelivr CDN 加速（墙内可用 +
- * download_detour='direct' 启动期直连下载）。与规则资源 catalog（MRD_RAW_BASE）同源、保持一致。
- * 历史 bug：旧源 SagerNet/sing-geoip 是**纯国家级** geoip，应用类 geoip（telegram/twitter/netflix 等）在该源不存在
- * → sing-box `initialize rule-set` 取回 404 → FATAL → 代理崩溃重试。MetaCubeX 含应用类 geoip+geosite（实测全 200）。
- */
-const MRD_GEO_JSDELIVR_BASE = 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/';
-
 /** 主机字符串是否为 IPv4 字面量（与 DNS/route 生成各处保持同一判定，避免分类不一致）。 */
 const isIpv4Host = (host: string): boolean => /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(host);
 
@@ -3896,8 +3882,9 @@ done
       const runtimeDir = this.getRuleSetRuntimeDir();
       for (const rs of this.getLocalGeoRuleSets()) {
         const filePath = path.join(runtimeDir, rs.fileName);
-        // 缺失/损坏即跳过：不引用不存在的本地文件（否则 sing-box `initialize rule-set` FATAL）。被 app-rule 引用的
-        // app-geo 若本地缺失，其同 tag 远程 rule_set 不被去重剔除 → 自动回落远程下载（缺失即跳过 + 远程兜底）。
+        // 缺失/损坏即跳过：不引用不存在的本地文件（否则 sing-box `initialize rule-set` FATAL）。
+        // fail-closed：缺失不再远程兜底——引用该 tag 的路由规则由 generateRouteConfig 末尾「悬空引用剪枝」剪掉，
+        // 重新在「规则资源」页下载后定义恢复 → 规则自动恢复（应用分流仍按进程名生效）。
         if (!isValidSrsFile(filePath)) continue;
         routeConfig.rule_set.push({ tag: rs.tag, type: 'local', format: 'binary', path: filePath });
       }
@@ -3911,7 +3898,10 @@ done
         config.customAppPresets || []
       );
 
-    // direct 模式无任何规则引用这些 remote rule_set → 不注入，避免启动期白拉 fastly.jsdelivr
+    // fail-closed：自定义规则 / 应用分流引用的 geo（geosite-<cat>/geoip-<cat>）统一由「规则资源」管理——
+    // 随包内置（上方已注入本地定义）或用户在规则资源页下载的本地 .srs；运行期零远程下载、缺失绝不远程兜底。
+    // 缺失本地副本 → 不注入定义；末尾「悬空引用剪枝」剪掉引用该 tag 的规则（应用分流只掉 geo 半、进程名仍生效；
+    // 自定义规则按 AND/OR 合理坍缩）。重新在规则资源页下载后定义恢复 → 规则自动恢复（download 触发 core reload）。
     if (
       proxyMode !== 'direct' &&
       (customGeositeCategories.size > 0 || customGeoipCategories.size > 0)
@@ -3919,64 +3909,27 @@ done
       if (!routeConfig.rule_set) {
         routeConfig.rule_set = [];
       }
-
-      // 源 = MetaCubeX/meta-rules-dat@sing（见 MRD_GEO_JSDELIVR_BASE）：
-      // 1. jsDelivr CDN 加速，替代直连 raw.githubusercontent.com（在中国大陆常被封锁）。
-      // 2. download_detour='direct'：避免循环依赖（代理需规则集才能启动、规则集需代理才能下载）→ 启动期直连下载，
-      //    后续更新可走代理。
-      // 3. ⚠️ 已知约束：任一被引用的 .srs 在源上 404 → sing-box `initialize rule-set` **FATAL**（非"跳过"，旧注释判断有误）。
-      //    内置预设的 geosite/geoip 标签均已对 MetaCubeX 实测可达；用户自定义规则/预设引用的非常规分类仍可能 404 →
-      //    后续应加"生成期可达性预检 + 丢弃不可达 rule_set"硬化（独立项），杜绝单个坏标签崩整个代理。
-
-      // 联动「规则资源」：用户已在规则资源页下载的 geo（catalog id 形如 geosite-<cat>/geoip-<cat>）→ 优先用其本地副本，
-      // 避免 sing-box 重复远程下载、并让该规则集在规则资源页可见可管；缺失/损坏回落远程（行为同前）。
-      // 本地优先、且与上方随包内置同 tag 去重（末尾 keep-first）。
+      // 已下载进规则资源的本地副本（id 形如 geosite-<cat>/geoip-<cat>）→ 注入 type:'local'；缺失/损坏返回 null。
       const localResPath = (tag: string): string | null => {
         const r = (config.ruleResources || []).find((x) => x.id === tag);
         if (!r) return null;
         const p = path.join(getRuleResourcesPath(), r.fileName);
         return isValidSrsFile(p) ? p : null;
       };
-
-      // 添加 Geosite 规则集（本地优先，否则远程）
-      for (const category of Array.from(customGeositeCategories)) {
-        const tag = `geosite-${category}`;
+      // 已有本地定义（随包内置已在上方注入）→ 跳过；否则用规则资源页的本地副本；再否则缺失（不注入，末尾剪枝）。
+      const definedTags = new Set(routeConfig.rule_set.map((rs) => rs.tag));
+      const addLocalGeo = (tag: string): void => {
+        if (definedTags.has(tag)) return;
         const local = localResPath(tag);
         if (local) {
-          routeConfig.rule_set.push({ tag, type: 'local', format: 'binary', path: local });
-          continue;
+          routeConfig.rule_set!.push({ tag, type: 'local', format: 'binary', path: local });
+          definedTags.add(tag);
         }
-        // category-ai：MetaCubeX 用 category-ai-!cn（裸 category-ai 在该源不单独成 .srs）；其余 geo/geosite/<cat>.srs。
-        const geositeFile = category === 'category-ai' ? 'category-ai-!cn' : category;
-        routeConfig.rule_set.push({
-          tag,
-          type: 'remote',
-          format: 'binary',
-          url: `${MRD_GEO_JSDELIVR_BASE}geosite/${geositeFile}.srs`,
-          // 必须走直连下载，避免启动时循环依赖
-          download_detour: 'direct',
-          update_interval: REMOTE_RULESET_UPDATE_INTERVAL,
-        });
-      }
-
-      // 添加 GeoIP 规则集（本地优先，否则远程）
-      for (const category of Array.from(customGeoipCategories)) {
-        const tag = `geoip-${category}`;
-        const local = localResPath(tag);
-        if (local) {
-          routeConfig.rule_set.push({ tag, type: 'local', format: 'binary', path: local });
-          continue;
-        }
-        routeConfig.rule_set.push({
-          tag,
-          type: 'remote',
-          format: 'binary',
-          url: `${MRD_GEO_JSDELIVR_BASE}geoip/${category}.srs`,
-          // 必须走直连下载，避免启动时循环依赖
-          download_detour: 'direct',
-          update_interval: REMOTE_RULESET_UPDATE_INTERVAL,
-        });
-      }
+        // 缺失：不注入、不远程兜底 → 交末尾悬空引用剪枝（fail-closed）。
+      };
+      for (const category of Array.from(customGeositeCategories))
+        addLocalGeo(`geosite-${category}`);
+      for (const category of Array.from(customGeoipCategories)) addLocalGeo(`geoip-${category}`);
     }
 
     // 【代理向 QUIC 兜底】：放在所有直连/分流规则之后，拦截"会落到 final(代理)"的剩余 QUIC(udp443)。
@@ -3996,6 +3949,33 @@ done
         seenTags.add(rs.tag);
         return true;
       });
+    }
+
+    // fail-closed 兜底：剪掉引用「未定义 rule_set tag」的路由规则——本地 geo 缺失/损坏未注入定义即成悬空引用，
+    // 否则 sing-box `initialize rule-set` FATAL 崩整个代理。复用 applyRuleSetPrune 的三态递归剪枝（string/array/logical）：
+    // smart geo 缺失→该方向规则 skip；app 规则只掉 geo 半（进程名规则独立保留）；自定义规则 AND/OR 合理坍缩。
+    // 重下缺失资源后定义恢复 → 规则自动恢复（RuleResourceManager.download 触发 core reload）。
+    {
+      const definedTags = new Set((routeConfig.rule_set ?? []).map((rs) => rs.tag));
+      const referenced = new Set<string>();
+      const collectRefs = (rules: SingBoxRouteRule[]): void => {
+        for (const rule of rules) {
+          if (Array.isArray(rule.rules)) collectRefs(rule.rules);
+          const rs = rule.rule_set;
+          if (typeof rs === 'string') referenced.add(rs);
+          else if (Array.isArray(rs)) for (const t of rs) referenced.add(t);
+        }
+      };
+      collectRefs(routeConfig.rules);
+      const dangling = new Set(Array.from(referenced).filter((t) => !definedTags.has(t)));
+      if (dangling.size > 0) {
+        this.applyRuleSetPrune({ route: routeConfig } as SingBoxConfig, dangling);
+        this.logToManager(
+          'warn',
+          `规则资源：${Array.from(dangling).join(', ')} 缺少本地副本，已跳过引用它的规则以避免代理启动失败` +
+            `（在「规则资源」页下载后自动恢复；应用分流仍按进程名生效）`
+        );
+      }
     }
 
     return routeConfig;
@@ -4059,7 +4039,6 @@ done
   ): { rules: SingBoxRouteRule[]; ruleSets: SingBoxRuleSet[] } {
     const rules: SingBoxRouteRule[] = [];
     const ruleSets: SingBoxRuleSet[] = [];
-    let ruleSetIndex = 1;
 
     // 目的地 OR 组：这些 type 的字段在单条 default rule 内原生 OR（sing-box: domain||suffix||keyword||regex||ip_cidr）。
     const OR_GROUP = new Set(['domain', 'domainSuffix', 'domainKeyword', 'domainRegex', 'ipCidr']);
@@ -4134,10 +4113,12 @@ done
                   continue;
                 }
                 const filePath = path.join(getRuleResourcesPath(), res.fileName);
-                if (!require('fs').existsSync(filePath)) {
+                // 与 builtin 分支对齐：用 isValidSrsFile（验 SRS 魔数）而非裸 existsSync——
+                // 损坏/半写文件存在但非法时注入 local rule_set 会让 sing-box 加载 FATAL，须 fail-closed 跳过。
+                if (!isValidSrsFile(filePath)) {
                   this.logToManager(
                     'warn',
-                    `ruleSet 规则引用的资源文件缺失，已跳过: ${res.fileName}`
+                    `ruleSet 规则引用的资源文件缺失/损坏，已跳过: ${res.fileName}`
                   );
                   continue;
                 }
@@ -4147,15 +4128,13 @@ done
                 }
               }
             } else {
-              tag = `custom-ruleset-${ruleSetIndex++}`;
-              ruleSets.push({
-                tag,
-                type: 'remote',
-                format: v.toLowerCase().endsWith('.json') ? 'source' : 'binary',
-                url: v,
-                download_detour: selectedServerTag,
-                update_interval: REMOTE_RULESET_UPDATE_INTERVAL,
-              });
+              // fail-closed：远程 URL rule_set 能力已移除——所有 srs 统一由「规则资源」页管理（res:<id> 引用本地副本）。
+              // 旧配置 / 旁路写入的裸 URL 值 → 跳过（不再生成运行期远程下载），日志告知改用规则资源。
+              this.logToManager(
+                'warn',
+                `ruleSet 规则的远程 URL 已不再支持，请改用「规则资源」下载后引用，已跳过: ${v}`
+              );
+              continue;
             }
             seen.add(tag);
           }
@@ -4271,33 +4250,14 @@ done
       rules.push(finalRule);
     }
 
-    // 兼容旧的独立 customRuleSets（迁移后通常为空；保留作防御 + 顺带修原 format 硬编码 'binary' 致 .json 坏）
+    // fail-closed：legacy customRuleSets（迁移后通常为空，ConfigManager 已转成 customRules）原走运行期远程下载，
+    // 远程能力已移除 → 仅日志告知，不再生成 remote rule_set / 路由规则。
     for (const ruleSet of customRuleSets) {
       if (!ruleSet.enabled || !ruleSet.url) continue;
-
-      const tag = `custom-ruleset-${ruleSetIndex++}`;
-      ruleSets.push({
-        tag,
-        type: 'remote',
-        format: ruleSet.url.toLowerCase().endsWith('.json') ? 'source' : 'binary',
-        url: ruleSet.url,
-        download_detour: selectedServerTag,
-        update_interval: REMOTE_RULESET_UPDATE_INTERVAL,
-      });
-
-      const singboxRule: SingBoxRouteRule = {
-        action: 'route',
-        rule_set: [tag],
-      };
-      this.applyRuleAction(
-        singboxRule,
-        ruleSet.action,
-        undefined,
-        selectedServerId,
-        idToTagMap,
-        selectedServerTag
+      this.logToManager(
+        'warn',
+        `legacy 远程规则集已不再支持（请用「规则资源」），已跳过: ${ruleSet.url}`
       );
-      rules.push(singboxRule);
     }
 
     return { rules, ruleSets };
@@ -4347,8 +4307,9 @@ done
    * 写入 sing-box 配置文件
    */
   private async writeSingBoxConfig(config: SingBoxConfig): Promise<void> {
-    // 落盘前预检远程 geo rule_set 可达性，剔除确定不存在(404)的，避免 sing-box `initialize rule-set` FATAL 崩整个代理。
-    // 无 remote rule_set（默认 smart 模式 geo 走本地 bundled .srs）时零开销。
+    // 纵深防御（fail-closed 后通常为 no-op）：fail-closed 改造后 generateRouteConfig 已不生成任何 type:'remote'
+    // rule_set（所有 srs 统一本地、缺失剪悬空引用），故此处恒早退、零开销；保留作回滚锚点 + 防御任何未来/旁路
+    // 路径意外注入 remote 时仍预检 404 剔除，杜绝 sing-box `initialize rule-set` FATAL。
     await this.pruneUnreachableRemoteRuleSets(config);
     const content = JSON.stringify(config, null, 2);
     await fs.writeFile(this.configPath, content, 'utf-8');
@@ -4597,6 +4558,9 @@ done
   }
 
   /**
+   * 【fail-closed 后通常为 no-op】运行期已不生成 type:'remote' rule_set，此函数 remote.length===0 恒早退；
+   * 保留作纵深防御（防未来/旁路意外注入 remote）+ 回滚锚点。applyRuleSetPrune 仍被「悬空引用剪枝」复用。
+   *
    * 远程 geo rule_set 可达性预检 + 剪枝（防"资源不存在→sing-box initialize rule-set 404 FATAL→整个代理崩溃"）。
    * sing-box 对任一 remote rule_set 取回 404 会**整体 FATAL**（非跳过）。内置预设标签均已对 MetaCubeX 实测可达，
    * 但用户自定义规则/预设引用的非常规分类仍可能 404。此处对所有 type:'remote' 的 rule_set 做 HEAD 预检：
@@ -4662,9 +4626,17 @@ done
     const pruneRules = (rules: SingBoxRouteRule[]): SingBoxRouteRule[] =>
       rules.filter((rule) => {
         if (Array.isArray(rule.rules)) {
+          const before = rule.rules.length;
           rule.rules = pruneRules(rule.rules);
           // logical 规则子条件被剪空 → 整条丢（空 logical 无意义且 sing-box 不接受）
           if (rule.type === 'logical' && rule.rules.length === 0) return false;
+          // AND logical 任一子条件被剪掉 → 整条丢（fail-closed：缺失条件无法满足，留剩余子集会以「超集」匹配）。
+          // 关键：修「派生的嵌套 AND udp443 reject」——内层 geo logical 被剪空丢弃后，外层 AND 仅剩 {network,port}
+          // 否则坍缩成无差别全局 udp443 reject（误伤 Hysteria2/TUIC 握手与全局 QUIC）；与 generateCustomRules
+          // 的 AND fail-closed 语义一致（任一子条件丢→整条 skip）。OR / 无 mode 不受影响（少一候选项无害）。
+          if (rule.type === 'logical' && rule.mode === 'and' && rule.rules.length < before) {
+            return false;
+          }
         }
         const rs = rule.rule_set;
         if (typeof rs === 'string') {
@@ -4676,7 +4648,9 @@ done
         }
         return true;
       });
-    if (dropped.length > 0) {
+    // 以 unreachable.size 为闸（已 early-return size===0），不以 dropped.length——fail-closed 下复用此函数剪
+    // 「本地缺失、无 rule_set 定义」的悬空 tag 时 dropped 恒为 0，但仍须剪掉引用它的规则（否则悬空引用 FATAL）。
+    if (unreachable.size > 0) {
       singboxConfig.route.rules = pruneRules(singboxConfig.route.rules ?? []);
     }
     return dropped;

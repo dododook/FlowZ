@@ -411,7 +411,7 @@ export function NetworkSettings() {
             />
           </SettingsRow>
           {config.allowLan && (
-            <p className="py-2 text-xs font-medium text-orange-500">
+            <p className="py-2 text-xs font-medium text-warning">
               {t('settings.advanced.allowLanGatewayTip')}
             </p>
           )}
@@ -461,7 +461,7 @@ export function NetworkSettings() {
             />
           </SettingsRow>
           <SettingsRow
-            label={<span className="text-orange-500">{t('settings.general.enableIPv6')}</span>}
+            label={<span className="text-warning">{t('settings.general.enableIPv6')}</span>}
             description={t('settings.network.enableIPv6Desc')}
           >
             <Switch

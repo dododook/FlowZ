@@ -278,8 +278,9 @@ export function AppRulesCard() {
       return;
     }
 
-    // 联动规则资源：所选 geo 中尚未本地（内置/已下载）的分类 → 下载进规则资源 → 可见 + 路由生成复用本地副本
-    // （见 ProxyManager.localResPath）。fire-and-forget：失败也不影响添加，路由层会回落远程下载兜底。
+    // fail-closed 联动规则资源：所选 geo 中尚未本地（内置随包 / 已下载）的分类 → 下载进「规则资源」→ 可见可管 +
+    // 路由生成复用本地副本（见 ProxyManager.localResPath）。已无远程兜底——下载失败时该分类的 geo 半暂不生效
+    // （进程名仍生效），可在「规则资源」页重试后自动恢复；故失败须可感知（toast），不再静默吞掉。
     const toDownload = [
       ...newAppGeositeTags
         .filter((tg) => !localGeositeTags.has(tg))
@@ -289,12 +290,30 @@ export function AppRulesCard() {
         .map((tg) => ({ catalogId: `geoip-${tg}` })),
     ];
     if (toDownload.length > 0) {
-      void api.ruleResources.download(toDownload).catch(() => {});
       toast.info(
         t('rules.customApp.geoDownloading', '正在下载 {{n}} 个分类规则集到规则资源', {
           n: toDownload.length,
         })
       );
+      void api.ruleResources
+        .download(toDownload)
+        .then((results) => {
+          const fail = (results || []).filter((r) => !r.ok).length;
+          if (fail > 0) {
+            toast.warning(
+              t(
+                'rules.customApp.geoDownloadPartial',
+                '{{n}} 个分类下载失败，可在「规则资源」页重试（缺失时该分类不生效，进程名仍生效）',
+                { n: fail }
+              )
+            );
+          }
+        })
+        .catch(() => {
+          toast.error(
+            t('rules.customApp.geoDownloadFailed', '分类规则集下载失败，可在「规则资源」页重试')
+          );
+        });
     }
 
     setIsAddDialogOpen(false);

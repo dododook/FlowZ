@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -203,9 +204,20 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
 
         <EchField control={form.control} t={t} />
 
-        <Button type="submit" className="w-full">
-          {t('common.save')}
-        </Button>
+        <div className="flex gap-4">
+          <Button type="submit" disabled={form.formState.isSubmitting}>
+            {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {t('common.save')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => form.reset()}
+            disabled={form.formState.isSubmitting}
+          >
+            {t('common.reset')}
+          </Button>
+        </div>
       </form>
     </Form>
   );

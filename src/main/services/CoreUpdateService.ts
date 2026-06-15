@@ -15,7 +15,8 @@ import { resourceManager } from './ResourceManager';
 
 import type { UserConfig } from '../../shared/types';
 import { APP_USER_AGENT } from '../../shared/constants';
-import { encodeMajorMinor, sameMajorMinor } from '../../shared/version';
+import { encodeMajorMinor, sameMajorMinor, compareSemver } from '../../shared/version';
+import { applyGhProxy, GH_PROXY_PRESETS, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
 import coreManifest from '../../shared/core-manifest.json';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
@@ -658,7 +659,11 @@ export class CoreUpdateService {
       if (cfg?.autoUpdateCore !== true) return;
 
       const check = await this.checkUpdate();
-      this.saveAutoState({ lastCheckAt: Date.now() });
+      // 仅成功检查才刷新 lastCheckAt：失败轮（network/API 限流等，check.error 有值）保留旧值，
+      // 让 6h tick 在下个周期重试，而非把整 24h due 推迟（原无条件刷新致失败后停检一整天）。
+      if (!check.error) {
+        this.saveAutoState({ lastCheckAt: Date.now() });
+      }
       const latest = check.latestVersion;
 
       const current = check.currentVersion;
@@ -1614,24 +1619,10 @@ export class CoreUpdateService {
     });
   }
 
+  // 版本比较收口到 shared/version.compareSemver（与 UpdateService.isNewerVersion 共用单一权威）。
+  // 保留薄包装：内部 3 处调用 this.compareVersions 签名不变，行为等价（容忍前导 v 与 -/+ 后缀）。
   private compareVersions(v1: string, v2: string): number {
-    // 容忍前导 v 与 prerelease/build 后缀（"v1.13.13"、"1.13.13-beta"、"1.13.13+naive"），
-    // 每段 NaN→0，避免 "1.13.13-beta" 这类标签把某段算成 NaN 而误判为相等。
-    const norm = (v: string) =>
-      v
-        .replace(/^v/i, '')
-        .split(/[-+]/)[0]
-        .split('.')
-        .map((p) => parseInt(p, 10) || 0);
-    const p1 = norm(v1);
-    const p2 = norm(v2);
-    for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
-      const n1 = p1[i] || 0;
-      const n2 = p2[i] || 0;
-      if (n1 > n2) return 1;
-      if (n1 < n2) return -1;
-    }
-    return 0;
+    return compareSemver(v1, v2);
   }
 
   private findSuitableAsset(assets: any[]): any {
@@ -1718,6 +1709,16 @@ export class CoreUpdateService {
     const tempPath = path.join(app.getPath('temp'), `sing-box-core-update-${Date.now()}${ext}`);
     const file = fs.createWriteStream(tempPath);
     const sess = await this.getUpdateSession();
+    // 下载失败兜底镜像前缀：优先用户配置的 ghProxyPrefix，否则用内置 preset[0]（gh-proxy.org）。
+    // 旧硬编码 mirror.ghproxy.com 已停服，复用 shared/gh-proxy 单一权威（同 RuleResourceManager 重试链）。
+    let ghPrefix: string | undefined;
+    try {
+      const cfg = this.configProvider ? await this.configProvider() : null;
+      const raw = cfg?.ghProxyPrefix;
+      ghPrefix = raw ? (normalizeGhProxyPrefix(raw) ?? undefined) : undefined;
+    } catch {
+      ghPrefix = undefined;
+    }
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -1751,12 +1752,14 @@ export class CoreUpdateService {
 
         // 遇到网络错误，且是第一次尝试，并且是 github 链接，尝试使用加速镜像
         if (!isRetry && url.includes('github.com')) {
+          // 优先配置前缀（applyGhProxy 只对 GitHub 域生效），否则回落内置 preset[0]。GH_PROXY_PRESETS 末尾带 '/'。
+          const proxied = ghPrefix ? applyGhProxy(ghPrefix, url) : url;
+          const mirrorUrl = proxied !== url ? proxied : GH_PROXY_PRESETS[0] + url;
           this.logManager.addLog(
             'warn',
             `下载出错，尝试使用加速镜像: ${err.message}`,
             'CoreUpdateService'
           );
-          const mirrorUrl = `https://mirror.ghproxy.com/${url}`;
           this.downloadFile(mirrorUrl, true).then(resolve).catch(reject);
           return;
         }

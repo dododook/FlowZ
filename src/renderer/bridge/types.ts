@@ -26,6 +26,7 @@ export type {
   RuleResourceCategory,
   RuleResourceDownloadItem,
   RuleResourceDownloadResult,
+  RuleResourceRef,
 } from '../../shared/types';
 // 本文件内 interface 也用到 ProxyModeType，需本地绑定（re-export 不产生本地可用绑定）
 import type { ProxyModeType } from '../../shared/types';
