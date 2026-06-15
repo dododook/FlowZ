@@ -1,9 +1,9 @@
 /**
  * 节点测速目标 URL 解析（纯函数，主进程 SpeedTestService + 单测共用；不经网络）。
  *
- * 测速经临时 sing-box 的各节点 HTTP 代理出站、GET 端点量 TTFB（mihomo/clash 的 `/proxies/{name}/delay` 等价）。
- * 默认 generate_204（204 空响应、TTFB=真实全链路延迟）。用户可自配（如 cp.cloudflare.com/generate_204 或自建端点），
- * 兼容 HTTP（代理绝对 URI GET）与 HTTPS（CONNECT 隧道 + TLS GET）。非法/非 http(s)/无 host → 调用方回落默认。
+ * 测速经临时 sing-box 的各节点 HTTP 代理出站、CONNECT 隧道上发两次 GET 量 warm TTFB（mihomo `unified-delay` 等价）。
+ * 默认 generate_204（204 空响应、可立即复用连接）。用户可自配（如 cp.cloudflare.com/generate_204 或自建端点），
+ * HTTP/HTTPS 同走 CONNECT 隧道（https 目标先在隧道上 TLS 握手）。非法/非 http(s)/无 host → 调用方回落默认。
  */
 
 /** 默认测速端点：Google generate_204（与 mihomo/clash/NekoBox 默认 urltest 同款）。 */

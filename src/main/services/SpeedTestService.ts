@@ -1,6 +1,8 @@
 /**
- * 速度测试服务（真实测速）：**所有协议**统一经临时 sing-box 的各自 HTTP 代理出口、GET generate_204 测 urltest TTFB，
- * 验证完整链路（连接+鉴权+中继+响应），等价 mihomo/clash 的 `/proxies/{name}/delay`。
+ * 速度测试服务（真实测速）：**所有协议**统一经临时 sing-box 的各自 HTTP 代理出口、CONNECT 隧道上发两次 GET 测
+ * urltest TTFB，验证完整链路（连接+鉴权+中继+响应）。计时对齐 mihomo `unified-delay`：在同一条已建立的隧道上**只计
+ * 第二次**请求往返——即不含建连/握手的「实际请求时间」，跨协议可比（旧实现每次新建连接、把到代理的握手 RTT
+ * 计进延迟，数值虚高且协议越重越偏，等价 mihomo `unified-delay:false`）。
  * 关键:端口通≠代理可用——裸 TCP ping 只测到入口的 RTT、测不出鉴权/协议/中继失败,故不再用于真实测速。
  *
  * 出站由 index.ts 注入 ProxyManager.buildSpeedTestOutbound 构造（全协议）。未注入（单测/兜底）时退回旧的 TCP ping + UDP 代理拆分。
@@ -30,9 +32,13 @@ export interface SpeedTestResult {
 export class SpeedTestService {
   private logManager: LogManager;
   private readonly MAX_CONCURRENT = 5; // TCP 并发数（仅兜底裸 ping 路径）
-  /** 经代理 urltest 的预热/正式测速并发上限：大订阅时分波，避免 N 路握手同时打出→请求风暴假超时。
-   *  小订阅(≤此值)等价全并行、零额外延迟；32=轻量 204 + sing-box 惰性拨号下的舒适区。 */
-  private static readonly PROXY_TEST_CONCURRENCY = 32;
+  /** 经代理 urltest 的测速并发上限：大订阅时分波，避免 N 路握手同时打出→请求风暴假超时。
+   *  小订阅(≤此值)等价全并行、零额外延迟。取 16=并发与稳健的折中（warm 计量已把握手挪出上报值，并发主要影响
+   *  总测速时长与争用、非延迟数值）；调大更快、调小更稳。 */
+  private static readonly PROXY_TEST_CONCURRENCY = 16;
+  /** 单节点测速总超时（ms）：覆盖冷建连(CONNECT+到代理/目标握手)+两次 GET；上报值只取第二次 warm RTT，与此无关。
+   *  取 8s 给大订阅并发冷启动留足头寸，超时即判该节点不可达(null)。 */
+  private static readonly MEASURE_TIMEOUT_MS = 8000;
   /**
    * 出站构造器（由 index.ts 注入 ProxyManager.buildSpeedTestOutbound）：注入后**所有协议**统一走「临时 sing-box
    * 经代理 urltest」真实测速（端口通≠代理可用，裸 TCP ping 测不出鉴权/中继失败）；返回 null=该节点不可用（如 naive
@@ -205,8 +211,9 @@ export class SpeedTestService {
   // ═══════════════════════════════════════════════════════════════
 
   /**
-   * 经临时 sing-box 真实测速（全协议）：每个可用节点起独立 HTTP 入站 → 该节点出站，GET 测速端点（默认 generate_204，
-   * 可经 testUrl 自配，兼容 http/https）测 TTFB。不可用节点（naive 缺 libcronet 等）预先剔除为 null、不进临时核。
+   * 经临时 sing-box 真实测速（全协议）：每个可用节点起独立 HTTP 入站 → 该节点出站，经 CONNECT 隧道发两次 GET 测速端点
+   * （默认 generate_204，可经 testUrl 自配，兼容 http/https）量 warm TTFB（详见 measureViaTunnel）。不可用节点（naive
+   * 缺 libcronet 等）预先剔除为 null、不进临时核。
    * @param onResult 可选逐节点回调：每测完一个节点即回传（serverId, latency），供 UI 流式增量显示。
    * @param testUrl 可选测速端点 URL（非法回落默认 generate_204）。
    */
@@ -302,23 +309,20 @@ export class SpeedTestService {
         return results;
       }
 
-      // 6. 预热：建立连接 + DNS 缓存（冷启动开销不计入延迟）。并发上限见 PROXY_TEST_CONCURRENCY。
-      await this.runWithLimit(usable, SpeedTestService.PROXY_TEST_CONCURRENCY, async (u) => {
-        await this.sendProxyRequest(serverPortMap.get(u.server.id)!, 8000, target);
-      });
-
-      // 7. 正式测速：经各自代理出站测 urltest TTFB。并发上限避免大订阅 N 路握手同时打出→请求风暴假超时；
-      //    小订阅(≤上限)等价全并行、零额外延迟。每测完一个节点立即回调 onResult（UI 流式显示），不等队列。
+      // 6. 测速：每节点经各自 HTTP 代理建一条 CONNECT 隧道，在同一条隧道上发两次 GET、只计第二次（warm RTT）——
+      //    对齐 mihomo unified-delay：第一次承担建连+握手暖身（丢弃计时），第二次是不含握手的纯请求延迟＝「实际请求
+      //    时间」。冷握手挪到被丢弃的第一次，故 32 并发的争用也不污染上报值；measureViaTunnel 内部已暖身，无需独立
+      //    预热轮。并发上限避免大订阅 N 路握手同时打出→请求风暴假超时；小订阅(≤上限)等价全并行。
+      //    每测完一个节点立即回调 onResult（UI 流式显示），不等队列。
       await this.runWithLimit(usable, SpeedTestService.PROXY_TEST_CONCURRENCY, async (u) => {
         const port = serverPortMap.get(u.server.id)!;
-        try {
-          const latency = await this.sendProxyRequest(port, 5000, target);
-          results.set(u.server.id, latency);
-          report(u.server.id, latency);
-        } catch {
-          results.set(u.server.id, null);
-          report(u.server.id, null);
-        }
+        const latency = await this.measureViaTunnel(
+          port,
+          SpeedTestService.MEASURE_TIMEOUT_MS,
+          target
+        );
+        results.set(u.server.id, latency);
+        report(u.server.id, latency);
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -469,65 +473,21 @@ export class SpeedTestService {
   // ═══════════════════════════════════════════════════════════════
 
   /**
-   * 通过本地 HTTP 代理（临时 sing-box 各节点入站）请求测速端点，量 TTFB（请求发出 → 收到响应头）。
-   * - HTTP 端点：代理绝对 URI GET（`GET http://host/path`，代理按 Host 转发）。
-   * - HTTPS 端点：代理 CONNECT 隧道 → TLS 握手 → GET；测速仅量可达性+TTFB，rejectUnauthorized=false（与 HTTP 路径不校验等价）。
+   * 经本地 HTTP 代理（临时 sing-box 各节点入站）测单节点延迟，量「实际请求时间」（不含建连/握手）。
+   *
+   * 做法对齐 mihomo `unified-delay`：CONNECT 到测速目标建一条隧道（= 已建立的「代理+目标」连接，等价 mihomo dial
+   * 出来的 instance），https 目标先在隧道上做一次 TLS 握手；随后在**同一条**连接上发两次 GET——第一次暖身（承担
+   * 建连+握手+冷启动，丢弃计时），第二次只量请求往返（响应头收齐 = warm TTFB）。
+   * HTTP/HTTPS 走同一隧道路径：第二次请求是否 warm 不依赖 sing-box 入站是否复用出站（隧道本身就是那条已建立的连接），
+   * 避免赌核内部行为。返回 null = 不可达/超时/对端过早关闭；单一总超时 timeout 兜底。
    */
-  private sendProxyRequest(
-    proxyPort: number,
-    timeout: number,
-    target: SpeedTestTarget
-  ): Promise<number | null> {
-    return target.https
-      ? this.sendHttpsViaProxy(proxyPort, timeout, target)
-      : this.sendHttpViaProxy(proxyPort, timeout, target);
-  }
-
-  /** HTTP 端点经代理绝对 URI GET。 */
-  private sendHttpViaProxy(
+  private measureViaTunnel(
     proxyPort: number,
     timeout: number,
     target: SpeedTestTarget
   ): Promise<number | null> {
     return new Promise((resolve) => {
-      const start = Date.now();
-      const timer = setTimeout(() => resolve(null), timeout);
-      const req = http.get(
-        {
-          hostname: '127.0.0.1',
-          port: proxyPort,
-          path: target.absoluteUri, // 代理绝对 URI（http://host[:port]/path）
-          headers: { Host: target.hostHeader, Connection: 'close' },
-          timeout,
-        },
-        (res) => {
-          clearTimeout(timer);
-          const latency = Date.now() - start; // 收到响应头即刻计算（不等 body），与 NekoBox urltest 一致
-          res.resume(); // 排空响应体，防止内存泄漏
-          resolve(latency);
-        }
-      );
-      req.on('error', () => {
-        clearTimeout(timer);
-        resolve(null);
-      });
-      req.on('timeout', () => {
-        clearTimeout(timer);
-        req.destroy();
-        resolve(null);
-      });
-    });
-  }
-
-  /** HTTPS 端点经代理 CONNECT 隧道 + TLS GET。 */
-  private sendHttpsViaProxy(
-    proxyPort: number,
-    timeout: number,
-    target: SpeedTestTarget
-  ): Promise<number | null> {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      // 持有所有已建立句柄，finish 时统一 destroy（防 fd/socket 泄漏：大订阅并发 32 + HTTPS 时累积）。
+      // 持有所有已建立句柄，finish 时统一 destroy（防 fd/socket 泄漏：大订阅并发 32 时累积）。
       let connectReq: http.ClientRequest | null = null;
       let tunnel: net.Socket | null = null;
       let tlsSock: tls.TLSSocket | null = null;
@@ -536,7 +496,6 @@ export class SpeedTestService {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        // 统一清理：destroy 所有已建立的句柄（GET 已拿到 TTFB / 任何错误 / 超时均不应留挂起 socket）
         tlsSock?.destroy();
         tunnel?.destroy();
         connectReq?.destroy();
@@ -544,10 +503,8 @@ export class SpeedTestService {
       };
       const timer = setTimeout(() => finish(null), timeout);
 
-      // CONNECT 端口用 target.port（不能用 hostHeader 拼 443——非标端口如 8443 会变成 host:8443:443；
-      // 也不能用 hostHeader:443——非标 hostHeader 已含端口会双端口）。CONNECT 始终显式 host:port。
+      // CONNECT 始终显式 host:port（标准端口也带，避免非标端口拼接歧义）。
       const connectHost = `${target.host}:${target.port}`;
-      // 1. 向代理发 CONNECT 建立到 target 的 TCP 隧道
       connectReq = http.request({
         host: '127.0.0.1',
         port: proxyPort,
@@ -558,33 +515,79 @@ export class SpeedTestService {
       });
       connectReq.on('error', () => finish(null));
       connectReq.on('timeout', () => finish(null));
+      // CONNECT 非 2xx（如 502）实测仍走 'connect'（携带 statusCode），由下方 statusCode 判定兜 null；
+      // 'response' 仅兜「代理把 CONNECT 降级成普通 HTTP 响应」的边缘情况，避免挂到总超时。
+      connectReq.on('response', () => finish(null));
       connectReq.on('connect', (res, socket) => {
         if (res.statusCode !== 200) {
           finish(null); // finish 内统一 destroy socket
           return;
         }
         tunnel = socket;
-        // 2. 在隧道上 TLS 握手；测速仅量可达性+TTFB，不校验证书（自签/MITM 端点也能测，与 HTTP 路径等价）
-        tlsSock = tls.connect(
-          { socket, servername: target.host, rejectUnauthorized: false },
-          () => {
-            // 3. 握手完成，发 GET（首批响应 data 即响应头到达 = TTFB）
-            tlsSock?.write(
-              `GET ${target.path} HTTP/1.1\r\nHost: ${target.hostHeader}\r\nConnection: close\r\n\r\n`
-            );
-          }
-        );
-        let measured = false;
-        tlsSock.on('data', () => {
-          if (!measured) {
-            measured = true;
-            finish(Date.now() - start);
-          }
-        });
-        tlsSock.on('error', () => finish(null));
+        socket.setNoDelay(true); // 关 Nagle：小请求 TTFB 不被 delayed-ACK/合包拖慢
+        if (target.https) {
+          // 隧道上做一次 TLS 握手（仅一次，归入第一次暖身）；测速仅量可达性+TTFB，不校验证书（与 HTTP 路径等价）。
+          tlsSock = tls.connect(
+            { socket, servername: target.host, rejectUnauthorized: false },
+            () => this.measureWarmRtt(tlsSock!, target, finish)
+          );
+          tlsSock.on('error', () => finish(null));
+        } else {
+          this.measureWarmRtt(socket, target, finish);
+        }
       });
       connectReq.end();
     });
+  }
+
+  /**
+   * 在一条已建立的隧道（net.Socket 或隧道上的 tls.TLSSocket）上发两次 GET，只计第二次「响应头收齐」的耗时（warm RTT）。
+   *
+   * 按 HTTP 报文边界（`\r\n\r\n`）在**连续缓冲**上数两次响应，**不是**见字节就判定——否则第一次响应的跨 chunk 残余
+   * （TLS record/TCP 分段/CDN 多次 write）会被误当第二次首字节，使上报值塌成 ≈0ms（比虚高更危险，会误选坏节点）。
+   * 切到第二次前**整段清空 buf**（连第一次响应的 body 残余一并丢弃——第二次请求此刻才发出，残余绝不含第二次数据）；
+   * 计到第二次响应头收齐，与 mihomo `client.Do`（收齐响应头即返回）同口径。用 GET 而非 HEAD：默认端点 generate_204
+   * 为 GET 设计、204 规范无 body，连接可立即复用；HEAD 可能 405/行为不一。
+   * 请求用 origin-form（隧道直连 origin，路径非代理绝对 URI）。
+   */
+  private measureWarmRtt(
+    conn: net.Socket | tls.TLSSocket,
+    target: SpeedTestTarget,
+    finish: (v: number | null) => void
+  ): void {
+    const HEADER_END = '\r\n\r\n';
+    const request =
+      `GET ${target.path} HTTP/1.1\r\n` +
+      `Host: ${target.hostHeader}\r\n` +
+      `Connection: keep-alive\r\n\r\n`;
+    let buf = '';
+    let firstDone = false;
+    let start = 0;
+
+    conn.on('data', (chunk: Buffer) => {
+      // latin1 单字节编码：逐 chunk 拼接不会把多字节字符跨 chunk 错位，ASCII 的响应头与 \r\n\r\n 边界检测安全。
+      // 勿改 utf8（会引入跨 chunk 截断）。
+      buf += chunk.toString('latin1');
+      if (!firstDone) {
+        if (buf.indexOf(HEADER_END) < 0) return; // 第一次响应头未收齐，继续累积（跨 chunk 安全）
+        // 第一次（暖身）响应头收齐：整段清空 buf（含可能的 body 残余）。第二次请求此刻才发出（下行 write），
+        // 故残余绝不含第二次响应数据——只 slice 到响应头会让自配「非 204 带 body」端点的 body（含空行）污染
+        // 第二次判定、塌成 ≈0ms，故整段丢弃。计时发第二次。
+        firstDone = true;
+        buf = '';
+        start = Date.now();
+        conn.write(request);
+      } else {
+        // 第二次响应：从第二次状态行 `HTTP/` 锚定起判「响应头收齐」，跳过可能先于第二次响应到达的第一次 body 残余
+        // （自配非 204 端点 + header/body 分段时，body 残余会先入清空后的 buf；不从 HTTP/ 起算会把它误当第二次）。
+        const sl = buf.indexOf('HTTP/');
+        if (sl < 0 || buf.indexOf(HEADER_END, sl) < 0) return; // 第二次状态行/响应头未到齐
+        finish(Date.now() - start); // 收齐第二次响应头 = 不含握手的纯请求往返
+      }
+    });
+    conn.on('error', () => finish(null));
+    conn.on('end', () => finish(null)); // 对端在测完前关闭 → 失败
+    conn.write(request); // 第一次（暖身，丢弃计时）
   }
 
   /**

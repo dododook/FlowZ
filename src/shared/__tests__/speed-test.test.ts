@@ -2,8 +2,8 @@
  * parseSpeedTestUrl / resolveSpeedTestTarget 单测（纯函数，无网络/无 FS）：
  * 验证测速端点 URL → SpeedTestTarget 解析（http/https、host/port、path+query、非标准端口 Host 头、非法回落默认）。
  *
- * 这是「测速地址可设置」的后端核心：SpeedTestService.sendProxyRequest 据 target.https 分流（HTTP 绝对 URI GET /
- * HTTPS CONNECT 隧道+TLS）。FS/网络层（实际请求）属集成层、真机验证，不在此测。
+ * 这是「测速地址可设置」的后端核心：SpeedTestService.measureViaTunnel 据 target.https 决定 CONNECT 隧道上是否先
+ * 做 TLS 握手，再发两次 GET 只计第二次（warm RTT）。FS/网络层（实际请求）属集成层、真机验证，不在此测。
  */
 import { parseSpeedTestUrl, resolveSpeedTestTarget, DEFAULT_SPEED_TEST_URL } from '../speed-test';
 
