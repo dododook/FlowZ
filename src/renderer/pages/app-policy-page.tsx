@@ -11,6 +11,8 @@ export function AppPolicyPage() {
   const saveConfig = useAppStore((s) => s.saveConfig);
   // 默认关（undefined=关闭，与后端 effectiveAppRules `!== true` 一致）；总开关切换走 config:save → 运行中全量重启
   const enabled = config?.appRoutingEnabled === true;
+  // 应用分流仅「智能分流」模式生效（与后端 effectiveAppRules smart-only 一致）：global/direct 下即便开关开也不生效。
+  const isSmartMode = (config?.proxyMode || 'smart').toLowerCase() === 'smart';
 
   const toggle = (v: boolean) => {
     if (!config) return;
@@ -38,13 +40,22 @@ export function AppPolicyPage() {
           />
         </div>
         <p className="text-muted-foreground mt-1">{t('rules.appRulesDesc')}</p>
-        {!enabled && (
+        {!enabled ? (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
             {t(
               'rules.appRoutingDisabledHint',
-              '应用分流已关闭：所有应用按全局分流策略走，下方规则不生效。提示：自定义路由规则始终优先于应用分流。'
+              '应用分流已关闭：所有应用按当前分流策略走，下方规则不生效。提示：智能分流模式下自定义路由规则优先于应用分流。'
             )}
           </p>
+        ) : (
+          !isSmartMode && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              {t(
+                'rules.appRoutingInactiveModeHint',
+                '当前分流模式下应用分流不生效，仅「智能分流」模式生效。'
+              )}
+            </p>
+          )
         )}
       </div>
 

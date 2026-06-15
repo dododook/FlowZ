@@ -2743,8 +2743,8 @@ done
       //   非 outbound 结构变（重启）。members 复用 proxy-selector 的可用 nodeTags（已排除 naive 缺库 / gate-invalid /
       //   detour 死引用剔除的节点）；目标无效/被 gate 剔除/无 target → default 落 proxy-selector 兜底
       //   （rule-sel 仍建、不 FATAL，与 fixRouteDeadReferences 兜底语义一致）。
-      // direct 模式不生成（generateCustomRules/effectiveAppRules 在 direct 不产出 proxy 规则 → 无消费者）。
-      if ((config.proxyMode || 'smart').toLowerCase() !== 'direct') {
+      // 仅 smart 生成：用户路由仅 smart 生效，global/direct 下 effectiveCustomRules/effectiveAppRules 为空 → 无 proxy 规则、无消费者。
+      if ((config.proxyMode || 'smart').toLowerCase() === 'smart') {
         this.generateRuleSelectors(config, idToTagMap, nodeTags, outbounds);
       }
     } else {
@@ -3660,7 +3660,7 @@ done
     //    下方 smart geo 也不加、final=proxy），direct=全直连。功能性强制直连（防环/LAN/网银/节点排除）在本块之外、不受影响。
     if (proxyMode === 'smart') {
       const { rules: customRules, ruleSets: customRuleSets } = this.generateCustomRules(
-        config.customRules || [],
+        this.effectiveCustomRules(config),
         config.customRuleSets || [],
         config.selectedServerId || undefined,
         idToTagMap,

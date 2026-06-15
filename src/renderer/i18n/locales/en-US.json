@@ -932,6 +932,8 @@
     "appRulesExperimental": "Experimental",
     "appRoutingToggle": "Enable app routing",
     "appRoutingDisabledHint": "App routing is off: all apps follow the current routing policy and the rules below have no effect. Note: in Smart mode custom routing rules take precedence over app routing.",
+    "appRoutingInactiveModeHint": "App routing doesn't apply in the current routing mode — it applies only in Smart mode.",
+    "customRulesInactiveModeHint": "Custom routing rules don't apply in the current routing mode — they apply only in Smart mode.",
     "moveUp": "Move up",
     "moveDown": "Move down",
     "moveTop": "Move to top",

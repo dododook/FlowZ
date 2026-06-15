@@ -19,6 +19,7 @@ jest.mock('electron', () => ({ app: { getPath: () => TMP }, net: {} }));
 (process as any).resourcesPath = TMP;
 
 import { ProxyManager } from '../ProxyManager';
+import { buildCustomRuleFiles } from '../custom-rule-files';
 import type { UserConfig } from '../../../shared/types';
 
 function makeSvc(): any {
@@ -139,5 +140,27 @@ describe('configGenerationNorm：global 下用户路由变更不翻转 norm（�
   it('smart：同样新增自定义规则 → norm 改变（fix 是 mode-specific，非一刀切忽略）', () => {
     const base = makeConfig('smart');
     expect(svc.configGenerationNorm(base)).not.toBe(svc.configGenerationNorm(addRule(base)));
+  });
+});
+
+describe('buildCustomRuleFiles：仅 smart 外化（global/direct 返空集 → 外化文件按孤儿清扫）', () => {
+  // 全 EXT 可表达（纯 domain 条件）→ smart 下应外化落盘 1 个文件
+  const extRuleCfg = (proxyMode: 'smart' | 'global' | 'direct'): UserConfig =>
+    ({
+      proxyMode,
+      dnsConfig: { enableFakeIp: true },
+      customRules: [
+        { id: 'c1', type: 'domain', values: ['ext.com'], action: 'proxy', enabled: true },
+      ],
+    }) as unknown as UserConfig;
+
+  it('smart：外化文件非空', () => {
+    expect(buildCustomRuleFiles(extRuleCfg('smart')).size).toBeGreaterThan(0);
+  });
+  it('global：外化文件为空集（无消费者）', () => {
+    expect(buildCustomRuleFiles(extRuleCfg('global')).size).toBe(0);
+  });
+  it('direct：外化文件为空集', () => {
+    expect(buildCustomRuleFiles(extRuleCfg('direct')).size).toBe(0);
   });
 });

@@ -932,6 +932,8 @@
     "appRulesExperimental": "实验性",
     "appRoutingToggle": "启用应用分流",
     "appRoutingDisabledHint": "应用分流已关闭：所有应用按当前分流策略走，下方规则不生效。提示：智能分流模式下自定义路由规则优先于应用分流。",
+    "appRoutingInactiveModeHint": "当前分流模式下应用分流不生效，仅「智能分流」模式生效。",
+    "customRulesInactiveModeHint": "当前分流模式下自定义路由规则不生效，仅「智能分流」模式生效。",
     "moveUp": "上移",
     "moveDown": "下移",
     "moveTop": "置顶",

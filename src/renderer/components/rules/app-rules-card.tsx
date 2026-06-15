@@ -179,7 +179,11 @@ export function AppRulesCard() {
   const appRules: AppRule[] = config.appRules || [];
   const customPresets: CustomAppPreset[] = config.customAppPresets || [];
   // 引用了缺失 geo（已删除/文件丢失）的应用 id 集合：geo 半暂不生效（进程名仍生效），卡片角标提示去「规则资源」页恢复。
-  const affectedAppIds = missingResourceAppIds(appRules, availableResTags, customPresets);
+  // 仅「智能分流」模式标注——非 smart 下应用分流本就被模式忽略（由 app-policy 页顶部提示说明），再标缺失会误导。
+  const isSmartMode = (config.proxyMode || 'smart').toLowerCase() === 'smart';
+  const affectedAppIds = isSmartMode
+    ? missingResourceAppIds(appRules, availableResTags, customPresets)
+    : new Set<string>();
 
   // 合并预设列表进行渲染
   const allPresets: AppPreset[] = [

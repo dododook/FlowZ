@@ -80,10 +80,14 @@ export function RulesPage() {
     };
   }, [config]);
 
+  // 用户路由仅「智能分流」模式生效（global=一律走选中节点、direct=全直连，自定义规则均不生效）。
+  const isSmartMode = (config?.proxyMode || 'smart').toLowerCase() === 'smart';
+
   // 引用了缺失资源（已删除/文件丢失）的规则 id 集合：运行期被 fail-closed 跳过，列内标角标提示去「规则资源」页恢复。
+  // 仅 smart 模式标注——非 smart 下规则本就被模式忽略（已由顶部提示说明），再标「资源缺失·下载恢复」会误导（下载也不会让规则生效）。
   const missingResRuleIds = useMemo(
-    () => missingResourceRuleIds(customRules, availableResTags),
-    [customRules, availableResTags]
+    () => (isSmartMode ? missingResourceRuleIds(customRules, availableResTags) : new Set<string>()),
+    [isSmartMode, customRules, availableResTags]
   );
 
   const handleToggleRule = async (rule: Rule) => {
@@ -187,7 +191,7 @@ export function RulesPage() {
         return (
           <Badge
             variant="outline"
-            className="whitespace-nowrap border-transparent bg-red-600/15 text-xs text-destructive"
+            className="whitespace-nowrap border-transparent bg-destructive/15 text-xs text-destructive"
             title={t('rules.targetMissingTip', '指定节点已删除，运行时回退为跟随全局选中节点')}
           >
             {t('rules.targetMissing', '节点已失效')}
@@ -219,6 +223,14 @@ export function RulesPage() {
         <div>
           <h2 className="text-2xl font-bold">{t('rules.customRules')}</h2>
           <p className="text-muted-foreground mt-1">{t('rules.customRulesDesc')}</p>
+          {!isSmartMode && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              {t(
+                'rules.customRulesInactiveModeHint',
+                '当前分流模式下自定义路由规则不生效，仅「智能分流」模式生效。'
+              )}
+            </p>
+          )}
         </div>
         <Button onClick={() => setIsAddDialogOpen(true)} disabled={isOrderEditing}>
           <Plus className="mr-2 h-4 w-4" />
