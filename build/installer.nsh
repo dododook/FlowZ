@@ -17,7 +17,10 @@
 !macro customUnInstall
   ${ifNot} ${isUpdated}
     DetailPrint "检查 FlowZ 提权 helper 服务..."
-    nsExec::ExecToStack 'sc.exe query FlowZHelper'
+    ; System32 绝对路径调系统命令（$SYSDIR=System32），不依赖 PATH——规避部分设备 PATH 缺失 System32
+    ; 致命令未找到（与 src/main 的 win-system32 硬化同根）。nsExec 经 CreateProcess（搜索序含 System32）本较稳，
+    ; 但 .ps1 内的 sc.exe 由 PowerShell 走 PATH 解析（见下），必须绝对路径化；此处一并收口、兼防 cwd 劫持。
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" query FlowZHelper'
     Pop $R4 ; 退出码：0=服务存在，1060=不存在
     Pop $R5 ; 输出（丢弃）
     ${If} $R4 == 0
@@ -25,14 +28,14 @@
       InitPluginsDir
       ; 把清理命令写入临时 .ps1（避免多层引号嵌套）。$$ → 字面 $（令 $env:ProgramData 在提权 PS 内展开）。
       FileOpen $R6 "$PLUGINSDIR\flowz-helper-uninstall.ps1" w
-      FileWrite $R6 `sc.exe stop FlowZHelper$\r$\n`
+      FileWrite $R6 `& "$SYSDIR\sc.exe" stop FlowZHelper$\r$\n`
       FileWrite $R6 `Start-Sleep -Milliseconds 500$\r$\n`
-      FileWrite $R6 `sc.exe delete FlowZHelper$\r$\n`
+      FileWrite $R6 `& "$SYSDIR\sc.exe" delete FlowZHelper$\r$\n`
       FileWrite $R6 `Start-Sleep -Milliseconds 500$\r$\n`
       FileWrite $R6 `Remove-Item -Recurse -Force -Path "$$env:ProgramData\FlowZ" -ErrorAction SilentlyContinue$\r$\n`
       FileClose $R6
       ; 外层普通 PS 唤起内层提权 PS（-Verb RunAs 触发 UAC，-Wait 阻塞至清理完成，nsExec 再阻塞至外层结束）。
-      nsExec::Exec `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$PLUGINSDIR\flowz-helper-uninstall.ps1'"`
+      nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$PLUGINSDIR\flowz-helper-uninstall.ps1'"`
       Pop $R7 ; 退出码（丢弃；用户取消 UAC 时非 0，best-effort 不阻断卸载）
     ${EndIf}
   ${endif}
