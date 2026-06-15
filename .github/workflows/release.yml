@@ -65,28 +65,34 @@ jobs:
           ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
           ELECTRON_BUILDER_BINARIES_MIRROR: "https://npmmirror.com/mirrors/electron-builder-binaries/"
 
-      - name: Create DMG (macOS)
+      - name: Create DMG (macOS, arm64 + x64)
         if: matrix.platform == 'mac'
         run: |
+          # electron-builder.json mac.target.arch = [arm64, x64] → 两个架构的 .app 都已构建
+          # （dist-package/mac-arm64 + dist-package/mac-x64，各自含对应架构的提权 helper）。
+          # 此处对两者分别 ad-hoc deep 签名 + 打 DMG，使 Intel Mac 用户也有发布包（不止 Apple Silicon）。
           VERSION=${GITHUB_REF#refs/tags/v}
-          APP_PATH="dist-package/mac-arm64/FlowZ.app"
-          DMG_PATH="dist-package/FlowZ-${VERSION}-mac-arm64.dmg"
+          for ARCH in arm64 x64; do
+            APP_PATH="dist-package/mac-${ARCH}/FlowZ.app"
+            DMG_PATH="dist-package/FlowZ-${VERSION}-mac-${ARCH}.dmg"
+            if [ ! -d "$APP_PATH" ]; then
+              echo "::warning::$APP_PATH 不存在，跳过 ${ARCH} DMG"
+              continue
+            fi
+            echo "Ad-hoc deep signing ${ARCH} app bundle (fix Team ID mismatch)..."
+            codesign --force --deep --sign - "$APP_PATH"
 
-          echo "Ad-hoc deep signing the app bundle to fix Team ID mismatch on ARM64..."
-          codesign --force --deep --sign - "$APP_PATH"
-
-          echo "Creating DMG..."
-          TEMP_DIR=$(mktemp -d)
-          cp -R "$APP_PATH" "$TEMP_DIR/"
-          ln -s /Applications "$TEMP_DIR/Applications"
-
-          hdiutil create -volname "FlowZ ${VERSION}" \
-            -srcfolder "$TEMP_DIR" \
-            -ov -format UDZO \
-            "$DMG_PATH"
-
-          rm -rf "$TEMP_DIR"
-          echo "Created: $DMG_PATH"
+            echo "Creating ${ARCH} DMG..."
+            TEMP_DIR=$(mktemp -d)
+            cp -R "$APP_PATH" "$TEMP_DIR/"
+            ln -s /Applications "$TEMP_DIR/Applications"
+            hdiutil create -volname "FlowZ ${VERSION} (${ARCH})" \
+              -srcfolder "$TEMP_DIR" \
+              -ov -format UDZO \
+              "$DMG_PATH"
+            rm -rf "$TEMP_DIR"
+            echo "Created: $DMG_PATH"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
