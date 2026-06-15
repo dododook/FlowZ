@@ -930,9 +930,12 @@ if (gotTheLock) {
     proxyManager.setPrivacyProvider(getPrivacyMode);
     coreUpdateService.setProxyManager(proxyManager);
     coreUpdateService.setConfigProvider(() => configManager.loadConfig());
-    // 启动即后台预热内核版本缓存（getCoreVersion 写 this.coreVersion）：使「关于」页**首次**进入也命中缓存、
-    // 不再临时 spawn `sing-box version` 子进程导致加载转圈。fire-and-forget 不阻塞启动；启动代理时(:716 force)会再刷新。
-    void proxyManager.getCoreVersion().catch(() => {});
+    // 后台预热内核版本缓存（getCoreVersion 写 this.coreVersion）：使「关于」页**首次**进入也命中缓存、
+    // 不再临时 spawn `sing-box version` 子进程导致加载转圈。
+    // 延后 ~5s 触发（C2）：spawn 50MB sing-box.exe 会再触发一次 AV 扫描，与 Windows portable 冷启动的自解压 + AV
+    // 扫描抢盘 I/O；延后避开冷启动高峰。fire-and-forget 不阻塞启动；延时内进「关于」则 IPC 走 on-demand
+    // getCoreVersion（同成本，非回归）；启动代理时(:716 force) 亦会刷新。
+    setTimeout(() => void proxyManager?.getCoreVersion().catch(() => {}), 5000);
     // 内核自动更新状态/成功提示经事件推渲染端（staged 待生效 / 跨带提示 / 落位成功复用 banner）
     coreUpdateService.setEventSender((channel, payload) =>
       ipcEventEmitter.sendToAll(channel, payload)
