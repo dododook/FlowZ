@@ -33,8 +33,10 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Setup Go (macOS 提权 helper)
-        if: matrix.platform == 'mac'
+      # 提权 helper 二进制不入库（.gitignore），由 build:helper 现编现打：mac(helper/) + win(helper-win/)。
+      # 必须在 mac 与 win 两个 runner 都装 Go，否则该平台 package 缺 helper 二进制 → 安装提权助手「二进制缺失」(issue #57)。
+      - name: Setup Go (提权 helper, mac + win)
+        if: matrix.platform == 'mac' || matrix.platform == 'win'
         uses: actions/setup-go@v5
         with:
           go-version-file: helper/go.mod

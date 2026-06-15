@@ -29,6 +29,14 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # 提权 helper 现编现打（package:win/package:mac 内含 build:helper）：mac+win runner 均需 Go，
+      # 否则 CI 包缺 helper 二进制（与发布同源，见 release.yml / issue #57）。
+      - name: Setup Go (提权 helper)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: helper/go.mod
+          cache: false
+
       - name: Install dependencies
         env:
           ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
