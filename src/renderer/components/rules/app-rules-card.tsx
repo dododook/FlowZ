@@ -34,7 +34,9 @@ import {
   List,
   Image as ImageIcon,
   ChevronDown,
+  AlertTriangle,
 } from 'lucide-react';
+import { availableResourceTagSet, missingResourceAppIds } from '../../../shared/rule-resource-refs';
 import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useEffect } from 'react';
@@ -99,14 +101,22 @@ export function AppRulesCard() {
       .finally(() => setGeoCatalogLoading(false));
   }, [isAddDialogOpen, geoCatalog.length]);
 
-  // 每次打开对话框刷新「已下载/内置」列表（反映新下载），用于本地标注与添加时按需下载
+  // 「已下载/内置」列表：挂载即拉（卡片「规则集缺失」角标需要），打开对话框时刷新（反映新下载），随 config 变化重拉
+  // （别处删除/恢复资源会改 config）。用于本地标注、添加时按需下载、以及应用卡片缺失角标。
   useEffect(() => {
-    if (!isAddDialogOpen) return;
+    let active = true;
     api.ruleResources
       .list()
-      .then(setGeoLocalList)
-      .catch(() => setGeoLocalList([]));
-  }, [isAddDialogOpen]);
+      .then((list) => {
+        if (active) setGeoLocalList(list);
+      })
+      .catch(() => {
+        if (active) setGeoLocalList([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAddDialogOpen, config]);
 
   useEffect(() => {
     if (!showIconGallery || iconGalleries.length > 0) return;
@@ -161,11 +171,15 @@ export function AppRulesCard() {
   const geoipOptions = useMemo(() => geoCategoryOptions(geoCatalog, 'geoip'), [geoCatalog]);
   const localGeositeTags = useMemo(() => localGeoTagSet(geoLocalList, 'geosite'), [geoLocalList]);
   const localGeoipTags = useMemo(() => localGeoTagSet(geoLocalList, 'geoip'), [geoLocalList]);
+  // 本地可用规则资源 tag 集合（fileExists 为真者）：用于卡片「规则集缺失」角标判定。
+  const availableResTags = useMemo(() => availableResourceTagSet(geoLocalList), [geoLocalList]);
 
   if (!config) return null;
 
   const appRules: AppRule[] = config.appRules || [];
   const customPresets: CustomAppPreset[] = config.customAppPresets || [];
+  // 引用了缺失 geo（已删除/文件丢失）的应用 id 集合：geo 半暂不生效（进程名仍生效），卡片角标提示去「规则资源」页恢复。
+  const affectedAppIds = missingResourceAppIds(appRules, availableResTags, customPresets);
 
   // 合并预设列表进行渲染
   const allPresets: AppPreset[] = [
@@ -536,6 +550,19 @@ export function AppRulesCard() {
                     )}
                   </SelectContent>
                 </Select>
+
+                {/* 规则集缺失角标：该应用引用的 geo 已删除/文件丢失 → geo 半暂不生效（进程名仍生效），需到「规则资源」页恢复。 */}
+                {affectedAppIds.has(preset.id) && (
+                  <span
+                    className="absolute -top-1 -left-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm"
+                    title={t(
+                      'rules.appGeoMissingTip',
+                      '该应用引用的分流规则集缺失（已删除或文件丢失），仅按进程名生效；请到「规则资源」页下载恢复'
+                    )}
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                  </span>
+                )}
 
                 {isCustom && (
                   <button

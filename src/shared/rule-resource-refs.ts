@@ -80,3 +80,81 @@ export function enumerateResourceRefs(resId: string, input: RefScanInput): RuleR
 export function isResourceReferenced(resId: string, input: RefScanInput): boolean {
   return enumerateResourceRefs(resId, input).length > 0;
 }
+
+/**
+ * 「本地可用资源」正向判断（与 ProxyManager 运行期 fail-closed 口径一致）——回答「某条规则 / 某个应用引用的规则资源是否
+ * 本地缺失（已删除或文件丢失）」，供路由规则页 / 应用分流页就地标注「资源缺失」角标。
+ *
+ * 与 enumerateResourceRefs（反向：资源 → 引用它的规则）互补：删除会把资源整条移出 config.ruleResources，反向枚举
+ * 便无从命中已删项；正向以「规则引用的 tag 是否在本地可用集合内」判定，删除态与文件缺失态统一收口。
+ *
+ * tag 口径严格对齐 generateCustomRules / getRequiredGeoCategories：
+ *   - ruleSet `res:<id>` → geoTagOf(id)（builtin:geosite-cn→geosite-cn；geosite-amazon / res_x 原样）
+ *   - geosite 裸 tag → `geosite-<tag>`；geoip 裸 tag → `geoip-<tag>`（trim + lowercase 归一）
+ *   - 应用分流 preset.geositeTags/geoipTags → `geosite-/geoip-<tag>`
+ * 可用集合 = 列表项中 fileExists 为真者的 geoTagOf(id)；仅判已启用规则 / 应用（与运行期一致，禁用规则不下发本就无效果）。
+ */
+export function availableResourceTagSet(
+  resources: { id: string; fileExists: boolean }[]
+): Set<string> {
+  return new Set((resources || []).filter((r) => r.fileExists).map((r) => geoTagOf(r.id)));
+}
+
+/** 单条路由规则引用的全部资源 tag（口径同 generateCustomRules 的条件解析）。 */
+export function ruleResourceTags(rule: Rule): string[] {
+  const tags: string[] = [];
+  for (const c of ruleConditions(rule)) {
+    if (c.type === 'ruleSet') {
+      for (const v of c.values || []) {
+        const s = v.trim();
+        if (s.startsWith('res:')) tags.push(geoTagOf(s.slice('res:'.length)));
+      }
+    } else if (c.type === 'geosite' || c.type === 'geoip') {
+      for (const v of c.values || []) {
+        const t = v.trim().toLowerCase();
+        if (t) tags.push(`${c.type}-${t}`);
+      }
+    }
+  }
+  return tags;
+}
+
+/** 该路由规则是否引用了「本地不可用」资源（缺失 / 已删除）。仅判已启用规则。 */
+export function ruleHasMissingResource(rule: Rule, available: Set<string>): boolean {
+  if (!rule.enabled) return false;
+  return ruleResourceTags(rule).some((t) => !available.has(t));
+}
+
+/** 引用了缺失资源的路由规则 id 集合（供路由规则列表就地角标）。 */
+export function missingResourceRuleIds(rules: Rule[], available: Set<string>): Set<string> {
+  const s = new Set<string>();
+  for (const r of rules || []) if (ruleHasMissingResource(r, available)) s.add(r.id);
+  return s;
+}
+
+/** 应用分流预设引用的全部 geo tag（口径同 generateRouteConfig 的 app 分支 / getRequiredGeoCategories）。 */
+export function appPresetResourceTags(preset: {
+  geositeTags: string[];
+  geoipTags?: string[];
+}): string[] {
+  return [
+    ...(preset.geositeTags || []).map((t) => `geosite-${t.trim().toLowerCase()}`),
+    ...(preset.geoipTags || []).map((t) => `geoip-${t.trim().toLowerCase()}`),
+  ];
+}
+
+/** 引用了缺失 geo 的应用 id 集合（进程名仍生效；仅判已启用 appRule）。 */
+export function missingResourceAppIds(
+  appRules: AppRule[],
+  available: Set<string>,
+  customAppPresets?: CustomAppPreset[]
+): Set<string> {
+  const s = new Set<string>();
+  for (const ar of appRules || []) {
+    if (!ar.enabled) continue;
+    const preset = getAppPreset(ar.appId, customAppPresets);
+    if (!preset) continue;
+    if (appPresetResourceTags(preset).some((t) => !available.has(t))) s.add(ar.appId);
+  }
+  return s;
+}

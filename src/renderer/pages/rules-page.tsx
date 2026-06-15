@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/store/app-store';
+import { api } from '@/ipc/api-client';
+import { availableResourceTagSet, missingResourceRuleIds } from '../../shared/rule-resource-refs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +47,8 @@ export function RulesPage() {
   const [orderDraft, setOrderDraft] = useState<string[] | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [search, setSearch] = useState('');
+  // 本地可用规则资源 tag 集合（fileExists 为真者）：用于就地标注「引用了缺失资源」的规则。
+  const [availableResTags, setAvailableResTags] = useState<Set<string>>(() => new Set());
 
   const customRules = config?.customRules || [];
   const isOrderEditing = orderDraft !== null;
@@ -61,6 +65,26 @@ export function RulesPage() {
       toast.info(t('rules.orderConflict', '规则已在别处变更，已退出排序编辑'));
     }
   }, [customRules, orderDraft, t]);
+
+  // 规则资源可用性：挂载即拉一次，并随 config 变化（别处删除/恢复资源会改 config）重新计算，使「资源缺失」角标即时反映。
+  useEffect(() => {
+    let active = true;
+    api.ruleResources
+      .list()
+      .then((list) => {
+        if (active) setAvailableResTags(availableResourceTagSet(list));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [config]);
+
+  // 引用了缺失资源（已删除/文件丢失）的规则 id 集合：运行期被 fail-closed 跳过，列内标角标提示去「规则资源」页恢复。
+  const missingResRuleIds = useMemo(
+    () => missingResourceRuleIds(customRules, availableResTags),
+    [customRules, availableResTags]
+  );
 
   const handleToggleRule = async (rule: Rule) => {
     try {
@@ -310,6 +334,7 @@ export function RulesPage() {
                         onMove={moveDraft}
                         onMoveToEdge={moveDraftToEdge}
                         renderExitNode={renderExitNode}
+                        hasMissingResource={missingResRuleIds.has(rule.id)}
                       />
                     ))}
                   </SortableContext>
