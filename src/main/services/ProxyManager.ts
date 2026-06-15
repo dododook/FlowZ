@@ -712,8 +712,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // sing-box）。把「裸 spawn 撞 9090 占用 → retry 风暴」收敛为一次明确、可定位的失败。
     await this.resolveClashApiPortConflict();
 
-    // 0. 获取核心版本（用于后续生成兼容的配置文件）
-    this.coreVersion = await this.getCoreVersion();
+    // 0. 获取核心版本（用于后续生成兼容的配置文件）。force=true：内核可能已更新，启动时强制重检测刷新缓存。
+    this.coreVersion = await this.getCoreVersion(true);
     this.logToManager('info', `检测到 sing-box 核心版本: ${this.coreVersion}`);
 
     // 修复可能被 root 创建的文件权限（从 TUN 模式切换到系统代理模式时）
@@ -1571,7 +1571,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   /**
    * 获取核心版本
    */
-  async getCoreVersion(): Promise<string> {
+  async getCoreVersion(force = false): Promise<string> {
+    // 缓存命中：启动时(startInternal :716)已检测并写入 this.coreVersion；此后 About 页/版本查询直接返回缓存，
+    // 不再每次都 spawn `sing-box version` 子进程（45MB 内核，Windows 进程创建+AV 扫描尤慢 → 进「关于」页转圈）。
+    // force=true 仅启动路径用（内核可能已更新 → 须重检测刷新缓存）。
+    if (!force && this.coreVersion && this.coreVersion !== 'unknown') {
+      return this.coreVersion;
+    }
     try {
       const { exec } = require('child_process');
       const util = require('util');
@@ -1580,16 +1586,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const { stdout } = await execAsync(`"${this.singboxPath}" version`);
       // 输出示例: sing-box version 1.13.0 ... 或 v1.13.0 ...
       const match = stdout.match(/(?:version\s+|v)(\d+\.\d+(\.\d+)?)/i);
-      if (match) {
-        return match[1];
-      }
-
       // 备选方案：尝试直接取第一组连续的数字版本号
       const secondMatch = stdout.match(/(\d+\.\d+\.\d+)/);
-      return secondMatch ? secondMatch[1] : coreManifest.bundledCoreVersion;
+      const detected = match
+        ? match[1]
+        : secondMatch
+          ? secondMatch[1]
+          : coreManifest.bundledCoreVersion;
+      this.coreVersion = detected; // 写缓存：供后续查询命中 + config 生成 coreVersionAtLeast 复用
+      return detected;
     } catch (error) {
       this.logToManager('error', `获取核心版本失败: ${(error as any).message}`);
-      return coreManifest.bundledCoreVersion;
+      return coreManifest.bundledCoreVersion; // 不写 'unknown' 缓存，下次仍可重试
     }
   }
 
