@@ -34,6 +34,7 @@ import {
   ElevatedLaunchPaths,
 } from '../PlatformPrivilegeService';
 import type { LogLevel } from '../../../shared/types';
+import { powershellPath } from '../../utils/win-system32';
 
 afterAll(() => {
   try {
@@ -203,7 +204,8 @@ describe('PlatformPrivilegeService.buildElevatedLaunchCommand', () => {
     const svc = makeSvc(true);
     const paths = makePaths();
     const { command, args } = svc.buildElevatedLaunchCommand(paths);
-    expect(command).toBe('powershell.exe');
+    // 绝对路径调 PowerShell（规避 PATH 缺 System32），不再裸 'powershell.exe'
+    expect(command).toBe(powershellPath());
     expect(args[0]).toBe('-NoProfile');
     expect(args[1]).toBe('-ExecutionPolicy');
     expect(args[2]).toBe('Bypass');

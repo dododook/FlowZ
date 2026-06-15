@@ -6,6 +6,7 @@
  * 真机行为（UAC、sc 引号语义、管道连通）属 Windows 真机必验清单，不在单测范围。
  */
 import { WindowsServiceHelper } from '../WindowsServiceHelper';
+import { system32 } from '../../utils/win-system32';
 
 // 「非 Windows 安全降级」只在非 Windows 宿主可测：helper 直接读 process.platform（无注入点），
 // 在 Windows CI runner（win32）上该降级路径不可达 → 跳过；其逻辑由 macOS/Linux runner 覆盖。
@@ -86,21 +87,24 @@ describe('WindowsServiceHelper', () => {
       expect(script).toContain('复制 helper.exe 到 ProgramData 失败'); // 复制失败 fail-loud（不静默留旧副本）
       // 目录 ACL 硬化（防本地提权 + 闭 token TOCTOU）：去继承 + 仅 SYSTEM/Administrators 完全控制并 (OI)(CI) 下传。
       // ProgramData 默认让 Users 能在子目录建/删文件 → 不锁目录则普通用户可替换以 SYSTEM 运行的 helper.exe（=提权）。
-      expect(script).toContain('icacls $support /inheritance:r');
+      // icacls 经 System32 绝对路径调（规避 PATH 缺失），PS 调用算子 & '<abs>'
+      expect(script).toContain(`& '${system32('icacls.exe')}' $support /inheritance:r`);
       expect(script).toContain(
-        'icacls $support /grant:r "SYSTEM:(OI)(CI)(F)" "Administrators:(OI)(CI)(F)"'
+        `& '${system32('icacls.exe')}' $support /grant:r "SYSTEM:(OI)(CI)(F)" "Administrators:(OI)(CI)(F)"`
       );
       // 外置副本再显式收紧：去继承、仅 SYSTEM/Administrators 完全控制。
-      expect(script).toContain('icacls $helperDst /inheritance:r');
-      expect(script).toContain('icacls $helperDst /grant:r "SYSTEM:(F)" "Administrators:(F)"');
+      expect(script).toContain(`& '${system32('icacls.exe')}' $helperDst /inheritance:r`);
+      expect(script).toContain(
+        `& '${system32('icacls.exe')}' $helperDst /grant:r "SYSTEM:(F)" "Administrators:(F)"`
+      );
       // 关键不变量：SYSTEM helper 目录/二进制对 Users 零授权（绝不出现 Users 授权 → 杜绝替换/提权）。
       expect(script).not.toContain('Users:(RX)');
       expect(script).not.toContain('"Users');
-      // 启动服务
-      expect(script).toContain('sc.exe start FlowZHelper');
+      // 启动服务（sc.exe 经 System32 绝对路径调）
+      expect(script).toContain(`& '${system32('sc.exe')}' start FlowZHelper`);
       // 幂等：重装先停删旧服务
-      expect(script).toContain('sc.exe stop FlowZHelper');
-      expect(script).toContain('sc.exe delete FlowZHelper');
+      expect(script).toContain(`& '${system32('sc.exe')}' stop FlowZHelper`);
+      expect(script).toContain(`& '${system32('sc.exe')}' delete FlowZHelper`);
       // token 值写入
       expect(script).toContain('deadbeefdeadbeef');
       // 重装可重入：写 token 前先删旧 token（自愈旧版「Admin 只读」残留——否则 Set-Content 覆盖只读文件被拒，真机根因）。
@@ -118,8 +122,8 @@ describe('WindowsServiceHelper', () => {
 
     it('uninstall 脚本停 + 删服务 + 清受保护目录', () => {
       const script = helper.buildUninstallScript();
-      expect(script).toContain('sc.exe stop FlowZHelper');
-      expect(script).toContain('sc.exe delete FlowZHelper');
+      expect(script).toContain(`& '${system32('sc.exe')}' stop FlowZHelper`);
+      expect(script).toContain(`& '${system32('sc.exe')}' delete FlowZHelper`);
       expect(script).toContain('Remove-Item');
       expect(script).toContain('FlowZ');
     });

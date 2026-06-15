@@ -37,7 +37,7 @@ import {
   getSingBoxLogPath,
   getSingBoxPidPath,
 } from '../utils/paths';
-import { system32 } from '../utils/win-system32';
+import { system32, powershellPath } from '../utils/win-system32';
 
 /**
  * 提权服务依赖注入上下文。所有成员为只读回调——避免本服务直接访问 ProxyManager 内部状态。
@@ -461,7 +461,7 @@ exit 0
       try {
         // 使用 Start-Process -Verb RunAs 触发 UAC 提权并用 -Wait 阻塞直到完成
         execSync(
-          `powershell -Command "Start-Process powershell.exe -ArgumentList '-ExecutionPolicy Bypass -WindowStyle Hidden -File \\"${scriptPath}\\"' -Verb RunAs -Wait"`,
+          `"${powershellPath()}" -Command "Start-Process '${powershellPath()}' -ArgumentList '-ExecutionPolicy Bypass -WindowStyle Hidden -File \\"${scriptPath}\\"' -Verb RunAs -Wait"`,
           {
             stdio: 'pipe',
             timeout: 60000,
@@ -642,12 +642,12 @@ exit 0
       // RunAs taskkill 兜底：覆盖旧版直起（无看护）与看护异常两种情形，一次 UAC（与旧版语义一致）。
       // /FI "IMAGENAME eq sing-box.exe" 防 PID 复用误杀（值含空格→ -ArgumentList 元素须内嵌双引号；VM 实测通过）。
       const psScript =
-        "Start-Process -FilePath 'taskkill' -ArgumentList '/F','/PID','" +
+        `Start-Process -FilePath '${system32('taskkill.exe')}' -ArgumentList '/F','/PID','` +
         pid.toString() +
         "','/FI','\"IMAGENAME eq sing-box.exe\"' -Verb RunAs -Wait -WindowStyle Hidden";
 
       const killProcess = spawn(
-        'powershell.exe',
+        powershellPath(),
         ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
         {
           windowsHide: true,
@@ -984,7 +984,7 @@ exit 0
     const psScript = [
       "$ErrorActionPreference = 'Stop'",
       'try {',
-      '  Start-Process -FilePath powershell.exe -Verb RunAs -WindowStyle Hidden ' +
+      `  Start-Process -FilePath '${powershellPath()}' -Verb RunAs -WindowStyle Hidden ` +
         '-ArgumentList ' +
         watchdogArgs,
       '  exit 0',
@@ -997,7 +997,7 @@ exit 0
     ].join('; ');
 
     return {
-      command: 'powershell.exe',
+      command: powershellPath(),
       args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
     };
   }

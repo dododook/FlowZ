@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { HelperStatus } from '../../../shared/types';
+import { system32 } from '../../utils/win-system32';
 import { registerIpcHandler } from '../ipc-handler';
 import type { IPrivilegedHelper } from '../../services/IPrivilegedHelper';
 import type { IProxyManager } from '../../services/ProxyManager';
@@ -118,10 +119,10 @@ export function registerHelperHandlers(
               'set "WAIT=0"',
               ':wait',
               // 精确等本进程 PID 退出；60×~1s=60s 上限防卡死。
-              `tasklist /fi "PID eq %FLOWZ_PID%" 2>nul | find "%FLOWZ_PID%" >nul || goto clean`,
+              `"${system32('tasklist.exe')}" /fi "PID eq %FLOWZ_PID%" 2>nul | "${system32('find.exe')}" "%FLOWZ_PID%" >nul || goto clean`,
               'set /a WAIT+=1',
               'if %WAIT% GEQ 60 goto clean',
-              'ping 127.0.0.1 -n 2 >nul',
+              `"${system32('ping.exe')}" 127.0.0.1 -n 2 >nul`,
               'goto wait',
               ':clean',
               `rmdir /s /q "${userData}"`,
@@ -136,9 +137,9 @@ export function registerHelperHandlers(
             // （detached 新建进程组与 windowsHide 冲突 → 卸载残留终端窗口需手动关闭）。wscript //B 无 UI 随即退出，
             // 其 .Run 出的 cmd/bat 成为独立后台进程、全程无终端窗口；bat 收尾删 .vbs + 自删。
             // VBS 字符串内 "" 即字面量 "，故 `cmd /c "<bat>"` 正确加引号容纳带空格路径。
-            const vbs = `Set s = CreateObject("WScript.Shell")\r\ns.Run "cmd /c ""${batPath}""", 0, False\r\n`;
+            const vbs = `Set s = CreateObject("WScript.Shell")\r\ns.Run """${system32('cmd.exe')}"" /c ""${batPath}""", 0, False\r\n`;
             fs.writeFileSync(vbsPath, vbs, 'utf8');
-            spawn('wscript', ['//B', '//Nologo', vbsPath], {
+            spawn(system32('wscript.exe'), ['//B', '//Nologo', vbsPath], {
               detached: true,
               stdio: 'ignore',
               windowsHide: true,

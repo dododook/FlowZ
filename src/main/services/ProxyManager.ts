@@ -5,7 +5,7 @@
 
 import { BrowserWindow, Notification, shell } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
-import { system32 } from '../utils/win-system32';
+import { system32, powershellPath } from '../utils/win-system32';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as net from 'net';
@@ -5418,7 +5418,7 @@ exit 0
             const psScript = [
               "$ErrorActionPreference = 'Stop'",
               'try {',
-              '  Start-Process -FilePath powershell.exe -Verb RunAs -WindowStyle Hidden ' +
+              `  Start-Process -FilePath '${powershellPath()}' -Verb RunAs -WindowStyle Hidden ` +
                 '-ArgumentList ' +
                 watchdogArgs,
               '  exit 0',
@@ -5430,7 +5430,7 @@ exit 0
               '}',
             ].join('; ');
 
-            command = 'powershell.exe';
+            command = powershellPath();
             args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript];
           }
           this.logToManager(
@@ -5963,12 +5963,12 @@ exit 0
       // RunAs taskkill 兜底：覆盖旧版直起（无看护）与看护异常两种情形，一次 UAC（与旧版语义一致）。
       // /FI "IMAGENAME eq sing-box.exe" 防 PID 复用误杀（值含空格→ -ArgumentList 元素须内嵌双引号；VM 实测通过）。
       const psScript =
-        "Start-Process -FilePath 'taskkill' -ArgumentList '/F','/PID','" +
+        `Start-Process -FilePath '${system32('taskkill.exe')}' -ArgumentList '/F','/PID','` +
         pidToKill.toString() +
         "','/FI','\"IMAGENAME eq sing-box.exe\"' -Verb RunAs -Wait -WindowStyle Hidden";
 
       const killProcess = spawn(
-        'powershell.exe',
+        powershellPath(),
         ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psScript],
         {
           windowsHide: true,

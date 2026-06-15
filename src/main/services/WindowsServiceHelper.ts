@@ -20,6 +20,7 @@
 import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as net from 'net';
+import { system32, powershellPath } from '../utils/win-system32';
 import * as os from 'os';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
@@ -116,7 +117,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
   private queryService(): Promise<{ exists: boolean; running: boolean }> {
     return new Promise((resolve) => {
       execFile(
-        'sc.exe',
+        system32('sc.exe'),
         ['query', SERVICE_NAME],
         { timeout: 4000, windowsHide: true },
         (err, stdout) => {
@@ -431,8 +432,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       // DACL。故去继承（清掉 CREATOR OWNER + Users 创建/删子权）、仅留 SYSTEM/Administrators 完全控制并以 (OI)(CI)
       // 下传 → 目录内 token/exe **出生即** SYSTEM/Admin 私有（Users 无任何访问：既不能替换 exe，也读不到 token，
       // 无「写后到设 ACL 之间 token 短暂可读」的竞态窗口）。对齐 macOS helper 落在 root-only 写的受保护目录。
-      'icacls $support /inheritance:r | Out-Null',
-      'icacls $support /grant:r "SYSTEM:(OI)(CI)(F)" "Administrators:(OI)(CI)(F)" | Out-Null',
+      `& '${system32('icacls.exe')}' $support /inheritance:r | Out-Null`,
+      `& '${system32('icacls.exe')}' $support /grant:r "SYSTEM:(OI)(CI)(F)" "Administrators:(OI)(CI)(F)" | Out-Null`,
       // 先删任何残留旧 token 再写：重装/修复时旧 token 可能是「Admin 只读」（旧版 ACL）或部分失败安装的残留，
       // 而 Set-Content 覆盖一个 Admin 只读的现存文件会被拒（真机实测「对…helper.token 的访问被拒绝」的根因）。
       // 经目录 Admin 的 FILE_DELETE_CHILD 删旧文件**不受其自身只读 DACL 阻挡** → 随后 Set-Content 必成（自愈已损状态）。
@@ -442,8 +443,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       // ACL——只读对机密性零增益（Users 已被目录挡死），却会令重装时 Set-Content 覆盖被拒（即上面那个真机根因）。
       `Set-Content -Path $tokenFile -Value '${this.psq(token)}' -NoNewline -Encoding ascii`,
       // 幂等重装：停 + 删旧服务（按名）
-      `& sc.exe stop ${SERVICE_NAME} 2>$null | Out-Null`,
-      `& sc.exe delete ${SERVICE_NAME} 2>$null | Out-Null`,
+      `& '${system32('sc.exe')}' stop ${SERVICE_NAME} 2>$null | Out-Null`,
+      `& '${system32('sc.exe')}' delete ${SERVICE_NAME} 2>$null | Out-Null`,
       // sc delete 是异步「标记删除」（须等所有句柄关闭 + 进程停才移除）→ 轮询等服务真消失，否则 New-Service 撞
       // 1072 ERROR_SERVICE_MARKED_FOR_DELETE（重装真机高概率命中）。注：服务注销与进程映像完全解除映射之间仍有 ms 级
       // 窗口，故旧副本解锁**靠下方 Copy-Item 的退避重试兜底**、而非仅靠本轮询（勿据此误删重试）。
@@ -459,8 +460,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       'if (-not $copied) { throw "复制 helper.exe 到 ProgramData 失败（旧服务二进制可能仍被占用，请稍后重试或重启后再装）" }',
       // 显式收紧外置副本 ACL（兜底）：目录已锁 SYSTEM/Admin 私有、本副本继承之即足够；这里再去继承 + 仅 SYSTEM/Admin
       // 完全控制，确保 Users 对这个**以 SYSTEM 运行**的二进制零访问（不可写/不可替换 → 杜绝本地提权）。
-      'icacls $helperDst /inheritance:r | Out-Null',
-      'icacls $helperDst /grant:r "SYSTEM:(F)" "Administrators:(F)" | Out-Null',
+      `& '${system32('icacls.exe')}' $helperDst /inheritance:r | Out-Null`,
+      `& '${system32('icacls.exe')}' $helperDst /grant:r "SYSTEM:(F)" "Administrators:(F)" | Out-Null`,
       // New-Service 退避重试兜底（删除标记态 1072 窗口期）：BinaryPathName 单一字符串直达 CreateService；
       // 默认账户即 LocalSystem；-StartupType Automatic = 开机自启常驻（app 全程只发管道命令、不 start/stop 服务）。
       '$created = $false',
@@ -471,7 +472,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       '}',
       // 失败抛**真实异常**（不用硬编码 1072 文案盖掉真因——非 1072 失败如路径非法/权限也要透出真原因，闭合 MED-2）
       `if (-not $created) { throw "New-Service 失败（重试 10 次；多为 sc delete 标记删除态 1072 竞态，若持续请重启）：$($lastErr.Exception.Message)" }`,
-      `& sc.exe start ${SERVICE_NAME} | Out-Null`,
+      `& '${system32('sc.exe')}' start ${SERVICE_NAME} | Out-Null`,
     ].join('\n');
   }
 
@@ -479,9 +480,9 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
    *  对「服务/目录不存在」容错（sc 外部命令不受 Stop 影响、不抛；Remove-Item 显式 SilentlyContinue）。 */
   private buildUninstallScript(): string {
     return [
-      `& sc.exe stop ${SERVICE_NAME} 2>$null | Out-Null`,
+      `& '${system32('sc.exe')}' stop ${SERVICE_NAME} 2>$null | Out-Null`,
       'Start-Sleep -Milliseconds 300',
-      `& sc.exe delete ${SERVICE_NAME} 2>$null | Out-Null`,
+      `& '${system32('sc.exe')}' delete ${SERVICE_NAME} 2>$null | Out-Null`,
       `Remove-Item -Recurse -Force -Path '${this.psq(SUPPORT_DIR)}' -ErrorAction SilentlyContinue`,
     ].join('\n');
   }
@@ -517,11 +518,11 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
         return resolve({ success: false, error: `写入提权脚本失败: ${String(e)}` });
       }
       const outer =
-        `try { Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -Wait ` +
+        `try { Start-Process '${powershellPath()}' -Verb RunAs -WindowStyle Hidden -Wait ` +
         `-ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','${this.psq(scriptPath)}'; exit 0 } ` +
         `catch { exit 1 }`;
       execFile(
-        'powershell.exe',
+        powershellPath(),
         ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', outer],
         { timeout: 120000, windowsHide: true },
         (err) => {

@@ -1992,7 +1992,7 @@ export class CoreUpdateService {
       try {
         // 使用 Start-Process -Verb RunAs 触发 UAC 提权并用 -Wait 阻塞直到完成
         execSync(
-          `powershell -Command "Start-Process powershell.exe -ArgumentList '-ExecutionPolicy Bypass -WindowStyle Hidden -File \\"${scriptPath}\\"' -Verb RunAs -Wait"`,
+          `"${powershellPath()}" -Command "Start-Process '${powershellPath()}' -ArgumentList '-ExecutionPolicy Bypass -WindowStyle Hidden -File \\"${scriptPath}\\"' -Verb RunAs -Wait"`,
           {
             stdio: 'pipe',
             timeout: 60000,

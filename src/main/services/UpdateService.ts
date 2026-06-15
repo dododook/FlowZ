@@ -10,6 +10,7 @@ import { LogManager } from './LogManager';
 import type { UpdateInfo, UpdateCheckResult, UpdateProgress } from '../../shared/types/update';
 import { APP_USER_AGENT } from '../../shared/constants';
 import { getUserDataPath } from '../utils/paths';
+import { system32 } from '../utils/win-system32';
 import { compareSemver } from '../../shared/version';
 import { GH_PROXY_PRESETS } from '../../shared/gh-proxy';
 
@@ -216,7 +217,7 @@ export class UpdateService {
         fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
 
         // 使用 wscript 运行 VBS（完全无窗口）
-        const vbs = spawn('wscript.exe', [vbsPath], {
+        const vbs = spawn(system32('wscript.exe'), [vbsPath], {
           detached: true,
           stdio: 'ignore',
           shell: false,
