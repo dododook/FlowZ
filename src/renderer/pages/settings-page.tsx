@@ -53,9 +53,9 @@ export function SettingsPage({ activeSection }: SettingsPageProps) {
   const meta = sectionTitles[activeSection] ?? sectionTitles.general;
 
   return (
-    // 限宽 + 左对齐：max-w-2xl(672) 约束阅读宽度（贴近 macOS 系统设置观感，标签↔控件距离适中）；不居中——内容左靠
-    // 紧随最左侧设置子导航，视线 nav→content 连贯，避免宽窗/最大化时居中内容成「孤岛」、与左 rail 脱节。
-    <div className="space-y-6 max-w-2xl">
+    // 流式满宽：内容随窗口拖动自适应充满内容区（仅受全局 main 容器 max-w-[1400px] 约束），与规则/节点等其它页一致；
+    // 不再限 max-w-2xl(672)——固定窄列会在宽窗右侧留白（用户反馈：自适应充满比留白更美观）。
+    <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">{t(meta.titleKey, meta.defaultTitle)}</h2>
         <p className="text-muted-foreground mt-1">{t(meta.descKey, meta.defaultDesc)}</p>
