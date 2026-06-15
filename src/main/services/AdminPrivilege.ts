@@ -13,6 +13,8 @@
  * 这部分逻辑已在 ProxyManager.ts 中实现。
  */
 
+import { system32 } from '../utils/win-system32';
+
 export interface IAdminPrivilege {
   isAdmin(): boolean;
   needsElevationForTun(): boolean;
@@ -37,7 +39,9 @@ export function isRunningAsAdmin(): boolean {
 function isWindowsAdmin(): boolean {
   try {
     const { execSync } = require('child_process');
-    execSync('net session', { stdio: 'ignore', windowsHide: true });
+    // 绝对路径调 net.exe：PATH 缺 System32 时裸 `net session` 会 command-not-found，
+    // catch 误判为"非管理员" → 触发多余 UAC/功能降级（同 reg 未找到的根因）。
+    execSync(`"${system32('net.exe')}" session`, { stdio: 'ignore', windowsHide: true });
     return true;
   } catch {
     return false;

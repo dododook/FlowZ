@@ -37,6 +37,7 @@ import {
   getSingBoxLogPath,
   getSingBoxPidPath,
 } from '../utils/paths';
+import { system32 } from '../utils/win-system32';
 
 /**
  * 提权服务依赖注入上下文。所有成员为只读回调——避免本服务直接访问 ProxyManager 内部状态。
@@ -1291,11 +1292,14 @@ exit 0
       try {
         // tasklist 无匹配时输出本地化 INFO 提示行而非 CSV → 逐行正则只取合法 CSV 行
         // CSV 形如 "sing-box.exe","1234","Console","1","12,345 K"，第 2 列为 PID
-        const result = execSync('tasklist /FI "IMAGENAME eq sing-box.exe" /FO CSV /NH', {
-          encoding: 'utf-8',
-          windowsHide: true,
-          stdio: ['ignore', 'pipe', 'ignore'],
-        });
+        const result = execSync(
+          `"${system32('tasklist.exe')}" /FI "IMAGENAME eq sing-box.exe" /FO CSV /NH`,
+          {
+            encoding: 'utf-8',
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }
+        );
 
         let pidList = result
           .split('\n')
@@ -1322,7 +1326,7 @@ exit 0
         const failed: number[] = [];
         for (const pid of pidList) {
           try {
-            execSync(`taskkill /F /PID ${pid}`, {
+            execSync(`"${system32('taskkill.exe')}" /F /PID ${pid}`, {
               windowsHide: true,
               stdio: 'ignore',
             });

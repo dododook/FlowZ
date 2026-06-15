@@ -7,6 +7,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { SystemProcessInfo } from '../../shared/types';
+import { system32, powershellPath } from '../utils/win-system32';
 
 const EXEC_TIMEOUT_MS = 5000;
 
@@ -106,7 +107,7 @@ async function listWindows(): Promise<SystemProcessInfo[]> {
   // 进程名：tasklist（最稳、无需管理员）
   let names: string[] = [];
   try {
-    const out = await execFileP('tasklist', ['/fo', 'csv', '/nh'], {
+    const out = await execFileP(system32('tasklist.exe'), ['/fo', 'csv', '/nh'], {
       timeout: EXEC_TIMEOUT_MS,
       maxBuffer: 8 * 1024 * 1024,
       windowsHide: true,
@@ -129,7 +130,7 @@ async function listWindows(): Promise<SystemProcessInfo[]> {
   const pathByName = new Map<string, string>();
   try {
     const ps = await execFileP(
-      'powershell',
+      powershellPath(),
       [
         '-NoProfile',
         '-Command',

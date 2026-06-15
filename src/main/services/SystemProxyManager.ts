@@ -3,16 +3,20 @@
  * 负责跨平台的系统代理设置和管理
  */
 
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { retry } from '../utils/retry';
 import { getUserDataPath } from '../utils/paths';
+import { system32, powershellPath, isCommandNotFoundError } from '../utils/win-system32';
 import type { LogManager } from './LogManager';
 import type { LogLevel } from '../../shared/types';
 
 const execAsync = promisify(exec);
+// notifyProxyChange 用 execFile（不经 cmd /c）直起 PowerShell：彻底消除 cmd 引号歧义，
+// 并保留脚本换行使 Add-Type here-string(@"..."@) 语法成立（原 exec 路径把换行压成空格会破坏 here-string）。
+const execFileAsync = promisify(execFile);
 
 /**
  * 系统代理状态
@@ -167,6 +171,13 @@ export class WindowsSystemProxy extends SystemProxyBase {
   private readonly regPath =
     'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings';
 
+  // 用 System32 绝对路径调系统二进制，规避部分设备 PATH 缺失 C:\Windows\System32 致
+  //「'reg' 不是内部或外部命令」（根因见 utils/win-system32）。构造时解析一次。
+  private readonly regExe = system32('reg.exe');
+  private readonly netshExe = system32('netsh.exe');
+  private readonly ipconfigExe = system32('ipconfig.exe');
+  private readonly psExe = powershellPath();
+
   /**
    * 启用系统代理
    */
@@ -202,11 +213,13 @@ export class WindowsSystemProxy extends SystemProxyBase {
           // SOCKS5 代理仍在 ${socksPort} 端口可用，供需要的应用主动配置。
           const proxyServer = `http=${address}:${httpPort};https=${address}:${httpPort}`;
           await execAsync(
-            `reg add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`
+            `"${this.regExe}" add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`
           );
 
           // 启用代理
-          await execAsync(`reg add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`);
+          await execAsync(
+            `"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`
+          );
 
           // 设置代理覆盖（本地地址 + 国内金融域名不走代理）
           // 关键修复：同花顺等金融软件使用二进制 TCP 协议 + 裸 IP 连接，
@@ -239,17 +252,17 @@ export class WindowsSystemProxy extends SystemProxyBase {
           ].join(';');
           const proxyOverride = `localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;${financialBypass};<local>`;
           await execAsync(
-            `reg add "${this.regPath}" /v ProxyOverride /t REG_SZ /d "${proxyOverride}" /f`
+            `"${this.regExe}" add "${this.regPath}" /v ProxyOverride /t REG_SZ /d "${proxyOverride}" /f`
           );
 
           // 核心特性：阻断 QUIC (UDP 443)，迫使浏览器回退到 TCP 以完美兼容系统代理
           // 很多应用（如 Instagram 的站内信）使用 QUIC，会无视系统 HTTP 代理直连导致被墙。
           // 利用 Windows 防火墙精准屏蔽出站 UDP 443，可实现类似 TUN 模式的稳定体验。
-          await execAsync('netsh advfirewall firewall delete rule name="FlowZ_Block_QUIC"').catch(
-            () => {}
-          );
           await execAsync(
-            'netsh advfirewall firewall add rule name="FlowZ_Block_QUIC" dir=out action=block protocol=UDP remoteport=443'
+            `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
+          ).catch(() => {});
+          await execAsync(
+            `"${this.netshExe}" advfirewall firewall add rule name="FlowZ_Block_QUIC" dir=out action=block protocol=UDP remoteport=443`
           ).catch((e) => this.log('warn', `添加 QUIC 阻断防火墙规则失败: ${e}`));
 
           // 通知系统代理设置已更改
@@ -262,6 +275,10 @@ export class WindowsSystemProxy extends SystemProxyBase {
             // 权限错误不重试
             const message = error.message.toLowerCase();
             if (message.includes('access denied') || message.includes('permission')) {
+              return false;
+            }
+            // 命令未找到（PATH 缺 System32 等）重试无意义——绝对路径化后本不应出现，纵深防御
+            if (isCommandNotFoundError(error)) {
               return false;
             }
             return true;
@@ -289,6 +306,12 @@ export class WindowsSystemProxy extends SystemProxyBase {
       }
 
       const errorMessage = error instanceof Error ? error.message : String(error);
+      // command-not-found 的根因是 PATH 缺 System32 而非权限——给对症诊断，避免误导用户去开管理员
+      if (isCommandNotFoundError(error)) {
+        throw new Error(
+          `设置 Windows 系统代理失败: ${errorMessage}\n\n可能的原因:\n1. 系统命令 reg/netsh 未找到，PATH 可能缺失 C:\\Windows\\System32\n2. 系统环境变量被第三方工具损坏（如 Path 值类型被改为 REG_SZ 致 %SystemRoot% 不展开）\n3. 安全软件拦截了系统命令调用`
+        );
+      }
       throw new Error(
         `设置 Windows 系统代理失败: ${errorMessage}\n\n可能的原因:\n1. 权限不足，请以管理员身份运行\n2. 注册表访问被阻止\n3. 系统策略限制`
       );
@@ -302,9 +325,9 @@ export class WindowsSystemProxy extends SystemProxyBase {
     this.log('info', '正在禁用 Windows 系统代理');
 
     // 禁用代理时务必清除 QUIC 阻断规则
-    await execAsync('netsh advfirewall firewall delete rule name="FlowZ_Block_QUIC"').catch(
-      () => {}
-    );
+    await execAsync(
+      `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
+    ).catch(() => {});
 
     try {
       if (this.originalSettings) {
@@ -315,7 +338,9 @@ export class WindowsSystemProxy extends SystemProxyBase {
         this.log('info', '已恢复原始代理设置');
       } else {
         // 简单禁用代理
-        await execAsync(`reg add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`);
+        await execAsync(
+          `"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`
+        );
         await this.notifyProxyChange();
         this.log('info', '已禁用系统代理');
       }
@@ -335,7 +360,7 @@ export class WindowsSystemProxy extends SystemProxyBase {
     const { execSync } = require('child_process');
     try {
       // 禁用代理时务必清除 QUIC 阻断规则
-      execSync('netsh advfirewall firewall delete rule name="FlowZ_Block_QUIC"', {
+      execSync(`"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`, {
         stdio: 'ignore',
       });
     } catch {
@@ -343,13 +368,13 @@ export class WindowsSystemProxy extends SystemProxyBase {
     }
 
     try {
-      execSync(`reg add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`, {
+      execSync(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`, {
         stdio: 'ignore',
       });
       // 禁用成功 → 删除持久化 marker（clearMarker 内部为同步 fs API 且不抛）
       this.clearMarker();
       // 尝试刷新设置
-      execSync('ipconfig /flushdns', { stdio: 'ignore' });
+      execSync(`"${this.ipconfigExe}" /flushdns`, { stdio: 'ignore' });
     } catch (error) {
       this.log('error', `同步禁用 Windows 系统代理失败: ${error}`);
     }
@@ -361,7 +386,9 @@ export class WindowsSystemProxy extends SystemProxyBase {
   async getProxyStatus(): Promise<SystemProxyStatus> {
     try {
       // 查询 ProxyEnable
-      const enableResult = await execAsync(`reg query "${this.regPath}" /v ProxyEnable`);
+      const enableResult = await execAsync(
+        `"${this.regExe}" query "${this.regPath}" /v ProxyEnable`
+      );
       const enabled = enableResult.stdout.includes('0x1');
 
       if (!enabled) {
@@ -369,7 +396,9 @@ export class WindowsSystemProxy extends SystemProxyBase {
       }
 
       // 查询 ProxyServer
-      const serverResult = await execAsync(`reg query "${this.regPath}" /v ProxyServer`);
+      const serverResult = await execAsync(
+        `"${this.regExe}" query "${this.regPath}" /v ProxyServer`
+      );
       const proxyServerMatch = serverResult.stdout.match(/ProxyServer\s+REG_SZ\s+(.+)/);
 
       if (!proxyServerMatch) {
@@ -413,18 +442,18 @@ export class WindowsSystemProxy extends SystemProxyBase {
       if (parts.length > 0) {
         const proxyServer = parts.join(';');
         await execAsync(
-          `reg add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`
+          `"${this.regExe}" add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`
         );
       }
 
       // 启用代理
-      await execAsync(`reg add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`);
+      await execAsync(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`);
     } else {
       // 禁用代理
-      await execAsync(`reg add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`);
-      await execAsync('netsh advfirewall firewall delete rule name="FlowZ_Block_QUIC"').catch(
-        () => {}
-      );
+      await execAsync(`"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 0 /f`);
+      await execAsync(
+        `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
+      ).catch(() => {});
     }
 
     await this.notifyProxyChange();
@@ -453,7 +482,9 @@ export class WindowsSystemProxy extends SystemProxyBase {
     `;
 
     try {
-      await execAsync(`powershell -Command "${script.replace(/\n/g, ' ')}"`);
+      // 换行保留：here-string @"..."@ 要求 @" 行尾、"@ 行首，不可压成单行
+      // windowsHide：与 ProcessEnumerator 的 powershell 调用对齐，避免闪 PowerShell 控制台窗
+      await execFileAsync(this.psExe, ['-NoProfile', '-Command', script], { windowsHide: true });
     } catch (error) {
       // 通知失败不影响代理设置，只记录警告
       this.log('warn', `通知系统刷新代理设置失败: ${error}`);

@@ -5,6 +5,7 @@
 
 import { BrowserWindow, Notification, shell } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
+import { system32 } from '../utils/win-system32';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as net from 'net';
@@ -6220,7 +6221,7 @@ exit 0
       if (process.platform === 'win32') {
         // Windows: 使用 tasklist 检测进程
         // /FI "PID eq xxx" 过滤指定 PID，/NH 不显示表头
-        const result = execSync(`tasklist /FI "PID eq ${pid}" /NH`, {
+        const result = execSync(`"${system32('tasklist.exe')}" /FI "PID eq ${pid}" /NH`, {
           encoding: 'utf-8',
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'ignore'],

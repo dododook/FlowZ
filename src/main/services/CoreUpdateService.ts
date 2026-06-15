@@ -19,6 +19,7 @@ import { encodeMajorMinor, sameMajorMinor, compareSemver } from '../../shared/ve
 import { applyGhProxy, GH_PROXY_PRESETS, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
 import coreManifest from '../../shared/core-manifest.json';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import { system32, powershellPath } from '../utils/win-system32';
 
 export interface CoreUpdateCheckResult {
   hasUpdate: boolean;
@@ -957,7 +958,9 @@ export class CoreUpdateService {
             'CoreUpdateService'
           );
           try {
-            require('child_process').execSync('taskkill /F /IM sing-box.exe', { stdio: 'ignore' });
+            require('child_process').execSync(`"${system32('taskkill.exe')}" /F /IM sing-box.exe`, {
+              stdio: 'ignore',
+            });
             // 杀进程后多等一会儿
             await new Promise((resolve) => setTimeout(resolve, 1000));
           } catch {
@@ -1839,7 +1842,7 @@ export class CoreUpdateService {
         // Windows: 使用 PowerShell 解压 zip
         const { execSync } = require('child_process');
         execSync(
-          `powershell -command "Expand-Archive -Path '${filePath}' -DestinationPath '${extractDir}' -Force"`
+          `"${powershellPath()}" -command "Expand-Archive -Path '${filePath}' -DestinationPath '${extractDir}' -Force"`
         );
       } else {
         // macOS/Linux: 使用 tar
