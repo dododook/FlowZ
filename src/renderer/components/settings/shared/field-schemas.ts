@@ -15,6 +15,7 @@ import type { ServerConfig } from '@/bridge/types';
 /** ECH 字段的 zod 形状（展开进 z.object）。 */
 export const echSchemaShape = {
   ech: z.boolean().optional(),
+  echConfig: z.string().optional(),
 };
 
 /** Multiplex 字段的 zod 形状（展开进 z.object）。 */
@@ -29,6 +30,7 @@ export const multiplexSchemaShape = {
 /** ECH 字段的新建表单默认值。 */
 export const echDefaults = {
   ech: false,
+  echConfig: '',
 };
 
 /** Multiplex 字段的新建表单默认值。 */
@@ -44,6 +46,7 @@ export const multiplexDefaults = {
 export function readEchDefault(serverConfig: ServerConfig) {
   return {
     ech: serverConfig.tlsSettings?.ech === true,
+    echConfig: serverConfig.tlsSettings?.echConfig || '',
   };
 }
 

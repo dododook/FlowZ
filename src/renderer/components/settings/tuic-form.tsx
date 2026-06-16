@@ -101,6 +101,7 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
         allowInsecure: values.tlsAllowInsecure,
         alpn: values.alpn ? values.alpn.split(',').map((s) => s.trim()) : undefined,
         ech: values.ech ? true : undefined,
+        echConfig: values.echConfig?.trim() || undefined,
       },
       tuicSettings: {
         congestionControl: values.congestionControl || undefined,

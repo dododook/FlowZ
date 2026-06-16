@@ -148,6 +148,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
               allowInsecure: values.tlsAllowInsecure,
               fingerprint: values.tlsFingerprint || 'chrome',
               ech: values.ech ? true : undefined,
+              echConfig: values.echConfig?.trim() || undefined,
             }
           : null,
       wsSettings:

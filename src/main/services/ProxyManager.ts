@@ -296,7 +296,7 @@ interface SingBoxOutbound {
       public_key: string;
       short_id: string;
     };
-    ech?: { enabled: boolean };
+    ech?: { enabled: boolean; config?: string[] };
     fragment?: boolean;
   };
   // Transport
@@ -3409,7 +3409,18 @@ done
 
     // ECH（隐藏 SNI）+ 每节点 TLS 分片（抗 SNI-DPI）：需已有 tls 块
     if (outbound.tls) {
-      if (server.tlsSettings?.ech) outbound.tls.ech = { enabled: true };
+      if (server.tlsSettings?.ech) {
+        // 可选 ECHConfigList：填了下发 tls.ech.config（PEM 按行拆数组）；留空则 sing-box 从 DNS(HTTPS RR) 自取。
+        const echCfg = server.tlsSettings.echConfig?.trim();
+        const echLines = echCfg
+          ? echCfg
+              .split(/\r?\n/)
+              .map((l) => l.trim())
+              .filter(Boolean)
+          : [];
+        outbound.tls.ech =
+          echLines.length > 0 ? { enabled: true, config: echLines } : { enabled: true };
+      }
       if (server.tlsSettings?.fragment && !fragmentUnsupported) outbound.tls.fragment = true;
     }
 

@@ -16,6 +16,7 @@ import type { Control } from 'react-hook-form';
 import { useFormContext } from 'react-hook-form';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -35,24 +36,57 @@ import {
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
 
-/** ECH（Encrypted Client Hello）开关 —— 隐藏 SNI、抗 SNI 阻断。适用于带 TLS 的协议。 */
+/**
+ * ECH（Encrypted Client Hello）开关 + 可选 ECHConfigList —— 隐藏 SNI、抗 SNI 阻断。适用于带 TLS 的协议。
+ * 勾选后展开可选 config 文本框：留空 = sing-box 从 DNS(HTTPS RR) 自取；填 PEM = 下发 tls.ech.config（带外/受审查网络兜底）。
+ */
 export function EchField({ control, t }: { control: AnyControl; t: TFn }) {
+  const { watch } = useFormContext();
+  const enabled = watch('ech') === true;
   return (
-    <FormField
-      control={control}
-      name="ech"
-      render={({ field }) => (
-        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-          <FormControl>
-            <Checkbox checked={field.value === true} onCheckedChange={field.onChange} />
-          </FormControl>
-          <div className="space-y-1 leading-none">
-            <FormLabel>{t('servers.ech')}</FormLabel>
-            <FormDescription>{t('servers.echDesc')}</FormDescription>
-          </div>
-        </FormItem>
+    <div className="space-y-3">
+      <FormField
+        control={control}
+        name="ech"
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+            <FormControl>
+              <Checkbox checked={field.value === true} onCheckedChange={field.onChange} />
+            </FormControl>
+            <div className="space-y-1 leading-none">
+              <FormLabel>{t('servers.ech')}</FormLabel>
+              <FormDescription>{t('servers.echDesc')}</FormDescription>
+            </div>
+          </FormItem>
+        )}
+      />
+      {enabled && (
+        <FormField
+          control={control}
+          name="echConfig"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('servers.echConfig', 'ECH Config (optional)')}</FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={3}
+                  placeholder={'-----BEGIN ECH CONFIGS-----\n...\n-----END ECH CONFIGS-----'}
+                  className="font-mono text-xs"
+                  {...field}
+                />
+              </FormControl>
+              <FormDescription>
+                {t(
+                  'servers.echConfigDesc',
+                  'Leave empty to auto-load from DNS (HTTPS record); paste ECHConfigList (PEM) to set explicitly'
+                )}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
       )}
-    />
+    </div>
   );
 }
 

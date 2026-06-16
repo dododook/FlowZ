@@ -220,41 +220,44 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 </FormItem>
               )}
             />
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="allowedIPs"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.wgAllowedIPs', 'Allowed IPs')}</FormLabel>
+                    <FormControl>
+                      <Input placeholder="0.0.0.0/0, ::/0" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'servers.wgAllowedIPsDesc',
+                        'Default 0.0.0.0/0, ::/0 routes all traffic; required to reach the peer'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
           </FieldGrid>
         </FormSection>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-          <FieldGrid cols={2}>
-            <FormField
-              control={form.control}
-              name="preSharedKey"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.wgPreSharedKey', 'Pre-Shared Key (optional)')}</FormLabel>
-                  <FormControl>
-                    <Input type="password" placeholder="base64 pre-shared key" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="allowedIPs"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.wgAllowedIPs', 'Allowed IPs')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="0.0.0.0/0, ::/0" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t('servers.wgAllowedIPsDesc', 'Default 0.0.0.0/0, ::/0 routes all traffic')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </FieldGrid>
+          <FormField
+            control={form.control}
+            name="preSharedKey"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('servers.wgPreSharedKey', 'Pre-Shared Key (optional)')}</FormLabel>
+                <FormControl>
+                  <Input type="password" placeholder="base64 pre-shared key" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <FieldGrid cols={3}>
             <FormField
               control={form.control}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -57,11 +58,19 @@ export function ServerConfigDialog({
   const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType>('vless');
   const [currentServerConfig, setCurrentServerConfig] = useState<any>(null);
   const [detour, setDetour] = useState<string | undefined>(undefined);
+  const [nameError, setNameError] = useState('');
 
   const isEditing = !!server;
 
+  // 重名软检测（非阻塞）：与其它节点同名时给琥珀提示，但不拦保存——后端 generateSingBoxConfig 用
+  // getUniqueTag 自动去重 tag（重名不破功能/切换），且订阅天然有同名节点，硬拦会误伤。排除自身（编辑不改名不报）。
+  const trimmedName = serverName.trim();
+  const isDuplicateName =
+    !!trimmedName && servers.some((s) => s.id !== server?.id && s.name.trim() === trimmedName);
+
   useEffect(() => {
     if (open) {
+      setNameError('');
       if (server) {
         setServerName(server.name);
         const normalizedProtocol = server.protocol.toLowerCase() as ProtocolType;
@@ -78,9 +87,13 @@ export function ServerConfigDialog({
   }, [server, open]);
 
   const handleSave = async (protocolConfig: any) => {
+    // 备注必填：协议表单字段由各自 zod 校验(红字)，但备注是 dialog 级 state、不在表单内——
+    // 此处显式校验并就地报错(红框+红字)，杜绝「未填备注 → 保存静默失败、无任何提示」。
     if (!serverName.trim()) {
-      throw new Error(t('servers.addressRequired'));
+      setNameError(t('servers.nameRequired', 'Name is required'));
+      return;
     }
+    setNameError('');
 
     const serverConfig = {
       name: serverName.trim(),
@@ -88,8 +101,15 @@ export function ServerConfigDialog({
       ...protocolConfig,
     };
 
-    await onSave(serverConfig);
-    onOpenChange(false);
+    try {
+      await onSave(serverConfig);
+      onOpenChange(false);
+    } catch (e) {
+      // 后端保存失败也要可见（原先 throw 被表单 submit 吞掉、无提示）。
+      toast.error(t('servers.saveFailed', 'Failed to save'), {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
   };
 
   const handleProtocolChange = (protocol: ProtocolType) => {
@@ -138,9 +158,21 @@ export function ServerConfigDialog({
                 id="serverName"
                 placeholder={t('servers.remarksPlaceholder')}
                 value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
+                onChange={(e) => {
+                  setServerName(e.target.value);
+                  if (nameError) setNameError('');
+                }}
+                className={nameError ? 'border-destructive focus-visible:ring-destructive' : ''}
               />
-              <p className="text-sm text-muted-foreground">{t('servers.remarksDesc')}</p>
+              {nameError ? (
+                <p className="text-sm text-destructive">{nameError}</p>
+              ) : isDuplicateName ? (
+                <p className="text-sm text-amber-600 dark:text-amber-500">
+                  {t('servers.nameDuplicate', 'A node with this name already exists')}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('servers.remarksDesc')}</p>
+              )}
             </div>
 
             <div className="space-y-2">

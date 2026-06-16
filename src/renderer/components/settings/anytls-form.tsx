@@ -113,6 +113,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         fingerprint: values.tlsFingerprint || 'chrome',
         allowInsecure: values.security === 'tls' ? values.tlsAllowInsecure : false,
         ech: values.ech ? true : undefined,
+        echConfig: values.echConfig?.trim() || undefined,
       },
     };
 
@@ -180,51 +181,48 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
               />
             </FieldSpan>
           </FieldGrid>
+          {/* Reality：security=reality 时 publicKey 为条件必填 → 放基础（不入折叠高级）。 */}
+          {isReality && (
+            <FieldGrid cols={2}>
+              <TlsServerNameField
+                control={form.control}
+                t={t}
+                labelKey="servers.realityTarget"
+                descKey="servers.realityTargetDesc"
+                placeholder="www.microsoft.com"
+              />
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <RealityPublicKeyField control={form.control} t={t} />
+              </FieldSpan>
+              <FieldSpan>
+                <RealityShortIdField control={form.control} t={t} />
+              </FieldSpan>
+            </FieldGrid>
+          )}
         </FormSection>
 
-        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-          <FieldGrid cols={2}>
-            {/* TLS 配置 */}
-            {isTls && (
-              <>
-                <TlsServerNameField
-                  control={form.control}
-                  t={t}
-                  labelKey="servers.sni"
-                  descKey="servers.sniDesc"
-                  optional
-                />
-                <FingerprintField control={form.control} t={t} />
-                <FieldSpan>
-                  <AllowInsecureField control={form.control} t={t} />
-                </FieldSpan>
-                <FieldSpan>
-                  <EchField control={form.control} t={t} />
-                </FieldSpan>
-              </>
-            )}
-
-            {/* Reality 配置 */}
-            {isReality && (
-              <>
-                <TlsServerNameField
-                  control={form.control}
-                  t={t}
-                  labelKey="servers.realityTarget"
-                  descKey="servers.realityTargetDesc"
-                  placeholder="www.microsoft.com"
-                />
-                <FingerprintField control={form.control} t={t} />
-                <FieldSpan>
-                  <RealityPublicKeyField control={form.control} t={t} />
-                </FieldSpan>
-                <FieldSpan>
-                  <RealityShortIdField control={form.control} t={t} />
-                </FieldSpan>
-              </>
-            )}
-          </FieldGrid>
-        </FormSection>
+        {/* 高级仅 TLS 模式有可选项（SNI/指纹/insecure/ECH）；Reality 模式全为基础项，故无高级区。 */}
+        {isTls && (
+          <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+            <FieldGrid cols={2}>
+              <TlsServerNameField
+                control={form.control}
+                t={t}
+                labelKey="servers.sni"
+                descKey="servers.sniDesc"
+                optional
+              />
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <AllowInsecureField control={form.control} t={t} />
+              </FieldSpan>
+              <FieldSpan>
+                <EchField control={form.control} t={t} />
+              </FieldSpan>
+            </FieldGrid>
+          </FormSection>
+        )}
 
         <div className="flex gap-4">
           <Button type="submit" disabled={form.formState.isSubmitting}>

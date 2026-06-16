@@ -156,6 +156,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               allowInsecure: security === 'tls' ? values.tlsAllowInsecure : false,
               fingerprint: values.tlsFingerprint || 'chrome',
               ech: values.ech ? true : undefined,
+              echConfig: values.echConfig?.trim() || undefined,
             }
           : null,
       realitySettings:
@@ -275,22 +276,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               )}
             />
           </FieldGrid>
-        </FormSection>
-
-        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-          {isTlsEnabled && (
-            <FieldGrid cols={2}>
-              <TlsServerNameField control={form.control} t={t} />
-              <FingerprintField control={form.control} t={t} />
-              <FieldSpan>
-                <AllowInsecureField control={form.control} t={t} />
-              </FieldSpan>
-              <FieldSpan>
-                <EchField control={form.control} t={t} />
-              </FieldSpan>
-            </FieldGrid>
-          )}
-
+          {/* Reality：security=Reality 时 publicKey 为条件必填 → 放基础(不入折叠高级)。 */}
           {isRealityEnabled && (
             <FieldGrid cols={2}>
               <TlsServerNameField
@@ -335,6 +321,21 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
                   </FormItem>
                 )}
               />
+            </FieldGrid>
+          )}
+        </FormSection>
+
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          {isTlsEnabled && (
+            <FieldGrid cols={2}>
+              <TlsServerNameField control={form.control} t={t} />
+              <FingerprintField control={form.control} t={t} />
+              <FieldSpan>
+                <AllowInsecureField control={form.control} t={t} />
+              </FieldSpan>
+              <FieldSpan>
+                <EchField control={form.control} t={t} />
+              </FieldSpan>
             </FieldGrid>
           )}
 

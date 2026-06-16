@@ -105,6 +105,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
         serverName: values.tlsServerName || undefined,
         allowInsecure: values.tlsAllowInsecure,
         ech: values.ech ? true : undefined,
+        echConfig: values.echConfig?.trim() || undefined,
       },
       hysteria2Settings: {
         upMbps: values.upMbps || undefined,

@@ -140,6 +140,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
               fingerprint: values.tlsFingerprint || 'none',
               alpn: values.alpn ? values.alpn.split(',').map((s) => s.trim()) : undefined,
               ech: values.ech ? true : undefined,
+              echConfig: values.echConfig?.trim() || undefined,
             }
           : null,
       wsSettings:
