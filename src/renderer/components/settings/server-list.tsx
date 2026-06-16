@@ -60,7 +60,7 @@ type ServerConfigWithId = ServerConfig;
 type ViewMode = 'card' | 'list';
 
 /** 无分享链接的协议（ProtocolParser.generateUrl 无对应分支）：隐藏/排除复制按钮，避免 per-server 抛错刷屏。 */
-const NO_SHARE_LINK_PROTOCOLS = new Set(['ssh', 'wireguard', 'tailscale']);
+const NO_SHARE_LINK_PROTOCOLS = new Set(['ssh', 'wireguard', 'tailscale', 'custom']);
 const hasShareLink = (protocol: string | undefined): boolean =>
   !NO_SHARE_LINK_PROTOCOLS.has(protocol?.toLowerCase() || '');
 type SortKey = 'name' | 'protocol' | 'latency' | 'address';
@@ -233,11 +233,16 @@ export function ServerList({
     }
   };
 
-  // 账号制协议（Tailscale）无 server address/port——卡片副标题不展示 `undefined:undefined`，改显协议传输标签。
-  const endpointLabel = (server: ServerConfigWithId): string =>
-    isAccountBasedProtocol(server.protocol)
-      ? `Tailscale · ${getTransportLabel(server)}`
-      : `${server.address}:${server.port}`;
+  // 账号制协议（Tailscale）无 server address/port；自定义协议 server/port 在 JSON 内（缺则显类型）——
+  // 卡片副标题不展示 `undefined:undefined`。
+  const endpointLabel = (server: ServerConfigWithId): string => {
+    if (isAccountBasedProtocol(server.protocol)) return `Tailscale · ${getTransportLabel(server)}`;
+    if (server.protocol?.toLowerCase() === 'custom' && !server.address) {
+      const type = (server.customSettings?.outbound as any)?.type;
+      return `Custom · ${type || 'json'}`;
+    }
+    return `${server.address}:${server.port}`;
+  };
 
   const getLatencyColor = (latency: number | undefined) => {
     if (latency === undefined) return 'text-muted-foreground';
@@ -415,6 +420,7 @@ export function ServerList({
       ssh: 'bg-badge-amber/15 text-badge-amber border-badge-amber/30',
       wireguard: 'bg-badge-cyan/15 text-badge-cyan border-badge-cyan/30',
       tailscale: 'bg-badge-blue/15 text-badge-blue border-badge-blue/30',
+      custom: 'bg-badge-slate/15 text-badge-slate border-badge-slate/30',
     };
     return colors[protocol.toLowerCase()] || 'bg-muted text-muted-foreground';
   };
@@ -1013,10 +1019,9 @@ export function ServerList({
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {isAccountBasedProtocol(server.protocol)
-                      ? endpointLabel(server)
-                      : `${server.address}:${server.port}`}
+                    {endpointLabel(server)}
                     {!isAccountBasedProtocol(server.protocol) &&
+                      server.protocol?.toLowerCase() !== 'custom' &&
                       getTransportLabel(server) !== 'tcp' && (
                         <span className="ml-2">{getTransportLabel(server)}</span>
                       )}

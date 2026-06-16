@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
   PROXY_STOP: 'proxy:stop',
   PROXY_GET_STATUS: 'proxy:getStatus',
   PROXY_RESTART: 'proxy:restart',
+  KERNEL_PROBE_OUTBOUND: 'kernel:probeOutbound', // 自定义协议兼容性 probe（当前内核 sing-box check）
 
   // 配置管理
   CONFIG_GET: 'config:get',

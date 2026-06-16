@@ -44,7 +44,7 @@ jest.mock('child_process', () => ({
   execFile: (...args: any[]) => mockExecFile(...args),
 }));
 
-import { ProxyManager, parseCheckOutboundIndex } from '../ProxyManager';
+import { ProxyManager, parseCheckOutboundIndex, parseCheckEndpointIndex } from '../ProxyManager';
 import { resourceManager } from '../ResourceManager';
 import type { InvalidNodeInfo } from '../../../shared/types';
 
@@ -130,6 +130,20 @@ describe('parseCheckOutboundIndex', () => {
   });
   it('下标 0', () => {
     expect(parseCheckOutboundIndex('outbounds[0].password missing')).toBe(0);
+  });
+  it('endpoints[N] 不被 outbound 解析器误命中', () => {
+    expect(parseCheckOutboundIndex('endpoints[1]: unknown endpoint type: snell')).toBeNull();
+  });
+});
+
+describe('parseCheckEndpointIndex', () => {
+  it('命中 endpoints[N]（自定义 endpoint 不兼容 type）', () => {
+    expect(parseCheckEndpointIndex('endpoints[0]: unknown endpoint type: foo')).toBe(0);
+    expect(parseCheckEndpointIndex('endpoint[2]: bad')).toBe(2);
+  });
+  it('outbounds[N] 不被 endpoint 解析器误命中 / 无关错误 → null', () => {
+    expect(parseCheckEndpointIndex('outbounds[2].method: unknown')).toBeNull();
+    expect(parseCheckEndpointIndex('some unrelated error')).toBeNull();
   });
 });
 

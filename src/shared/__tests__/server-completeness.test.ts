@@ -22,6 +22,7 @@ const requiredByProtocol: Record<Protocol, Partial<ServerConfig>> = {
     } as any,
   },
   tailscale: {}, // 账号制：无硬必填项（auth_key 可选）；无 address/port
+  custom: { customSettings: { outbound: { type: 'snell' } } as any }, // raw-JSON：须含 type 的 outbound 对象
 };
 
 const node = (protocol: Protocol, extra: Partial<ServerConfig> = {}): ServerConfig =>
@@ -63,6 +64,22 @@ describe('server-completeness（主/渲染共用单一真值）', () => {
         })
       )
     ).toMatch(/peerPublicKey/i);
+  });
+
+  it('custom：缺 outbound / 缺 type → 报错；有合法 outbound → 齐备且豁免 address/port', () => {
+    expect(protocolRequirementError(node('custom'))).toMatch(/custom/i); // 无 customSettings
+    expect(
+      protocolRequirementError(node('custom', { customSettings: { outbound: {} } as any }))
+    ).toMatch(/type/i); // 缺 type
+    // 合法 outbound + 完全无 address/port → 仍可启动（自带 server/port 在 JSON 内）
+    expect(
+      isServerComplete({
+        id: 'c',
+        name: 'c',
+        protocol: 'custom',
+        customSettings: { outbound: { type: 'snell', server: '1.2.3.4', server_port: 8388 } },
+      } as unknown as ServerConfig)
+    ).toBe(true);
   });
 
   it('未知协议 → 报错 + 不可启动', () => {

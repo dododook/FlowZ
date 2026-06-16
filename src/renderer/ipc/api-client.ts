@@ -63,6 +63,16 @@ export const proxyApi = {
   },
 
   /**
+   * 自定义协议兼容性 probe：当前内核能否识别该 outbound（sing-box check）。
+   */
+  async probeOutbound(
+    outbound: unknown,
+    isEndpoint?: boolean
+  ): Promise<{ ok: boolean; indeterminate?: boolean; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.KERNEL_PROBE_OUTBOUND, { outbound, isEndpoint });
+  },
+
+  /**
    * 监听代理启动事件
    */
   onStarted(

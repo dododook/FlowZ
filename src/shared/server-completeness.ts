@@ -24,7 +24,19 @@ export const ALL_PROTOCOLS: readonly Protocol[] = [
   'ssh',
   'wireguard',
   'tailscale',
+  'custom',
 ];
+
+/** 自定义协议的 outbound 是否合法形态（对象且含非空字符串 type）。语义不校验，交内核。 */
+export function isValidCustomOutbound(outbound: unknown): boolean {
+  return (
+    !!outbound &&
+    typeof outbound === 'object' &&
+    !Array.isArray(outbound) &&
+    typeof (outbound as Record<string, unknown>).type === 'string' &&
+    ((outbound as Record<string, unknown>).type as string).trim().length > 0
+  );
+}
 
 const KNOWN = new Set<string>(ALL_PROTOCOLS);
 
@@ -70,6 +82,11 @@ export function protocolRequirementError(server: ServerConfig): string | null {
       return null; // 仅需 address/port（调用方通用校验）
     case 'tailscale':
       return null; // 账号制：auth_key 可选（无则运行时交互登录），无硬必填项；亦无 address/port
+    case 'custom':
+      // raw-JSON 透传：必须是含 type 的 outbound 对象（语义/能否启用由内核 check 判，FlowZ 不校验）。
+      return isValidCustomOutbound(server.customSettings?.outbound)
+        ? null
+        : 'Custom protocol requires a JSON outbound object with a "type" field';
     default:
       return `Unsupported protocol: ${p ?? '(empty)'}`;
   }
@@ -83,8 +100,8 @@ export function isServerComplete(server: ServerConfig | undefined | null): boole
   if (!server) return false;
   const p = server.protocol?.toLowerCase();
   if (!KNOWN.has(p)) return false;
-  // 账号制协议（Tailscale）连控制面、无 server address/port；其余协议必须有 address/port。
-  if (!isAccountBasedProtocol(p)) {
+  // 账号制协议（Tailscale）连控制面、custom（raw-JSON 自带 server/port）→ 无 ServerConfig address/port；其余必须有。
+  if (!isAccountBasedProtocol(p) && p !== 'custom') {
     if (!server.address || server.address.trim() === '') return false;
     if (!server.port || server.port <= 0) return false;
   }

@@ -367,8 +367,8 @@ export class ConfigManager implements IConfigManager {
       if (!protocolLower || !ALLOWED_PROTOCOLS.includes(protocolLower as Protocol)) {
         throw new Error(`Server protocol must be one of: ${ALLOWED_PROTOCOLS.join(', ')}`);
       }
-      // 账号制协议（Tailscale，连控制面、无 server endpoint）→ 豁免 address/port；其余协议必须有。
-      if (!isAccountBasedProtocol(protocolLower)) {
+      // 账号制协议（Tailscale，连控制面）/ custom（raw-JSON 自带 server/port）→ 豁免 address/port；其余必须有。
+      if (!isAccountBasedProtocol(protocolLower) && protocolLower !== 'custom') {
         if (!server.address || typeof server.address !== 'string') {
           throw new Error('Server address is required and must be a string');
         }

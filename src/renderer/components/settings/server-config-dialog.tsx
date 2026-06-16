@@ -29,6 +29,7 @@ import { HttpForm } from './http-form';
 import { SshForm } from './ssh-form';
 import { WireGuardForm } from './wireguard-form';
 import { TailscaleForm } from './tailscale-form';
+import { CustomForm } from './custom-form';
 import { WarpPanel } from './warp-panel';
 import { ServerSelectGroups } from './server-select-groups';
 import { FormSection } from './shared/form-layout';
@@ -353,6 +354,17 @@ export function ServerConfigDialog({
                 key={currentServerConfig?.id || 'new'}
                 serverConfig={
                   currentServerConfig?.protocol?.toLowerCase() === 'tailscale'
+                    ? currentServerConfig
+                    : undefined
+                }
+                onSubmit={handleSave}
+              />
+            )}
+            {selectedProtocol === 'custom' && (
+              <CustomForm
+                key={currentServerConfig?.id || 'new'}
+                serverConfig={
+                  currentServerConfig?.protocol?.toLowerCase() === 'custom'
                     ? currentServerConfig
                     : undefined
                 }

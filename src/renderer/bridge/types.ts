@@ -44,7 +44,8 @@ export type ProtocolType =
   | 'http'
   | 'ssh'
   | 'wireguard'
-  | 'tailscale';
+  | 'tailscale'
+  | 'custom';
 
 // 兼容旧代码的类型别名
 export type ServerConfigWithId = import('../../shared/types').ServerConfig;

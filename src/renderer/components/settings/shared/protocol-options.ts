@@ -7,6 +7,7 @@ import type { ProtocolType } from '@/bridge/types';
  */
 export const PROTOCOL_OPTIONS: { value: ProtocolType; label: string }[] = [
   { value: 'anytls', label: 'AnyTLS' },
+  { value: 'custom', label: 'Custom (JSON)' },
   { value: 'http', label: 'HTTP(S)' },
   { value: 'hysteria2', label: 'Hysteria2' },
   { value: 'naive', label: 'NaiveProxy' },

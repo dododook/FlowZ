@@ -22,7 +22,8 @@ export type Protocol =
   | 'http'
   | 'ssh'
   | 'wireguard'
-  | 'tailscale';
+  | 'tailscale'
+  | 'custom';
 export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type Hysteria2Network = 'tcp' | 'udp';
 export type Security = 'none' | 'tls' | 'reality';
@@ -196,6 +197,15 @@ export interface TailscaleSettings {
   reverseMesh?: boolean; // Phase 2：反向 mesh（system_interface=真 TUN，被组网访问）；默认 false=userspace
 }
 
+// 自定义协议（raw-JSON 透传）：用户直接填一份 sing-box outbound/endpoint JSON，FlowZ 不解析语义、只注入 tag。
+// 供第三方内核协议（如 snell）使用——「内核即权威」：能否启用由 sing-box check probe / 启动 gate 判定，FlowZ 不维护
+// type 白名单。address/port 由 JSON 内部携带，不用 ServerConfig.address/port。
+export interface CustomSettings {
+  outbound: Record<string, unknown>; // 用户填的 outbound/endpoint 对象（须含字符串 type）；tag 由 FlowZ 生成期强制覆盖
+  isEndpoint?: boolean; // 该 type 属 sing-box endpoints[]（如类 wireguard/tailscale 的第三方实现）而非 outbounds[]
+  secretKeys?: string[]; // 该 JSON 里属密钥的键名（诊断包脱敏用；缺省整体打码 + 常见键启发式）
+}
+
 export interface ServerConfig {
   id: string;
   name: string;
@@ -244,6 +254,9 @@ export interface ServerConfig {
 
   // Tailscale 特定（sing-box endpoint，账号制 mesh）
   tailscaleSettings?: TailscaleSettings;
+
+  // 自定义协议（raw-JSON 透传，第三方内核用）
+  customSettings?: CustomSettings;
 
   // AnyTLS 特定
   anyTlsSettings?: AnyTlsSettings;

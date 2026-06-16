@@ -474,6 +474,18 @@ export function parseCheckOutboundIndex(stderr: string): number | null {
   return Number.isInteger(idx) && idx >= 0 ? idx : null;
 }
 
+/**
+ * 同 parseCheckOutboundIndex，但匹配 endpoints[N]（sing-box 顶层 endpoints[]：WireGuard/Tailscale/自定义 endpoint）。
+ * 自定义 endpoint 用不被内核支持的 type 时，check 报 `endpoints[N]: unknown endpoint type` —— 须能据此剪除该
+ * endpoint 节点（否则 idx=null 整体启动失败）。内置 WG/TS 恒兼容，历史上不触发；自定义 endpoint 才需要它。
+ */
+export function parseCheckEndpointIndex(stderr: string): number | null {
+  const m = /\bendpoints?\[(\d+)\]/.exec(stderr);
+  if (!m) return null;
+  const idx = Number(m[1]);
+  return Number.isInteger(idx) && idx >= 0 ? idx : null;
+}
+
 interface SingBoxExperimental {
   cache_file?: {
     enabled: boolean;
@@ -522,6 +534,10 @@ export interface IProxyManager {
   ): void;
   getCoreVersion(force?: boolean): Promise<string>;
   buildPreflightConfigJson(targetVersion: string): string | null;
+  probeOutbound(
+    outbound: unknown,
+    isEndpoint?: boolean
+  ): Promise<{ ok: boolean; indeterminate?: boolean; error?: string }>;
   closeConnection(id?: string): Promise<{ ok: boolean; status: number }>;
 }
 
@@ -2767,6 +2783,20 @@ done
           }
           continue;
         }
+        // 自定义协议标记为 endpoint 类型（第三方类 wireguard/tailscale 实现）→ 进 endpoints[]；
+        // 否则走下方普通 outbound 路径。tag 由 generateProxyOutbound/此处统一注入。
+        if (server.protocol.toLowerCase() === 'custom' && server.customSettings?.isEndpoint) {
+          const { detour: _d, ...epOutbound } = (server.customSettings.outbound || {}) as Record<
+            string,
+            unknown
+          >;
+          this.pendingEndpoints.push({
+            ...(epOutbound as unknown as SingBoxEndpoint),
+            tag,
+          });
+          nodeTags.push(tag);
+          continue;
+        }
         try {
           const ob = this.generateProxyOutbound(
             server,
@@ -3094,6 +3124,10 @@ done
       if (!this.isNodeUsable(server)) return null;
       // Tailscale：账号制/带认证状态的入网，非即起即测的临时隧道 → 排除测速。
       if (server.protocol.toLowerCase() === 'tailscale') return null;
+      // 自定义 endpoint 类型：测速临时配置按 isEndpointProtocol(type) 分流 outbounds/endpoints[]，
+      // 自定义 type 不被识别会错放 → 排除测速（自定义 outbound 类型仍走下方 generateProxyOutbound 正常测）。
+      if (server.protocol.toLowerCase() === 'custom' && server.customSettings?.isEndpoint)
+        return null;
       // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
       if (server.protocol.toLowerCase() === 'wireguard') {
         return this.buildWireGuardEndpoint(server, tag);
@@ -3202,6 +3236,21 @@ done
     const protocol = server.protocol.toLowerCase();
     const protocolLower = protocol;
     const tlsProtocols = ['trojan', 'anytls', 'hysteria2', 'tuic'];
+
+    // 自定义协议（raw-JSON 透传）：原样下发用户的 outbound 对象，仅【强制覆盖 tag】（防撞/防注入），
+    // 语义与能否启用由 sing-box check（启动 gate / 表单 probe）判定，FlowZ 不解析 type。
+    if (protocol === 'custom') {
+      // 强制覆盖 tag、剥离 detour：内层 detour 会绕过 FlowZ 的代理链环检测（仅走 server.detour）且 sing-box check
+      // 测不出 detour 环 → 运行时拨号死循环。FlowZ 经 detour 字段统一管理链路，自定义透传不携带内层 detour。
+      const { detour: _drop, ...userOutbound } = (server.customSettings?.outbound || {}) as Record<
+        string,
+        unknown
+      >;
+      return {
+        ...userOutbound,
+        tag: idToTagMap.get(server.id) || `proxy-${server.id}`,
+      } as unknown as SingBoxOutbound;
+    }
 
     const outbound: SingBoxOutbound = {
       type: protocol,
@@ -4608,6 +4657,79 @@ done
     }
   }
 
+  /** 自定义协议兼容性 probe 的结果缓存：键 = 内核身份(版本) + outbound 规范化哈希；换核（版本变）键变、天然失效。 */
+  private probeCache = new Map<string, { ok: boolean; error?: string }>();
+
+  /**
+   * 用当前内核 probe 一个 outbound/endpoint 是否被支持（自定义协议门控的单一真值 = 内核本身）：
+   * 写一份最小 config（仅该出站 + direct）跑 `sing-box check`，`unknown outbound type` 等即不支持。
+   * 主进程子进程、结果缓存 → 渲染端异步调用不阻塞 UI。失败（spawn/超时）按「无法判定」返回 ok:false 带原因。
+   */
+  async probeOutbound(
+    outbound: unknown,
+    isEndpoint = false
+  ): Promise<{ ok: boolean; indeterminate?: boolean; error?: string }> {
+    if (
+      !outbound ||
+      typeof outbound !== 'object' ||
+      Array.isArray(outbound) ||
+      typeof (outbound as any).type !== 'string'
+    ) {
+      return { ok: false, error: 'invalid outbound: must be an object with a string "type"' };
+    }
+    const crypto = require('crypto');
+    const version = await this.getCoreVersion().catch(() => 'unknown');
+    // 内核身份含二进制 size+mtime：fork 版本号撞官方（同 version）但换了二进制时，键变、缓存自动失效。
+    let binId = 'na';
+    try {
+      const st = require('fs').statSync(this.singboxPath);
+      binId = `${st.size}-${Math.round(st.mtimeMs)}`;
+    } catch {
+      /* 核缺失：用 version 兜底键 */
+    }
+    const norm = JSON.stringify(outbound);
+    const key = `${version}|${binId}|${isEndpoint ? 'ep' : 'ob'}|${crypto.createHash('sha1').update(norm).digest('hex')}`;
+    const cached = this.probeCache.get(key);
+    if (cached) return cached;
+
+    const probe = { ...(outbound as Record<string, unknown>), tag: 'probe' };
+    const minimal = isEndpoint
+      ? {
+          log: { level: 'fatal' },
+          endpoints: [probe],
+          outbounds: [{ type: 'direct', tag: 'direct' }],
+          route: { final: 'direct' },
+        }
+      : {
+          log: { level: 'fatal' },
+          outbounds: [probe, { type: 'direct', tag: 'direct' }],
+          route: { final: 'direct' },
+        };
+
+    const fs = require('fs');
+    const tmp = path.join(getUserDataPath(), `probe-${crypto.randomBytes(6).toString('hex')}.json`);
+    let result: { ok: boolean; indeterminate?: boolean; error?: string };
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(minimal));
+      const r = await this.runSingBoxCheck(tmp);
+      if (r.ok) result = { ok: true };
+      // failOpen（核缺失/超时/慢盘）≠ 不兼容 → indeterminate，渲染端给中性「无法判定」而非红色「不支持」。
+      else if (r.failOpen)
+        result = { ok: false, indeterminate: true, error: '内核不可用或超时，无法判定兼容性' };
+      else result = { ok: false, error: (r.stderr || 'check failed').slice(0, 300) };
+    } catch (e: any) {
+      result = { ok: false, error: String(e?.message ?? e) };
+    } finally {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* 已不存在/无权限：忽略 */
+      }
+    }
+    this.probeCache.set(key, result);
+    return result;
+  }
+
   /**
    * 启动前配置校验 gate：对已写盘配置跑 `sing-box check`，把会致整体启动 FATAL 的坏节点（未知 cipher /
    * ss2022 坏 key / 未知 plugin / naive alpn 等字段级问题）迭代剔除后重写盘，直到 check 通过或触上限。
@@ -4644,11 +4766,19 @@ done
         throw new Error(`配置校验失败：已剔除 ${prunes} 个非法节点仍无法通过校验（${firstLine}）`);
       }
 
-      const idx = parseCheckOutboundIndex(stderr);
-      if (idx === null || idx < 0 || idx >= singboxConfig.outbounds.length) {
+      // 先按 outbounds[N] 反查；未命中再按 endpoints[N]（自定义 endpoint 用不兼容 type → endpoints[N] 报错，
+      // 否则整体启动失败而非剪单点）。两者命中域互斥（'endpoints' 不含 'outbound'）。
+      const obIdx = parseCheckOutboundIndex(stderr);
+      const epIdx = obIdx === null ? parseCheckEndpointIndex(stderr) : null;
+      let flagged: { type: string; tag: string } | undefined;
+      if (obIdx !== null && obIdx >= 0 && obIdx < singboxConfig.outbounds.length) {
+        flagged = singboxConfig.outbounds[obIdx];
+      } else if (epIdx !== null && epIdx >= 0 && epIdx < (singboxConfig.endpoints?.length ?? 0)) {
+        flagged = singboxConfig.endpoints![epIdx];
+      }
+      if (!flagged) {
         throw new Error(`配置校验失败：${firstLine}`);
       }
-      const flagged = singboxConfig.outbounds[idx];
       // 命中非节点出站（内置出站/探针）→ 不是坏节点问题，降级不启动（避免误剔内置出站致更大故障）。
       const NON_NODE_TYPES = new Set(['selector', 'urltest', 'direct', 'block']);
       const isProbeOrBuiltin =
