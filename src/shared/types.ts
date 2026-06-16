@@ -21,7 +21,8 @@ export type Protocol =
   | 'socks'
   | 'http'
   | 'ssh'
-  | 'wireguard';
+  | 'wireguard'
+  | 'tailscale';
 export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type Hysteria2Network = 'tcp' | 'udp';
 export type Security = 'none' | 'tls' | 'reality';
@@ -178,6 +179,23 @@ export interface WireGuardSettings {
   mtu?: number; // 缺省 1408
 }
 
+// Tailscale（sing-box endpoint，账号制 mesh，无 server address/port——连控制面）。Phase 1 userspace。
+export interface TailscaleSettings {
+  authKey?: string; // pre-auth key（可选；无则核日志出 `Waiting for authentication: <url>` 交互登录）
+  exitNode?: string; // 出口节点 name/IP（选它当全局代理时填；空=仅通 tailnet 内网/accept_routes 段）
+  exitNodeAllowLanAccess?: boolean; // 用 exit node 时本地 LAN 仍直连
+  acceptRoutes?: boolean; // 接受其它节点广告的子网路由（访问 tailnet 内网段）
+  // 经此 Tailscale 节点路由的子网（CIDR）= WG allowedIPs 的等价物（FlowZ force-route 源）。
+  // 与 advertiseRoutes 不同：advertiseRoutes 是「本机对外广告」，routes 是「把这些段的流量送进此节点」。
+  // FlowZ userspace 下自动含 tailnet 段 100.64.0.0/10 + 这里填的 advertised 子网。需配 acceptRoutes 才真正接收。
+  routes?: string[];
+  controlUrl?: string; // 默认 controlplane.tailscale.com；Headscale 自建控制面填此
+  hostname?: string; // 节点名（默认系统主机名）
+  ephemeral?: boolean; // 临时节点（离线即注销）
+  advertiseRoutes?: string[]; // 本机作子网路由器对外广告的段
+  reverseMesh?: boolean; // Phase 2：反向 mesh（system_interface=真 TUN，被组网访问）；默认 false=userspace
+}
+
 export interface ServerConfig {
   id: string;
   name: string;
@@ -223,6 +241,9 @@ export interface ServerConfig {
 
   // WireGuard 特定（sing-box endpoint）
   wireguardSettings?: WireGuardSettings;
+
+  // Tailscale 特定（sing-box endpoint，账号制 mesh）
+  tailscaleSettings?: TailscaleSettings;
 
   // AnyTLS 特定
   anyTlsSettings?: AnyTlsSettings;
@@ -570,7 +591,6 @@ export interface UserConfig {
   mixedPort?: number; // 混合端口（可选，同时支持 HTTP 和 SOCKS5，0 或 undefined 表示禁用）
   allowLan?: boolean; // 局域网共享代理（允许其他设备连接）
   bypassLAN?: boolean; // 绕过局域网（将内网 IP 设置为直连）
-  bypassLANExclude?: string[]; // 绕过局域网的排除段（CIDR）：这些私网/组网段不直连、改走选中节点（经 WireGuard/Tailscale 访问组网设备）
   blockQuic?: boolean; // 阻止 QUIC（对代理向 UDP 443 执行 reject，逼浏览器回退 TCP）；默认关；节点无关，对所有协议一视同仁
   tlsFragment?: boolean; // 全局 TLS 分片：对所有 TLS 节点切分 ClientHello 抗 SNI-DPI；默认关
   // 节点测速端点 URL（经各节点代理 GET 量 TTFB）。默认 generate_204（见 shared/speed-test）；用户可自配，兼容 http/https。

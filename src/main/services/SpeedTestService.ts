@@ -19,6 +19,7 @@ import type { LogManager } from './LogManager';
 import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
 import { resolveSpeedTestTarget, type SpeedTestTarget } from '../../shared/speed-test';
+import { isEndpointProtocol } from '../../shared/endpoint-routes';
 
 /** 基于 UDP/QUIC 的协议，需要走真实代理测速 */
 const UDP_PROTOCOLS = new Set(['hysteria2', 'tuic']);
@@ -378,8 +379,9 @@ export class SpeedTestService {
       if (!port) continue;
       const inboundTag = `http-in-${server.id.slice(0, 8)}`;
       inbounds.push({ type: 'http', tag: inboundTag, listen: '127.0.0.1', listen_port: port });
-      // endpoint（WireGuard 等）进 endpoints[]，普通协议进 outbounds[]；route 规则均按 tag 指向（一致）。
-      if (outbound.type === 'wireguard') {
+      // endpoint（WireGuard/Tailscale）进 endpoints[]，普通协议进 outbounds[]；route 规则均按 tag 指向（一致）。
+      // 按单一真值 isEndpointProtocol 判 type（非硬编码 'wireguard'），未来新增 endpoint 类型自动归位、不误进 outbounds。
+      if (isEndpointProtocol(outbound.type as string)) {
         endpoints.push(outbound);
       } else {
         outbounds.push(outbound); // 预构造的出站（tag 已为 out-<id8>）

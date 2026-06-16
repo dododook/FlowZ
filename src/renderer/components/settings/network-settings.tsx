@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -58,7 +56,6 @@ export function NetworkSettings() {
   // TUN 模式下 FakeIP ON→OFF 一次性风险确认弹窗开关（机场拒纯 IP 不可预判、无法客户端缓解）。
   const [fakeIpOffConfirmOpen, setFakeIpOffConfirmOpen] = useState(false);
   // 绕过局域网 · 排除段（每行一个 CIDR）：onBlur 提交（避免逐键触发代理重启），外部变更时 resync。
-  const [lanExclude, setLanExclude] = useState((config?.bypassLANExclude || []).join('\n'));
   const [subInterval, setSubInterval] = useState(
     config?.subscriptionUpdateIntervalHours?.toString() || '12'
   );
@@ -121,27 +118,6 @@ export function NetworkSettings() {
   // 切换布尔配置项（整体回写，保留其余字段）
   const setBool = (key: keyof typeof config, value: boolean) =>
     saveConfig({ ...config, [key]: value }).catch(() => toast.error(t('common.saveFailed')));
-
-  // bypassLANExclude：外部 config 变化时 resync 文本框（本组件自身 save 产出相同内容、无害）。
-  useEffect(() => {
-    setLanExclude((config?.bypassLANExclude || []).join('\n'));
-  }, [config?.bypassLANExclude]);
-
-  // onBlur 提交：按 换行/逗号/空白 切分 → trim/去空/去重 → 存盘（后端 validateConfig 再 sanitize 非法 CIDR）。
-  const commitLanExclude = () => {
-    if (!config) return;
-    const list = Array.from(
-      new Set(
-        lanExclude
-          .split(/[\n,\s]+/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      )
-    );
-    saveConfig({ ...config, bypassLANExclude: list }).catch(() =>
-      toast.error(t('common.saveFailed'))
-    );
-  };
 
   const updateDns = (patch: Partial<NonNullable<typeof config.dnsConfig>>) => {
     const updated = { ...config };
@@ -449,22 +425,6 @@ export function NetworkSettings() {
               onCheckedChange={(c) => setBool('bypassLAN', c)}
             />
           </SettingsRow>
-          {config.bypassLAN !== false && (
-            <div className="space-y-2 py-2">
-              <Label className="text-sm">{t('settings.advanced.bypassLANExclude')}</Label>
-              <Textarea
-                rows={3}
-                placeholder={'10.10.10.0/24\n172.22.0.0/18'}
-                value={lanExclude}
-                onChange={(e) => setLanExclude(e.target.value)}
-                onBlur={commitLanExclude}
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('settings.advanced.bypassLANExcludeDesc')}
-              </p>
-            </div>
-          )}
           <SettingsRow
             label={t('settings.advanced.blockQuic')}
             description={t('settings.advanced.blockQuicDesc')}

@@ -8,6 +8,7 @@ import { useAppStore } from '../store/app-store';
 import { ErrorHandler, ErrorCategory, proxyErrorCategory } from '../lib/error-handler';
 import { toast } from 'sonner';
 import i18n from '../i18n';
+import { openExternal } from '../bridge/api-wrapper';
 import type {
   TrafficStats,
   IpInfoSnapshot,
@@ -36,6 +37,7 @@ interface NativeEventData {
   proxyModeSwitchFailed: { success: boolean; error: string };
   autoNodeSwitched: { reason: string; newServerName: string; latency: number };
   invalidNodes: InvalidNodeInfo[];
+  tailscaleAuth: { nodeName: string; url: string };
 }
 
 type NativeEventListener<K extends keyof NativeEventData> = (data: NativeEventData[K]) => void;
@@ -72,6 +74,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'invalidNodes':
         unsubscribe = api.proxy.onInvalidNodes(callback as any);
+        break;
+      case 'tailscaleAuth':
+        unsubscribe = api.proxy.onTailscaleAuth(callback as any);
         break;
       default:
         console.warn(`Unknown event: ${eventName}`);
@@ -172,6 +177,31 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
   useAppStore.setState({ invalidNodes: map });
 }
 
+function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
+  // Tailscale 无 auth_key 节点：核给出交互登录 URL → 持久 toast + 「打开登录页」action（openExternal）。
+  // duration:Infinity——登录需用户去浏览器操作，不能自动消失。
+  // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
+  let safeUrl: string | null = null;
+  try {
+    const u = new URL(data.url);
+    if (u.protocol === 'https:' || u.protocol === 'http:') safeUrl = u.href;
+  } catch {
+    safeUrl = null;
+  }
+  toast.info(i18n.t('servers.tsLoginNeeded', { name: data.nodeName }), {
+    description: i18n.t('servers.tsLoginNeededDesc'),
+    duration: Infinity,
+    action: safeUrl
+      ? {
+          label: i18n.t('servers.tsOpenLogin'),
+          onClick: () => {
+            void openExternal(safeUrl);
+          },
+        }
+      : undefined,
+  });
+}
+
 /**
  * Hook to listen to all native events and update store
  */
@@ -184,4 +214,5 @@ export function useNativeEventListeners() {
   useNativeEvent('ipInfoUpdated', handleIpInfoUpdated);
   useNativeEvent('autoNodeSwitched', handleAutoNodeSwitched);
   useNativeEvent('invalidNodes', handleInvalidNodes);
+  useNativeEvent('tailscaleAuth', handleTailscaleAuth);
 }

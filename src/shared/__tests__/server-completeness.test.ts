@@ -21,6 +21,7 @@ const requiredByProtocol: Record<Protocol, Partial<ServerConfig>> = {
       localAddress: ['10.0.0.2/32'],
     } as any,
   },
+  tailscale: {}, // 账号制：无硬必填项（auth_key 可选）；无 address/port
 };
 
 const node = (protocol: Protocol, extra: Partial<ServerConfig> = {}): ServerConfig =>
@@ -42,6 +43,12 @@ describe('server-completeness（主/渲染共用单一真值）', () => {
   it('缺地址/端口 → 不可启动', () => {
     expect(isServerComplete(node('socks', { address: '' }))).toBe(false);
     expect(isServerComplete(node('socks', { port: 0 }))).toBe(false);
+  });
+
+  it('Tailscale 豁免 address/port（账号制）→ 无地址端口仍可启动', () => {
+    expect(isServerComplete({ id: 't', name: 'ts', protocol: 'tailscale' } as ServerConfig)).toBe(
+      true
+    );
   });
 
   it('缺协议必填 → 报错信息（抽样）', () => {

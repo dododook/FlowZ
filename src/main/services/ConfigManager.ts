@@ -13,6 +13,7 @@ import { readPrivacyHash, writePrivacyHash, hashPasswordSync } from '../utils/pr
 import {
   RULE_TYPE_IDS,
   validateRuleValue,
+  isValidIpCidr,
   migrateCustomRules,
   customRulesNeedMigration,
 } from '../../shared/rules';
@@ -25,6 +26,7 @@ import {
   ALL_PROTOCOLS as ALLOWED_PROTOCOLS,
   protocolRequirementError,
 } from '../../shared/server-completeness';
+import { isAccountBasedProtocol } from '../../shared/endpoint-routes';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -353,6 +355,7 @@ export class ConfigManager implements IConfigManager {
     }
 
     // 验证每个服务器配置
+    let droppedCidrs = 0; // endpoint 节点的非法 CIDR（allowedIPs/routes）一律丢弃而非 throw（见循环内说明）
     for (const server of config.servers) {
       if (!server.id || typeof server.id !== 'string') {
         throw new Error('Server id is required and must be a string');
@@ -364,16 +367,19 @@ export class ConfigManager implements IConfigManager {
       if (!protocolLower || !ALLOWED_PROTOCOLS.includes(protocolLower as Protocol)) {
         throw new Error(`Server protocol must be one of: ${ALLOWED_PROTOCOLS.join(', ')}`);
       }
-      if (!server.address || typeof server.address !== 'string') {
-        throw new Error('Server address is required and must be a string');
-      }
-      if (
-        !server.port ||
-        typeof server.port !== 'number' ||
-        server.port < 1 ||
-        server.port > 65535
-      ) {
-        throw new Error('Server port must be a number between 1 and 65535');
+      // 账号制协议（Tailscale，连控制面、无 server endpoint）→ 豁免 address/port；其余协议必须有。
+      if (!isAccountBasedProtocol(protocolLower)) {
+        if (!server.address || typeof server.address !== 'string') {
+          throw new Error('Server address is required and must be a string');
+        }
+        if (
+          !server.port ||
+          typeof server.port !== 'number' ||
+          server.port < 1 ||
+          server.port > 65535
+        ) {
+          throw new Error('Server port must be a number between 1 and 65535');
+        }
       }
 
       // 协议特有必填校验（单一真值 shared/server-completeness.protocolRequirementError，与渲染侧
@@ -383,6 +389,38 @@ export class ConfigManager implements IConfigManager {
       if (protocolError) {
         throw new Error(protocolError);
       }
+
+      // endpoint 节点的 CIDR/地址一律 sanitize 而非 throw：WG localAddress→endpoint.address、allowedIPs→
+      // peer.allowed_ips、TS routes→force-route ip_cidr，脏值（缺掩码、含空格、八位组/掩码越界如 10.0.0.0/40）
+      // 会让内核启动 FATAL。用 isValidIpCidr（含范围校验）丢弃非法项 + 告警，保留合法项——避免单条脏 CIDR 阻断
+      // 全部启动，也避免 throw 走 loadConfig catch 回落默认配置致用户节点全丢（与 customRules 容错同型）。
+      const sanitizeCidrs = (list: string[] | undefined): string[] | undefined => {
+        if (!Array.isArray(list)) return list;
+        const cleaned = list
+          .map((c) => (typeof c === 'string' ? c.trim() : ''))
+          .filter((c) => isValidIpCidr(c));
+        droppedCidrs += list.length - cleaned.length;
+        return cleaned;
+      };
+      if (server.wireguardSettings) {
+        // localAddress 是接口地址（进 endpoint.address），同样必须是合法 IP/CIDR，否则内核 FATAL。
+        // localAddress 为必填 string[]（protocolRequirementError 已保证此处非空数组），仅在确为数组时回写。
+        const cleanedLocal = sanitizeCidrs(server.wireguardSettings.localAddress);
+        if (Array.isArray(cleanedLocal)) server.wireguardSettings.localAddress = cleanedLocal;
+        server.wireguardSettings.allowedIPs = sanitizeCidrs(server.wireguardSettings.allowedIPs);
+      }
+      if (server.tailscaleSettings) {
+        server.tailscaleSettings.routes = sanitizeCidrs(server.tailscaleSettings.routes);
+        server.tailscaleSettings.advertiseRoutes = sanitizeCidrs(
+          server.tailscaleSettings.advertiseRoutes
+        );
+      }
+    }
+    if (droppedCidrs > 0) {
+      this.log(
+        'warn',
+        `[ConfigManager] 丢弃 ${droppedCidrs} 处非法 CIDR（endpoint allowedIPs/routes）`
+      );
     }
 
     // 验证 selectedServerId
@@ -559,28 +597,6 @@ export class ConfigManager implements IConfigManager {
     ) {
       this.log('warn', 'mainSessionViaProxy must be a boolean; resetting to default (enabled)');
       delete config.mainSessionViaProxy;
-    }
-    // bypassLANExclude（绕过局域网排除段，CIDR 列表）：非数组重置；逐项 sanitize 非法 CIDR（trim/去空/去重/
-    // validateRuleValue('ipCidr')）。一律 sanitize 不 throw——单条脏数据不应触发整配置回落默认致全丢（同 customRules 策略）。
-    if (config.bypassLANExclude !== undefined) {
-      if (!Array.isArray(config.bypassLANExclude)) {
-        this.log('warn', 'bypassLANExclude must be an array; resetting to default (empty)');
-        delete config.bypassLANExclude;
-      } else {
-        const before = config.bypassLANExclude.length;
-        config.bypassLANExclude = Array.from(
-          new Set(
-            config.bypassLANExclude
-              .filter((c): c is string => typeof c === 'string')
-              .map((c) => c.trim())
-              .filter((c) => c.length > 0 && validateRuleValue('ipCidr', c))
-          )
-        );
-        const dropped = before - config.bypassLANExclude.length;
-        if (dropped > 0) {
-          this.log('warn', `[ConfigManager] bypassLANExclude 丢弃 ${dropped} 个非法/重复 CIDR`);
-        }
-      }
     }
     if (typeof config.autoConnect !== 'boolean') {
       throw new Error('autoConnect must be a boolean');

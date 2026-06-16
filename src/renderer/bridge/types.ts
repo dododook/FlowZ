@@ -43,7 +43,8 @@ export type ProtocolType =
   | 'socks'
   | 'http'
   | 'ssh'
-  | 'wireguard';
+  | 'wireguard'
+  | 'tailscale';
 
 // 兼容旧代码的类型别名
 export type ServerConfigWithId = import('../../shared/types').ServerConfig;

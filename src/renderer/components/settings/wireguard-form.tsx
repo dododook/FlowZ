@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
+import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { parseWgQuickConf } from '../../../shared/wg-quick';
@@ -46,15 +47,9 @@ interface WireGuardFormProps {
   onSubmit: (config: any) => Promise<void>;
 }
 
-const splitCsv = (v: string | undefined): string[] =>
-  (v || '')
-    .split(',')
-    .map((x) => x.trim())
-    .filter(Boolean);
-
 /** "1,2,3" → [1,2,3]（恰 3 个有效字节）；否则 undefined（reserved 仅 Cloudflare WARP 等需要）。 */
 const parseReserved = (v: string | undefined): number[] | undefined => {
-  const nums = splitCsv(v)
+  const nums = splitTextList(v)
     .map((x) => Number(x))
     .filter((n) => Number.isInteger(n) && n >= 0 && n <= 255);
   return nums.length === 3 ? nums : undefined;
@@ -134,10 +129,10 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       port: values.port,
       wireguardSettings: {
         privateKey: values.privateKey.trim(),
-        localAddress: splitCsv(values.localAddress),
+        localAddress: splitTextList(values.localAddress),
         peerPublicKey: values.peerPublicKey.trim(),
         preSharedKey: values.preSharedKey?.trim() || undefined,
-        allowedIPs: splitCsv(values.allowedIPs),
+        allowedIPs: splitTextList(values.allowedIPs),
         persistentKeepalive: values.persistentKeepalive,
         mtu: values.mtu || undefined,
         reserved: parseReserved(values.reserved),

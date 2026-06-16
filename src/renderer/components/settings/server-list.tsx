@@ -54,9 +54,15 @@ import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { PROTOCOL_OPTIONS } from './shared/protocol-options';
+import { isAccountBasedProtocol } from '../../../shared/endpoint-routes';
 
 type ServerConfigWithId = ServerConfig;
 type ViewMode = 'card' | 'list';
+
+/** 无分享链接的协议（ProtocolParser.generateUrl 无对应分支）：隐藏/排除复制按钮，避免 per-server 抛错刷屏。 */
+const NO_SHARE_LINK_PROTOCOLS = new Set(['ssh', 'wireguard', 'tailscale']);
+const hasShareLink = (protocol: string | undefined): boolean =>
+  !NO_SHARE_LINK_PROTOCOLS.has(protocol?.toLowerCase() || '');
 type SortKey = 'name' | 'protocol' | 'latency' | 'address';
 type SortOrder = 'asc' | 'desc';
 
@@ -96,6 +102,7 @@ const getCountryCode = (name: string): string | null => {
 const getTransportLabel = (server: ServerConfigWithId): string => {
   const p = server.protocol?.toLowerCase();
   if (p === 'hysteria2' || p === 'tuic' || p === 'wireguard') return 'udp';
+  if (p === 'tailscale') return 'mesh';
   if (p === 'naive') return server.naiveSettings?.useHttp3 ? 'udp' : 'tcp';
   return server.network || 'tcp';
 };
@@ -217,6 +224,12 @@ export function ServerList({
     }
   };
 
+  // 账号制协议（Tailscale）无 server address/port——卡片副标题不展示 `undefined:undefined`，改显协议传输标签。
+  const endpointLabel = (server: ServerConfigWithId): string =>
+    isAccountBasedProtocol(server.protocol)
+      ? `Tailscale · ${getTransportLabel(server)}`
+      : `${server.address}:${server.port}`;
+
   const getLatencyColor = (latency: number | undefined) => {
     if (latency === undefined) return 'text-muted-foreground';
     if (latency === -1) return 'text-destructive';
@@ -269,10 +282,9 @@ export function ServerList({
 
   const handleBatchCopy = async () => {
     try {
-      // ssh / wireguard 无分享链接，批量复制时排除（避免 per-server 抛错刷屏 toast）
+      // 无分享链接的协议（ssh/wireguard/tailscale）批量复制时排除（避免 per-server 抛错刷屏 toast）
       const selectedServersList = servers.filter(
-        (s) =>
-          selectedIds.has(s.id) && !['ssh', 'wireguard'].includes(s.protocol?.toLowerCase() || '')
+        (s) => selectedIds.has(s.id) && hasShareLink(s.protocol)
       );
       const urls: string[] = [];
       let successCount = 0;
@@ -334,7 +346,7 @@ export function ServerList({
       list = list.filter(
         (s) =>
           s.name.toLowerCase().includes(q) ||
-          s.address.toLowerCase().includes(q) ||
+          (s.address || '').toLowerCase().includes(q) ||
           s.protocol.toLowerCase().includes(q)
       );
     }
@@ -352,7 +364,7 @@ export function ServerList({
       } else if (sortKey === 'protocol') {
         cmp = a.protocol.localeCompare(b.protocol);
       } else if (sortKey === 'address') {
-        cmp = a.address.localeCompare(b.address);
+        cmp = (a.address || '').localeCompare(b.address || '');
       } else if (sortKey === 'latency') {
         const getVal = (v: number | undefined) =>
           v === undefined ? Infinity : v === -1 ? Infinity - 1 : v;
@@ -379,6 +391,7 @@ export function ServerList({
       http: 'bg-badge-sky/15 text-badge-sky border-badge-sky/30',
       ssh: 'bg-badge-amber/15 text-badge-amber border-badge-amber/30',
       wireguard: 'bg-badge-cyan/15 text-badge-cyan border-badge-cyan/30',
+      tailscale: 'bg-badge-blue/15 text-badge-blue border-badge-blue/30',
     };
     return colors[protocol.toLowerCase()] || 'bg-muted text-muted-foreground';
   };
@@ -409,8 +422,8 @@ export function ServerList({
           {latencyMap[server.id] === -1 ? t('servers.timeout') : `${latencyMap[server.id]} ms`}
         </span>
       )}
-      {/* ssh / wireguard 无分享链接(ProtocolParser.generateUrl 无对应分支)，隐藏复制按钮 */}
-      {!['ssh', 'wireguard'].includes(server.protocol?.toLowerCase() || '') && (
+      {/* 无分享链接的协议(ProtocolParser.generateUrl 无对应分支)隐藏复制按钮 */}
+      {hasShareLink(server.protocol) && (
         <Button
           variant="ghost"
           size="sm"
@@ -804,7 +817,7 @@ export function ServerList({
                         {server.name}
                       </CardTitle>
                       <CardDescription className="text-xs mt-0.5">
-                        {server.address}:{server.port}
+                        {endpointLabel(server)}
                       </CardDescription>
                     </div>
                     {!isSelecting && renderActions(server)}
@@ -945,10 +958,13 @@ export function ServerList({
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {server.address}:{server.port}
-                    {getTransportLabel(server) !== 'tcp' && (
-                      <span className="ml-2">{getTransportLabel(server)}</span>
-                    )}
+                    {isAccountBasedProtocol(server.protocol)
+                      ? endpointLabel(server)
+                      : `${server.address}:${server.port}`}
+                    {!isAccountBasedProtocol(server.protocol) &&
+                      getTransportLabel(server) !== 'tcp' && (
+                        <span className="ml-2">{getTransportLabel(server)}</span>
+                      )}
                   </p>
                 </div>
 

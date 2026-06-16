@@ -48,9 +48,62 @@ const DOMAIN_RE =
 // geo 标签：小写字母数字 + ! - _（如 geolocation-!cn、category-ads-all）
 // geo 标签大小写不敏感（用户输 CN 也接受）；生成期统一 lowercase（远程 .srs 文件名为小写）
 const GEO_TAG_RE = /^[a-z0-9!_-]+$/i;
-// IPv4/IPv6 + 可选 CIDR（宽松，足以拦明显手误；sing-box 启动会做严格校验）
-const IP_CIDR_RE = /^(\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?|[0-9a-fA-F:]+(\/\d{1,3})?)$/;
 const PORT_RE = /^\d{1,5}(-\d{1,5})?$/;
+
+/** 严格 IPv4：恰 4 段、每段 0-255、禁前导零（sing-box netip 拒 `010.0.0.1`）。 */
+function isStrictIpv4(addr: string): boolean {
+  const octets = addr.split('.');
+  return (
+    octets.length === 4 && octets.every((o) => /^(0|[1-9]\d{0,2})$/.test(o) && Number(o) <= 255)
+  );
+}
+
+/**
+ * 结构化 IPv6 校验：处理 `::` 压缩（至多一次）、每段 1-4 hex、末段可为内嵌 IPv4。匹配 sing-box netip.ParsePrefix——
+ * 拒 `12345::1`（段>4 位）、`1:2:3:4:5:6:7:8:9`（>8 段）、`::::`/`dead::beef::1`（多个 ::）、`fe80:`、`:` 等会 FATAL 的形态。
+ */
+function isStrictIpv6(addr: string): boolean {
+  const parts = addr.split('::');
+  if (parts.length > 2) return false; // 多于一个 ::
+  const hasCompression = parts.length === 2;
+  const left = parts[0] === '' ? [] : parts[0].split(':');
+  const right = hasCompression ? (parts[1] === '' ? [] : parts[1].split(':')) : [];
+  const groups = [...left, ...right];
+  let ipv4Suffix = false;
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    if (i === groups.length - 1 && g.includes('.')) {
+      if (!isStrictIpv4(g)) return false; // 末段内嵌 IPv4（如 ::ffff:192.168.1.1）
+      ipv4Suffix = true;
+    } else if (!/^[0-9a-fA-F]{1,4}$/.test(g)) {
+      return false;
+    }
+  }
+  const count = groups.length + (ipv4Suffix ? 1 : 0); // 内嵌 IPv4 占 2 个 16-bit 段
+  // 无 :: 须恰 8 段；有 :: 时它代表 ≥1 个零段，故显式段须 ≤7。
+  return hasCompression ? count <= 7 : count === 8;
+}
+
+/**
+ * IPv4/IPv6（可选 CIDR 掩码）严格校验。**含范围+结构检查**：八位组 ≤255、禁前导零、掩码 v4≤32 / v6≤128、
+ * IPv6 结构合法。旧的纯形状正则会放过 `10.0.0.0/40`、`300.300.300.300`、`abc`、`12345::1`、`010.0.0.1` 等，
+ * 这些值会让 sing-box 启动 FATAL（且落在 endpoints[]/route.rules[] 时启动前 gate 无法按 outbounds 索引剪除→整体启动失败）。
+ * ConfigManager 对 endpoint allowedIPs/routes/localAddress 用本函数 sanitize（丢弃非法项防 FATAL），customRules
+ * 校验亦共用——单一真值，杜绝「校验通过却启动炸」。
+ */
+export function isValidIpCidr(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  const slash = v.indexOf('/');
+  const addr = slash === -1 ? v : v.slice(0, slash);
+  const maskStr = slash === -1 ? undefined : v.slice(slash + 1);
+  const isV6 = addr.includes(':');
+  if (maskStr !== undefined) {
+    if (!/^\d{1,3}$/.test(maskStr)) return false;
+    if (Number(maskStr) > (isV6 ? 128 : 32)) return false;
+  }
+  return isV6 ? isStrictIpv6(addr) : isStrictIpv4(addr);
+}
 
 function validPortToken(v: string): boolean {
   if (!PORT_RE.test(v)) return false;
@@ -79,7 +132,7 @@ export function validateRuleValue(type: RuleType, value: string): boolean {
       }
     case 'ipCidr':
     case 'sourceIpCidr':
-      return IP_CIDR_RE.test(v);
+      return isValidIpCidr(v);
     case 'port':
     case 'sourcePort':
       return validPortToken(v);

@@ -1,4 +1,5 @@
 import type { ServerConfig, Protocol } from './types';
+import { isAccountBasedProtocol } from './endpoint-routes';
 
 /**
  * 协议「必填字段是否齐备」的**单一真值**——主侧 `ConfigManager.validateConfig`（缺则 throw）
@@ -22,6 +23,7 @@ export const ALL_PROTOCOLS: readonly Protocol[] = [
   'http',
   'ssh',
   'wireguard',
+  'tailscale',
 ];
 
 const KNOWN = new Set<string>(ALL_PROTOCOLS);
@@ -66,6 +68,8 @@ export function protocolRequirementError(server: ServerConfig): string | null {
     case 'http':
     case 'ssh':
       return null; // 仅需 address/port（调用方通用校验）
+    case 'tailscale':
+      return null; // 账号制：auth_key 可选（无则运行时交互登录），无硬必填项；亦无 address/port
     default:
       return `Unsupported protocol: ${p ?? '(empty)'}`;
   }
@@ -77,8 +81,12 @@ export function protocolRequirementError(server: ServerConfig): string | null {
  */
 export function isServerComplete(server: ServerConfig | undefined | null): boolean {
   if (!server) return false;
-  if (!server.address || server.address.trim() === '') return false;
-  if (!server.port || server.port <= 0) return false;
-  if (!KNOWN.has(server.protocol?.toLowerCase())) return false;
+  const p = server.protocol?.toLowerCase();
+  if (!KNOWN.has(p)) return false;
+  // 账号制协议（Tailscale）连控制面、无 server address/port；其余协议必须有 address/port。
+  if (!isAccountBasedProtocol(p)) {
+    if (!server.address || server.address.trim() === '') return false;
+    if (!server.port || server.port <= 0) return false;
+  }
   return protocolRequirementError(server) === null;
 }

@@ -111,6 +111,13 @@ export const proxyApi = {
   onInvalidNodes(listener: (data: InvalidNodeInfo[]) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_PROXY_INVALID_NODES, listener);
   },
+
+  /**
+   * 监听 Tailscale 交互登录 URL（无 auth_key 的节点启动时核日志出登录 URL）。
+   */
+  onTailscaleAuth(listener: (data: { nodeName: string; url: string }) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, listener);
+  },
 };
 
 /**

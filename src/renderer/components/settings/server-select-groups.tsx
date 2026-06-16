@@ -11,8 +11,8 @@ interface ServerSelectGroupsProps {
   servers: ServerConfig[];
   /** 排除某节点（用于 detour 选择器避免自指） */
   excludeId?: string;
-  /** 排除某些协议（小写）：如 detour 选择器排除 WireGuard——endpoint 不作前置代理目标 */
-  excludeProtocols?: string[];
+  /** 排除某些协议（小写）：如 detour 选择器排除 endpoint（WireGuard/Tailscale）——endpoint 不作前置代理目标 */
+  excludeProtocols?: readonly string[];
   /** option value 前缀（如应用分流用 'node-'），默认空 */
   valuePrefix?: string;
   /** SelectItem 透传类名（适配不同选择器字号） */

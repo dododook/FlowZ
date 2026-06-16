@@ -13,6 +13,7 @@ export const PROTOCOL_OPTIONS: { value: ProtocolType; label: string }[] = [
   { value: 'shadowsocks', label: 'Shadowsocks' },
   { value: 'socks', label: 'SOCKS5' },
   { value: 'ssh', label: 'SSH' },
+  { value: 'tailscale', label: 'Tailscale' },
   { value: 'trojan', label: 'Trojan' },
   { value: 'tuic', label: 'TUIC' },
   { value: 'vless', label: 'VLESS' },

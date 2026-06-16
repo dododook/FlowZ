@@ -28,9 +28,11 @@ import { SocksForm } from './socks-form';
 import { HttpForm } from './http-form';
 import { SshForm } from './ssh-form';
 import { WireGuardForm } from './wireguard-form';
+import { TailscaleForm } from './tailscale-form';
 import { ServerSelectGroups } from './server-select-groups';
 import { FormSection } from './shared/form-layout';
 import { PROTOCOL_OPTIONS } from './shared/protocol-options';
+import { ENDPOINT_PROTOCOLS } from '../../../shared/endpoint-routes';
 import type { ServerConfig, ProtocolType } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -328,6 +330,17 @@ export function ServerConfigDialog({
                 onSubmit={handleSave}
               />
             )}
+            {selectedProtocol === 'tailscale' && (
+              <TailscaleForm
+                key={currentServerConfig?.id || 'new'}
+                serverConfig={
+                  currentServerConfig?.protocol?.toLowerCase() === 'tailscale'
+                    ? currentServerConfig
+                    : undefined
+                }
+                onSubmit={handleSave}
+              />
+            )}
           </div>
 
           {/* 前置代理(detour) 收进折叠 opt-in 区：默认关，编辑已有 detour 的节点时默认展开；WG 不作 detour 目标。 */}
@@ -350,7 +363,7 @@ export function ServerConfigDialog({
                 <ServerSelectGroups
                   servers={servers}
                   excludeId={server?.id}
-                  excludeProtocols={['wireguard']}
+                  excludeProtocols={ENDPOINT_PROTOCOLS}
                   selectedId={detour}
                 />
               </SelectContent>

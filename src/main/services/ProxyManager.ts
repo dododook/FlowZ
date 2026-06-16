@@ -37,6 +37,8 @@ import {
 } from './builtin-geo-rulesets';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
+import { parseTailscaleAuthLine } from '../../shared/tailscale';
+import { endpointForcedRouteCidrs, isEndpointProtocol } from '../../shared/endpoint-routes';
 import { effectiveLogLevel } from '../../shared/log-level';
 import {
   getUserDataPath,
@@ -229,7 +231,6 @@ interface SingBoxInbound {
   sniff?: boolean;
   sniff_override_destination?: boolean; // Keep for interface compatibility if needed by types, but won't be used for 1.13+
   route_exclude_address?: string[];
-  route_address?: string[]; // 强制纳入 TUN 的段（Windows：把 bypassLAN 宽段 exclude 误带出的 mesh 排除段抢回 TUN）
   platform?: {
     http_proxy?: {
       enabled: boolean;
@@ -354,10 +355,11 @@ interface SingBoxWireGuardPeer {
 }
 
 // sing-box endpoint（1.11+）：独立于 outbound 的顶层 endpoints[] 元素，其 tag 可被 route/selector 当 outbound 引用。
-// 当前仅 WireGuard（默认 gVisor 用户态栈 system=false，零提权）；Tailscale 后续迭代再加字段。
+// WireGuard + Tailscale（默认用户态：WG system=false / TS system_interface=false，零提权）。
 interface SingBoxEndpoint {
   type: string;
   tag: string;
+  // WireGuard
   system?: boolean;
   mtu?: number;
   address?: string[];
@@ -366,6 +368,17 @@ interface SingBoxEndpoint {
   peers?: SingBoxWireGuardPeer[];
   udp_timeout?: string;
   workers?: number;
+  // Tailscale（账号制 mesh；默认 tsnet 用户态。system_interface=Phase 2 反向 mesh）
+  auth_key?: string;
+  state_directory?: string;
+  control_url?: string;
+  hostname?: string;
+  exit_node?: string;
+  exit_node_allow_lan_access?: boolean;
+  accept_routes?: boolean;
+  ephemeral?: boolean;
+  advertise_routes?: string[];
+  system_interface?: boolean;
 }
 
 interface SingBoxRouteRule {
@@ -2548,6 +2561,12 @@ done
         process.platform === 'win32' && shouldBypassLAN
           ? [...PRIVATE_IP_CIDRS]
           : ['127.0.0.0/8', '::1/128'];
+      // 【已知限制 / Windows 真机待验】Windows+bypassLAN 下这里用宽私网段(10/8、192.168/16 等)整体排除出 TUN，
+      // 会顺带把落在私网段内的 endpoint(WG/Tailscale) force-route 段(如 mesh 192.168.50.0/24)也排除 → 该段到不了
+      // 组网节点（走物理 LAN/直连）。mac/Linux 不排除私网（gvisor/系统栈走路由规则），force-route 正常生效。
+      // 旧版曾用 route_address 把 mesh 段以更具体前缀抢回 TUN，但该机制本身从未在 Windows 真机验证（且 sing-box
+      // route_address 非空即替换默认 0/0，处置不当会反而破坏 Windows 全局代理）→ 故此处不再投机重加，留待 Windows
+      // 真机抓包定论后于专项分支处理（tailnet 100.64.0.0/10 不在私网排除表，Windows 下本就可达，不受此限制影响）。
 
       // Windows 下额外排除核心 DNS IP，防止 WFP 进程匹配失效时产生回流死循环
       if (process.platform === 'win32') {
@@ -2635,17 +2654,6 @@ done
       // 对于 1.13.0+，嗅探逻辑已经统一由后方 route.rules 承担，但在入站开启会报错，因此需精准版本判断。
       if (!coreVersionAtLeast(this.coreVersion, 1, 13)) {
         (tunInbound as any).sniff = true;
-      }
-
-      // Windows：上面 route_exclude_address 用宽私网段(10/8 等)把私网整体排除出 TUN，会顺带把「绕过局域网排除段」
-      // (mesh 段)也带出 TUN → 路由层的「排除段→选中节点」规则永远命不中 → 到不了 WG/Tailscale 组网设备。
-      // 故把排除段作为更具体 include 加入 route_address，凭最长前缀抢回 TUN。mac/Linux 不排除私网(gvisor/系统栈
-      // 走路由规则)，无需此步。【Windows 真机待验】
-      if (process.platform === 'win32' && shouldBypassLAN) {
-        const lanExclude = (config.bypassLANExclude || []).map((c) => c.trim()).filter(Boolean);
-        if (lanExclude.length > 0) {
-          tunInbound.route_address = lanExclude;
-        }
       }
 
       // macOS 平台特定配置
@@ -2736,6 +2744,29 @@ done
           }
           continue;
         }
+        // Tailscale：endpoint（账号制 mesh）。就绪门控——非选中且未就绪（无 authKey、无持久 state）不发射，
+        // 避免拖慢启动 + 多个未登录节点登录 URL 刷屏；选中节点即便未就绪也发射（触发交互登录 URL 流）。
+        if (server.protocol.toLowerCase() === 'tailscale') {
+          const ts = server.tailscaleSettings;
+          const ready = !!ts?.authKey?.trim() || this.tailscaleStateExists(server.id);
+          if (server.id !== selectedServer.id && !ready) {
+            this.logToManager(
+              'info',
+              `Tailscale 节点「${server.name}」未就绪(需登录)且非选中，已跳过`
+            );
+            continue;
+          }
+          try {
+            this.pendingEndpoints.push(this.buildTailscaleEndpoint(server, tag));
+            nodeTags.push(tag);
+          } catch (e: any) {
+            this.logToManager(
+              'warn',
+              `生成 Tailscale endpoint 失败，已跳过: ${server.name} (${e?.message ?? e})`
+            );
+          }
+          continue;
+        }
         try {
           const ob = this.generateProxyOutbound(
             server,
@@ -2760,13 +2791,13 @@ done
               this.logToManager('warn', `检测到代理链成环，已跳过 detour: ${server.name}`);
             } else {
               const detourSrv = config.servers.find((s) => s.id === server.detour);
-              if (detourSrv && detourSrv.protocol.toLowerCase() === 'wireguard') {
-                // WireGuard 是 endpoint，不作为 outbound 的前置代理(detour)目标（dialer detour→endpoint 语义未定，
-                // 且本节点会被下方 detour 死引用预校验误剔）。丢弃 detour（本节点仍直连可用）+ 警告。UI 亦不列 WG 为
-                // detour 候选（route 规则指向 WG 仍合法，仅 detour 不合法——两者语义不同）。
+              if (detourSrv && isEndpointProtocol(detourSrv.protocol)) {
+                // endpoint（WireGuard/Tailscale）不作为 outbound 的前置代理(detour)目标（dialer detour→endpoint 语义
+                // 未定，且本节点会被下方 detour 死引用预校验误剔）。丢弃 detour（本节点仍直连可用）+ 警告。UI 亦不列
+                // endpoint 为 detour 候选（route 规则指向 endpoint 仍合法，仅 detour 不合法——两者语义不同）。
                 this.logToManager(
                   'warn',
-                  `WireGuard 不支持作为前置代理(detour)目标，已忽略「${server.name}」的代理链`
+                  `endpoint 节点（WireGuard/Tailscale）不支持作为前置代理(detour)目标，已忽略「${server.name}」的代理链`
                 );
               } else {
                 ob.detour = idToTagMap.get(server.detour);
@@ -3061,6 +3092,8 @@ done
   ): SingBoxOutbound | SingBoxEndpoint | null {
     try {
       if (!this.isNodeUsable(server)) return null;
+      // Tailscale：账号制/带认证状态的入网，非即起即测的临时隧道 → 排除测速。
+      if (server.protocol.toLowerCase() === 'tailscale') return null;
       // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
       if (server.protocol.toLowerCase() === 'wireguard') {
         return this.buildWireGuardEndpoint(server, tag);
@@ -3106,6 +3139,53 @@ done
         },
       ],
     };
+  }
+
+  /** Tailscale state 目录：`<userData>/tailscale/<serverId>`，跨重启免重认证、删节点时清理。 */
+  private tailscaleStateDir(serverId: string): string {
+    return path.join(getUserDataPath(), 'tailscale', serverId);
+  }
+
+  /** state 目录是否已有持久节点状态（免 authKey 重登录的判据）：目录存在且非空。 */
+  private tailscaleStateExists(serverId: string): boolean {
+    try {
+      // readdirSync 在目录缺失时抛 ENOENT → catch 返 false，无需先 existsSync（省一次 stat）。
+      return require('fs').readdirSync(this.tailscaleStateDir(serverId)).length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 构造 Tailscale endpoint（sing-box 1.12+ 顶层 endpoints[]）。账号制 mesh，无 server address/port。
+   * 默认 tsnet 用户态（system_interface 省略=false，零提权）；auth_key 可选（无则核日志出登录 URL）。
+   */
+  private buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpoint {
+    const ts = server.tailscaleSettings || {};
+    const stateDir = this.tailscaleStateDir(server.id);
+    try {
+      require('fs').mkdirSync(stateDir, { recursive: true });
+    } catch {
+      /* best-effort；目录建失败时 sing-box 自身会报错 */
+    }
+    const ep: SingBoxEndpoint = { type: 'tailscale', tag, state_directory: stateDir };
+    const authKey = ts.authKey?.trim();
+    if (authKey) ep.auth_key = authKey;
+    const controlUrl = ts.controlUrl?.trim();
+    if (controlUrl) ep.control_url = controlUrl;
+    const hostname = ts.hostname?.trim();
+    if (hostname) ep.hostname = hostname;
+    const exitNode = ts.exitNode?.trim();
+    if (exitNode) {
+      ep.exit_node = exitNode;
+      if (ts.exitNodeAllowLanAccess) ep.exit_node_allow_lan_access = true;
+    }
+    if (ts.acceptRoutes) ep.accept_routes = true;
+    if (ts.ephemeral) ep.ephemeral = true;
+    const adv = (ts.advertiseRoutes || []).map((c) => c.trim()).filter(Boolean);
+    if (adv.length) ep.advertise_routes = adv;
+    // Phase 2：ts.reverseMesh → ep.system_interface=true（+ 选中节点门控 + 强制 helper）。Phase 1 用户态、省略。
+    return ep;
   }
 
   /**
@@ -3763,20 +3843,47 @@ done
       });
     }
 
-    // 1. 私有 IP 段直连（内网地址不应该经过代理，优先级最高）
-    // 仅当用户未关闭"绕过局域网"时添加
-    if (config.bypassLAN !== false) {
-      // 排除段（经 WireGuard/Tailscale 访问组网设备）：这些私网/组网段**不绕过**，抢在私网直连规则之前
-      // 导向选中节点（其 allowedIPs 覆盖这些段）。first-match 生效；仅非 direct 模式（direct 模式 final=direct，
-      // 导向 selector 无意义）。selectedServerTag=proxy-selector → 切节点经 clash_api 热切换自动跟随。
-      const lanExclude = (config.bypassLANExclude || []).map((c) => c.trim()).filter(Boolean);
-      if (lanExclude.length > 0 && proxyMode !== 'direct') {
-        rules.push({
-          ip_cidr: lanExclude,
-          action: 'route',
-          outbound: selectedServerTag,
+    // 0c. endpoint 节点（WireGuard/Tailscale）的「配置路由段」强制路由到**该节点自身 tag**——优先于下方私网直连、
+    //     **独立于 bypass-LAN 开关、独立于全局选中**。单一真值：节点路由由其 allowedIPs(WG) / routes+tailnet(TS)
+    //     决定（endpointForcedRouteCidrs），不再有独立「绕过局域网排除段」。指向节点自身 tag（非 selector）→ 该段
+    //     恒走其 mesh 节点、与全局选中无关，实现「某段走 WG/TS、上网走全局节点」。仅 userspace（system 由内核接口
+    //     路由——Phase 2）；仅非 direct。按 config.servers 顺序=隐式优先级；被跳过节点的死引用由
+    //     fixRouteDeadReferences 兜底改写 selector。
+    if (proxyMode !== 'direct') {
+      // 仅对【本轮实际发射】的 endpoint 节点强制路由：未就绪/被跳过的 Tailscale 节点不进 pendingEndpoints，
+      // 其 tag 若仍 force-route 会被末尾 fixRouteDeadReferences 改写成 selector → 该段误流向全局选中节点。
+      // emitted 集合天然只含 endpoint 协议（仅 WG/TS 进 pendingEndpoints），故无需再按协议预判。
+      const emittedEndpointTags = new Set(this.pendingEndpoints.map((e) => e.tag));
+      // 跨 endpoint 去重：同一 CIDR 被多个 endpoint 声明（如两个 Tailscale 节点都含 tailnet 100.64.0.0/10，
+      // 或两个 WG 节点 allowedIPs 重叠），sing-box 路由首条命中 → 后者静默失效。按 config.servers 顺序，
+      // 先声明者占有该段（隐式优先级），后者重复段跳过 + 累计告警，杜绝「无声误路由到另一节点」。
+      const claimedCidrs = new Set<string>();
+      let forceRouteConflicts = 0;
+      for (const s of config.servers) {
+        const tag = idToTagMap.get(s.id);
+        if (!tag || !emittedEndpointTags.has(tag)) continue;
+        const cidrs = endpointForcedRouteCidrs(s).filter((c) => {
+          if (claimedCidrs.has(c)) {
+            forceRouteConflicts++;
+            return false;
+          }
+          claimedCidrs.add(c);
+          return true;
         });
+        if (cidrs.length > 0) {
+          rules.push({ ip_cidr: cidrs, action: 'route', outbound: tag });
+        }
       }
+      if (forceRouteConflicts > 0) {
+        this.logToManager(
+          'warn',
+          `${forceRouteConflicts} 个 endpoint 路由段被多个节点重复声明，已按节点顺序去重（先声明者生效）`
+        );
+      }
+    }
+
+    // 1. 私有 IP 段直连（内网地址不应该经过代理）。仅当用户未关闭"绕过局域网"时添加。
+    if (config.bypassLAN !== false) {
       rules.push({
         ip_cidr: PRIVATE_IP_CIDRS,
         action: 'route',
@@ -7003,6 +7110,10 @@ exit 0
    * 解析并记录日志行
    */
   private parseAndLogLine(line: string): void {
+    // Tailscale 交互登录：核打印 `endpoint/tailscale[<tag>]: Waiting for authentication: <url>`，
+    // 须在 dedup/低价值过滤之前抓出 → 推 renderer 弹「打开登录页」，保证必达。
+    this.detectTailscaleAuthUrl(line);
+
     // 过滤重复日志
     if (this.isDuplicateLog(line)) {
       return;
@@ -7032,6 +7143,23 @@ exit 0
       const resolvedLine = this.resolveTagsToNames(line);
       this.logToManager('info', resolvedLine, 'sing-box');
     }
+  }
+
+  /** 已推送过的 Tailscale 登录 URL（核会重复打印同一行，按 url 去重防刷屏）。urls 为一次性 token、量小，不清理。 */
+  private tailscaleAuthSeen = new Set<string>();
+
+  /**
+   * 抓 Tailscale 交互登录 URL（无 auth_key 时核日志出 `endpoint/tailscale[<tag>]: Waiting for authentication: <url>`）
+   * → 推 renderer 弹「打开登录页」。tag 即节点显示名（idToTagMap 用 server.name）。
+   */
+  private detectTailscaleAuthUrl(line: string): void {
+    const hit = parseTailscaleAuthLine(line);
+    if (!hit) return;
+    const { nodeName, url } = hit;
+    if (this.tailscaleAuthSeen.has(url)) return;
+    this.tailscaleAuthSeen.add(url);
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, { nodeName, url });
+    this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
   }
 
   /**
