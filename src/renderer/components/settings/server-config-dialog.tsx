@@ -29,6 +29,7 @@ import { HttpForm } from './http-form';
 import { SshForm } from './ssh-form';
 import { WireGuardForm } from './wireguard-form';
 import { TailscaleForm } from './tailscale-form';
+import { WarpPanel } from './warp-panel';
 import { ServerSelectGroups } from './server-select-groups';
 import { FormSection } from './shared/form-layout';
 import { PROTOCOL_OPTIONS } from './shared/protocol-options';
@@ -57,7 +58,9 @@ export function ServerConfigDialog({
 }: ServerConfigDialogProps) {
   const { t } = useTranslation();
   const [serverName, setServerName] = useState('');
-  const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType>('vless');
+  // 'warp' 是 UI 伪协议（仅新增流的一键 WARP 入口，不进 PROTOCOL_OPTIONS/协议枚举）；选它渲染 WarpPanel，
+  // 实际保存的是普通 wireguard 节点。
+  const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType | 'warp'>('vless');
   const [currentServerConfig, setCurrentServerConfig] = useState<any>(null);
   const [detour, setDetour] = useState<string | undefined>(undefined);
   const [nameError, setNameError] = useState('');
@@ -114,8 +117,14 @@ export function ServerConfigDialog({
     }
   };
 
-  const handleProtocolChange = (protocol: ProtocolType) => {
-    setSelectedProtocol(protocol);
+  const handleProtocolChange = (protocol: string) => {
+    setSelectedProtocol(protocol as ProtocolType | 'warp');
+    // WARP 一键入口：预填默认节点名（仅名称空时），使 WarpPanel 生成后 handleSave 不因缺名失败。
+    if (protocol === 'warp') {
+      if (!serverName.trim()) setServerName('Cloudflare WARP');
+      setCurrentServerConfig(null);
+      return;
+    }
     if (protocol !== currentServerConfig?.protocol) {
       setCurrentServerConfig(null);
     }
@@ -184,6 +193,12 @@ export function ServerConfigDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* WARP 一键入口置顶（仅新增）：用户想用 WARP 会在协议处找它，不必先懂「WARP=WireGuard」。 */}
+                  {!isEditing && (
+                    <SelectItem value="warp">
+                      {t('servers.warpOption', 'Cloudflare WARP (one-click)')}
+                    </SelectItem>
+                  )}
                   {PROTOCOL_OPTIONS.map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
@@ -198,6 +213,9 @@ export function ServerConfigDialog({
           </div>
 
           <div className="border-t pt-6">
+            {selectedProtocol === 'warp' && (
+              <WarpPanel onSubmit={handleSave} nameMissing={!serverName.trim()} />
+            )}
             {selectedProtocol === 'vless' && (
               <VlessForm
                 key={currentServerConfig?.id || 'new'}
@@ -328,9 +346,6 @@ export function ServerConfigDialog({
                     : undefined
                 }
                 onSubmit={handleSave}
-                onSuggestName={(n) => {
-                  if (!serverName.trim()) setServerName(n);
-                }}
               />
             )}
             {selectedProtocol === 'tailscale' && (

@@ -107,6 +107,15 @@ const getTransportLabel = (server: ServerConfigWithId): string => {
   return server.network || 'tcp';
 };
 
+/** WARP 节点（一键生成的 wireguard，端点为 Cloudflare WARP relay）。无需持久标记，按端点域名判，缺则不显示。 */
+const isWarpNode = (s: ServerConfigWithId): boolean =>
+  s.protocol?.toLowerCase() === 'wireguard' &&
+  (s.address || '').toLowerCase().includes('cloudflareclient.com');
+
+/** Tailscale 节点未配置 authKey → 首次连接需浏览器交互登录，列表给提示角标降低「为何连不上」的困惑。 */
+const tailscaleNeedsLogin = (s: ServerConfigWithId): boolean =>
+  s.protocol?.toLowerCase() === 'tailscale' && !s.tailscaleSettings?.authKey?.trim();
+
 interface ServerListProps {
   servers: ServerConfigWithId[];
   selectedServerId?: string;
@@ -337,6 +346,20 @@ export function ServerList({
   };
 
   // 过滤 + 排序
+  // 协议筛选项按【当前分组实际存在的协议】动态生成（保持 PROTOCOL_OPTIONS 顺序）：订阅组不再列 WG/WARP/Tailscale
+  // 等不可能出现的协议，自建/组网组也各只列自己有的——降低无意义选项的理解成本。
+  const availableProtocols = useMemo(() => {
+    const present = new Set(servers.map((s) => s.protocol?.toLowerCase()));
+    return PROTOCOL_OPTIONS.filter((p) => present.has(p.value));
+  }, [servers]);
+
+  // 当前筛选的协议在本组已不存在（切组/订阅更新后）→ 回落 all，避免筛出空列表。
+  useEffect(() => {
+    if (filterProtocol !== 'all' && !availableProtocols.some((p) => p.value === filterProtocol)) {
+      setFilterProtocol('all');
+    }
+  }, [availableProtocols, filterProtocol]);
+
   const filteredServers = useMemo(() => {
     let list = servers;
 
@@ -607,7 +630,7 @@ export function ServerList({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('servers.allProtocols')}</SelectItem>
-            {PROTOCOL_OPTIONS.map((p) => (
+            {availableProtocols.map((p) => (
               <SelectItem key={p.value} value={p.value}>
                 {p.label}
               </SelectItem>
@@ -829,6 +852,22 @@ export function ServerList({
                     >
                       {server.protocol.toUpperCase()}
                     </Badge>
+                    {isWarpNode(server) && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs h-4 px-1 bg-badge-sky/15 text-badge-sky border-badge-sky/30"
+                      >
+                        WARP
+                      </Badge>
+                    )}
+                    {tailscaleNeedsLogin(server) && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs h-4 px-1 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+                      >
+                        {t('servers.tsNeedsLogin', 'Login needed')}
+                      </Badge>
+                    )}
                     {selectedServerId === server.id && (
                       <Badge variant="outline" className="text-xs h-4 px-1">
                         {t('servers.current')}
@@ -943,6 +982,22 @@ export function ServerList({
                     >
                       {server.protocol.toUpperCase()}
                     </Badge>
+                    {isWarpNode(server) && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-sky/15 text-badge-sky border-badge-sky/30"
+                      >
+                        WARP
+                      </Badge>
+                    )}
+                    {tailscaleNeedsLogin(server) && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+                      >
+                        {t('servers.tsNeedsLogin', 'Login needed')}
+                      </Badge>
+                    )}
                     {server.shadowTlsSettings && (
                       <Badge
                         variant="outline"

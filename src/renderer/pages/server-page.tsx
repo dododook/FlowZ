@@ -7,7 +7,8 @@ import { SubscriptionDialog } from '@/components/settings/subscription-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, RefreshCw, Rss, Server } from 'lucide-react';
+import { Plus, RefreshCw, Rss, Server, Network } from 'lucide-react';
+import { isEndpointProtocol } from '../../shared/endpoint-routes';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,17 +54,27 @@ export function ServerPage() {
   const manualServers = servers.filter(
     (s) => !s.subscriptionId || !subscriptionIds.has(s.subscriptionId)
   );
+  // 组网/出口 endpoint 节点（WireGuard/WARP/Tailscale）概念上不同于代理节点，独立成「组网」组；
+  // 自建 Tab 仅留代理节点。WARP 是 wireguard 节点，自然归入。
+  const meshServers = manualServers.filter((s) => isEndpointProtocol(s.protocol));
+  const manualProxyServers = manualServers.filter((s) => !isEndpointProtocol(s.protocol));
 
-  // 默认激活 Tab = 当前选中节点所在组（自建 / 某订阅）；用户手动切 Tab 后由 override 接管。
+  // 默认激活 Tab = 当前选中节点所在组（自建 / 组网 / 某订阅）；用户手动切 Tab 后由 override 接管。
   // 用「派生 + override」而非 useState 惰性初值：config 异步到位前挂载不会把激活组锁死在 'manual'。
   const selected = selectedServerId ? servers.find((s) => s.id === selectedServerId) : undefined;
   const selectedGroupKey =
     selected?.subscriptionId && subscriptionIds.has(selected.subscriptionId)
       ? selected.subscriptionId
-      : 'manual';
+      : selected && isEndpointProtocol(selected.protocol)
+        ? 'mesh'
+        : 'manual';
   const [tabOverride, setTabOverride] = useState<string | null>(null);
   const activeTab =
-    tabOverride && (tabOverride === 'manual' || subscriptionIds.has(tabOverride))
+    tabOverride &&
+    (tabOverride === 'manual' ||
+      // 组网 Tab 仅在有组网节点时有效——删光最后一个组网节点后从 mesh 回落，避免停在无 Trigger 的空 Tab。
+      (tabOverride === 'mesh' && meshServers.length > 0) ||
+      subscriptionIds.has(tabOverride))
       ? tabOverride
       : selectedGroupKey;
 
@@ -261,16 +272,27 @@ export function ServerPage() {
               className="overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
             >
               <TabsList className="inline-flex w-max justify-start">
-                {/* 自建节点 Tab */}
+                {/* 自建节点 Tab（仅代理节点） */}
                 <TabsTrigger value="manual" className="flex items-center gap-1.5 whitespace-nowrap">
                   <Server className="h-3.5 w-3.5" />
                   {t('servers.manualNodes')}
-                  {manualServers.length > 0 && (
+                  {manualProxyServers.length > 0 && (
                     <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
-                      {manualServers.length}
+                      {manualProxyServers.length}
                     </Badge>
                   )}
                 </TabsTrigger>
+
+                {/* 组网/Endpoint Tab（WireGuard/WARP/Tailscale）——有节点才显示，避免对不用组网的用户造成噪音 */}
+                {meshServers.length > 0 && (
+                  <TabsTrigger value="mesh" className="flex items-center gap-1.5 whitespace-nowrap">
+                    <Network className="h-3.5 w-3.5" />
+                    {t('servers.meshNodes')}
+                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                      {meshServers.length}
+                    </Badge>
+                  </TabsTrigger>
+                )}
 
                 {/* 每个订阅一个 Tab */}
                 {subscriptions.map((sub) => {
@@ -310,10 +332,24 @@ export function ServerPage() {
           </div>
         </div>
 
-        {/* 自建节点内容 */}
+        {/* 自建节点内容（仅代理节点） */}
         <TabsContent value="manual">
           <ServerList
-            servers={manualServers}
+            servers={manualProxyServers}
+            selectedServerId={selectedServerId ?? undefined}
+            onAddServer={handleAddServer}
+            onEditServer={handleEditServer}
+            onDeleteServer={handleDeleteServer}
+            onCloneServer={handleCloneServer}
+            onSelectServer={handleSelectServer}
+            onImportSuccess={handleImportSuccess}
+          />
+        </TabsContent>
+
+        {/* 组网节点内容（WireGuard/WARP/Tailscale） */}
+        <TabsContent value="mesh">
+          <ServerList
+            servers={meshServers}
             selectedServerId={selectedServerId ?? undefined}
             onAddServer={handleAddServer}
             onEditServer={handleEditServer}

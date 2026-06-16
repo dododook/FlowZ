@@ -20,9 +20,7 @@ import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import { parseWgQuickConf } from '../../../shared/wg-quick';
-import { api } from '@/ipc/api-client';
 
 const createWireGuardSchema = (t: any) =>
   z.object({
@@ -47,8 +45,6 @@ type WireGuardFormValues = z.infer<ReturnType<typeof createWireGuardSchema>>;
 interface WireGuardFormProps {
   serverConfig?: ServerConfig;
   onSubmit: (config: any) => Promise<void>;
-  /** WARP 生成时回填一个建议节点名（仅当 dialog 名称为空时采用）。 */
-  onSuggestName?: (name: string) => void;
 }
 
 /** "1,2,3" → [1,2,3]（恰 3 个有效字节）；否则 undefined（reserved 仅 Cloudflare WARP 等需要）。 */
@@ -59,13 +55,11 @@ const parseReserved = (v: string | undefined): number[] | undefined => {
   return nums.length === 3 ? nums : undefined;
 };
 
-export function WireGuardForm({ serverConfig, onSubmit, onSuggestName }: WireGuardFormProps) {
+export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
   const { t } = useTranslation();
   const wireguardFormSchema = createWireGuardSchema(t);
   const [confText, setConfText] = useState('');
   const [confError, setConfError] = useState('');
-  const [warpLicense, setWarpLicense] = useState('');
-  const [warpLoading, setWarpLoading] = useState(false);
 
   const form = useForm<WireGuardFormValues>({
     resolver: zodResolver(wireguardFormSchema),
@@ -128,35 +122,6 @@ export function WireGuardForm({ serverConfig, onSubmit, onSuggestName }: WireGua
     });
   };
 
-  // 一键生成 Cloudflare WARP：主进程注册匿名设备 → 回填同一套 WG 表单字段（用户确认后按普通 WG 节点保存）。
-  const handleGenerateWarp = async () => {
-    setWarpLoading(true);
-    try {
-      const draft = await api.server.registerWarp(warpLicense.trim() || undefined);
-      form.reset({
-        address: draft.address,
-        port: draft.port,
-        privateKey: draft.privateKey,
-        localAddress: draft.localAddress.join(', '),
-        peerPublicKey: draft.peerPublicKey,
-        preSharedKey: '',
-        allowedIPs: (draft.allowedIPs.length ? draft.allowedIPs : ['0.0.0.0/0', '::/0']).join(', '),
-        persistentKeepalive: 25,
-        mtu: draft.mtu || 1280,
-        reserved: (draft.reserved || []).join(', '),
-      });
-      onSuggestName?.(draft.meta.warpPlus ? 'Cloudflare WARP+' : 'Cloudflare WARP');
-      toast.success(
-        t('servers.warpGenerated', 'WARP config generated — review and save') +
-          (draft.meta.warpPlus ? ' (WARP+)' : '')
-      );
-    } catch (e: any) {
-      toast.error(`${t('servers.warpFailed', 'WARP registration failed')}: ${e?.message ?? e}`);
-    } finally {
-      setWarpLoading(false);
-    }
-  };
-
   const handleSubmit = async (values: WireGuardFormValues) => {
     const config: any = {
       protocol: 'wireguard' as const,
@@ -197,36 +162,6 @@ export function WireGuardForm({ serverConfig, onSubmit, onSuggestName }: WireGua
           <Button type="button" variant="outline" size="sm" onClick={handleParseConf}>
             {t('servers.wgParseAndFill', 'Parse & fill')}
           </Button>
-        </div>
-
-        {/* 一键生成 Cloudflare WARP（匿名注册 → 填充本表单；WARP+ license 可选） */}
-        <div className="space-y-2 rounded-md border border-dashed p-3">
-          <FormLabel>{t('servers.warpGenerate', 'Generate Cloudflare WARP (optional)')}</FormLabel>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'servers.warpGenerateDesc',
-              'Registers an anonymous WARP device and fills the fields below. Optionally paste a WARP+ license key.'
-            )}
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              placeholder={t('servers.warpLicense', 'WARP+ license key (optional)')}
-              value={warpLicense}
-              onChange={(e) => setWarpLicense(e.target.value)}
-              className="font-mono text-xs"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleGenerateWarp}
-              disabled={warpLoading}
-              className="w-full sm:w-auto sm:flex-shrink-0"
-            >
-              {warpLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {t('servers.warpGenerateBtn', 'Generate WARP')}
-            </Button>
-          </div>
         </div>
 
         <FormSection title={t('servers.basic', 'Basic')}>
