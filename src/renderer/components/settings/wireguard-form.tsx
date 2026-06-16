@@ -70,7 +70,8 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       localAddress: '',
       peerPublicKey: '',
       preSharedKey: '',
-      allowedIPs: '0.0.0.0/0, ::/0',
+      // 留空=全量（buildWireGuardEndpoint 空值默认 0/0,::/0）。不预填 0/0：降理解成本 + 不给 system 模式种「默认注入 0/0」隐患。
+      allowedIPs: '',
       persistentKeepalive: 25, // 默认 25s：避免 NAT 空闲断连（WireGuard 无连接 UDP）
       mtu: 1408,
       reserved: '',
@@ -223,12 +224,18 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                   <FormItem>
                     <FormLabel>{t('servers.wgAllowedIPs', 'Allowed IPs')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="0.0.0.0/0, ::/0" {...field} />
+                      <Input
+                        placeholder={t(
+                          'servers.wgAllowedIPsPlaceholder',
+                          '留空=全量；或 10.10.10.0/24'
+                        )}
+                        {...field}
+                      />
                     </FormControl>
                     <FormDescription>
                       {t(
                         'servers.wgAllowedIPsDesc',
-                        'Default 0.0.0.0/0, ::/0 routes all traffic; required to reach the peer'
+                        'Leave empty = all traffic via this node (full tunnel); to send only certain subnets here, list specific CIDRs (e.g. 10.10.10.0/24) — only those go here, the rest still use your globally selected node'
                       )}
                     </FormDescription>
                     <FormMessage />

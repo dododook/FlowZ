@@ -40,7 +40,8 @@ export function SegmentedControl<T extends string>({
             disabled={disabled || opt.disabled}
             onClick={() => !active && onChange(opt.value)}
             className={cn(
-              'flex-1 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+              // whitespace-nowrap：禁止「TUN 网卡」等含空格标签在窄列里从空格处折行（双列布局下曾断成两行）。
+              'flex-1 whitespace-nowrap rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               'disabled:pointer-events-none disabled:opacity-50',
               active

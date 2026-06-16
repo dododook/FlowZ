@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, RefreshCw, Rss, Server, Network } from 'lucide-react';
 import { isEndpointProtocol } from '../../shared/endpoint-routes';
+import { groupServersBySubscription } from '../../shared/server-grouping';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,14 +51,13 @@ export function ServerPage() {
   const selectedServerId = config?.selectedServerId;
   const subscriptionIds = new Set(subscriptions.map((s) => s.id));
 
-  // 手动添加的节点：无 subscriptionId，或 subscriptionId 指向已删订阅的孤儿（口径对齐 groupServersBySubscription）
-  const manualServers = servers.filter(
-    (s) => !s.subscriptionId || !subscriptionIds.has(s.subscriptionId)
-  );
-  // 组网/出口 endpoint 节点（WireGuard/WARP/Tailscale）概念上不同于代理节点，独立成「组网」组；
-  // 自建 Tab 仅留代理节点。WARP 是 wireguard 节点，自然归入。
-  const meshServers = manualServers.filter((s) => isEndpointProtocol(s.protocol));
-  const manualProxyServers = manualServers.filter((s) => !isEndpointProtocol(s.protocol));
+  // 自建 / 组网 / 各订阅分组**收口到共享单一真值** groupServersBySubscription——与下拉选择器、托盘菜单同一口径，
+  // 杜绝「列表页归组网、下拉归自建」漂移。自建 Tab 仅代理节点，组网 Tab = endpoint（WireGuard/WARP/Tailscale）。
+  const grouped = groupServersBySubscription(servers, subscriptions);
+  // 按组 id 统一取数（manual/mesh/订阅 id）；空组在 grouped 中被省略，回落 []（仍渲染该订阅 tab 供更新）。
+  const serversOfGroup = (id: string) => grouped.find((g) => g.id === id)?.servers ?? [];
+  const manualProxyServers = serversOfGroup('manual');
+  const meshServers = serversOfGroup('mesh');
 
   // 默认激活 Tab = 当前选中节点所在组（自建 / 组网 / 某订阅）；用户手动切 Tab 后由 override 接管。
   // 用「派生 + override」而非 useState 惰性初值：config 异步到位前挂载不会把激活组锁死在 'manual'。
@@ -258,7 +258,7 @@ export function ServerPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setTabOverride}>
-        {/* Tab 栏：自建节点 + 每个订阅 + 订阅管理 */}
+        {/* Tab 栏：自建节点 + 组网 + 每个订阅（右侧固定「添加订阅」按钮，不在 TabsList 内） */}
         <div className="flex items-center gap-4">
           {/* 可滚动的 Tab 区域，两侧渐变遮罩提示还有更多内容 */}
           <div className="relative min-w-0 flex-1">
@@ -296,7 +296,7 @@ export function ServerPage() {
 
                 {/* 每个订阅一个 Tab */}
                 {subscriptions.map((sub) => {
-                  const subServers = servers.filter((s) => s.subscriptionId === sub.id);
+                  const subServers = serversOfGroup(sub.id);
                   const isUpdating = updatingSubId === sub.id;
                   return (
                     <TabsTrigger
@@ -362,7 +362,7 @@ export function ServerPage() {
 
         {/* 各订阅节点内容 */}
         {subscriptions.map((sub) => {
-          const subServers = servers.filter((s) => s.subscriptionId === sub.id);
+          const subServers = serversOfGroup(sub.id);
           const isUpdating = updatingSubId === sub.id;
           return (
             <TabsContent key={sub.id} value={sub.id}>

@@ -340,10 +340,14 @@ export class TrayManager implements ITrayManager {
         // 单一来源：平铺
         data.servers.forEach((s) => serverSubmenu.push(buildServerItem(s)));
       } else {
-        // 多来源：每个订阅/自建一个子菜单
+        // 多来源：每个订阅/自建/组网一个子菜单
         for (const g of groups) {
           serverSubmenu.push({
-            label: g.isManual ? this.t('自建节点', 'Custom Nodes') : g.name,
+            label: g.isMesh
+              ? this.t('组网', 'Mesh')
+              : g.isManual
+                ? this.t('自建节点', 'Custom Nodes')
+                : g.name,
             submenu: g.servers.map(buildServerItem),
           });
         }

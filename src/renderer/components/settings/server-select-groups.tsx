@@ -81,7 +81,11 @@ export function ServerSelectGroups({
     <>
       {groups.map((g) => {
         const open = expanded.has(g.id);
-        const label = g.isManual ? t('servers.manualNodes', '自建节点') : g.name;
+        const label = g.isMesh
+          ? t('servers.meshNodes', '组网')
+          : g.isManual
+            ? t('servers.manualNodes', '自建节点')
+            : g.name;
         return (
           <SelectGroup key={g.id}>
             <div
