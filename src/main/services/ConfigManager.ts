@@ -18,26 +18,13 @@ import {
 } from '../../shared/rules';
 import { defaultAppRules, seedDefaultAppRules } from '../../shared/app-rules-preset';
 import { DEFAULT_SPEED_TEST_URL } from '../../shared/speed-test';
-
-/**
- * 合法服务器协议白名单（单一来源，T5）。
- * 从 shared/types.ts Protocol 联合类型派生——新增协议只改 types.ts，此处自动同步，
- * 消除「数组抄一遍 + 错误串再抄一遍」双重维护漂移（曾出现数组含某协议、错误串漏列的情况）。
- */
-const ALLOWED_PROTOCOLS: readonly Protocol[] = [
-  'vless',
-  'vmess',
-  'trojan',
-  'hysteria2',
-  'shadowsocks',
-  'anytls',
-  'tuic',
-  'naive',
-  'socks',
-  'http',
-  'ssh',
-  'wireguard',
-];
+// 协议白名单 + 协议必填校验单一真值：与渲染侧首页连接闸门 isServerComplete 共用同一份
+// shared/server-completeness，杜绝「新增协议时主/渲染各自枚举漂移」（WireGuard 漏列致连接按钮
+// 恒置灰、anytls 曾在此漏校验，均属此类）。
+import {
+  ALL_PROTOCOLS as ALLOWED_PROTOCOLS,
+  protocolRequirementError,
+} from '../../shared/server-completeness';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -389,79 +376,12 @@ export class ConfigManager implements IConfigManager {
         throw new Error('Server port must be a number between 1 and 65535');
       }
 
-      // VLESS 特定验证
-      if (protocolLower === 'vless') {
-        if (!server.uuid || typeof server.uuid !== 'string') {
-          throw new Error('VLESS server requires uuid');
-        }
-      }
-
-      // VMess 特定验证
-      if (protocolLower === 'vmess') {
-        if (!server.uuid || typeof server.uuid !== 'string') {
-          throw new Error('VMess server requires uuid');
-        }
-      }
-
-      // Trojan 特定验证
-      if (protocolLower === 'trojan') {
-        if (!server.password || typeof server.password !== 'string') {
-          throw new Error('Trojan server requires password');
-        }
-      }
-
-      // Hysteria2 特定验证
-      if (protocolLower === 'hysteria2') {
-        if (!server.password || typeof server.password !== 'string') {
-          throw new Error('Hysteria2 server requires password');
-        }
-      }
-
-      // TUIC 特定验证
-      if (protocolLower === 'tuic') {
-        if (!server.uuid || typeof server.uuid !== 'string') {
-          throw new Error('TUIC server requires uuid');
-        }
-        if (!server.password || typeof server.password !== 'string') {
-          throw new Error('TUIC server requires password');
-        }
-      }
-
-      // Naive 特定验证
-      if (protocolLower === 'naive') {
-        if (!server.username || typeof server.username !== 'string') {
-          throw new Error('Naive server requires username');
-        }
-        if (!server.password || typeof server.password !== 'string') {
-          throw new Error('Naive server requires password');
-        }
-      }
-
-      // Shadowsocks 特定验证
-      if (protocolLower === 'shadowsocks') {
-        if (!server.shadowsocksSettings) {
-          throw new Error('Shadowsocks server requires shadowsocksSettings');
-        }
-        if (
-          !server.shadowsocksSettings.method ||
-          typeof server.shadowsocksSettings.method !== 'string'
-        ) {
-          throw new Error('Shadowsocks server requires encryption method');
-        }
-        if (
-          !server.shadowsocksSettings.password ||
-          typeof server.shadowsocksSettings.password !== 'string'
-        ) {
-          throw new Error('Shadowsocks server requires password');
-        }
-      }
-
-      // WireGuard 特定验证（fail-fast：缺字段不可存盘，避免运行时 buildWireGuardEndpoint throw 后选中节点静默切换）
-      if (protocolLower === 'wireguard') {
-        const wg = server.wireguardSettings;
-        if (!wg || !wg.privateKey || !wg.peerPublicKey || !wg.localAddress?.length) {
-          throw new Error('WireGuard server requires privateKey, peerPublicKey and localAddress');
-        }
+      // 协议特有必填校验（单一真值 shared/server-completeness.protocolRequirementError，与渲染侧
+      // 首页连接闸门 isServerComplete 共用）。fail-fast：缺字段 throw（与原逐协议 throw 等价；额外补齐
+      // 了原先漏校验的 anytls 密码——与 isServerComplete 一致，且 anytls 无密码本就连不通）。
+      const protocolError = protocolRequirementError(server);
+      if (protocolError) {
+        throw new Error(protocolError);
       }
     }
 

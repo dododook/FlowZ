@@ -17,6 +17,7 @@ import { Loader2, Play, Square } from 'lucide-react';
 import type { ProxyMode, ProxyModeType } from '@/bridge/types';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { isServerComplete } from '../../../shared/server-completeness';
 
 /**
  * 首页代理控制卡：两行 OpenClash 风格分段切换（接管方式 / 分流策略）+ 启停按钮。
@@ -50,23 +51,9 @@ export function ProxyControlCard() {
       : connectionStatus?.proxyCore?.running && connectionStatus?.proxy?.enabled;
   const hasError = connectionStatus?.proxyCore?.error;
 
-  const isServerConfigured = (() => {
-    if (!config?.selectedServerId) return false;
-    const s = config.servers?.find((x) => x.id === config.selectedServerId);
-    if (!s) return false;
-    if (!s.address || s.address.trim() === '') return false;
-    if (!s.port || s.port <= 0) return false;
-    const protocol = s.protocol?.toLowerCase();
-    if (protocol === 'vless' || protocol === 'vmess') return !!s.uuid?.trim();
-    if (protocol === 'trojan' || protocol === 'hysteria2' || protocol === 'anytls')
-      return !!s.password?.trim();
-    if (protocol === 'tuic') return !!s.uuid?.trim() && !!s.password?.trim();
-    if (protocol === 'shadowsocks')
-      return !!s.shadowsocksSettings?.method?.trim() && !!s.shadowsocksSettings?.password?.trim();
-    if (protocol === 'naive') return !!s.username?.trim() && !!s.password?.trim();
-    if (protocol === 'socks' || protocol === 'http' || protocol === 'ssh') return true;
-    return false;
-  })();
+  const isServerConfigured = isServerComplete(
+    config?.servers?.find((x) => x.id === config?.selectedServerId)
+  );
 
   // ── 接管方式（proxyModeType）────────────────────────────────────────────
   const applyTakeover = async (modeType: ProxyModeType) => {
