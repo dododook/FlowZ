@@ -27,6 +27,7 @@ import type {
   RuleResourceCatalogResult,
   InvalidNodeInfo,
 } from '../../shared/types';
+import type { WarpWireGuardDraft } from '../../shared/warp';
 
 /**
  * 代理控制 API
@@ -257,6 +258,13 @@ export const serverApi = {
    */
   async generateUrl(server: ServerConfig): Promise<string> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_GENERATE_URL, { server });
+  },
+
+  /**
+   * Cloudflare WARP：注册匿名设备 → 返回 WireGuard 草稿（供 WG 表单填充）。licenseKey 可选（WARP+）。
+   */
+  async registerWarp(licenseKey?: string): Promise<WarpWireGuardDraft> {
+    return ipcClient.invoke(IPC_CHANNELS.WARP_REGISTER, { licenseKey });
   },
 
   /**

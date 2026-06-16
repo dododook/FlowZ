@@ -32,6 +32,7 @@ export const IPC_CHANNELS = {
   SERVER_DELETE: 'server:delete',
   SERVER_GET_ALL: 'server:getAll',
   SERVER_SPEED_TEST: 'server:speedTest',
+  WARP_REGISTER: 'warp:register', // Cloudflare WARP 设备注册 → 生成 WireGuard 草稿
 
   // 订阅管理
   SUBSCRIPTION_ADD: 'subscription:add',

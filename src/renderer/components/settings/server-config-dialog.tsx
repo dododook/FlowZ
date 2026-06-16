@@ -328,6 +328,9 @@ export function ServerConfigDialog({
                     : undefined
                 }
                 onSubmit={handleSave}
+                onSuggestName={(n) => {
+                  if (!serverName.trim()) setServerName(n);
+                }}
               />
             )}
             {selectedProtocol === 'tailscale' && (

@@ -11,6 +11,7 @@ import type { ServerConfig } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { ProtocolParser } from '../../services/ProtocolParser';
 import { ConfigManager } from '../../services/ConfigManager';
+import { WarpService, type WarpWireGuardDraft } from '../../services/WarpService';
 import { getUserDataPath } from '../../utils/paths';
 
 /**
@@ -143,6 +144,15 @@ export function registerServerHandlers(
 
       config.selectedServerId = args.serverId;
       await configManager.saveConfig(config);
+    }
+  );
+
+  // Cloudflare WARP：注册匿名设备 → 返回 WireGuard 草稿（渲染端填表、用户确认后按普通 WG 节点保存）。
+  // 不落盘、不存 token；网络/TLS 细节见 WarpService。
+  registerIpcHandler<{ licenseKey?: string }, WarpWireGuardDraft>(
+    IPC_CHANNELS.WARP_REGISTER,
+    async (_event: IpcMainInvokeEvent, args: { licenseKey?: string }) => {
+      return new WarpService().register({ licenseKey: args?.licenseKey });
     }
   );
 }
