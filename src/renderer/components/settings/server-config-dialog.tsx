@@ -202,7 +202,7 @@ export function ServerConfigDialog({
                   )}
                   {PROTOCOL_OPTIONS.map((p) => (
                     <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                      {p.value === 'custom' ? t('servers.protocolCustom', p.label) : p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

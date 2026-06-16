@@ -7,7 +7,8 @@ import type { ProtocolType } from '@/bridge/types';
  */
 export const PROTOCOL_OPTIONS: { value: ProtocolType; label: string }[] = [
   { value: 'anytls', label: 'AnyTLS' },
-  { value: 'custom', label: 'Custom (JSON)' },
+  // custom 是唯一描述性（非品牌名）标签，需本地化：消费方对 'custom' 用 t('servers.protocolCustom') 覆盖此英文兜底。
+  { value: 'custom', label: 'Custom Outbound JSON' },
   { value: 'http', label: 'HTTP(S)' },
   { value: 'hysteria2', label: 'Hysteria2' },
   { value: 'naive', label: 'NaiveProxy' },

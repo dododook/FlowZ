@@ -795,6 +795,7 @@
     "warpLicense": "WARP+ license key",
     "warpGenerateSave": "Generate & Add WARP node",
     "warpNameFirst": "Enter a node name above first",
+    "protocolCustom": "Custom Outbound JSON",
     "customIntro": "Paste a raw sing-box outbound JSON (e.g. snell). Compatibility is checked against the current kernel; an incompatible protocol needs a third-party kernel that supports it.",
     "customJsonInvalid": "Invalid JSON — must be an object with a \"type\" field",
     "customProbing": "Checking kernel compatibility…",

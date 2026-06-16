@@ -795,6 +795,7 @@
     "warpLicense": "WARP+ license key",
     "warpGenerateSave": "生成并添加 WARP 节点",
     "warpNameFirst": "请先在上方填写节点名称",
+    "protocolCustom": "自定义出站 JSON",
     "customIntro": "粘贴一份 sing-box outbound JSON（如 snell）。会用当前内核检测兼容性；当前内核不支持的协议需换用支持它的第三方内核。",
     "customJsonInvalid": "JSON 非法——必须是含 \"type\" 字段的对象",
     "customProbing": "正在检测当前内核兼容性…",

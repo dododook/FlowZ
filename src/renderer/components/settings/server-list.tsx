@@ -638,7 +638,7 @@ export function ServerList({
             <SelectItem value="all">{t('servers.allProtocols')}</SelectItem>
             {availableProtocols.map((p) => (
               <SelectItem key={p.value} value={p.value}>
-                {p.label}
+                {p.value === 'custom' ? t('servers.protocolCustom', p.label) : p.label}
               </SelectItem>
             ))}
           </SelectContent>
