@@ -569,6 +569,7 @@ export interface UserConfig {
   mixedPort?: number; // 混合端口（可选，同时支持 HTTP 和 SOCKS5，0 或 undefined 表示禁用）
   allowLan?: boolean; // 局域网共享代理（允许其他设备连接）
   bypassLAN?: boolean; // 绕过局域网（将内网 IP 设置为直连）
+  bypassLANExclude?: string[]; // 绕过局域网的排除段（CIDR）：这些私网/组网段不直连、改走选中节点（经 WireGuard/Tailscale 访问组网设备）
   blockQuic?: boolean; // 阻止 QUIC（对代理向 UDP 443 执行 reject，逼浏览器回退 TCP）；默认关；节点无关，对所有协议一视同仁
   tlsFragment?: boolean; // 全局 TLS 分片：对所有 TLS 节点切分 ClientHello 抗 SNI-DPI；默认关
   // 节点测速端点 URL（经各节点代理 GET 量 TTFB）。默认 generate_204（见 shared/speed-test）；用户可自配，兼容 http/https。

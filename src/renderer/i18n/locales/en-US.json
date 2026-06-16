@@ -479,6 +479,8 @@
       "allowLanGatewayTip": "When used as a gateway (other devices set this computer as Gateway/DNS), please ensure TUN mode is enabled. This will automatically enable system IP forwarding and listen on port 53 for DNS services.",
       "bypassLAN": "Bypass LAN",
       "bypassLANDesc": "Force requests destined for the local network to bypass the proxy (disable to allow proxying for 192.168.x etc.)",
+      "bypassLANExclude": "Excluded ranges (via selected node)",
+      "bypassLANExcludeDesc": "These private/mesh ranges are NOT bypassed — they go through the currently selected node (to reach mesh devices via WireGuard/Tailscale). One CIDR per line, e.g. 10.10.10.0/24. Select a node that can reach these ranges (e.g. WireGuard) whose allowed_ips cover them.",
       "blockQuic": "Block QUIC (UDP/443, nudge browsers to TCP)",
       "blockQuicDesc": "Reject proxy-bound QUIC (UDP 443) so browsers fall back to TCP. Fixes pages stalling when a node's UDP relay is unreliable. Off by default; applies to all nodes.",
       "interruptOnSwitch": "Interrupt existing connections on switch",

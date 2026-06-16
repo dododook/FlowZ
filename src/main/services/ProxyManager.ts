@@ -229,6 +229,7 @@ interface SingBoxInbound {
   sniff?: boolean;
   sniff_override_destination?: boolean; // Keep for interface compatibility if needed by types, but won't be used for 1.13+
   route_exclude_address?: string[];
+  route_address?: string[]; // 强制纳入 TUN 的段（Windows：把 bypassLAN 宽段 exclude 误带出的 mesh 排除段抢回 TUN）
   platform?: {
     http_proxy?: {
       enabled: boolean;
@@ -2636,6 +2637,17 @@ done
         (tunInbound as any).sniff = true;
       }
 
+      // Windows：上面 route_exclude_address 用宽私网段(10/8 等)把私网整体排除出 TUN，会顺带把「绕过局域网排除段」
+      // (mesh 段)也带出 TUN → 路由层的「排除段→选中节点」规则永远命不中 → 到不了 WG/Tailscale 组网设备。
+      // 故把排除段作为更具体 include 加入 route_address，凭最长前缀抢回 TUN。mac/Linux 不排除私网(gvisor/系统栈
+      // 走路由规则)，无需此步。【Windows 真机待验】
+      if (process.platform === 'win32' && shouldBypassLAN) {
+        const lanExclude = (config.bypassLANExclude || []).map((c) => c.trim()).filter(Boolean);
+        if (lanExclude.length > 0) {
+          tunInbound.route_address = lanExclude;
+        }
+      }
+
       // macOS 平台特定配置
       if (process.platform === 'darwin') {
         tunInbound.platform = {
@@ -3743,6 +3755,17 @@ done
     // 1. 私有 IP 段直连（内网地址不应该经过代理，优先级最高）
     // 仅当用户未关闭"绕过局域网"时添加
     if (config.bypassLAN !== false) {
+      // 排除段（经 WireGuard/Tailscale 访问组网设备）：这些私网/组网段**不绕过**，抢在私网直连规则之前
+      // 导向选中节点（其 allowedIPs 覆盖这些段）。first-match 生效；仅非 direct 模式（direct 模式 final=direct，
+      // 导向 selector 无意义）。selectedServerTag=proxy-selector → 切节点经 clash_api 热切换自动跟随。
+      const lanExclude = (config.bypassLANExclude || []).map((c) => c.trim()).filter(Boolean);
+      if (lanExclude.length > 0 && proxyMode !== 'direct') {
+        rules.push({
+          ip_cidr: lanExclude,
+          action: 'route',
+          outbound: selectedServerTag,
+        });
+      }
       rules.push({
         ip_cidr: PRIVATE_IP_CIDRS,
         action: 'route',

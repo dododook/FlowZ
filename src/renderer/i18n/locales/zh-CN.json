@@ -479,6 +479,8 @@
       "allowLanGatewayTip": "当作为网关使用（另一台设备设置此电脑为网关及 DNS）时，请务必开启 TUN 模式。该设置将自动开启系统 IP 转发并监听 53 端口提供 DNS 服务。",
       "bypassLAN": "绕过局域网 (Bypass LAN)",
       "bypassLANDesc": "默认将发往局域网的请求强制直连（关闭此选项后，192.168.x 等内网 IP 才可能走代理）",
+      "bypassLANExclude": "排除段（走选中节点）",
+      "bypassLANExcludeDesc": "这些私网/组网段不直连、改走当前选中节点（用于经 WireGuard/Tailscale 访问组网设备）。每行一个 CIDR，如 10.10.10.0/24。需选中能到达这些段的节点（如 WireGuard），且其 allowed_ips 覆盖这些段。",
       "blockQuic": "阻断 QUIC（UDP/443，促浏览器回退 TCP）",
       "blockQuicDesc": "reject 代理向 QUIC（UDP 443），让浏览器回退 TCP，解决节点 UDP relay 不通导致的网页卡顿/断流。默认关；对所有节点生效。",
       "interruptOnSwitch": "切换节点时断开现有连接",

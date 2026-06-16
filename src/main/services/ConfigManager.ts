@@ -560,6 +560,28 @@ export class ConfigManager implements IConfigManager {
       this.log('warn', 'mainSessionViaProxy must be a boolean; resetting to default (enabled)');
       delete config.mainSessionViaProxy;
     }
+    // bypassLANExclude（绕过局域网排除段，CIDR 列表）：非数组重置；逐项 sanitize 非法 CIDR（trim/去空/去重/
+    // validateRuleValue('ipCidr')）。一律 sanitize 不 throw——单条脏数据不应触发整配置回落默认致全丢（同 customRules 策略）。
+    if (config.bypassLANExclude !== undefined) {
+      if (!Array.isArray(config.bypassLANExclude)) {
+        this.log('warn', 'bypassLANExclude must be an array; resetting to default (empty)');
+        delete config.bypassLANExclude;
+      } else {
+        const before = config.bypassLANExclude.length;
+        config.bypassLANExclude = Array.from(
+          new Set(
+            config.bypassLANExclude
+              .filter((c): c is string => typeof c === 'string')
+              .map((c) => c.trim())
+              .filter((c) => c.length > 0 && validateRuleValue('ipCidr', c))
+          )
+        );
+        const dropped = before - config.bypassLANExclude.length;
+        if (dropped > 0) {
+          this.log('warn', `[ConfigManager] bypassLANExclude 丢弃 ${dropped} 个非法/重复 CIDR`);
+        }
+      }
+    }
     if (typeof config.autoConnect !== 'boolean') {
       throw new Error('autoConnect must be a boolean');
     }
