@@ -298,6 +298,17 @@ export class ConfigManager implements IConfigManager {
     delete config.httpPort;
     delete config.socksPort;
 
+    // 控制端口（clash_api external_controller）：未设(>0) → 默认 9090（DEFAULT_CONTROL_PORT）。可改以解端口冲突死局。
+    // 防自撞：与本地端口同口则回退（9090，仍同则取 9091），杜绝 clash_api 与 mixed inbound 撞口致 sing-box FATAL。
+    // 作用域：此 guard 护持久化/loadConfig 路径（saveConfig 亦经 validateConfig）。运行时 start() 收到的是渲染端
+    // 内存 config、不经此重校验，那条路径的同口由 UI 两个 commit 守卫拦下。未来若加 config 导入，须在导入处复用本校验。
+    if (!config.controlPort || config.controlPort <= 0) {
+      config.controlPort = 9090;
+    }
+    if (config.controlPort === config.mixedPort) {
+      config.controlPort = config.mixedPort === 9090 ? 9091 : 9090;
+    }
+
     // 自动迁移：旧版自定义规则（DomainRule: domains+ipCidr）→ 新版 Rule（type+values）。
     // 必须在下方 customRules 校验之前（旧 shape 会被新校验判废 → loadConfig catch 覆盖保存 → 规则全丢）。
     // 幂等：已是新 shape 原样保留。
@@ -653,6 +664,14 @@ export class ConfigManager implements IConfigManager {
       throw new Error('mixedPort must be a number between 1 and 65535');
     }
     if (
+      config.controlPort !== undefined &&
+      (typeof config.controlPort !== 'number' ||
+        config.controlPort < 1 ||
+        config.controlPort > 65535)
+    ) {
+      throw new Error('controlPort must be a number between 1 and 65535');
+    }
+    if (
       config.socksPort !== undefined &&
       (typeof config.socksPort !== 'number' || config.socksPort < 1 || config.socksPort > 65535)
     ) {
@@ -772,6 +791,7 @@ export class ConfigManager implements IConfigManager {
       speedTestUrl: DEFAULT_SPEED_TEST_URL, // 节点测速端点默认 generate_204（用户可在设置·网络改）
 
       mixedPort: 7890, // mixed-only canonical 本地端口（同口 HTTP+SOCKS）；新装默认对齐业内 7890（存量经迁移沿用原 httpPort）。
+      controlPort: 9090, // clash_api 外部控制端口（对齐业内 9090）；可改以解端口冲突死局。
       // 注：不再设 httpPort/socksPort（mixed-only 已治理；旧配置经 loadConfig 迁移删除这两个 deprecated 字段）。
       logLevel: 'info',
       disableLogFile: false,

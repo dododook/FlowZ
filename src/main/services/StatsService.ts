@@ -63,7 +63,7 @@ export class StatsService {
   private connectionsWatchers = 0;
   /**
    * @param onUpdate 每次拿到新快照时回调（广播给渲染端）
-   * @param clashApi clash_api(9090) 客户端（T15：与 ProxyManager 共用单一 agent，替代本服务原私有 agent + getJson）
+   * @param clashApi clash_api 客户端（端口默认 9090，可经 config.controlPort 改；T15：与 ProxyManager 共用单一 agent）
    * @param onConnections 连接快照回调（topology 统一供数；按 divider 节奏推送）
    */
   constructor(

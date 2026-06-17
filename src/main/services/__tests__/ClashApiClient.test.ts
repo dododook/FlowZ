@@ -155,6 +155,21 @@ describe('ClashApiClient', () => {
       expect(calls[0].options.headers).not.toHaveProperty('Authorization');
     });
 
+    it('getPort 注入 → request 连到自定义控制端口（解 9090 冲突死局）；缺省回退 9090', async () => {
+      const c = new ClashApiClient(
+        () => '',
+        () => 9091
+      );
+      responders.push({ drive: ({ res }) => res.emit('close') });
+      await c.request('/p', 'GET');
+      expect(calls[0].options.port).toBe(9091);
+      // 缺省 getPort（仅传 secret）→ 9090，兼容旧调用方
+      const cDefault = new ClashApiClient(() => '');
+      responders.push({ drive: ({ res }) => res.emit('close') });
+      await cDefault.request('/p', 'GET');
+      expect(calls[1].options.port).toBe(9090);
+    });
+
     it('timeout → req.destroy()（无参，node abort emit error）→ done(ok:false,0)，不悬挂', async () => {
       const c = clientWithSecret();
       responders.push({ drive: ({ req }) => req.emit('timeout') });

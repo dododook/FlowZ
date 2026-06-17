@@ -26,7 +26,7 @@ import { ClashApiClient } from './ClashApiClient';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
-import { localProxyPort } from '../../shared/proxy-ports';
+import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../shared/constants';
 import { resourceManager } from './ResourceManager';
@@ -568,7 +568,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 杀核前「静默 clash_api 客户端」回调（停 StatsService 轮询 + 关其到 9090 的 keep-alive 连接）：让 client 主动关
   // → 9090 不进 TIME_WAIT → 下次用户态 sing-box 免撞 root TIME_WAIT 等 30s（P0-2 治本 TIME_WAIT）。
   private quiesceClashClients: (() => void) | null = null;
-  // clash_api(9090) 专属 HTTP 客户端（T15：原 clashApiAgent 字段 + clashApiRequest/clashAuthHeaders/
+  // clash_api 专属 HTTP 客户端（端口默认 9090，可经 config.controlPort 改；T15：原 clashApiAgent 字段 + clashApiRequest/clashAuthHeaders/
   // destroyClashApiAgent 收口进 ClashApiClient，与 StatsService 共用单一 agent）。经 setClashApiClient 注入。
   private clashApiClient: ClashApiClient | null = null;
   // 平台提权服务（T16：原提权脚本生成 / 文件权限 / 提权复制等纯函数迁出，经 setPrivilegeService 注入；
@@ -1603,9 +1603,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.clashApiClient?.destroyAgent();
   }
 
-  /** 当前 clash_api secret（供 StatsService 等其它主进程内部 9090 调用带鉴权）。 */
+  /** 当前 clash_api secret（供 StatsService 等其它主进程内部 clash_api 调用带鉴权）。 */
   getClashApiSecret(): string {
     return this.currentConfig?.clashApiSecret || '';
+  }
+
+  /** 当前 clash_api 控制端口（ClashApiClient/StatsService/端口冲突清理 统一取用；缺省 9090，可经 config.controlPort 改）。 */
+  getClashApiPort(): number {
+    return controlApiPort(this.currentConfig ?? {});
   }
 
   /**
@@ -1737,7 +1742,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    */
   private async allocateProbePorts(config?: UserConfig): Promise<void> {
     // 排除用户自配端口与 clash_api，避免 listen(0) 偶撞用户端口段致 sing-box bind FATAL（review P1-4）
-    const exclude = new Set<number>([9090]);
+    const exclude = new Set<number>([controlApiPort(config ?? {})]);
     if (config) {
       if (config.httpPort) exclude.add(config.httpPort);
       if (config.socksPort) exclude.add(config.socksPort);
@@ -1781,14 +1786,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 启动前确认 clash_api 端口(9090)可用，仍被占则**按端口**清掉占用者（L2，彻底摆脱 cmdline 匹配）。
-   * 9090 是对外契约固定端口（StatsService / external_controller / 高级设置展示与复制），不改可变端口，故唯一
-   * 正确处置是「清掉占用者，否则明确终态」。处置阶梯：① helper 就绪 → freePort（root、按端口、零提权，是 sing-box
+   * 启动前确认 clash_api 控制端口可用，仍被占则**按端口**清掉占用者（L2，彻底摆脱 cmdline 匹配）。
+   * 端口取 getClashApiPort()（默认 9090，可经 config.controlPort 改）。残留 sing-box 是自家的，正确处置是「清掉
+   * 占用者，否则明确终态 / 提示用户改 controlPort」。处置阶梯：① helper 就绪 → freePort（root、按端口、零提权，是 sing-box
    * 才杀，否则回报占用者名）；② 交互 + 无 helper → osascript 一次性按端口清；③ 兜底明确终态。所有终态码
    * ∈ 不可恢复错误（含 _FOREIGN / _AUTH_CANCELLED，均含 clash_api_port_busy 子串）→ 不进自动重启风暴。
    */
   private async resolveClashApiPortConflict(): Promise<void> {
-    const PORT = 9090;
+    const PORT = this.getClashApiPort();
     // 占用两态：listening(connect 连上=有活监听者，必有 PID，可杀) / bindBusy(bind EADDRINUSE)。
     // bindBusy 但 !listening = TIME_WAIT 类——XNU in_pcbbind 有 UID 检查：root sing-box 死后留下的 9090
     // root TIME_WAIT，用户态(systemProxy) sing-box 即使 SO_REUSEADDR 也压不过 → EADDRINUSE，持续 2MSL≈30s。
@@ -1804,30 +1809,30 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     };
     let p = await probe();
     if (!p.bindBusy && !p.listening) {
-      this.logToManager('info', `[9090] 端口空闲，正常继续`);
+      this.logToManager('info', `[clash_api] 端口空闲，正常继续`);
       return;
     }
     this.logToManager(
       'warn',
-      `[9090] 仍被占用(bindBusy=${p.bindBusy} listening=${p.listening})，进入清理（helper=${!!this.helperManager}）`
+      `[clash_api] 仍被占用(bindBusy=${p.bindBusy} listening=${p.listening})，进入清理（helper=${!!this.helperManager}）`
     );
 
     // ② 有活监听者（孤儿/外部/旧路径 sing-box）→ 按端口提权杀（freePort 零提权 / osascript 带超时）
     if (p.listening) {
       if (this.helperManager && (await this.helperManager.isReady())) {
-        this.logToManager('info', `[9090] helper 就绪 → freePort 按端口清理`);
+        this.logToManager('info', `[clash_api] helper 就绪 → freePort 按端口清理`);
         const r = await this.helperManager.freePort(PORT);
-        this.logToManager('info', `[9090] freePort 结果: ${JSON.stringify(r)}`);
+        this.logToManager('info', `[clash_api] freePort 结果: ${JSON.stringify(r)}`);
         if (r.foreign) throw this.clashPortError('FOREIGN', r.foreign);
       }
       p = await probe();
       if (p.listening && this.startInteractive && process.platform === 'darwin') {
         this.logToManager(
           'warn',
-          `[9090] freePort 未清净 → osascript 按端口清理（带超时，弹前置顶窗口）`
+          `[clash_api] freePort 未清净 → osascript 按端口清理（带超时，弹前置顶窗口）`
         );
         const res = await this.osascriptFreePort(PORT);
-        this.logToManager('info', `[9090] osascript 按端口清理结果: ${res}`);
+        this.logToManager('info', `[clash_api] osascript 按端口清理结果: ${res}`);
         if (res === 'cancelled') throw this.clashPortError('AUTH_CANCELLED');
         if (res === 'foreign') throw this.clashPortError('FOREIGN');
         p = await probe();
@@ -1841,12 +1846,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         // M5：Windows helper 就绪但首次 freePort 未清净（可能竞态/刚退 TIME_WAIT 转监听）→ 再试一次。
         // 注：Windows 无 osascript 等价的零提权清理；helper 未装=设计现状（可选加速层），
         // 不冒险加 RunAs taskkill（按映像名杀会误杀用户其他 sing-box 进程）。
-        this.logToManager('info', `[9090] Windows helper freePort 首次未清净，重试一次`);
+        this.logToManager('info', `[clash_api] Windows helper freePort 首次未清净，重试一次`);
         await this.helperManager.freePort(PORT);
         p = await probe();
       }
       if (!p.bindBusy && !p.listening) {
-        this.logToManager('info', `[9090] 活监听者已清掉，端口空闲`);
+        this.logToManager('info', `[clash_api] 活监听者已清掉，端口空闲`);
         return;
       }
       if (p.listening) {
@@ -1854,11 +1859,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           const ready = this.helperManager && (await this.helperManager.isReady());
           this.logToManager(
             'error',
-            `[9090] Windows 活监听者仍在 → 终态 BUSY：${ready ? 'helper freePort 重试后仍未清净' : '未装 helper，无零提权清理手段（建议安装 Windows 提权 helper）'}`
+            `[clash_api] Windows 活监听者仍在 → 终态 BUSY：${ready ? 'helper freePort 重试后仍未清净' : '未装 helper，无零提权清理手段（建议安装 Windows 提权 helper）'}`
           );
         } else {
           // 仍有活监听者没杀掉（非交互/取消/外部）
-          this.logToManager('error', `[9090] 活监听者仍在 → 终态 BUSY`);
+          this.logToManager('error', `[clash_api] 活监听者仍在 → 终态 BUSY`);
         }
         throw this.clashPortError('BUSY');
       }
@@ -1875,13 +1880,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (this.needsOsascript()) {
         this.logToManager(
           'info',
-          `[9090] TIME_WAIT 残留，本次以 root 启动 sing-box（SO_REUSEADDR 复用同 uid 残留）→ 跳过等待直接放行`
+          `[clash_api] TIME_WAIT 残留，本次以 root 启动 sing-box（SO_REUSEADDR 复用同 uid 残留）→ 跳过等待直接放行`
         );
         return;
       }
       this.logToManager(
         'warn',
-        `[9090] 端口处于回收中(TIME_WAIT)，等待系统释放（≤35s，无需结束进程）...`
+        `[clash_api] 端口处于回收中(TIME_WAIT)，等待系统释放（≤35s，无需结束进程）...`
       );
       this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
         message:
@@ -1894,17 +1899,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         await new Promise((r) => setTimeout(r, 1000));
         p = await probe();
         if (!p.bindBusy && !p.listening) {
-          this.logToManager('info', `[9090] TIME_WAIT 已回收，端口空闲`);
+          this.logToManager('info', `[clash_api] TIME_WAIT 已回收，端口空闲`);
           return;
         }
         if (p.listening) break; // 期间又冒出活监听者 → 跳出走 BUSY 终态（罕见）
       }
       if (p.bindBusy && !p.listening) {
-        this.logToManager('error', `[9090] TIME_WAIT 35s 未回收 → 终态`);
+        this.logToManager('error', `[clash_api] TIME_WAIT 35s 未回收 → 终态`);
         throw this.clashPortError('BUSY_TIMEWAIT');
       }
     }
-    this.logToManager('error', `[9090] 清理后仍被占用 → 终态 BUSY`);
+    this.logToManager('error', `[clash_api] 清理后仍被占用 → 终态 BUSY`);
     throw this.clashPortError('BUSY');
   }
 
@@ -1932,12 +1937,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     });
   }
 
-  /** 构造 9090 占用终态错误（err.code 带机读码；三条消息均含「clash_api 端口 9090」→ isUnrecoverableRestartError 命中、立即终态）。 */
+  /** 构造 clash_api 端口占用终态错误（err.code 带机读码；消息均含「clash_api 端口」→ isUnrecoverableRestartError 命中、立即终态）。 */
   private clashPortError(
     kind: 'BUSY' | 'FOREIGN' | 'AUTH_CANCELLED' | 'BUSY_TIMEWAIT',
     occupant?: string
   ): Error & { code?: string } {
-    const PORT = 9090;
+    const PORT = this.getClashApiPort();
     let msg: string;
     let code: string;
     if (kind === 'FOREIGN') {
@@ -2009,7 +2014,7 @@ done
       };
       // 硬超时：授权框被遮挡/无人应答 120s → 杀 osascript 按取消处理，绝不让 start() 永挂（修卡死诱因）。
       const timer = setTimeout(() => {
-        this.logToManager('warn', `[9090] osascript 授权框 120s 未应答，按取消处理`);
+        this.logToManager('warn', `[clash_api] osascript 授权框 120s 未应答，按取消处理`);
         try {
           proc.kill('SIGKILL');
         } catch {
@@ -2101,7 +2106,7 @@ done
           store_rdrc: true,
         },
         clash_api: {
-          external_controller: '127.0.0.1:9090',
+          external_controller: `127.0.0.1:${controlApiPort(config)}`,
           external_ui: path.join(userDataPath, 'ui'),
           // 随机 secret 鉴权（持久化于 config）：内部调用带 Authorization，防恶意网页跨域读连接历史
           secret: config.clashApiSecret || '',
@@ -7029,7 +7034,7 @@ exit 0
       m.includes('root_orphan_blocked') ||
       m.includes('root 残留') ||
       m.includes('clash_api_port_busy') ||
-      m.includes('clash_api 端口 9090')
+      m.includes('clash_api 端口')
     );
   }
 

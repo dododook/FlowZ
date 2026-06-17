@@ -1,4 +1,9 @@
-import { localProxyPort, DEFAULT_MIXED_PORT } from '../proxy-ports';
+import {
+  localProxyPort,
+  DEFAULT_MIXED_PORT,
+  controlApiPort,
+  DEFAULT_CONTROL_PORT,
+} from '../proxy-ports';
 
 describe('localProxyPort (mixed-only 单一真值)', () => {
   it('mixedPort 已设(>0) → 用 mixedPort', () => {
@@ -15,5 +20,20 @@ describe('localProxyPort (mixed-only 单一真值)', () => {
   });
   it('DEFAULT_MIXED_PORT 对齐业内 7890', () => {
     expect(DEFAULT_MIXED_PORT).toBe(7890);
+  });
+});
+
+describe('controlApiPort (clash_api 控制端口单一真值)', () => {
+  it('controlPort 已设(>0) → 用 controlPort', () => {
+    expect(controlApiPort({ controlPort: 9091 })).toBe(9091);
+    expect(controlApiPort({ controlPort: 12345 })).toBe(12345);
+  });
+  it('controlPort 未设/无效 → 默认 9090', () => {
+    expect(controlApiPort({})).toBe(DEFAULT_CONTROL_PORT);
+    expect(controlApiPort({ controlPort: 0 })).toBe(9090);
+    expect(controlApiPort({ controlPort: -1 })).toBe(9090);
+  });
+  it('DEFAULT_CONTROL_PORT 对齐业内 9090', () => {
+    expect(DEFAULT_CONTROL_PORT).toBe(9090);
   });
 });

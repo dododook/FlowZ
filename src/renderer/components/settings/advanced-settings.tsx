@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/app-store';
+import { controlApiPort } from '@shared/proxy-ports';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { SettingsRow } from './settings-row';
@@ -46,6 +47,8 @@ export function AdvancedSettings() {
   const localPort = (config.mixedPort || config.httpPort || 7890).toString();
   const httpPort = localPort;
   const socksPort = localPort;
+  // clash_api 控制端口（默认 9090，可在「网络」节改 controlPort）。展示与复制随之动态。
+  const clashApiAddr = `127.0.0.1:${controlApiPort(config)}`;
 
   return (
     <div className="space-y-6">
@@ -61,12 +64,12 @@ export function AdvancedSettings() {
           <div className="space-y-1.5">
             <Label className="font-normal">{t('settings.advanced.clashApiAddress')}</Label>
             <div className="flex items-center gap-2">
-              <code className="rounded bg-muted px-2 py-1 font-mono text-xs">127.0.0.1:9090</code>
+              <code className="rounded bg-muted px-2 py-1 font-mono text-xs">{clashApiAddr}</code>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  navigator.clipboard.writeText('127.0.0.1:9090');
+                  navigator.clipboard.writeText(clashApiAddr);
                   toast.success(t('settings.advanced.copied'));
                 }}
               >

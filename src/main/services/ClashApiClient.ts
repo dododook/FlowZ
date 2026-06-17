@@ -19,7 +19,12 @@ export interface ClashApiResult {
 export class ClashApiClient {
   private agent: http.Agent;
 
-  constructor(private readonly getSecret: () => string) {
+  // getPort：clash_api 控制端口取值回调（默认 9090）。与 getSecret 同形——每次请求读最新值，
+  // reload 配置改 controlPort 后无需通知。缺省 9090 保持旧调用方/单测（仅传 getSecret）不破。
+  constructor(
+    private readonly getSecret: () => string,
+    private readonly getPort: () => number = () => 9090
+  ) {
     this.agent = new http.Agent({ keepAlive: true, maxSockets: 2 });
   }
 
@@ -40,7 +45,7 @@ export class ClashApiClient {
       const req = http.request(
         {
           host: '127.0.0.1',
-          port: 9090,
+          port: this.getPort(),
           path: pathName,
           method,
           agent: this.agent,
@@ -78,7 +83,7 @@ export class ClashApiClient {
       const req = http.request(
         {
           host: '127.0.0.1',
-          port: 9090,
+          port: this.getPort(),
           path,
           method: 'GET',
           agent: this.agent,

@@ -23,6 +23,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useAppStore } from '@/store/app-store';
 import { parseDnsServerSpec } from '@shared/dns';
+import { controlApiPort } from '@shared/proxy-ports';
 import {
   DEFAULT_SYSTEM_PROXY_BYPASS,
   parseBypassList,
@@ -56,6 +57,8 @@ export function NetworkSettings() {
   const [localPort, setLocalPort] = useState(
     (config?.mixedPort || config?.httpPort || 7890).toString()
   );
+  // clash_api 外部控制端口（默认 9090，可改以解端口冲突死局）。失焦提交，外部变更时 resync。
+  const [controlPort, setControlPort] = useState(controlApiPort(config ?? {}).toString());
   // TUN 模式下 FakeIP ON→OFF 一次性风险确认弹窗开关（机场拒纯 IP 不可预判、无法客户端缓解）。
   const [fakeIpOffConfirmOpen, setFakeIpOffConfirmOpen] = useState(false);
   // 绕过局域网 · 排除段（每行一个 CIDR）：onBlur 提交（避免逐键触发代理重启），外部变更时 resync。
@@ -78,6 +81,7 @@ export function NetworkSettings() {
   // 回填「未被用户改动」的字段；dirty 守卫（本地值 ≠ 上次种子）避免打断正在输入的用户。
   const seededRef = useRef<{
     localPort: string;
+    controlPort: string;
     subInterval: string;
     domesticDns: string;
     foreignDns: string;
@@ -88,6 +92,7 @@ export function NetworkSettings() {
     if (!config) return;
     const snap = {
       localPort: (config.mixedPort || config.httpPort || 7890).toString(),
+      controlPort: controlApiPort(config).toString(),
       subInterval: config.subscriptionUpdateIntervalHours?.toString() || '12',
       domesticDns: config.dnsConfig?.domesticDns || DNS_DEFAULTS.domesticDns,
       foreignDns: config.dnsConfig?.foreignDns || DNS_DEFAULTS.foreignDns,
@@ -96,6 +101,7 @@ export function NetworkSettings() {
     };
     const prev = seededRef.current;
     setLocalPort((cur) => (prev && cur !== prev.localPort ? cur : snap.localPort));
+    setControlPort((cur) => (prev && cur !== prev.controlPort ? cur : snap.controlPort));
     setSubInterval((cur) => (prev && cur !== prev.subInterval ? cur : snap.subInterval));
     setDomesticDns((cur) => (prev && cur !== prev.domesticDns ? cur : snap.domesticDns));
     setForeignDns((cur) => (prev && cur !== prev.foreignDns ? cur : snap.foreignDns));
@@ -105,6 +111,7 @@ export function NetworkSettings() {
   }, [
     config?.mixedPort,
     config?.httpPort,
+    config?.controlPort,
     config?.subscriptionUpdateIntervalHours,
     config?.dnsConfig?.domesticDns,
     config?.dnsConfig?.foreignDns,
@@ -198,13 +205,10 @@ export function NetworkSettings() {
       revert();
       return;
     }
-    if (portNum === 9090) {
-      // 9090 = clash_api 控制端口（对外契约固定端口，内部占用）。本地端口可改、唯独不能填 9090，提示并回滚。
+    if (portNum === controlApiPort(config)) {
+      // 撞控制端口（clash_api）→ sing-box 两 inbound 同口必 FATAL。两者皆可改，提示改其一并回滚。
       toast.error(
-        t(
-          'settings.advanced.localPort9090',
-          '本地端口不能用 9090（内部控制接口占用），请改用其它端口'
-        )
+        t('settings.advanced.portClashWithControl', '本地端口不能与控制端口相同，请改其中之一')
       );
       revert();
       return;
@@ -212,6 +216,30 @@ export function NetworkSettings() {
     if (portNum === cur) return; // 无变化
     setLocalPort(portNum.toString());
     saveConfig({ ...config, mixedPort: portNum }).catch(() => toast.error(t('common.saveFailed')));
+  };
+
+  // 控制端口（clash_api external_controller）：失焦即生效。范围/与本地端口冲突给提示并回滚。
+  const commitControlPort = () => {
+    const portNum = parseInt(controlPort, 10);
+    const cur = controlApiPort(config);
+    const revert = () => setControlPort(cur.toString());
+    if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+      toast.error(t('settings.advanced.localPortRange', '端口须为 1024-65535'));
+      revert();
+      return;
+    }
+    if (portNum === (config.mixedPort || config.httpPort || 7890)) {
+      toast.error(
+        t('settings.advanced.portClashWithControl', '本地端口不能与控制端口相同，请改其中之一')
+      );
+      revert();
+      return;
+    }
+    if (portNum === cur) return; // 无变化
+    setControlPort(portNum.toString());
+    saveConfig({ ...config, controlPort: portNum }).catch(() =>
+      toast.error(t('common.saveFailed'))
+    );
   };
 
   const numInput = (
@@ -366,6 +394,15 @@ export function NetworkSettings() {
             )}
           >
             {numInput(localPort, setLocalPort, 'w-[120px]', commitLocalPort)}
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.advanced.controlPort', '控制端口')}
+            description={t(
+              'settings.advanced.controlPortDesc',
+              '外部控制端口（clash API，供面板/脚本对接）。默认 9090；被其它应用占用导致代理无法启动时，改此端口即可。'
+            )}
+          >
+            {numInput(controlPort, setControlPort, 'w-[120px]', commitControlPort)}
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.allowLan')}

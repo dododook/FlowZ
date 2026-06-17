@@ -1016,9 +1016,12 @@ if (gotTheLock) {
     // 系统 DNS 接管单一写者：注入同一 singleton，set（仅 TUN）/restore 统一收口 ProxyManager.start()/终态。
     proxyManager.setSystemDnsManager(systemDnsManager);
 
-    // clash_api(9090) 专属客户端（T15：ProxyManager 与 StatsService 共用单一 keep-alive agent，消除两处 plumbing 重复）。
-    // secret 经 getter 回调读 currentConfig.clashApiSecret（reload 后自动读最新）。
-    const clashApiClient = new ClashApiClient(() => proxyManager?.getClashApiSecret() ?? '');
+    // clash_api 专属客户端（T15：ProxyManager 与 StatsService 共用单一 keep-alive agent，消除两处 plumbing 重复）。
+    // secret/port 均经 getter 回调读 currentConfig（reload 后自动读最新，改 controlPort 无需通知）。
+    const clashApiClient = new ClashApiClient(
+      () => proxyManager?.getClashApiSecret() ?? '',
+      () => proxyManager?.getClashApiPort() ?? 9090
+    );
     proxyManager.setClashApiClient(clashApiClient);
 
     // 平台提权服务（T16：纯函数/无状态方法 + killOrphans 链迁出 ProxyManager/CoreUpdateService，delegate 后调用点零改动）。
