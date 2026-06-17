@@ -75,8 +75,8 @@ const mainNavGroups: { label?: string; items: { id: string; icon: React.ElementT
 
 const settingsNavItems = [
   { id: 'general', icon: Sliders },
+  { id: 'appearance', icon: Palette }, // 外观(主题/语言)前置：首次个性化、设一次即用，靠前更顺手
   { id: 'network', icon: Network },
-  { id: 'appearance', icon: Palette },
   { id: 'advanced', icon: Cpu },
   { id: 'about', icon: Info },
 ];
