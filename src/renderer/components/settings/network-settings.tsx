@@ -33,7 +33,10 @@ import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { SettingsRow } from './settings-row';
+import { SettingsCollapsible } from './settings-collapsible';
 import { HelperManagementCard } from './helper-management-card';
+import { ExternalControlSection } from './external-control-section';
+import { TerminalProxySection } from './terminal-proxy-section';
 
 const isMac = window.electron?.platform === 'darwin';
 const isWin = window.electron?.platform === 'win32';
@@ -326,59 +329,63 @@ export function NetworkSettings() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <SettingsRow
-            label={t('settings.advanced.fakeIpFilter', 'fake-ip-filter 默认清单')}
-            description={t(
-              'settings.advanced.fakeIpFilterDesc',
-              'NTP / STUN / 连通性探测等域名走真实 DNS 解析、绕过 FakeIP（避免校时失败、系统误判断网 / 锁屏登录卡死）。建议开启。'
-            )}
-          >
-            <Switch
-              checked={config.fakeIpFilter !== false}
-              onCheckedChange={(c) => setBool('fakeIpFilter', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.advanced.nodeDomainResolver')}
-            description={t('settings.advanced.nodeDomainResolverDesc')}
-          >
-            <Select
-              value={config.dnsConfig?.nodeDomainResolver ?? 'auto'}
-              onValueChange={(v) =>
-                updateDns({
-                  nodeDomainResolver: v as NonNullable<
-                    typeof config.dnsConfig
-                  >['nodeDomainResolver'],
-                })
-              }
+          <SettingsCollapsible label={t('settings.network.advancedDns', '高级 DNS')} defaultOpen>
+            <SettingsRow
+              label={t('settings.advanced.fakeIpFilter', 'fake-ip-filter 默认清单')}
+              description={t(
+                'settings.advanced.fakeIpFilterDesc',
+                'NTP / STUN / 连通性探测等域名走真实 DNS 解析、绕过 FakeIP（避免校时失败、系统误判断网 / 锁屏登录卡死）。建议开启。'
+              )}
             >
-              <SelectTrigger className="h-8 w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">{t('settings.advanced.nodeResolverAuto')}</SelectItem>
-                <SelectItem value="dnspod">{t('settings.advanced.nodeResolverDnspod')}</SelectItem>
-                <SelectItem value="system">
-                  {t('settings.advanced.nodeResolverSystem')}
-                  {isLinux && config.proxyModeType === 'tun'
-                    ? ` (${t('settings.advanced.nodeResolverExperimental')})`
-                    : ''}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
-            description={t(
-              'settings.advanced.takeoverSystemDnsDesc',
-              'TUN 模式下把系统 DNS 临时改为 8.8.8.8，让需代理的域名经隧道正确解析（停止/退出自动还原）。关闭后改用你原本的 DNS，内网域名解析更友好，但部分需代理域名可能解析异常。建议保持开启。'
-            )}
-          >
-            <Switch
-              checked={config.dnsConfig?.takeoverSystemDns !== false}
-              onCheckedChange={(c) => updateDns({ takeoverSystemDns: c })}
-            />
-          </SettingsRow>
+              <Switch
+                checked={config.fakeIpFilter !== false}
+                onCheckedChange={(c) => setBool('fakeIpFilter', c)}
+              />
+            </SettingsRow>
+            <SettingsRow
+              label={t('settings.advanced.nodeDomainResolver')}
+              description={t('settings.advanced.nodeDomainResolverDesc')}
+            >
+              <Select
+                value={config.dnsConfig?.nodeDomainResolver ?? 'auto'}
+                onValueChange={(v) =>
+                  updateDns({
+                    nodeDomainResolver: v as NonNullable<
+                      typeof config.dnsConfig
+                    >['nodeDomainResolver'],
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 w-[160px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">{t('settings.advanced.nodeResolverAuto')}</SelectItem>
+                  <SelectItem value="dnspod">
+                    {t('settings.advanced.nodeResolverDnspod')}
+                  </SelectItem>
+                  <SelectItem value="system">
+                    {t('settings.advanced.nodeResolverSystem')}
+                    {isLinux && config.proxyModeType === 'tun'
+                      ? ` (${t('settings.advanced.nodeResolverExperimental')})`
+                      : ''}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingsRow>
+            <SettingsRow
+              label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
+              description={t(
+                'settings.advanced.takeoverSystemDnsDesc',
+                'TUN 模式下把系统 DNS 临时改为 8.8.8.8，让需代理的域名经隧道正确解析（停止/退出自动还原）。关闭后改用你原本的 DNS，内网域名解析更友好，但部分需代理域名可能解析异常。建议保持开启。'
+              )}
+            >
+              <Switch
+                checked={config.dnsConfig?.takeoverSystemDns !== false}
+                onCheckedChange={(c) => updateDns({ takeoverSystemDns: c })}
+              />
+            </SettingsRow>
+          </SettingsCollapsible>
         </CardContent>
       </Card>
 
@@ -452,37 +459,18 @@ export function NetworkSettings() {
         </CardContent>
       </Card>
 
+      {/* 外部控制 / clash API（从「高级」节迁入，与控制端口同节就近，M2） */}
+      <Card>
+        <CardContent className="divide-y divide-border/60 pt-2">
+          <ExternalControlSection />
+        </CardContent>
+      </Card>
+
       {/* 连接 / 流量（QUIC/TLS/IPv6 流量治理 + 切换/换节点/更新路由 行为） */}
       <Card>
         <CardContent className="divide-y divide-border/60 pt-2">
           <SettingsRow heading label={t('settings.network.connection')} />
-          <SettingsRow
-            label={t('settings.advanced.blockQuic')}
-            description={t('settings.advanced.blockQuicDesc')}
-          >
-            <Switch
-              checked={config.blockQuic === true}
-              onCheckedChange={(c) => setBool('blockQuic', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.advanced.interruptOnSwitch')}
-            description={t('settings.advanced.interruptOnSwitchDesc')}
-          >
-            <Switch
-              checked={config.interruptConnectionsOnSwitch === true}
-              onCheckedChange={(c) => setBool('interruptConnectionsOnSwitch', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.advanced.tlsFragment')}
-            description={t('settings.advanced.tlsFragmentDesc')}
-          >
-            <Switch
-              checked={config.tlsFragment === true}
-              onCheckedChange={(c) => setBool('tlsFragment', c)}
-            />
-          </SettingsRow>
+          {/* 高频项常驻；低频流量治理折叠（C4/H3） */}
           <SettingsRow
             label={t('settings.advanced.autoSwitchNode')}
             description={t('settings.advanced.autoSwitchNodeDesc')}
@@ -492,61 +480,54 @@ export function NetworkSettings() {
               onCheckedChange={(c) => setBool('autoSwitchNode', c)}
             />
           </SettingsRow>
-          <SettingsRow
-            label={<span className="text-warning">{t('settings.general.enableIPv6')}</span>}
-            description={t('settings.network.enableIPv6Desc')}
+          <SettingsCollapsible
+            label={t('settings.network.advancedTraffic', '高级流量')}
+            defaultOpen
           >
-            <Switch
-              checked={config.enableIPv6 === true}
-              onCheckedChange={(c) => setBool('enableIPv6', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.advanced.mainSessionViaProxy', '更新检查走代理')}
-            description={t(
-              'settings.advanced.mainSessionViaProxyDesc',
-              '开启后，应用/内核更新检查与规则资源下载在代理运行时经代理（更新源多在 GitHub）；关闭则直连/走系统代理。注：TUN 模式下因系统层捕获，关闭不能完全直连。'
-            )}
-          >
-            <Switch
-              checked={config.mainSessionViaProxy !== false}
-              onCheckedChange={(checked) =>
-                saveConfig({ ...config, mainSessionViaProxy: checked }).catch(() =>
-                  toast.error(t('common.saveFailed'))
-                )
-              }
-            />
-          </SettingsRow>
+            <SettingsRow
+              label={t('settings.advanced.blockQuic')}
+              description={t('settings.advanced.blockQuicDesc')}
+            >
+              <Switch
+                checked={config.blockQuic === true}
+                onCheckedChange={(c) => setBool('blockQuic', c)}
+              />
+            </SettingsRow>
+            <SettingsRow
+              label={t('settings.advanced.interruptOnSwitch')}
+              description={t('settings.advanced.interruptOnSwitchDesc')}
+            >
+              <Switch
+                checked={config.interruptConnectionsOnSwitch === true}
+                onCheckedChange={(c) => setBool('interruptConnectionsOnSwitch', c)}
+              />
+            </SettingsRow>
+            <SettingsRow
+              label={t('settings.advanced.tlsFragment')}
+              description={t('settings.advanced.tlsFragmentDesc')}
+            >
+              <Switch
+                checked={config.tlsFragment === true}
+                onCheckedChange={(c) => setBool('tlsFragment', c)}
+              />
+            </SettingsRow>
+            <SettingsRow
+              label={<span className="text-warning">{t('settings.general.enableIPv6')}</span>}
+              description={t('settings.network.enableIPv6Desc')}
+            >
+              <Switch
+                checked={config.enableIPv6 === true}
+                onCheckedChange={(c) => setBool('enableIPv6', c)}
+              />
+            </SettingsRow>
+          </SettingsCollapsible>
         </CardContent>
       </Card>
 
-      {/* 节点测速 */}
+      {/* 更新与测速（订阅自动更新 + 更新走代理 + 节点测速端点合并为一卡，C5/L2） */}
       <Card>
         <CardContent className="divide-y divide-border/60 pt-2">
-          <SettingsRow heading label={t('settings.network.speedTest')} />
-          <SettingsRow
-            label={t('settings.network.speedTestUrl')}
-            description={t('settings.network.speedTestUrlDesc')}
-            stacked
-          >
-            <Input
-              value={speedTestUrl}
-              onChange={(e) => setSpeedTestUrl(e.target.value)}
-              onBlur={() => commitSpeedTestUrl(speedTestUrl)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur();
-              }}
-              className="max-w-md font-mono text-sm"
-              placeholder={DEFAULT_SPEED_TEST_URL}
-            />
-          </SettingsRow>
-        </CardContent>
-      </Card>
-
-      {/* 订阅自动更新 */}
-      <Card>
-        <CardContent className="divide-y divide-border/60 pt-2">
-          <SettingsRow heading label={t('settings.advanced.subAutoUpdate')} />
+          <SettingsRow heading label={t('settings.network.updateAndSpeedTest', '更新与测速')} />
           <SettingsRow
             label={t('settings.advanced.autoUpdateSub')}
             description={t('settings.advanced.autoUpdateSubDesc')}
@@ -586,6 +567,49 @@ export function NetworkSettings() {
               </SettingsRow>
             </>
           )}
+          {/* 更新检查走代理（L2：与订阅更新同属「更新流量是否走代理」，从连接/流量卡归并至此） */}
+          <SettingsRow
+            label={t('settings.advanced.mainSessionViaProxy', '更新检查走代理')}
+            description={t(
+              'settings.advanced.mainSessionViaProxyDesc',
+              '开启后，应用/内核更新检查与规则资源下载在代理运行时经代理（更新源多在 GitHub）；关闭则直连/走系统代理。注：TUN 模式下因系统层捕获，关闭不能完全直连。'
+            )}
+          >
+            <Switch
+              checked={config.mainSessionViaProxy !== false}
+              onCheckedChange={(checked) =>
+                saveConfig({ ...config, mainSessionViaProxy: checked }).catch(() =>
+                  toast.error(t('common.saveFailed'))
+                )
+              }
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.network.speedTestUrl')}
+            description={t('settings.network.speedTestUrlDesc')}
+            stacked
+          >
+            <Input
+              value={speedTestUrl}
+              onChange={(e) => setSpeedTestUrl(e.target.value)}
+              onBlur={() => commitSpeedTestUrl(speedTestUrl)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+              }}
+              className="max-w-md font-mono text-sm"
+              placeholder={DEFAULT_SPEED_TEST_URL}
+            />
+          </SettingsRow>
+        </CardContent>
+      </Card>
+
+      {/* 终端代理速查表（从「高级」节迁入，默认折叠；C3/L4） */}
+      <Card>
+        <CardContent className="pt-6">
+          <TerminalProxySection
+            httpPort={(config.mixedPort || config.httpPort || 7890).toString()}
+            socksPort={(config.mixedPort || config.httpPort || 7890).toString()}
+          />
         </CardContent>
       </Card>
     </div>

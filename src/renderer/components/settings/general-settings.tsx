@@ -73,86 +73,98 @@ export function GeneralSettings() {
 
   if (!config) return null;
 
+  // 卡片分组与「网络」节一致：每个主题一张卡（启动 / 行为与隐私），而非单卡内分隔标题（UI 风格统一）。
   return (
-    <Card>
-      <CardContent className="divide-y divide-border/60 pt-2">
-        <SettingsRow
-          label={t('settings.general.silentStart')}
-          description={t('settings.general.silentStartDesc')}
-        >
-          <Switch
-            checked={config.silentStart}
-            onCheckedChange={(c) => handleToggle('silentStart', c)}
-          />
-        </SettingsRow>
-        <SettingsRow label={t('settings.general.autoStartTitle')}>
-          <Switch
-            checked={config.autoStart}
-            onCheckedChange={(c) => handleToggle('autoStart', c)}
-          />
-        </SettingsRow>
-        <SettingsRow label={t('settings.general.autoConnect')}>
-          <Switch
-            checked={config.autoConnect}
-            onCheckedChange={(c) => handleToggle('autoConnect', c)}
-          />
-        </SettingsRow>
-        <SettingsRow label={t('settings.general.minimizeToTrayTitle')}>
-          <Switch
-            checked={config.minimizeToTray}
-            onCheckedChange={(c) => handleToggle('minimizeToTray', c)}
-          />
-        </SettingsRow>
-        <SettingsRow label={t('settings.general.autoCheckUpdate')}>
-          <Switch
-            checked={config.autoCheckUpdate !== false}
-            onCheckedChange={(c) => handleToggle('autoCheckUpdate', c)}
-          />
-        </SettingsRow>
-        <SettingsRow label={t('settings.general.rememberWindowSize')}>
-          <Switch
-            checked={config.rememberWindowSize === true}
-            onCheckedChange={(c) => handleToggle('rememberWindowSize', c)}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label={t('settings.general.autoLightweightMode')}
-          description={t('settings.general.autoLightweightModeDesc')}
-        >
-          <Switch
-            checked={config.autoLightweightMode}
-            onCheckedChange={(c) => handleToggle('autoLightweightMode', c)}
-          />
-        </SettingsRow>
-        <SettingsRow
-          label={t('settings.general.autoPrivacyMode')}
-          description={t('settings.general.autoPrivacyModeDesc')}
-        >
-          <Switch
-            checked={config.autoPrivacyMode === true}
-            onCheckedChange={(c) => handleToggle('autoPrivacyMode', c)}
-          />
-        </SettingsRow>
-        {config.autoPrivacyMode && (
-          <SettingsRow label={t('settings.general.privacyPassword')} stacked>
-            <div className="flex items-center gap-2">
-              <Input
-                type="password"
-                placeholder={t('settings.general.privacyPasswordPlaceholder')}
-                value={passwordValue}
-                onChange={(e) => setPasswordValue(e.target.value)}
-                onBlur={() => handlePasswordSave(passwordValue)}
-                className="h-8 max-w-[260px]"
-              />
-              {hasPrivacyPassword && (
-                <Button variant="outline" size="sm" className="h-8" onClick={handleClearPassword}>
-                  {t('settings.general.clearPassword')}
-                </Button>
-              )}
-            </div>
+    <div className="space-y-6">
+      {/* 启动 */}
+      <Card>
+        <CardContent className="divide-y divide-border/60 pt-2">
+          <SettingsRow heading label={t('settings.general.groupStartup', '启动')} />
+          <SettingsRow
+            label={t('settings.general.silentStart')}
+            description={t('settings.general.silentStartDesc')}
+          >
+            <Switch
+              checked={config.silentStart}
+              onCheckedChange={(c) => handleToggle('silentStart', c)}
+            />
           </SettingsRow>
-        )}
-      </CardContent>
-    </Card>
+          <SettingsRow label={t('settings.general.autoStartTitle')}>
+            <Switch
+              checked={config.autoStart}
+              onCheckedChange={(c) => handleToggle('autoStart', c)}
+            />
+          </SettingsRow>
+          <SettingsRow label={t('settings.general.autoConnect')}>
+            <Switch
+              checked={config.autoConnect}
+              onCheckedChange={(c) => handleToggle('autoConnect', c)}
+            />
+          </SettingsRow>
+          <SettingsRow label={t('settings.general.minimizeToTrayTitle')}>
+            <Switch
+              checked={config.minimizeToTray}
+              onCheckedChange={(c) => handleToggle('minimizeToTray', c)}
+            />
+          </SettingsRow>
+        </CardContent>
+      </Card>
+
+      {/* 行为与隐私 */}
+      <Card>
+        <CardContent className="divide-y divide-border/60 pt-2">
+          <SettingsRow heading label={t('settings.general.groupBehavior', '行为与隐私')} />
+          <SettingsRow label={t('settings.general.autoCheckUpdate')}>
+            <Switch
+              checked={config.autoCheckUpdate !== false}
+              onCheckedChange={(c) => handleToggle('autoCheckUpdate', c)}
+            />
+          </SettingsRow>
+          <SettingsRow label={t('settings.general.rememberWindowSize')}>
+            <Switch
+              checked={config.rememberWindowSize === true}
+              onCheckedChange={(c) => handleToggle('rememberWindowSize', c)}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.general.autoLightweightMode')}
+            description={t('settings.general.autoLightweightModeDesc')}
+          >
+            <Switch
+              checked={config.autoLightweightMode}
+              onCheckedChange={(c) => handleToggle('autoLightweightMode', c)}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.general.autoPrivacyMode')}
+            description={t('settings.general.autoPrivacyModeDesc')}
+          >
+            <Switch
+              checked={config.autoPrivacyMode === true}
+              onCheckedChange={(c) => handleToggle('autoPrivacyMode', c)}
+            />
+          </SettingsRow>
+          {config.autoPrivacyMode && (
+            <SettingsRow label={t('settings.general.privacyPassword')} stacked>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="password"
+                  placeholder={t('settings.general.privacyPasswordPlaceholder')}
+                  value={passwordValue}
+                  onChange={(e) => setPasswordValue(e.target.value)}
+                  onBlur={() => handlePasswordSave(passwordValue)}
+                  className="h-8 max-w-[260px]"
+                />
+                {hasPrivacyPassword && (
+                  <Button variant="outline" size="sm" className="h-8" onClick={handleClearPassword}>
+                    {t('settings.general.clearPassword')}
+                  </Button>
+                )}
+              </div>
+            </SettingsRow>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

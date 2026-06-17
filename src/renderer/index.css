@@ -116,6 +116,12 @@
     font-family:
       -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
       'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  }
+
+  /* 字体平滑按平台分流：仅 macOS 用 grayscale antialiased（macOS 观感）。
+     Windows/Linux 不强制 antialiased —— 全局 -webkit-font-smoothing:antialiased 会关闭 Windows 的
+     ClearType 亚像素渲染，导致字体发虚/变细/模糊；保留系统默认即恢复 ClearType 锐利度。 */
+  html.platform-darwin body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

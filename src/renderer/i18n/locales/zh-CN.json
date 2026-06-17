@@ -67,7 +67,9 @@
   },
   "logs": {
     "pageTitle": "实时日志",
-    "pageDesc": "查看 sing-box 核心与应用运行日志"
+    "pageDesc": "查看 sing-box 核心与应用运行日志",
+    "settingsTitle": "日志与诊断",
+    "currentLevel": "级别"
   },
   "connections": {
     "pageTitle": "连接信息",
@@ -324,7 +326,9 @@
     },
     "general": {
       "title": "常规",
-      "description": "应用程序启动和行为设置",
+      "description": "应用启动、行为与隐私",
+      "groupStartup": "启动",
+      "groupBehavior": "行为与隐私",
       "autoStartTitle": "开机自动启动",
       "silentStart": "静默启动",
       "silentStartDesc": "启动应用时不显示主窗口，直接最小化到系统托盘",
@@ -413,10 +417,13 @@
     },
     "network": {
       "title": "网络",
-      "description": "DNS、端口、连接与订阅更新",
+      "description": "DNS、端口、流量、测速与订阅更新",
       "connection": "连接",
       "enableIPv6Desc": "启用全局 IPv6 解析及路由；节点不支持时可能假死，不建议开启",
       "logs": "日志",
+      "updateAndSpeedTest": "更新与测速",
+      "advancedDns": "高级 DNS",
+      "advancedTraffic": "高级流量",
       "speedTest": "节点测速",
       "speedTestUrl": "测速端点",
       "speedTestUrlDesc": "经各节点代理请求该 URL 量 TTFB（默认 generate_204）。兼容 http/https；端点不可达时该节点显示超时，可换 cloudflare/自建端点。",
@@ -441,7 +448,7 @@
     },
     "advanced": {
       "title": "高级",
-      "description": "高级配置选项与 DNS 设置",
+      "description": "数据备份与系统运维",
       "dnsSettings": "DNS 设置",
       "domesticDns": "国内 DNS (直连)",
       "domesticDnsPlaceholder": "例如: https://doh.pub/dns-query 或 223.5.5.5",
@@ -572,7 +579,7 @@
     },
     "about": {
       "title": "关于",
-      "description": "应用程序信息",
+      "description": "版本信息与社区",
       "appVersion": "应用版本",
       "version": "版本",
       "openSource": "开源项目",

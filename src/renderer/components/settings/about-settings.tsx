@@ -14,8 +14,6 @@ import {
 import { api } from '@/ipc/api-client';
 import type { UpdateProgress } from '@/ipc/api-client';
 import { useTranslation } from 'react-i18next';
-import { CoreVersionBanner } from './core-version-banner';
-import { CoreManagementCard } from './core-management-card';
 import { AppUpdateBanner } from './app-update-banner';
 import { useAppStore } from '@/store/app-store';
 
@@ -188,10 +186,6 @@ export function AboutSettings() {
 
   return (
     <div className="space-y-4">
-      <CoreVersionBanner />
-
-      <CoreManagementCard />
-
       {availableAppUpdate && (
         <AppUpdateBanner
           updateInfo={availableAppUpdate}

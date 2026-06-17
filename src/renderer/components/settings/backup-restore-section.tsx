@@ -119,7 +119,7 @@ export function BackupRestoreSection() {
       {/* Section header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h4 className="text-sm font-medium flex items-center gap-2">
+          <h4 className="text-sm font-semibold flex items-center gap-2">
             <Database className="h-3.5 w-3.5 text-muted-foreground" />
             {t('settings.advanced.backup.title')}
           </h4>

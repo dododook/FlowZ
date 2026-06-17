@@ -20,13 +20,13 @@ const sectionTitles: Record<
     titleKey: 'settings.general.title',
     defaultTitle: '常规',
     descKey: 'settings.general.description',
-    defaultDesc: '应用程序启动和行为设置',
+    defaultDesc: '应用启动、行为与隐私',
   },
   network: {
     titleKey: 'settings.network.title',
     defaultTitle: '网络',
     descKey: 'settings.network.description',
-    defaultDesc: 'DNS、端口、连接与订阅更新',
+    defaultDesc: 'DNS、端口、流量、测速与订阅更新',
   },
   appearance: {
     titleKey: 'settings.appearance.title',
@@ -38,13 +38,13 @@ const sectionTitles: Record<
     titleKey: 'settings.advanced.title',
     defaultTitle: '高级',
     descKey: 'settings.advanced.description',
-    defaultDesc: '高级网络和系统配置',
+    defaultDesc: '数据备份与系统运维',
   },
   about: {
     titleKey: 'settings.about.title',
     defaultTitle: '关于',
     descKey: 'settings.about.description',
-    defaultDesc: '版本信息和更新',
+    defaultDesc: '版本信息与社区',
   },
 };
 

@@ -67,7 +67,9 @@
   },
   "logs": {
     "pageTitle": "Live Logs",
-    "pageDesc": "View sing-box core and application runtime logs"
+    "pageDesc": "View sing-box core and application runtime logs",
+    "settingsTitle": "Logs & Diagnostics",
+    "currentLevel": "Level"
   },
   "connections": {
     "pageTitle": "Connections",
@@ -324,7 +326,9 @@
     },
     "general": {
       "title": "General",
-      "description": "Application startup and behavior settings",
+      "description": "App startup, behavior & privacy",
+      "groupStartup": "Startup",
+      "groupBehavior": "Behavior & Privacy",
       "autoStartTitle": "Launch at Login",
       "silentStart": "Silent Start",
       "silentStartDesc": "Start minimized to system tray without showing the main window",
@@ -413,10 +417,13 @@
     },
     "network": {
       "title": "Network",
-      "description": "DNS, ports, connection & subscription updates",
+      "description": "DNS, ports, traffic, speed test & subscription updates",
       "connection": "Connection",
       "enableIPv6Desc": "Enable global IPv6 resolution & routing; may hang on nodes without IPv6, not recommended",
       "logs": "Logs",
+      "updateAndSpeedTest": "Updates & Speed Test",
+      "advancedDns": "Advanced DNS",
+      "advancedTraffic": "Advanced Traffic",
       "speedTest": "Node Speed Test",
       "speedTestUrl": "Test URL",
       "speedTestUrlDesc": "Requests this URL through each node's proxy to measure TTFB (default generate_204). Supports http/https; if the endpoint is unreachable the node shows timeout — switch to cloudflare/self-hosted.",
@@ -441,7 +448,7 @@
     },
     "advanced": {
       "title": "Advanced",
-      "description": "Advanced configuration and DNS settings",
+      "description": "Data backup & system maintenance",
       "dnsSettings": "DNS Settings",
       "domesticDns": "Domestic DNS (Direct)",
       "domesticDnsPlaceholder": "e.g. https://doh.pub/dns-query or 223.5.5.5",
@@ -572,7 +579,7 @@
     },
     "about": {
       "title": "About",
-      "description": "Application information",
+      "description": "Version info & community",
       "appVersion": "App Version",
       "version": "Version",
       "openSource": "Open Source",
