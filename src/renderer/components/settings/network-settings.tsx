@@ -407,7 +407,7 @@ export function NetworkSettings() {
               className="w-full font-mono text-xs"
             />
             <div className="flex justify-end">
-              <Button variant="outline" size="sm" onClick={resetBypass}>
+              <Button size="sm" onClick={resetBypass}>
                 {t('settings.advanced.systemProxyBypassReset', '恢复默认')}
               </Button>
             </div>
