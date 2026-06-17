@@ -34,6 +34,9 @@ export function RealTimeLogs({
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 防自指：effect ④ 程序化滚到底会触发 scroll 事件，若被 handleScroll 当成"用户滚动"会反推 isAutoScroll
+  // → 形成反馈环（高日志量下开关失灵、关不掉一直滚）。置位后忽略该次（及本帧内）滚动事件，只有真·用户滚动才更新状态。
+  const suppressScrollHandlerRef = useRef(false);
   const nextIdRef = useRef(0);
   const maxBufferRef = useRef(maxBuffer);
   const connectionStatus = useAppStore((state) => state.connectionStatus);
@@ -107,6 +110,11 @@ export function RealTimeLogs({
     if (!scrollElement) return;
 
     const handleScroll = () => {
+      // 防自指：本次 scroll 由 effect ④ 程序化滚到底触发 → 消费并忽略，不更新 isAutoScroll/isUserScrolling（断反馈环）。
+      if (suppressScrollHandlerRef.current) {
+        suppressScrollHandlerRef.current = false;
+        return;
+      }
       // 标记用户正在滚动
       setIsUserScrolling(true);
 
@@ -139,7 +147,13 @@ export function RealTimeLogs({
     if (isAutoScroll && !isUserScrolling) {
       const scrollElement = getScrollElement();
       if (scrollElement) {
+        // 置位防自指标志 → 这次程序化滚动产生的 scroll 事件被 handleScroll 消费忽略，不反推 isAutoScroll（断反馈环）。
+        suppressScrollHandlerRef.current = true;
         scrollElement.scrollTop = scrollElement.scrollHeight;
+        // 兜底：若已在底部、scrollTop 无位移 → 不触发 scroll 事件 → 下一帧清标志，避免误吞下次真·用户滚动。
+        requestAnimationFrame(() => {
+          suppressScrollHandlerRef.current = false;
+        });
       }
     }
   }, [logs, isAutoScroll, isUserScrolling, getScrollElement]);
