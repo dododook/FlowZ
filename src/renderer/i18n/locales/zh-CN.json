@@ -465,6 +465,7 @@
       "localPort": "本地端口",
       "localPortDesc": "本地代理端口（同一端口支持 HTTP 与 SOCKS5）。新装默认 7890；系统代理与终端代理均用此端口。",
       "localPortRange": "端口须为 1024-65535",
+      "localPort9090": "本地端口不能用 9090（内部控制接口占用），请改用其它端口",
       "socksPort": "本地 SOCKS 端口",
       "httpPort": "本地 HTTP 端口",
       "default": "默认",

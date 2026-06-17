@@ -226,7 +226,7 @@ export class WindowsSystemProxy extends SystemProxyBase {
           // 会将 WebSocket 等连接通过 SOCKS5 发送，而 SOCKS5 客户端可能先本地解析 DNS
           //（被 GFW 污染），再将污染后的 IP 发给代理 → 路由失败。
           // NekoBox 等工具也不在系统代理中设置 socks=。
-          // SOCKS5 代理仍在 ${socksPort} 端口可用，供需要的应用主动配置。
+          // mixed-only：SOCKS5 与 HTTP 同口（mixed inbound），需 SOCKS 的应用主动指向同一端口即可。
           const proxyServer = `http=${address}:${httpPort};https=${address}:${httpPort}`;
           await execAsync(
             `"${this.regExe}" add "${this.regPath}" /v ProxyServer /t REG_SZ /d "${proxyServer}" /f`

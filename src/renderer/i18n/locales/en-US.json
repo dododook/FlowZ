@@ -465,6 +465,7 @@
       "localPort": "Local port",
       "localPortDesc": "Local proxy port (HTTP and SOCKS5 on the same port). Defaults to 7890 for new installs; used by both system proxy and terminal proxy.",
       "localPortRange": "Port must be 1024-65535",
+      "localPort9090": "Local port can't be 9090 (reserved by the internal control API); pick another",
       "socksPort": "Local SOCKS Port",
       "httpPort": "Local HTTP Port",
       "default": "Default",

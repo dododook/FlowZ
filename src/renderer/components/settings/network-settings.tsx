@@ -56,7 +56,6 @@ export function NetworkSettings() {
   const [localPort, setLocalPort] = useState(
     (config?.mixedPort || config?.httpPort || 7890).toString()
   );
-  const [isLoading, setIsLoading] = useState(false);
   // TUN 模式下 FakeIP ON→OFF 一次性风险确认弹窗开关（机场拒纯 IP 不可预判、无法客户端缓解）。
   const [fakeIpOffConfirmOpen, setFakeIpOffConfirmOpen] = useState(false);
   // 绕过局域网 · 排除段（每行一个 CIDR）：onBlur 提交（避免逐键触发代理重启），外部变更时 resync。
@@ -189,22 +188,30 @@ export function NetworkSettings() {
     saveConfig({ ...config, speedTestUrl: next }).catch(() => toast.error(t('common.saveFailed')));
   };
 
-  const handleSavePorts = async () => {
-    // mixed-only：单一本地端口（mixed inbound 同口 HTTP+SOCKS）。只写 mixedPort（httpPort/socksPort 已治理删除）。
+  // 本地端口：失焦即生效（mixed-only 单口 HTTP+SOCKS，只写 mixedPort）。范围/冲突给提示并回滚，不需保存按钮。
+  const commitLocalPort = () => {
     const portNum = parseInt(localPort, 10);
+    const cur = config.mixedPort || config.httpPort || 7890;
+    const revert = () => setLocalPort(cur.toString());
     if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
       toast.error(t('settings.advanced.localPortRange', '端口须为 1024-65535'));
+      revert();
       return;
     }
-    setIsLoading(true);
-    try {
-      await saveConfig({ ...config, mixedPort: portNum });
-      toast.success(t('settings.advanced.portsSaved'));
-    } catch {
-      toast.error(t('settings.advanced.portsSaveFail'));
-    } finally {
-      setIsLoading(false);
+    if (portNum === 9090) {
+      // 9090 = clash_api 控制端口（对外契约固定端口，内部占用）。本地端口可改、唯独不能填 9090，提示并回滚。
+      toast.error(
+        t(
+          'settings.advanced.localPort9090',
+          '本地端口不能用 9090（内部控制接口占用），请改用其它端口'
+        )
+      );
+      revert();
+      return;
     }
+    if (portNum === cur) return; // 无变化
+    setLocalPort(portNum.toString());
+    saveConfig({ ...config, mixedPort: portNum }).catch(() => toast.error(t('common.saveFailed')));
   };
 
   const numInput = (
@@ -358,14 +365,7 @@ export function NetworkSettings() {
               '本地代理端口（同口支持 HTTP 与 SOCKS5）。新装默认 7890；系统代理与终端代理均用此端口。'
             )}
           >
-            <div className="flex flex-col items-end gap-2">
-              {numInput(localPort, setLocalPort)}
-              <Button size="sm" onClick={handleSavePorts} disabled={isLoading}>
-                {isLoading
-                  ? t('settings.advanced.saving')
-                  : t('settings.advanced.savePortSettings')}
-              </Button>
-            </div>
+            {numInput(localPort, setLocalPort, 'w-[120px]', commitLocalPort)}
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.allowLan')}
@@ -391,22 +391,23 @@ export function NetworkSettings() {
             />
           </SettingsRow>
           <SettingsRow
+            stacked
             label={t('settings.advanced.systemProxyBypass', '跳过代理（系统代理）')}
             description={t(
               'settings.advanced.systemProxyBypassDesc',
               '仅系统代理模式生效：这些地址/域名直连、不走代理（逗号分隔，支持 CIDR 与域名）。TUN 模式直连由路由规则负责。'
             )}
           >
-            <div className="flex flex-col items-end gap-2">
-              <Textarea
-                value={bypassText}
-                onChange={(e) => setBypassText(e.target.value)}
-                onBlur={commitBypass}
-                rows={5}
-                spellCheck={false}
-                className="w-[320px] font-mono text-xs"
-              />
-              <Button variant="ghost" size="sm" onClick={resetBypass}>
+            <Textarea
+              value={bypassText}
+              onChange={(e) => setBypassText(e.target.value)}
+              onBlur={commitBypass}
+              rows={6}
+              spellCheck={false}
+              className="w-full font-mono text-xs"
+            />
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={resetBypass}>
                 {t('settings.advanced.systemProxyBypassReset', '恢复默认')}
               </Button>
             </div>
