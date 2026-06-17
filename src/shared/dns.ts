@@ -1,4 +1,34 @@
 /**
+ * sing-box route 在 hijack-dns 之前「直连放行」的国内 bootstrap DNS IP（:53/:443）。单一真值：
+ *   - generateRouteConfig 的引导直连规则（C 段）引用，保证核心 DNS 自举不被 hijack 成 FakeIP；
+ *   - SystemDnsManager 受控 DNS IP 的选择守卫引用——受控 IP 绝不能落在此列表，否则其 :53 查询被该
+ *     直连规则放行、逃逸 hijack-dns，DNS 接管失效（见 docs/design/dns-ipv6-takeover.md）。
+ * 含 1.12.12.12（#57 DNSPod IP-DoH 档，与 223.5.5.5 同列直连）。
+ */
+export const BOOTSTRAP_DIRECT_DNS_IPS: readonly string[] = [
+  '223.5.5.5',
+  '223.6.6.6',
+  '1.12.12.12',
+  '119.29.29.29',
+  '119.28.28.28',
+  '114.114.114.114',
+];
+
+/**
+ * TUN 模式下 FlowZ 强制接管的「受控系统 DNS IP」。on-link 的 LAN/ISP DNS 不进 TUN → hijack-dns 看不到，
+ * 故 TUN 启动时把系统 DNS 改为此 IP，使其经 TUN 默认路由被 hijack（真进 sing-box → FakeIP/远程解析）。
+ * 选择三要求：① 非 on-link（经 TUN 默认路由）② 不在 BOOTSTRAP_DIRECT_DNS_IPS（否则被直连规则放行、逃逸 hijack）
+ * ③ 真实可路由（崩溃未还原也降级为真 DNS、不断网）。8.8.8.8 三者皆满足；223.5.5.5 因②不可用。
+ * 单测护栏断言此 IP 不在 BOOTSTRAP_DIRECT_DNS_IPS。
+ */
+export const CONTROLLED_TUN_DNS_IP = '8.8.8.8';
+
+/** 某 IP 是否在 bootstrap-direct 直连放行列表（受控 DNS IP 选择守卫 / 单测护栏用）。 */
+export function isBootstrapDirectDnsIp(ip: string): boolean {
+  return BOOTSTRAP_DIRECT_DNS_IPS.includes(ip.trim());
+}
+
+/**
  * 用户自定义 DNS 地址解析（供主进程生成 sing-box dns server + 渲染端校验共用）。
  * 支持 https:// (DoH) / tls:// (DoT) / udp:// / 裸 IP 字面量；裸域名（无 scheme）语义歧义，判非法。
  */

@@ -25,6 +25,7 @@ import type { IPrivilegedHelper } from './IPrivilegedHelper';
 import { ClashApiClient } from './ClashApiClient';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
+import { type ISystemDnsManager } from './SystemDnsManager';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../shared/constants';
 import { resourceManager } from './ResourceManager';
@@ -50,7 +51,11 @@ import {
   getCustomRulesDir,
 } from '../utils/paths';
 import { getAppPreset } from '../../shared/app-rules-preset';
-import { parseDnsServerSpec, type ParsedDnsServer } from '../../shared/dns';
+import {
+  parseDnsServerSpec,
+  type ParsedDnsServer,
+  BOOTSTRAP_DIRECT_DNS_IPS,
+} from '../../shared/dns';
 import { ruleConditions } from '../../shared/rules';
 import {
   EXT_TYPES,
@@ -552,6 +557,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 系统代理单一写者（注入 index.ts 的同一 singleton，与 IPC handler/tray 共享 originalSettings/marker 状态）。
   // 拆双轨：ProxyManager 不再内联 networksetup/reg，统一经此调用 enableProxy/disableProxy（带 marker + 防自指）。
   private systemProxyManager: ISystemProxyManager | null = null;
+  // 系统 DNS 接管单一写者（注入 index.ts 同一 singleton）：仅 TUN 模式接管（on-link LAN DNS 不进 TUN → hijack
+  // 失效，故强制系统 DNS 为可路由的受控 IP 使其经 TUN 被 hijack）。与 systemProxyManager 同生命周期点收口。
+  private systemDnsManager: ISystemDnsManager | null = null;
+  // 方案B：接管前读到的内网 LAN 解析器 IP（私网 IPv4）。仅 TUN+takeover 开时在 generateSingBoxConfig 前预读填充，
+  // 供 generateDnsConfig 把内网/captive 域名重定向到它（takeover 后 dns-local=公网解不了内网）+ rule C 直连放行防环。
+  // null=无可用 LAN 解析器（非 TUN/关/DHCP 读不到/仅公网）→ 退回 dns-local。每次 start 入口重置重读。
+  private lanResolverForDns: string | null = null;
   // 杀核前「静默 clash_api 客户端」回调（停 StatsService 轮询 + 关其到 9090 的 keep-alive 连接）：让 client 主动关
   // → 9090 不进 TIME_WAIT → 下次用户态 sing-box 免撞 root TIME_WAIT 等 30s（P0-2 治本 TIME_WAIT）。
   private quiesceClashClients: (() => void) | null = null;
@@ -563,6 +575,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private privilegeService: PlatformPrivilegeService | null = null;
   // ensureSystemProxyCleared 单飞：终态清理可能被 giveUp/健康检查/信号死多路并发触发，防重复 disable。
   private clearingSystemProxy = false;
+  // ensureSystemDnsRestored 单飞：与系统代理同终态多路并发，防重复 restore。
+  private clearingSystemDns = false;
   // 「主动停止/重启中」：stop() 期间置位，令 ensureSystemProxyCleared 跳过——避免重启 stop 腿清掉系统代理后
   // 又被 start() reconcile 设回的并发竞态（C1）。真·外部死亡时为 false → 信号死分支照常清理。
   private stopping = false;
@@ -839,6 +853,21 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.gateInvalidNodes.clear();
     this.refFixAttempted = false;
 
+    // 3.8 方案B：DNS 接管激活时,先读接管前的内网 LAN 解析器(私网 IPv4),供 generateDnsConfig 把内网/captive 域名
+    //     重定向到它(takeover 把系统 DNS 改公网 8.8.8.8 后 dns-local 解不了内网/可能环)。必须在 generateSingBoxConfig
+    //     之前读(此刻系统 DNS 尚未被 setDns 改写,scutil/netsh 反映的仍是 LAN 解析器)。无可用→null→退回 dns-local。
+    this.lanResolverForDns = null;
+    if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
+      this.lanResolverForDns =
+        (await this.systemDnsManager?.getLanResolverForDns().catch(() => null)) ?? null;
+      if (this.lanResolverForDns) {
+        this.logToManager(
+          'info',
+          `DNS 接管：内网/captive 域名将经原 LAN 解析器 ${this.lanResolverForDns} 解析`
+        );
+      }
+    }
+
     // 4. 生成 sing-box 配置文件
     const singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
 
@@ -947,7 +976,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         await this.systemProxyManager?.enableProxy(
           '127.0.0.1',
           config.httpPort || 2080,
-          config.socksPort || 2081
+          config.socksPort || 2081,
+          config.systemProxyBypass // 缺省 undefined → SystemProxyManager 取业内默认 bypass 清单
         );
       } else {
         await this.ensureSystemProxyCleared();
@@ -964,6 +994,25 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           code: -3,
         });
       }
+    }
+
+    // 系统 DNS 接管收口（治本 DNS，与系统代理 reconcile 正交）：仅 TUN 模式接管——on-link 的 LAN/ISP DNS 不进
+    // TUN → hijack-dns 看不到 → 需代理的域名被系统解析器解析成真实/错族 IP。故 TUN 启动把系统 DNS 改为受控、
+    // 可路由、不在 bootstrap-direct 的 8.8.8.8，使其经 TUN 被 hijack（真进 sing-box → FakeIP/远程解析）。
+    // systemProxy/manual 模式不接管 DNS（系统代理走远程解析）→ 反向还原可能残留（覆盖 TUN→其它模式切换）。
+    // best-effort：setDns 内部失败仅告警 + 回滚，绝不抛、不阻断 TUN 启动。
+    try {
+      if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
+        await this.systemDnsManager?.setDns();
+      } else {
+        // 非 TUN / 用户关掉接管开关 → 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
+        await this.ensureSystemDnsRestored();
+      }
+    } catch (e) {
+      this.logToManager(
+        'warn',
+        `系统 DNS 接管状态同步失败: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
 
     // H3 修复：sing-box 的 cache_file 会持久化 selector 的 clash_api 选择，重启后缓存会覆盖 config
@@ -2312,6 +2361,31 @@ done
       });
     }
 
+    // 方案B：DNS 接管把系统 DNS 改成公网 8.8.8.8 后，dns-local(type:local) 解不了内网域名(.lan/.home.arpa/内网域)、
+    // 反查(.arpa) 与 captive portal。接管激活且读到内网 LAN 解析器(私网 IPv4)时，建 dns-lan(udp:53 指向它)，把这些
+    // 域名重定向到它解析；其 :53 由 generateRouteConfig rule C 直连放行(防被 hijack-dns 抢走成环)。
+    const lanResolver = this.lanResolverForDns;
+    if (lanResolver) {
+      dnsServers.push({ tag: 'dns-lan', type: 'udp', server: lanResolver, server_port: 53 });
+    }
+    // Q1 死循环防护（**仅 Windows**）：takeover 把系统 DNS 改公网 8.8.8.8 后，type:local 经 svchost(Win DNS 客户端，
+    // 不在 route 直连进程白名单)发往 8.8.8.8 → 进 TUN → hijack-dns → 命中 dns-local 规则 → 又 svchost → ∞（代码注释
+    // 2287 记的死循环，被 takeover 触发）。macOS 安全(dns-local→mDNSResponder，在直连白名单，查询不被 hijack)；
+    // Linux 不接管(setDns no-op)。故仅 Win+takeover 下把会落 type:local 的 unicast 域名改路由：银行公网→dns-domestic、
+    // 内网/反查/captive→dns-lan(有 LAN 解析器)否则 dns-domestic。.local 走 mDNS/LLMNR 组播(不发 unicast 8.8.8.8)，留 dns-local。
+    const dnsTakeoverActive =
+      config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false;
+    const winLoopRisk = process.platform === 'win32' && dnsTakeoverActive;
+    // 内网/反查/captive 解析器：优先 dns-lan(直连放行的 LAN IP)；无则 Win+takeover 退 dns-domestic(避免 type:local 死环、
+    // 内网域名 NXDOMAIN 但不挂)，非 Win/非 takeover 退 dns-local(系统解析器=真实 LAN，正常)。
+    const internalResolverTag = lanResolver
+      ? 'dns-lan'
+      : winLoopRisk
+        ? 'dns-domestic'
+        : 'dns-local';
+    // 银行/U盾公网域名解析器：仅 Win+takeover 改 dns-domestic 绕死环；其余 dns-local（mac 经 mDNSResponder 直连解公网正常）。
+    const bankResolverTag = winLoopRisk ? 'dns-domestic' : 'dns-local';
+
     const dnsConfig: SingBoxDnsConfig = {
       servers: dnsServers,
       rules: [],
@@ -2362,21 +2436,41 @@ done
       server: 'dns-bootstrap-udp',
     } as SingBoxDnsRule);
 
-    // 解决 mDNS 和本地反向解析导致的 context deadline exceeded 超时问题
-    // 拦截 .arpa 等反向解析请求交由本地系统 DNS 快速返回，防止泄漏到公网 DNS 而引起解析超时
-    // 拦截国内常见网银 U盾 驱动的本地环回解析，防止 FakeIP 拦截产生 NXDOMAIN
-    dnsRules.push({
-      domain_suffix: ['.local', '.arpa', '.lan', '.home.arpa', ...DOMESTIC_BANK_AND_STOCK_DOMAINS],
-      server: 'dns-local',
-    } as SingBoxDnsRule);
+    // 解决 mDNS 和本地反向解析导致的 context deadline exceeded 超时问题。
+    // 方案B + Q1：内网/反查 → internalResolverTag、银行 → bankResolverTag、.local 恒 dns-local（组播安全）。
+    // 三者全为 dns-local（即非 dns-lan、非 Win+takeover）→ 合并回原单条规则，byte-diff 零变化（Linux baseline/系统代理/
+    // 关接管均走此路）。否则拆三条（mac/Win 有 LAN 解析器，或 Win+takeover 无 LAN 解析器）。
+    if (internalResolverTag === 'dns-local' && bankResolverTag === 'dns-local') {
+      dnsRules.push({
+        domain_suffix: [
+          '.local',
+          '.arpa',
+          '.lan',
+          '.home.arpa',
+          ...DOMESTIC_BANK_AND_STOCK_DOMAINS,
+        ],
+        server: 'dns-local',
+      } as SingBoxDnsRule);
+    } else {
+      dnsRules.push({ domain_suffix: ['.local'], server: 'dns-local' } as SingBoxDnsRule);
+      dnsRules.push({
+        domain_suffix: [...DOMESTIC_BANK_AND_STOCK_DOMAINS],
+        server: bankResolverTag,
+      } as SingBoxDnsRule);
+      dnsRules.push({
+        domain_suffix: ['.arpa', '.lan', '.home.arpa'],
+        server: internalResolverTag,
+      } as SingBoxDnsRule);
+    }
 
     // fake-ip-filter 默认清单（仅 FakeIP 开启时有意义；config.fakeIpFilter === false 可关）：NTP/STUN/Captive 等
     // 在 FakeIP 下会坏的域名 → 在 fakeip catch-all 之前命中、改走真实解析器，绕过 FakeIP。内联硬编码、无下载依赖。
     if (enableFakeIp && config.fakeIpFilter !== false) {
-      // 连通性探测 / Captive Portal → dns-local（系统解析，反映真实本地网络，否则系统误判断网 / 锁屏登录卡死）
+      // 连通性探测 / Captive Portal → internalResolverTag（需接入网/LAN 解析器反映真实本地网络，否则系统误判断网 /
+      // 锁屏登录卡死）：有 LAN 解析器→dns-lan；Win+takeover 无 LAN→dns-domestic(避死环,captive 检测降级但不挂);否则 dns-local。
       dnsRules.push({
         domain: FAKEIP_FILTER_CAPTIVE_DOMAINS,
-        server: 'dns-local',
+        server: internalResolverTag,
       } as SingBoxDnsRule);
       // NTP / STUN / TURN → dns-domestic（真实 DoH；校时与 P2P 需真实 IP）。同规则内 domain_suffix/domain_keyword 为 OR。
       dnsRules.push({
@@ -3729,16 +3823,16 @@ done
     const customDomesticDns = this.getCustomDomesticDnsEndpoint(config);
     rules.push({
       ip_cidr: [
-        '223.5.5.5/32',
-        '223.6.6.6/32',
-        '1.12.12.12/32', // #57 DNSPod IP-DoH（节点域名解析器 DNSPod 档）：与 223.5.5.5 同列，hijack-dns 前直连放行（443 端口已含）
-        '119.29.29.29/32',
-        '119.28.28.28/32',
-        '114.114.114.114/32',
+        // bootstrap-direct 国内 DNS（含 1.12.12.12 DNSPod IP-DoH）：单一真值 shared/dns#BOOTSTRAP_DIRECT_DNS_IPS，
+        // 与 SystemDnsManager 的受控 DNS IP 选择守卫共用（受控 IP 绝不能落此列表，否则逃逸 hijack）。
+        ...BOOTSTRAP_DIRECT_DNS_IPS.map((ip) => `${ip}/32`),
         // 用户自定义的国内 DNS（IP 型）也须在 hijack-dns 之前直连放行，否则其 53 端口查询会被劫持成 FakeIP
         ...(customDomesticDns
           ? [`${customDomesticDns.ip}/${isIpv6Host(customDomesticDns.ip) ? 128 : 32}`]
           : []),
+        // 方案B：DNS 接管的内网 LAN 解析器（dns-lan 指向它）必须在 hijack-dns 之前直连放行，否则其 :53 查询会被
+        // hijack-dns 抢走 → 内网域名解析成环。私网 IPv4 /32（getLanResolverForDns 已保证私网，亦经下方私网直连可达）。
+        ...(this.lanResolverForDns ? [`${this.lanResolverForDns}/32`] : []),
       ],
       port: Array.from(new Set([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])])),
       action: 'route',
@@ -6485,6 +6579,11 @@ exit 0
     this.systemProxyManager = systemProxyManager;
   }
 
+  /** 注入系统 DNS 管理器（index.ts 启动时调用，须为同一 singleton）。仅 TUN 模式接管，收口于 ProxyManager。 */
+  setSystemDnsManager(systemDnsManager: ISystemDnsManager): void {
+    this.systemDnsManager = systemDnsManager;
+  }
+
   /** 注入「杀核前静默 clash_api 客户端」回调（停 StatsService + 关其 9090 连接）。防 9090 TIME_WAIT（P0-2）。 */
   setQuiesceClashClients(cb: () => void): void {
     this.quiesceClashClients = cb;
@@ -6966,6 +7065,10 @@ exit 0
    */
   async ensureSystemProxyCleared(): Promise<void> {
     if (this.stopping) return; // 主动停止/重启中 → 跳过，避免清了又被 start() reconcile 设回的竞态
+    // 系统 DNS 还原与系统代理清理同终态点收口（各自 marker + 单飞门控，互不影响）：让每条「核已死」路径
+    // （giveUp/健康检查/信号死·崩溃/重启 catch/外部死亡/用户停止前置）都顺带还原可能残留的受控 DNS，
+    // 无需在 7 处终态点各加一行。stopping 守卫共用（重启 stop 腿跳过，由 start reconcile 重设/还原）。
+    await this.ensureSystemDnsRestored();
     if (this.clearingSystemProxy) return; // 单飞：多路终态并发只清一次
     const mgr = this.systemProxyManager;
     if (!mgr) return;
@@ -7003,6 +7106,35 @@ exit 0
       );
     } finally {
       this.clearingSystemProxy = false;
+    }
+  }
+
+  /**
+   * 系统 DNS 统一还原收口（public）：仅当 DNS 确由 FlowZ 接管（marker 在）才还原，杜绝误改用户自配 DNS。
+   * 调用方：① ensureSystemProxyCleared 内（覆盖全部「核已死」终态点，免逐点加行）；② start() reconcile 的
+   * 非 TUN 分支（systemProxy/manual 切换后还原残留）。门控镜像 ensureSystemProxyCleared：
+   * stopping（重启 stop 腿跳过，由 start reconcile 重设/还原负责）+ 单飞 + marker。
+   * 注意：本方法不重复 stopping 守卫——它已由唯一外部入口在调用前判定（ensureSystemProxyCleared 顶部 /
+   * start reconcile 仅在非重启路径调用）；此处仅做 单飞 + marker 门控，避免与 ensureSystemProxyCleared 的
+   * stopping 早返回语义打架。
+   */
+  async ensureSystemDnsRestored(): Promise<void> {
+    if (this.clearingSystemDns) return; // 单飞：多路终态并发只还原一次
+    const mgr = this.systemDnsManager;
+    if (!mgr) return;
+    // 仅当 DNS 确由 FlowZ 接管（marker 在）才动手 → 不误改用户自配/系统默认 DNS
+    if (!mgr.hasMarker()) return;
+
+    this.clearingSystemDns = true;
+    try {
+      await mgr.restoreDns();
+    } catch (e) {
+      this.logToManager(
+        'warn',
+        `终态还原系统 DNS 失败: ${e instanceof Error ? e.message : String(e)}`
+      );
+    } finally {
+      this.clearingSystemDns = false;
     }
   }
 

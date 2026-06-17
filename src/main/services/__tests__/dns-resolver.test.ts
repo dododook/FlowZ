@@ -228,6 +228,72 @@ byteDiffDescribe(
   }
 );
 
+describe('Q1 Windows takeover：消除 type:local 死循环（dns-local 改路由，生成物验证）', () => {
+  const realPlatform = process.platform;
+  const setPlatform = (p: string) =>
+    Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  // 每个用例后即还原（不只 afterAll）：杜绝 platform mutation 泄漏到后续 describe（review LOW，隔离健壮性）。
+  afterEach(() => setPlatform(realPlatform));
+  afterAll(() => setPlatform(realPlatform));
+
+  const tunFx = buildFixtures().find((f) => f.name === 'tun-smart__auto')!; // tun + 默认 takeover 开
+  const ruleBy = (cfg: AnyCfg, pred: (r: AnyCfg) => boolean) => dnsRules(cfg).find(pred);
+  const sfx = (r: AnyCfg) => (Array.isArray(r.domain_suffix) ? (r.domain_suffix as string[]) : []);
+  const bankRule = (cfg: AnyCfg) => ruleBy(cfg, (r) => sfx(r).includes('.icbc.com.cn'));
+  const lanRule = (cfg: AnyCfg) => ruleBy(cfg, (r) => sfx(r).includes('.lan'));
+  const localRule = (cfg: AnyCfg) =>
+    ruleBy(cfg, (r) => sfx(r).includes('.local') && !sfx(r).includes('.lan'));
+  const captiveRule = (cfg: AnyCfg) =>
+    ruleBy(cfg, (r) => Array.isArray(r.domain) && r.domain.includes('captive.apple.com'));
+
+  it('Win+takeover+无 LAN 解析器：银行/内网/captive→dns-domestic（不落 type:local），.local 留 dns-local', () => {
+    setPlatform('win32');
+    const cfg = new ProxyManager().generateSingBoxConfig(tunFx.config) as AnyCfg;
+    expect(bankRule(cfg)?.server).toBe('dns-domestic');
+    expect(lanRule(cfg)?.server).toBe('dns-domestic');
+    expect(captiveRule(cfg)?.server).toBe('dns-domestic');
+    expect(localRule(cfg)?.server).toBe('dns-local');
+    // 关键不变量：无任何把银行域名喂给 dns-local 的规则（否则 svchost→8.8.8.8→hijack→dns-local 死环）
+    const bankToLocal = dnsRules(cfg).some(
+      (r) => r.server === 'dns-local' && sfx(r).includes('.icbc.com.cn')
+    );
+    expect(bankToLocal).toBe(false);
+  });
+
+  it('Win+takeover+有 LAN 解析器：内网/captive→dns-lan，银行→dns-domestic，dns-lan server + rule C 直连放行', () => {
+    setPlatform('win32');
+    const pm = new ProxyManager();
+    (pm as any).lanResolverForDns = '192.168.5.1';
+    const cfg = pm.generateSingBoxConfig(tunFx.config) as AnyCfg;
+    expect(lanRule(cfg)?.server).toBe('dns-lan');
+    expect(captiveRule(cfg)?.server).toBe('dns-lan');
+    expect(bankRule(cfg)?.server).toBe('dns-domestic');
+    expect(
+      (cfg.dns.servers as AnyCfg[]).some((s) => s.tag === 'dns-lan' && s.server === '192.168.5.1')
+    ).toBe(true);
+    expect(hasRouteDirect(cfg, '192.168.5.1/32')).toBe(true);
+  });
+
+  it('macOS+takeover+无 LAN 解析器：保持原合并 dns-local 规则（mDNSResponder 直连不死环，byte 不漂移）', () => {
+    setPlatform('darwin');
+    const cfg = new ProxyManager().generateSingBoxConfig(tunFx.config) as AnyCfg;
+    const merged = ruleBy(cfg, (r) => sfx(r).includes('.lan') && sfx(r).includes('.icbc.com.cn'));
+    expect(merged?.server).toBe('dns-local');
+  });
+
+  it('Win+TUN 但接管开关关(takeoverSystemDns:false)：winLoopRisk=false → 保持原合并 dns-local 规则（A 开关门控生效）', () => {
+    setPlatform('win32');
+    const offConfig = {
+      ...tunFx.config,
+      dnsConfig: { ...tunFx.config.dnsConfig, takeoverSystemDns: false },
+    } as AnyCfg;
+    const cfg = new ProxyManager().generateSingBoxConfig(offConfig) as AnyCfg;
+    const merged = ruleBy(cfg, (r) => sfx(r).includes('.lan') && sfx(r).includes('.icbc.com.cn'));
+    expect(merged?.server).toBe('dns-local'); // 关接管 → 不改路由（系统 DNS 未被接管，dns-local=真实 LAN，无环）
+    expect((cfg.dns.servers as AnyCfg[]).some((s) => s.tag === 'dns-lan')).toBe(false);
+  });
+});
+
 describe('#57 错误归因：translateErrorMessage / classifyCoreError 同序镜像', () => {
   const pm = new ProxyManager();
   // 注入 currentConfig，使节点域名集 = NODE_A/B 域名

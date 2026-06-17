@@ -395,6 +395,12 @@ export interface DnsConfig {
   // auto（缺省）=AliDNS IP-DoH（dns-bootstrap，零行为变化）/ dnspod=DNSPod IP-DoH（dns-node，1.12.12.12）/
   // system=系统 DNS（dns-local；TUN 下 rule ctx 仍强制 IP-DoH 防递归）。旧配置无此字段 → 视为 auto。
   nodeDomainResolver?: 'auto' | 'dnspod' | 'system';
+  // TUN 模式强制接管系统 DNS（SystemDnsManager）：缺省/true=开（默认）。on-link 的 LAN/ISP DNS 不进 TUN →
+  // hijack-dns 看不到 → 需代理的域名走系统解析得到真实/错族 IP（双栈站 ERR_CONNECTION_CLOSED / 真 v6 泄漏）。
+  // 开 → TUN 启动把系统 DNS 改为可路由的 8.8.8.8 使其经 TUN 被 hijack；停止/退出/崩溃还原。
+  // 关 → 不接管（dns-local 恢复用原 LAN DNS、内网域名正常，但 TUN 下有上述泄漏风险），供有自定义/内网 DNS 的用户用。
+  // 仅 TUN 模式生效；旧配置无此字段 → 视为开。详见 docs/design/dns-ipv6-takeover.md。
+  takeoverSystemDns?: boolean;
 }
 
 // 自定义规则集（从 URL 导入）
@@ -604,6 +610,10 @@ export interface UserConfig {
   mixedPort?: number; // 混合端口（可选，同时支持 HTTP 和 SOCKS5，0 或 undefined 表示禁用）
   allowLan?: boolean; // 局域网共享代理（允许其他设备连接）
   bypassLAN?: boolean; // 绕过局域网（将内网 IP 设置为直连）
+  // 系统代理「忽略代理列表」(OS proxy 例外)。仅系统代理模式生效（TUN 直连走 sing-box route）。
+  // 缺省/空 → 取 shared/system-proxy-bypass#DEFAULT_SYSTEM_PROXY_BYPASS（业内聚合清单）；用户可在设置里逗号分隔编辑。
+  // mac networksetup 原样下发 CIDR+域名；win 转通配；linux gsettings ignore-hosts。详见 shared/system-proxy-bypass。
+  systemProxyBypass?: string[];
   blockQuic?: boolean; // 阻止 QUIC（对代理向 UDP 443 执行 reject，逼浏览器回退 TCP）；默认关；节点无关，对所有协议一视同仁
   tlsFragment?: boolean; // 全局 TLS 分片：对所有 TLS 节点切分 ClientHello 抗 SNI-DPI；默认关
   // 节点测速端点 URL（经各节点代理 GET 量 TTFB）。默认 generate_204（见 shared/speed-test）；用户可自配，兼容 http/https。

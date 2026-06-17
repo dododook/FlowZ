@@ -20,8 +20,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { useAppStore } from '@/store/app-store';
 import { parseDnsServerSpec } from '@shared/dns';
+import {
+  DEFAULT_SYSTEM_PROXY_BYPASS,
+  parseBypassList,
+  effectiveBypassList,
+} from '@shared/system-proxy-bypass';
 import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -66,6 +72,10 @@ export function NetworkSettings() {
     config?.dnsConfig?.foreignDns || DNS_DEFAULTS.foreignDns
   );
   const [speedTestUrl, setSpeedTestUrl] = useState(config?.speedTestUrl || DEFAULT_SPEED_TEST_URL);
+  // 系统代理「跳过代理」清单（逗号分隔文本编辑；缺省取业内默认清单）。
+  const [bypassText, setBypassText] = useState(
+    effectiveBypassList(config?.systemProxyBypass).join(', ')
+  );
 
   // F26：config 异步到达 / 挂载期间被外部替换（托盘改配置、备份恢复、规则 CRUD 后 loadConfig）时，
   // 回填「未被用户改动」的字段；dirty 守卫（本地值 ≠ 上次种子）避免打断正在输入的用户。
@@ -78,6 +88,7 @@ export function NetworkSettings() {
     domesticDns: string;
     foreignDns: string;
     speedTestUrl: string;
+    bypassText: string;
   } | null>(null);
   useEffect(() => {
     if (!config) return;
@@ -90,6 +101,7 @@ export function NetworkSettings() {
       domesticDns: config.dnsConfig?.domesticDns || DNS_DEFAULTS.domesticDns,
       foreignDns: config.dnsConfig?.foreignDns || DNS_DEFAULTS.foreignDns,
       speedTestUrl: config.speedTestUrl || DEFAULT_SPEED_TEST_URL,
+      bypassText: effectiveBypassList(config.systemProxyBypass).join(', '),
     };
     const prev = seededRef.current;
     setSocksPort((cur) => (prev && cur !== prev.socksPort ? cur : snap.socksPort));
@@ -102,6 +114,7 @@ export function NetworkSettings() {
     setDomesticDns((cur) => (prev && cur !== prev.domesticDns ? cur : snap.domesticDns));
     setForeignDns((cur) => (prev && cur !== prev.foreignDns ? cur : snap.foreignDns));
     setSpeedTestUrl((cur) => (prev && cur !== prev.speedTestUrl ? cur : snap.speedTestUrl));
+    setBypassText((cur) => (prev && cur !== prev.bypassText ? cur : snap.bypassText));
     seededRef.current = snap;
   }, [
     config?.socksPort,
@@ -111,6 +124,7 @@ export function NetworkSettings() {
     config?.dnsConfig?.domesticDns,
     config?.dnsConfig?.foreignDns,
     config?.speedTestUrl,
+    config?.systemProxyBypass,
   ]);
 
   if (!config) return null;
@@ -118,6 +132,22 @@ export function NetworkSettings() {
   // 切换布尔配置项（整体回写，保留其余字段）
   const setBool = (key: keyof typeof config, value: boolean) =>
     saveConfig({ ...config, [key]: value }).catch(() => toast.error(t('common.saveFailed')));
+
+  // 系统代理「跳过代理」清单：失焦提交（解析逗号分隔→去重→存 config.systemProxyBypass）。
+  const commitBypass = () => {
+    const parsed = parseBypassList(bypassText);
+    setBypassText(parsed.join(', '));
+    saveConfig({ ...config, systemProxyBypass: parsed }).catch(() =>
+      toast.error(t('common.saveFailed'))
+    );
+  };
+  const resetBypass = () => {
+    const def = [...DEFAULT_SYSTEM_PROXY_BYPASS];
+    setBypassText(def.join(', '));
+    saveConfig({ ...config, systemProxyBypass: def }).catch(() =>
+      toast.error(t('common.saveFailed'))
+    );
+  };
 
   const updateDns = (patch: Partial<NonNullable<typeof config.dnsConfig>>) => {
     const updated = { ...config };
@@ -342,6 +372,18 @@ export function NetworkSettings() {
             </Select>
           </SettingsRow>
           <SettingsRow
+            label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
+            description={t(
+              'settings.advanced.takeoverSystemDnsDesc',
+              'TUN 模式下把系统 DNS 临时改为 8.8.8.8，让需代理的域名经隧道正确解析（停止/退出自动还原）。关闭后改用你原本的 DNS，内网域名解析更友好，但部分需代理域名可能解析异常。建议保持开启。'
+            )}
+          >
+            <Switch
+              checked={config.dnsConfig?.takeoverSystemDns !== false}
+              onCheckedChange={(c) => updateDns({ takeoverSystemDns: c })}
+            />
+          </SettingsRow>
+          <SettingsRow
             label={t('settings.advanced.mainSessionViaProxy', '更新检查走代理')}
             description={t(
               'settings.advanced.mainSessionViaProxyDesc',
@@ -424,6 +466,27 @@ export function NetworkSettings() {
               checked={config.bypassLAN !== false}
               onCheckedChange={(c) => setBool('bypassLAN', c)}
             />
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.advanced.systemProxyBypass', '跳过代理（系统代理）')}
+            description={t(
+              'settings.advanced.systemProxyBypassDesc',
+              '仅系统代理模式生效：这些地址/域名直连、不走代理（逗号分隔，支持 CIDR 与域名）。TUN 模式直连由路由规则负责。'
+            )}
+          >
+            <div className="flex flex-col items-end gap-2">
+              <Textarea
+                value={bypassText}
+                onChange={(e) => setBypassText(e.target.value)}
+                onBlur={commitBypass}
+                rows={5}
+                spellCheck={false}
+                className="w-[320px] font-mono text-xs"
+              />
+              <Button variant="ghost" size="sm" onClick={resetBypass}>
+                {t('settings.advanced.systemProxyBypassReset', '恢复默认')}
+              </Button>
+            </div>
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.blockQuic')}

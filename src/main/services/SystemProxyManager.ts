@@ -12,6 +12,12 @@ import { getUserDataPath } from '../utils/paths';
 import { system32, powershellPath, isCommandNotFoundError } from '../utils/win-system32';
 import type { LogManager } from './LogManager';
 import type { LogLevel } from '../../shared/types';
+import {
+  effectiveBypassList,
+  formatBypassForMac,
+  formatBypassForWindows,
+  formatBypassForLinux,
+} from '../../shared/system-proxy-bypass';
 
 const execAsync = promisify(exec);
 // notifyProxyChange 用 execFile（不经 cmd /c）直起 PowerShell：彻底消除 cmd 引号歧义，
@@ -33,9 +39,14 @@ export interface SystemProxyStatus {
  */
 export interface ISystemProxyManager {
   /**
-   * 启用系统代理
+   * 启用系统代理。bypassList = 用户配置的忽略代理列表（缺省取 DEFAULT_SYSTEM_PROXY_BYPASS）；按平台格式化下发。
    */
-  enableProxy(address: string, httpPort: number, socksPort: number): Promise<void>;
+  enableProxy(
+    address: string,
+    httpPort: number,
+    socksPort: number,
+    bypassList?: string[]
+  ): Promise<void>;
 
   /**
    * 禁用系统代理
@@ -181,7 +192,12 @@ export class WindowsSystemProxy extends SystemProxyBase {
   /**
    * 启用系统代理
    */
-  async enableProxy(address: string, httpPort: number, _socksPort: number): Promise<void> {
+  async enableProxy(
+    address: string,
+    httpPort: number,
+    _socksPort: number,
+    bypassList?: string[]
+  ): Promise<void> {
     this.log('info', '正在设置 Windows 系统代理');
 
     // marker 提前写（intent）：enable 期间崩溃也留 marker，供下次启动恢复。
@@ -221,49 +237,22 @@ export class WindowsSystemProxy extends SystemProxyBase {
             `"${this.regExe}" add "${this.regPath}" /v ProxyEnable /t REG_DWORD /d 1 /f`
           );
 
-          // 设置代理覆盖（本地地址 + 国内金融域名不走代理）
-          // 关键修复：同花顺等金融软件使用二进制 TCP 协议 + 裸 IP 连接，
-          // 如果走 HTTP 代理会导致协议解析失败和连接超时。
-          // 将金融域名加入旁路名单，使其完全绕过代理直连物理网卡。
-          const financialBypass = [
-            '*.10jqka.com.cn',
-            '*.thsi.cn', // 同花顺
-            '*.eastmoney.com',
-            '*.1234567.com.cn', // 东方财富
-            '*.gw.com.cn', // 大智慧
-            '*.tdx.com.cn', // 通达信
-            '*.microdone.cn', // U盾插件
-            '*.icbc.com.cn', // 工商银行
-            '*.boc.cn', // 中国银行
-            '*.ccb.com', // 建设银行
-            '*.abchina.com',
-            '*.abchina.com.cn', // 农业银行
-            '*.bankcomm.com', // 交通银行
-            '*.cmbchina.com', // 招商银行
-            '*.psbc.com', // 邮储银行
-            '*.spdb.com.cn', // 浦发银行
-            '*.cebbank.com', // 光大银行
-            '*.citicbank.com', // 中信银行
-            '*.pingan.com', // 平安银行
-            '*.cib.com.cn', // 兴业银行
-            '*.hxb.com.cn', // 华夏银行
-            '*.cmbc.com.cn', // 民生银行
-            '*.hzbank.com.cn', // 杭州银行
-          ].join(';');
-          const proxyOverride = `localhost;127.*;10.*;172.16.*;172.17.*;172.18.*;172.19.*;172.20.*;172.21.*;172.22.*;172.23.*;172.24.*;172.25.*;172.26.*;172.27.*;172.28.*;172.29.*;172.30.*;172.31.*;192.168.*;${financialBypass};<local>`;
+          // 代理覆盖（忽略代理列表）= 用户配置的 bypass 清单（缺省业内聚合清单，含私网/保留段 + Apple 连通性 +
+          // 国内会被代理打断的 App/网银）。Windows ProxyOverride 不支持 CIDR → CIDR 转通配（v6 CIDR 跳过）、域名原样、补 <local>。
+          // 对齐 Clash/Stash 系：保存原列表→开启写入→关闭还原（restoreProxySettings 负责还原）。
+          const proxyOverride = formatBypassForWindows(effectiveBypassList(bypassList));
           await execAsync(
             `"${this.regExe}" add "${this.regPath}" /v ProxyOverride /t REG_SZ /d "${proxyOverride}" /f`
           );
 
-          // 核心特性：阻断 QUIC (UDP 443)，迫使浏览器回退到 TCP 以完美兼容系统代理
-          // 很多应用（如 Instagram 的站内信）使用 QUIC，会无视系统 HTTP 代理直连导致被墙。
-          // 利用 Windows 防火墙精准屏蔽出站 UDP 443，可实现类似 TUN 模式的稳定体验。
+          // 系统代理**不写防火墙拦 QUIC**（设计决策）：CONNECT 是 TCP-only 隧道、承载不了 QUIC(UDP)→守规矩的 app
+          // 在显式系统代理下会自禁 QUIC、回退 TCP→CONNECT（正确走代理）。旧版的「防火墙 block 全部 UDP443」是**blanket**、
+          // 会误杀国内 QUIC（与「只拦海外代理域名 QUIC」的 route 设计不符）→ 已移除。选择性 QUIC 阻断（仅海外代理域名、
+          // CN 豁免）由 sing-box route 规则在 TUN 模式实现（系统代理下 QUIC 不进核、route 够不着，靠上述 app 自禁）。
+          // 仅保留 delete：清理历史版本残留的 FlowZ_Block_QUIC 规则（升级迁移），不再 add。
           await execAsync(
             `"${this.netshExe}" advfirewall firewall delete rule name="FlowZ_Block_QUIC"`
           ).catch(() => {});
-          await execAsync(
-            `"${this.netshExe}" advfirewall firewall add rule name="FlowZ_Block_QUIC" dir=out action=block protocol=UDP remoteport=443`
-          ).catch((e) => this.log('warn', `添加 QUIC 阻断防火墙规则失败: ${e}`));
 
           // 通知系统代理设置已更改
           await this.notifyProxyChange();
@@ -500,7 +489,12 @@ export class MacOSSystemProxy extends SystemProxyBase {
   /**
    * 启用系统代理
    */
-  async enableProxy(address: string, httpPort: number, socksPort: number): Promise<void> {
+  async enableProxy(
+    address: string,
+    httpPort: number,
+    socksPort: number,
+    bypassList?: string[]
+  ): Promise<void> {
     this.log('info', '正在设置 macOS 系统代理');
 
     // marker 提前写（intent）：enable 期间崩溃也留 marker，供下次启动恢复（disable 成功/失败回滚才会删）。
@@ -545,40 +539,9 @@ export class MacOSSystemProxy extends SystemProxyBase {
             );
             await execAsync(`networksetup -setsocksfirewallproxystate "${service}" on`);
 
-            // 设置代理绕过列表（本地地址 + 国内金融域名不走代理）
-            const bypassDomains = [
-              'localhost',
-              '127.0.0.1',
-              '*.local',
-              '169.254.0.0/16',
-              '10.0.0.0/8',
-              '172.16.0.0/12',
-              '192.168.0.0/16',
-              // 金融软件旁路：使其完全绕过代理直连
-              '*.10jqka.com.cn',
-              '*.thsi.cn',
-              '*.eastmoney.com',
-              '*.1234567.com.cn',
-              '*.gw.com.cn',
-              '*.tdx.com.cn',
-              '*.microdone.cn',
-              '*.icbc.com.cn',
-              '*.boc.cn',
-              '*.ccb.com',
-              '*.abchina.com',
-              '*.abchina.com.cn',
-              '*.bankcomm.com',
-              '*.cmbchina.com',
-              '*.psbc.com',
-              '*.spdb.com.cn',
-              '*.cebbank.com',
-              '*.citicbank.com',
-              '*.pingan.com',
-              '*.cib.com.cn',
-              '*.hxb.com.cn',
-              '*.cmbc.com.cn',
-              '*.hzbank.com.cn',
-            ];
+            // 代理绕过列表（忽略代理列表）= 用户配置的 bypass 清单（缺省业内聚合清单，对齐 Clash/Stash）。
+            // networksetup 原样接受 CIDR(v4/v6) + 域名 + *.通配（空格分隔）。保存原列表→开启写入→关闭还原。
+            const bypassDomains = formatBypassForMac(effectiveBypassList(bypassList));
             await execAsync(
               `networksetup -setproxybypassdomains "${service}" ${bypassDomains.join(' ')}`
             );
@@ -820,7 +783,12 @@ export class LinuxSystemProxy extends SystemProxyBase {
   /**
    * 启用系统代理
    */
-  async enableProxy(address: string, httpPort: number, socksPort: number): Promise<void> {
+  async enableProxy(
+    address: string,
+    httpPort: number,
+    socksPort: number,
+    bypassList?: string[]
+  ): Promise<void> {
     this.log('info', '正在设置 Linux 系统代理');
 
     // 保存原始设置
@@ -850,9 +818,10 @@ export class LinuxSystemProxy extends SystemProxyBase {
           await execAsync(`gsettings set org.gnome.system.proxy.socks host "${address}"`);
           await execAsync(`gsettings set org.gnome.system.proxy.socks port ${socksPort}`);
 
-          // 设置忽略列表
-          const ignoreList =
-            "['localhost', '127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']";
+          // 设置忽略列表（用户配置的 bypass 清单，缺省业内聚合清单）。gsettings ignore-hosts 为 GVariant 字符串数组，
+          // 接受 CIDR + 域名；单引号包裹、逗号分隔。条目本身无单引号（已 trim/去空），无注入风险。
+          const hosts = formatBypassForLinux(effectiveBypassList(bypassList));
+          const ignoreList = `[${hosts.map((h) => `'${h}'`).join(', ')}]`;
           await execAsync(`gsettings set org.gnome.system.proxy ignore-hosts "${ignoreList}"`);
         },
         { maxRetries: 1, delay: 500 }
