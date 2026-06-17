@@ -982,9 +982,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         );
       } else {
         await this.ensureSystemProxyCleared();
-        // TUN 进入：清掉 FlowZ 自己的(marker)系统代理后，若仍有系统代理开着 = 无 marker 残留(外部/他软件/丢 marker)。
-        // 不自动清(7890 等是业内共用端口、无法证明归属，自动清会误伤别的代理软件)→ 一次性提示，交用户决定。
-        await this.adviseIfResidualSystemProxy();
+        // 仅 TUN：清掉 FlowZ 自己的(marker)系统代理后，若仍有系统代理开着 = 无 marker 残留(外部/他软件/丢 marker)。
+        // TUN 下它会截走代理感知 app 的流量致连接异常；direct/manual 模式不接管路由，残留是用户自己的事，不提示。
+        // 不自动清(7890 等业内共用端口、无法证明归属，自动清会误伤别的代理软件)→ 一次性提示，交用户决定。
+        if (config.proxyModeType === 'tun') await this.adviseIfResidualSystemProxy();
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -2377,22 +2378,25 @@ done
     if (lanResolver) {
       dnsServers.push({ tag: 'dns-lan', type: 'udp', server: lanResolver, server_port: 53 });
     }
-    // Q1 死循环防护（**仅 Windows**）：takeover 把系统 DNS 改公网 8.8.8.8 后，type:local 经 svchost(Win DNS 客户端，
-    // 不在 route 直连进程白名单)发往 8.8.8.8 → 进 TUN → hijack-dns → 命中 dns-local 规则 → 又 svchost → ∞（代码注释
-    // 2287 记的死循环，被 takeover 触发）。macOS 安全(dns-local→mDNSResponder，在直连白名单，查询不被 hijack)；
-    // Linux 不接管(setDns no-op)。故仅 Win+takeover 下把会落 type:local 的 unicast 域名改路由：银行公网→dns-domestic、
-    // 内网/反查/captive→dns-lan(有 LAN 解析器)否则 dns-domestic。.local 走 mDNS/LLMNR 组播(不发 unicast 8.8.8.8)，留 dns-local。
+    // Q1 死循环防护（**仅 Windows**）：Win TUN 的 strict_route(WFP) 把所有 :53 逼进 TUN；type:local 经 svchost(Win DNS
+    // 客户端，不在 route 直连进程白名单)发出的查询 → 进 TUN → hijack-dns → 命中 dns-local 规则 → 又 svchost → ∞。
+    // **死环源于 strict_route + type:local 本身，与系统 DNS 是否被改无关**（Win setDns 已收敛 no-op，见 SystemDnsManager）。
+    // macOS 安全(dns-local→mDNSResponder，在直连白名单，查询不被 hijack)；Linux 不接管。故仅 Win 下把会落 type:local 的
+    // unicast 域名改路由：银行公网→dns-domestic、内网/反查/captive→dns-lan(有 LAN 解析器)否则 dns-domestic。
+    // .local 走 mDNS/LLMNR 组播(不发 unicast)，留 dns-local。
+    // 注：winLoopRisk 暂以 takeoverSystemDns 开关为代理键(默认 on)；理想是解耦为「Win+TUN」恒判(死环与开关无关)，
+    // 待真机 nslookup 实证后再改（见 docs/design/dns-ipv6-takeover.md §A）。
     const dnsTakeoverActive =
       config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false;
     const winLoopRisk = process.platform === 'win32' && dnsTakeoverActive;
-    // 内网/反查/captive 解析器：优先 dns-lan(直连放行的 LAN IP)；无则 Win+takeover 退 dns-domestic(避免 type:local 死环、
-    // 内网域名 NXDOMAIN 但不挂)，非 Win/非 takeover 退 dns-local(系统解析器=真实 LAN，正常)。
+    // 内网/反查/captive 解析器：优先 dns-lan(直连放行的 LAN IP)；无则 Win 退 dns-domestic(避免 type:local 死环、
+    // 内网域名 NXDOMAIN 但不挂)，非 Win 退 dns-local(系统解析器=真实 LAN，正常)。
     const internalResolverTag = lanResolver
       ? 'dns-lan'
       : winLoopRisk
         ? 'dns-domestic'
         : 'dns-local';
-    // 银行/U盾公网域名解析器：仅 Win+takeover 改 dns-domestic 绕死环；其余 dns-local（mac 经 mDNSResponder 直连解公网正常）。
+    // 银行/U盾公网域名解析器：仅 Win 改 dns-domestic 绕死环；其余 dns-local（mac 经 mDNSResponder 直连解公网正常）。
     const bankResolverTag = winLoopRisk ? 'dns-domestic' : 'dns-local';
 
     const dnsConfig: SingBoxDnsConfig = {

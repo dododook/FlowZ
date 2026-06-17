@@ -168,7 +168,12 @@ export abstract class SystemProxyBase implements ISystemProxyManager {
     return status;
   }
 
-  abstract enableProxy(address: string, httpPort: number, socksPort: number): Promise<void>;
+  abstract enableProxy(
+    address: string,
+    httpPort: number,
+    socksPort: number,
+    bypassList?: string[]
+  ): Promise<void>;
   abstract disableProxy(): Promise<void>;
   abstract disableProxySync(): void;
   abstract getProxyStatus(): Promise<SystemProxyStatus>;
