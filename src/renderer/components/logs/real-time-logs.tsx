@@ -144,18 +144,18 @@ export function RealTimeLogs({
 
   // 只有在自动滚动模式且用户没有主动滚动时才自动滚动到底部
   useEffect(() => {
-    if (isAutoScroll && !isUserScrolling) {
-      const scrollElement = getScrollElement();
-      if (scrollElement) {
-        // 置位防自指标志 → 这次程序化滚动产生的 scroll 事件被 handleScroll 消费忽略，不反推 isAutoScroll（断反馈环）。
-        suppressScrollHandlerRef.current = true;
-        scrollElement.scrollTop = scrollElement.scrollHeight;
-        // 兜底：若已在底部、scrollTop 无位移 → 不触发 scroll 事件 → 下一帧清标志，避免误吞下次真·用户滚动。
-        requestAnimationFrame(() => {
-          suppressScrollHandlerRef.current = false;
-        });
-      }
-    }
+    if (!isAutoScroll || isUserScrolling) return;
+    const scrollElement = getScrollElement();
+    if (!scrollElement) return;
+    // 置位防自指标志 → 这次程序化滚动产生的 scroll 事件被 handleScroll 消费忽略，不反推 isAutoScroll（断反馈环）。
+    suppressScrollHandlerRef.current = true;
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+    // 兜底：若已在底部、scrollTop 无位移 → 不触发 scroll 事件 → 下一帧清标志，避免误吞下次真·用户滚动。
+    // 与本组件惯例一致：捕获 rafId 并在 cleanup 取消（高日志量下避免堆积未触发的帧回调）。
+    const rafId = requestAnimationFrame(() => {
+      suppressScrollHandlerRef.current = false;
+    });
+    return () => cancelAnimationFrame(rafId);
   }, [logs, isAutoScroll, isUserScrolling, getScrollElement]);
 
   const handleClearLogs = async () => {

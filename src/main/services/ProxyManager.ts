@@ -2367,8 +2367,9 @@ done
         tag: 'fakeip',
         type: 'fakeip',
         inet4_range: '198.18.0.0/15',
-        // §B：关 IPv6(enableIPv6=false)时不给 FakeIP 分配 v6 段 → AAAA 不被 FakeIP 化（配合下方 strategy=ipv4_only +
-        // 规则 query_type 去 AAAA）→ 客户端拿不到任何 v6，杜绝"双栈站 + 节点无 v6"时浏览器试 v6 失败致 ERR_CONNECTION_CLOSED。
+        // §B：关 IPv6(enableIPv6=false)时不给 FakeIP 分配 v6 段 → fakeip 对 AAAA 无段可分配即返空（真机实测，见
+        // docs/design E-1：无需改规则 query_type）；配合下方 strategy=ipv4_only → 客户端拿不到任何 v6，杜绝
+        // "双栈站 + 节点无 v6"时浏览器试 v6 失败致 ERR_CONNECTION_CLOSED。
         ...(config.enableIPv6 ? { inet6_range: 'fc00::/18' } : {}),
       });
     }
