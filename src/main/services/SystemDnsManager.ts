@@ -410,7 +410,8 @@ export class WindowsSystemDns extends SystemDnsBase {
 
   protected async readEffectiveResolvers(): Promise<string[]> {
     // 逐**已连接**接口读 DNS（与 listTargets 同口径，避免 VMware/Hyper-V/VPN 虚拟网卡的私网 DNS 抢先被选）。
-    // 单接口 show dnsservers 同时含 static 与 dhcp 行 → extractIpv4s 两者都取；输出本地化不影响 IPv4 提取。真机待验。
+    // 单接口 show dnsservers 同时含 static 与 dhcp 行 → extractIpv4s 两者都取；输出本地化不影响 IPv4 提取。
+    // 仅 READ（show，非提权可跑），供 getLanResolverForDns(方案B) 用——SET(setDns) 已收敛为 no-op，见下。
     const ifaces = await this.listTargets();
     const all: string[] = [];
     for (const iface of ifaces) {
@@ -427,6 +428,25 @@ export class WindowsSystemDns extends SystemDnsBase {
       }
     }
     return all;
+  }
+
+  // ── 收口（2026-06-17，真机实证）：Windows 不接管系统 DNS（与 Linux 同口径） ──
+  // 根因：① sing-box TUN `strict_route`(WFP) 已在路由层把所有 :53(含 DHCP/系统分配 DNS)强制逼进 TUN → 被 hijack，
+  //   不需要也不应再改系统 DNS 设置项；② `netsh set dnsservers` 需管理员，FlowZ GUI 非提权 → 真机每次 ACCESS DENIED
+  //   失败，且 set 前已写 marker → 失败后 marker 卡死 → 每次启动反复「还原 netsh 失败、保留 marker」刷错误日志。
+  // 故 setDns/restoreDns/sync 收敛为 no-op（READ 机制保留供方案B）。详见 docs/design/dns-ipv6-takeover.md §A。
+  async setDns(): Promise<void> {
+    this.log(
+      'info',
+      'Windows 不接管系统 DNS（sing-box TUN strict_route/WFP 已在路由层劫持 :53；netsh set 需管理员、GUI 非提权必失败）'
+    );
+  }
+  async restoreDns(): Promise<void> {
+    // 清历史（旧版 netsh 失败）残留的 stuck marker，否则 hasMarker 恒 true 致每个终态点/启动 recovery 反复空跑还原。
+    this.clearMarker();
+  }
+  restoreDnsSync(): void {
+    this.clearMarker();
   }
 }
 
