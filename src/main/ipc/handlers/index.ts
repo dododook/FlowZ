@@ -16,6 +16,7 @@ export * from './speed-test-handlers';
 export * from './core-update-handlers';
 export * from './subscription-handlers';
 export * from './backup-handlers';
+export * from './diagnostic-handlers';
 export * from './helper-handlers';
 export * from './ipinfo-handlers';
 export * from './system-handlers';

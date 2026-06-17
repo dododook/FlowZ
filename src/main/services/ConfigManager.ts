@@ -41,6 +41,7 @@ export class ConfigManager implements IConfigManager {
   private configPath: string;
   private currentConfig: UserConfig | null = null;
   private tmpSwept = false;
+  private diagnosticRestoreChecked = false;
   private logManager?: LogManager;
 
   /**
@@ -179,6 +180,22 @@ export class ConfigManager implements IConfigManager {
         await this.saveConfig(config).catch((e) =>
           this.log('warn', `应用分流默认注入落盘失败（不阻断）: ${e}`)
         );
+      }
+
+      // 诊断采集还原（仅首次 loadConfig=app 启动触发，会话内 backup/诊断导出重载 config 不触发，避免误结束采集）：
+      // 上次会话留有 diagnosticCapture（含采集前快照级别）→ 还原 logLevel=prevLogLevel 后清字段。
+      // 还原到快照级别（可能是 error/warn），绝不硬编码 info。崩溃/强杀后下次启动据此自愈，不让 debug 长期记录明细。
+      if (!this.diagnosticRestoreChecked) {
+        this.diagnosticRestoreChecked = true;
+        if (config.diagnosticCapture) {
+          const prev = config.diagnosticCapture.prevLogLevel;
+          config.logLevel = prev;
+          delete config.diagnosticCapture;
+          await this.saveConfig(config).catch((e) =>
+            this.log('warn', `诊断采集还原落盘失败（不阻断）: ${e}`)
+          );
+          this.log('info', `诊断采集已结束，日志级别还原为 ${prev}`);
+        }
       }
 
       // 缓存配置

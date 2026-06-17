@@ -844,6 +844,16 @@ export const backupApi = {
 };
 
 /**
+ * 诊断 API（导出脱敏诊断报告）
+ */
+export const diagnosticApi = {
+  /** 导出诊断报告（弹出系统文件保存对话框，单 Markdown，密钥已脱敏） */
+  async export(): Promise<{ success: boolean; filePath?: string; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.DIAGNOSTIC_EXPORT);
+  },
+};
+
+/**
  * macOS 提权 helper API（免提权启停 sing-box）
  */
 export const helperApi = {
@@ -897,6 +907,7 @@ export const api = {
   coreUpdate: coreUpdateApi,
   subscription: subscriptionApi,
   backup: backupApi,
+  diagnostic: diagnosticApi,
   helper: helperApi,
   app: appApi,
 };

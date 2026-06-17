@@ -5,6 +5,7 @@ import { ProtocolParser } from './services/ProtocolParser';
 import { LogManager } from './services/LogManager';
 import { TrayManager } from './services/TrayManager';
 import { ProxyManager } from './services/ProxyManager';
+import { DiagnosticService } from './services/DiagnosticService';
 import { createSystemProxyManager, SystemProxyBase } from './services/SystemProxyManager';
 import { createSystemDnsManager, SystemDnsBase } from './services/SystemDnsManager';
 import { localProxyPort } from '../shared/proxy-ports';
@@ -28,6 +29,7 @@ import {
   registerCoreUpdateHandlers,
   setCoreUpdateService,
   registerBackupHandlers,
+  registerDiagnosticHandlers,
   registerHelperHandlers,
   registerIpInfoHandlers,
   registerSystemHandlers,
@@ -1280,6 +1282,18 @@ if (gotTheLock) {
 
     // 注册备份与恢复处理器（注入 ruleResourceManager：恢复后补缺失的规则资源 .srs）
     registerBackupHandlers(configManager, ruleResourceManager);
+
+    // 注册诊断报告处理器（汇集环境/脱敏配置/日志 tail → 单 Markdown）。此处 proxyManager 已构造（非空）。
+    if (proxyManager) {
+      const diagnosticService = new DiagnosticService(
+        configManager,
+        logManager,
+        proxyManager,
+        systemProxyManager,
+        getPrivacyMode
+      );
+      registerDiagnosticHandlers(diagnosticService);
+    }
 
     // 注册提权 helper 处理器（macOS 免提权启停）
     registerHelperHandlers(helperManager, proxyManager);

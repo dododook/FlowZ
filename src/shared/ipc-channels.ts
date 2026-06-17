@@ -147,6 +147,9 @@ export const IPC_CHANNELS = {
   BACKUP_EXPORT: 'backup:export',
   BACKUP_IMPORT: 'backup:import',
   BACKUP_GET_INFO: 'backup:getInfo',
+
+  // 诊断报告导出（单 Markdown，脱敏）
+  DIAGNOSTIC_EXPORT: 'diagnostic:export',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

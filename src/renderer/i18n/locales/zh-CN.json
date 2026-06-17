@@ -547,6 +547,25 @@
         "importConfirmDesc": "此操作将完全覆盖当前的节点、订阅和规则配置，且无法撤销。请确认您已了解风险后再继续。",
         "importConfirmBtn": "确认覆盖恢复"
       },
+      "logLevelCaptureLocked": "诊断采集中，级别已锁定为 debug（在下方诊断卡片结束采集后可改）",
+      "diagnostics": {
+        "title": "诊断",
+        "desc": "导出脱敏诊断报告，或开启诊断采集（临时提高日志级别）以捕获更详细的根因数据。",
+        "export": "导出诊断报告",
+        "exporting": "导出中...",
+        "exportSuccess": "诊断报告已导出",
+        "exportSuccessDesc": "已保存到 {{path}}；密钥已脱敏，可附到 issue。",
+        "exportFail": "导出诊断报告失败",
+        "captureStart": "开始诊断采集",
+        "captureStop": "结束采集",
+        "captureActiveTitle": "诊断采集中",
+        "captureActiveDesc": "日志级别已临时调到 debug，会记录访问的域名/SNI。请复现问题后导出诊断报告；结束采集将还原到原级别。",
+        "captureStarted": "已开启诊断采集",
+        "captureStartedDesc": "日志级别已调到 debug（代理运行中会自动重启生效）。请复现问题后导出诊断报告。",
+        "captureStopped": "诊断采集已结束，日志级别已还原为 {{level}}",
+        "capturePrivacyBlocked": "请先关闭隐私模式（隐私模式会抑制详细日志，诊断采集无法生效）",
+        "captureLogFileDisabled": "请先关闭「关闭日志写盘」（否则采集的详细日志不会落盘，无法导出）"
+      },
       "autoSwitchNode": "节点故障自动切换",
       "autoSwitchNodeDesc": "当当前代理连接失败时，自动切换到可用节点",
       "subIntervalRange": "更新间隔需为 1–168 小时"

@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { SettingsRow } from './settings-row';
 import { TerminalProxySection } from './terminal-proxy-section';
 import { BackupRestoreSection } from './backup-restore-section';
+import { DiagnosticSection } from './diagnostic-section';
 
 /**
  * 设置「高级」节：外部控制(clash API) / 日志 / 内核更新策略 / 终端代理速查(折叠) / 备份恢复。
@@ -113,10 +114,16 @@ export function AdvancedSettings() {
           <SettingsRow heading label={t('settings.network.logs', '日志')} />
           <SettingsRow
             label={t('settings.advanced.logLevel')}
-            description={t('settings.advanced.logLevelDesc')}
+            description={
+              config.diagnosticCapture
+                ? t('settings.advanced.logLevelCaptureLocked')
+                : t('settings.advanced.logLevelDesc')
+            }
           >
+            {/* 诊断采集中级别锁定为 debug：禁用以免手动改被采集结束时的快照还原静默覆盖（见诊断卡片）。 */}
             <Select
               value={config.logLevel || 'info'}
+              disabled={!!config.diagnosticCapture}
               onValueChange={(v) =>
                 saveConfig({ ...config, logLevel: v as typeof config.logLevel }).catch(() =>
                   toast.error(t('common.saveFailed'))
@@ -148,6 +155,13 @@ export function AdvancedSettings() {
               }
             />
           </SettingsRow>
+        </CardContent>
+      </Card>
+
+      {/* 诊断（导出脱敏报告 + 诊断采集临时提级） */}
+      <Card>
+        <CardContent className="pt-6">
+          <DiagnosticSection />
         </CardContent>
       </Card>
 

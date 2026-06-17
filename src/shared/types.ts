@@ -203,7 +203,7 @@ export interface TailscaleSettings {
 export interface CustomSettings {
   outbound: Record<string, unknown>; // 用户填的 outbound/endpoint 对象（须含字符串 type）；tag 由 FlowZ 生成期强制覆盖
   isEndpoint?: boolean; // 该 type 属 sing-box endpoints[]（如类 wireguard/tailscale 的第三方实现）而非 outbounds[]
-  secretKeys?: string[]; // 该 JSON 里属密钥的键名（诊断包脱敏用；缺省整体打码 + 常见键启发式）
+  secretKeys?: string[]; // 该 JSON 里属密钥的键名（诊断报告脱敏用：redactDeep 据此叠加打码）。无值层启发式，未声明则仅靠通用密钥黑名单兜底（psk/password/uuid 等），建议填全自定义密钥键
 }
 
 export interface ServerConfig {
@@ -642,6 +642,11 @@ export interface UserConfig {
   logLevel: LogLevel;
   // 关闭日志写盘（sing-box log.disabled）；默认 false=写盘。关闭后应用内无法查看实时日志/基于日志的诊断
   disableLogFile?: boolean;
+
+  // 诊断采集（临时提级）：开启时把 logLevel 临时拉到 debug 复现问题，存档原级别供还原。
+  // 存在即「采集中」（UI 据此显示采集条）。结束采集 / 下次启动 app → 还原 logLevel=prevLogLevel 后清此字段。
+  // 还原到「采集前的快照级别」（可能是 error/warn），绝不硬编码 info。崩溃安全：持久在 config，loadConfig 启动还原。
+  diagnosticCapture?: { prevLogLevel: LogLevel };
 
   // clash_api(127.0.0.1:9090) 鉴权 secret：首次启动随机生成并持久化，统一管所有 clash_api 访问(含 external_ui)。
   // 内部调用(热切换/流量统计/拓扑)带 Authorization；防恶意网页跨域读连接历史。可在设置里查看/重置。

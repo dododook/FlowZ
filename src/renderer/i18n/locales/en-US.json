@@ -547,6 +547,25 @@
         "importConfirmDesc": "This will completely overwrite your current nodes, subscriptions, and rules. This action cannot be undone. Please confirm before proceeding.",
         "importConfirmBtn": "Confirm & Restore"
       },
+      "logLevelCaptureLocked": "Locked to debug during diagnostic capture (stop the capture in the Diagnostics card below to change it)",
+      "diagnostics": {
+        "title": "Diagnostics",
+        "desc": "Export a redacted diagnostic report, or start a diagnostic capture (temporarily raise the log level) to gather more detailed root-cause data.",
+        "export": "Export Diagnostic Report",
+        "exporting": "Exporting...",
+        "exportSuccess": "Diagnostic report exported",
+        "exportSuccessDesc": "Saved to {{path}}; secrets are redacted, safe to attach to an issue.",
+        "exportFail": "Failed to export diagnostic report",
+        "captureStart": "Start Diagnostic Capture",
+        "captureStop": "Stop Capture",
+        "captureActiveTitle": "Diagnostic capture active",
+        "captureActiveDesc": "Log level is temporarily set to debug and will record visited domains/SNI. Reproduce the issue then export the report; stopping the capture restores the original level.",
+        "captureStarted": "Diagnostic capture started",
+        "captureStartedDesc": "Log level set to debug (the proxy auto-restarts to apply it if running). Reproduce the issue, then export the diagnostic report.",
+        "captureStopped": "Diagnostic capture stopped; log level restored to {{level}}",
+        "capturePrivacyBlocked": "Please turn off Privacy Mode first (it suppresses detailed logs, so diagnostic capture cannot take effect)",
+        "captureLogFileDisabled": "Please turn off \"Disable log file\" first (otherwise the captured detailed logs are not written to disk and cannot be exported)"
+      },
       "autoSwitchNode": "Auto-Switch Node on Failure",
       "autoSwitchNodeDesc": "Automatically switch to an available node if the current proxy connection fails",
       "subIntervalRange": "Update interval must be 1–168 hours"
