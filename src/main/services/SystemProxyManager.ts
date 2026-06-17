@@ -505,13 +505,15 @@ export class MacOSSystemProxy extends SystemProxyBase {
     // marker 提前写（intent）：enable 期间崩溃也留 marker，供下次启动恢复（disable 成功/失败回滚才会删）。
     this.writeMarker(`${address}:${httpPort}`);
 
-    // 保存原始设置（防自指：已指向我们自己的代理 → 视为无原始，杜绝 disable restore 死端口致断网）
+    // 保存原始设置（防自指：已指向我们自己的代理 → 视为无原始，杜绝 disable restore 死端口致断网）。
+    // 按"首个服务"读取，与 disable 时 restoreProxySettings 回写**全部**服务的单快照口径对称——勿用 iterate-all 的
+    // getProxyStatus(那是给残留检测/清理用，会返回非首服务的代理)，否则多网卡上把以太网代理存为原始 → restore 误铺到
+    // Wi-Fi 等全部服务(round-3 MED)。注：单快照 blanket 回写对"各服务代理不同"仍有损(既有设计限制，罕见配置，见设计文档)。
     try {
-      this.originalSettings = SystemProxyBase.stripSelf(
-        await this.getProxyStatus(),
-        address,
-        httpPort
-      );
+      const primary = (await this.getNetworkServices())[0];
+      this.originalSettings = primary
+        ? SystemProxyBase.stripSelf(await this.readServiceProxy(primary), address, httpPort)
+        : null;
       this.log('info', '已保存原始代理设置');
     } catch (error) {
       this.log('warn', `无法获取原始代理设置: ${error}`);
