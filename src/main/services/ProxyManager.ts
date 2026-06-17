@@ -2367,7 +2367,9 @@ done
         tag: 'fakeip',
         type: 'fakeip',
         inet4_range: '198.18.0.0/15',
-        inet6_range: 'fc00::/18',
+        // §B：关 IPv6(enableIPv6=false)时不给 FakeIP 分配 v6 段 → AAAA 不被 FakeIP 化（配合下方 strategy=ipv4_only +
+        // 规则 query_type 去 AAAA）→ 客户端拿不到任何 v6，杜绝"双栈站 + 节点无 v6"时浏览器试 v6 失败致 ERR_CONNECTION_CLOSED。
+        ...(config.enableIPv6 ? { inet6_range: 'fc00::/18' } : {}),
       });
     }
 
@@ -2404,10 +2406,12 @@ done
       rules: [],
       // 默认使用国内 DNS 解析
       final: 'dns-domestic',
-      // strategy 仅控制 A/AAAA 偏好，与 FakeIP 无关：统一 prefer_ipv4（sing-box 官方默认行为，三平台一致）。
-      // 原 ipv4_only 分支会抑制 AAAA 查询，伤 CDN 优选域名 / IPv6-only 目标的解析（#57）；prefer_ipv4 在无 IPv6 时
-      // 仍优先用 A，安全无副作用。usesFakeIp 无平台分支，三平台 enableFakeIp 时一致走 FakeIP（旧注释已过时，实为恒 FakeIP）。
-      strategy: 'prefer_ipv4',
+      // §B strategy 随 enableIPv6 收敛:
+      //  - 开 IPv6 → prefer_ipv4(允许 AAAA,IPv6-only 目标/CDN v6 优选可达;有 v6 时 v6 可能被系统选用)。
+      //  - 关 IPv6 → ipv4_only(抑制 AAAA,客户端只拿 A)→ 杜绝"双栈站 + 节点无 v6"时浏览器试 v6 失败致
+      //    ERR_CONNECTION_CLOSED(#57:TUN 本地握手骗过 Happy Eyeballs、不回落 v4)。关 IPv6 即明示放弃 v6,
+      //    IPv6-only 目标不可达是该选择的预期代价(故不再有当初移除 ipv4_only 的顾虑——那是 v6 开着时的副作用)。
+      strategy: config.enableIPv6 ? 'prefer_ipv4' : 'ipv4_only',
       // 关 FakeIP：补 reverse_mapping，让无 SNI/ECH 的连接也能用 DNS 反查域名做路由匹配（不改节点收 IP 事实，见设计 T3）。
       // 开 FakeIP 时不加（FakeIP 本身已提供域名↔假 IP 的双向映射）。
       ...(enableFakeIp ? {} : { reverse_mapping: true }),

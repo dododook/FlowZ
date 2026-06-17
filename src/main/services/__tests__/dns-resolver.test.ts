@@ -294,6 +294,25 @@ describe('Q1 Windows takeover：消除 type:local 死循环（dns-local 改路�
   });
 });
 
+describe('§B：enableIPv6 收敛 AAAA（IPv4-only 节点防 ERR_CONNECTION_CLOSED）', () => {
+  const tunFx = buildFixtures().find((f) => f.name === 'tun-smart__auto')!; // FakeIP 开 + enableIPv6:false
+  const fakeip = (cfg: AnyCfg) => (cfg.dns.servers as AnyCfg[]).find((s) => s.tag === 'fakeip');
+
+  it('enableIPv6=false → strategy=ipv4_only + fakeip 无 inet6_range（抑制 AAAA，客户端只拿 A）', () => {
+    const cfg = new ProxyManager().generateSingBoxConfig(tunFx.config) as AnyCfg;
+    expect(cfg.dns.strategy).toBe('ipv4_only');
+    expect(fakeip(cfg)?.inet4_range).toBe('198.18.0.0/15');
+    expect(fakeip(cfg)?.inet6_range).toBeUndefined();
+  });
+
+  it('enableIPv6=true → strategy=prefer_ipv4 + fakeip 带 inet6_range（允许 AAAA / v6-only 目标可达）', () => {
+    const v6cfg = { ...tunFx.config, enableIPv6: true } as AnyCfg;
+    const cfg = new ProxyManager().generateSingBoxConfig(v6cfg) as AnyCfg;
+    expect(cfg.dns.strategy).toBe('prefer_ipv4');
+    expect(fakeip(cfg)?.inet6_range).toBe('fc00::/18');
+  });
+});
+
 describe('#57 错误归因：translateErrorMessage / classifyCoreError 同序镜像', () => {
   const pm = new ProxyManager();
   // 注入 currentConfig，使节点域名集 = NODE_A/B 域名
