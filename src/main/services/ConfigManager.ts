@@ -284,14 +284,19 @@ export class ConfigManager implements IConfigManager {
       throw new Error('Config is null or undefined');
     }
 
-    // 自动迁移：强制将旧版本默认的高位端口（65533/65534）升级为标准端口（2080/2081）
-    // 解决方法：如果用户当前设置的是旧默认值，自动将其重置为新默认值
-    if (config.httpPort === 65533 || !config.httpPort) {
-      config.httpPort = 2080;
+    // mixed-only 迁移 + 治理：本地端口收敛为单一 mixedPort（同口 HTTP+SOCKS）。
+    // 种子：mixedPort 未设(>0) → 旧 httpPort（忽略历史 65533 哨兵；用户现 http 端口不变，仅 SOCKS app 需改指同口），
+    //       再无则新装默认 7890。幂等：mixedPort 一旦 >0 不再改写。
+    // 治理：彻底删除 deprecated httpPort/socksPort（不再写回持久化配置；运行时一律走 shared/proxy-ports#localProxyPort）。
+    if (!config.mixedPort || config.mixedPort <= 0) {
+      const legacyHttp =
+        config.httpPort && config.httpPort > 0 && config.httpPort !== 65533
+          ? config.httpPort
+          : undefined;
+      config.mixedPort = legacyHttp || 7890;
     }
-    if (config.socksPort === 65534 || !config.socksPort) {
-      config.socksPort = 2081;
-    }
+    delete config.httpPort;
+    delete config.socksPort;
 
     // 自动迁移：旧版自定义规则（DomainRule: domains+ipCidr）→ 新版 Rule（type+values）。
     // 必须在下方 customRules 校验之前（旧 shape 会被新校验判废 → loadConfig catch 覆盖保存 → 规则全丢）。
@@ -643,11 +648,20 @@ export class ConfigManager implements IConfigManager {
       throw new Error('bypassProcesses must be an array');
     }
 
-    // 验证端口
-    if (typeof config.socksPort !== 'number' || config.socksPort < 1 || config.socksPort > 65535) {
+    // 验证端口（mixed-only：canonical = mixedPort；http/socks 为 deprecated，仅在存在时宽松校验）
+    if (typeof config.mixedPort !== 'number' || config.mixedPort < 1 || config.mixedPort > 65535) {
+      throw new Error('mixedPort must be a number between 1 and 65535');
+    }
+    if (
+      config.socksPort !== undefined &&
+      (typeof config.socksPort !== 'number' || config.socksPort < 1 || config.socksPort > 65535)
+    ) {
       throw new Error('socksPort must be a number between 1 and 65535');
     }
-    if (typeof config.httpPort !== 'number' || config.httpPort < 1 || config.httpPort > 65535) {
+    if (
+      config.httpPort !== undefined &&
+      (typeof config.httpPort !== 'number' || config.httpPort < 1 || config.httpPort > 65535)
+    ) {
       throw new Error('httpPort must be a number between 1 and 65535');
     }
 
@@ -757,8 +771,8 @@ export class ConfigManager implements IConfigManager {
       fakeIpFilter: true, // fake-ip-filter 默认清单默认开启（NTP/STUN/Captive 走真实解析；老配置 undefined 亦视为开）
       speedTestUrl: DEFAULT_SPEED_TEST_URL, // 节点测速端点默认 generate_204（用户可在设置·网络改）
 
-      socksPort: 2081,
-      httpPort: 2080,
+      mixedPort: 7890, // mixed-only canonical 本地端口（同口 HTTP+SOCKS）；新装默认对齐业内 7890（存量经迁移沿用原 httpPort）。
+      // 注：不再设 httpPort/socksPort（mixed-only 已治理；旧配置经 loadConfig 迁移删除这两个 deprecated 字段）。
       logLevel: 'info',
       disableLogFile: false,
       clashApiSecret: randomBytes(16).toString('hex'),

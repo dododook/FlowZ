@@ -300,12 +300,8 @@
     "routeDefaultDomainResolver": "dns-bootstrap",
     "inbounds": [
       {
-        "type": "http",
-        "tag": "http-in"
-      },
-      {
-        "type": "socks",
-        "tag": "socks-in"
+        "type": "mixed",
+        "tag": "mixed-in"
       },
       {
         "type": "tun",
@@ -612,12 +608,8 @@
     "routeDefaultDomainResolver": "dns-bootstrap",
     "inbounds": [
       {
-        "type": "http",
-        "tag": "http-in"
-      },
-      {
-        "type": "socks",
-        "tag": "socks-in"
+        "type": "mixed",
+        "tag": "mixed-in"
       },
       {
         "type": "tun",
@@ -941,12 +933,8 @@
     "routeDefaultDomainResolver": "dns-bootstrap",
     "inbounds": [
       {
-        "type": "http",
-        "tag": "http-in"
-      },
-      {
-        "type": "socks",
-        "tag": "socks-in"
+        "type": "mixed",
+        "tag": "mixed-in"
       }
     ],
     "outboundResolvers": [

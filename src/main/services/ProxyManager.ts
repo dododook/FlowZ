@@ -26,6 +26,7 @@ import { ClashApiClient } from './ClashApiClient';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
+import { localProxyPort } from '../../shared/proxy-ports';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../shared/constants';
 import { resourceManager } from './ResourceManager';
@@ -975,8 +976,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (config.proxyModeType === 'systemProxy') {
         await this.systemProxyManager?.enableProxy(
           '127.0.0.1',
-          config.httpPort || 2080,
-          config.socksPort || 2081,
+          localProxyPort(config), // mixed-only：HTTP 与 SOCKS 同口（mac 三代理同口、win 仅 http）
+          localProxyPort(config),
           config.systemProxyBypass // 缺省 undefined → SystemProxyManager 取业内默认 bypass 清单
         );
       } else {
@@ -2604,27 +2605,19 @@ done
     //            （详见 generateRouteConfig A. 嗅探规则段注释）。
     const useLegacySniff = !coreVersionAtLeast(this.coreVersion, 1, 13);
 
-    const httpInbound: SingBoxInbound = {
-      type: 'http',
-      tag: 'http-in',
+    // mixed-only：单个 mixed inbound 同口服务 HTTP + SOCKS（取代原 http-in + socks-in + 可选 mixed-in）。
+    // 要 SOCKS 的 app 指同一端口即可。端口取单一真值 localProxyPort（mixedPort，旧配置回退 httpPort）。
+    const mixedInbound: SingBoxInbound = {
+      type: 'mixed',
+      tag: 'mixed-in',
       listen: listenAddr,
-      listen_port: config.httpPort || 2080,
+      listen_port: localProxyPort(config),
     };
-    const socksInbound: SingBoxInbound = {
-      type: 'socks',
-      tag: 'socks-in',
-      listen: listenAddr,
-      listen_port: config.socksPort || 2081,
-    };
-
     if (useLegacySniff) {
-      httpInbound.sniff = true;
-      httpInbound.sniff_override_destination = true;
-      socksInbound.sniff = true;
-      socksInbound.sniff_override_destination = true;
+      mixedInbound.sniff = true;
+      mixedInbound.sniff_override_destination = true;
     }
-
-    inbounds.push(httpInbound, socksInbound);
+    inbounds.push(mixedInbound);
 
     // 出口 IP 探针 inbound（仅本地回环，端口动态分配）：经 probe-direct-in 的请求由 route.rules 头部
     // 钉死走 direct 出站、经 probe-proxy-in 钉死走 proxy-selector，从而无论接管/分流模式都能测出真实出口
@@ -2644,21 +2637,6 @@ done
           listen_port: this.probeProxyPort,
         }
       );
-    }
-
-    // Mixed 端口（可选）：同时接受 HTTP 和 SOCKS5 请求
-    if (config.mixedPort && config.mixedPort > 0) {
-      const mixedInbound: SingBoxInbound = {
-        type: 'mixed',
-        tag: 'mixed-in',
-        listen: listenAddr,
-        listen_port: config.mixedPort,
-      };
-      if (useLegacySniff) {
-        mixedInbound.sniff = true;
-        mixedInbound.sniff_override_destination = true;
-      }
-      inbounds.push(mixedInbound);
     }
 
     // TUN 模式额外添加 TUN inbound
@@ -2772,7 +2750,7 @@ done
           http_proxy: {
             enabled: true,
             server: '127.0.0.1',
-            server_port: config.httpPort || 2080,
+            server_port: localProxyPort(config), // mixed-only：指向本地 mixed 端口
           },
         };
       }
@@ -7494,8 +7472,7 @@ exit 0
       'resolved', // DNS 解析完成
       'udp packet', // UDP 包
       'inbound/tun[tun-in]', // TUN 入站细节
-      'inbound/http[http-in]', // HTTP 入站细节
-      'inbound/socks[socks-in]', // SOCKS 入站细节
+      'inbound/mixed[mixed-in]', // mixed(HTTP+SOCKS) 入站细节（mixed-only）
     ];
 
     for (const pattern of filterPatterns) {

@@ -53,8 +53,8 @@ const ALL_PROTOCOLS: Protocol[] = [
 ];
 
 /** 最小可校验 UserConfig（够过 validateConfig 的非 protocol 分支），按需覆盖 servers。
- *  必须补齐 validateConfig 尾部强制校验的 socksPort/httpPort/logLevel，否则合法 protocol
- *  测试会被无关字段误触发错误。 */
+ *  mixed-only 后 validateConfig 尾部强制校验 mixedPort（http/socksPort 仅存在时宽松校验，且迁移会以 httpPort
+ *  为种子补 mixedPort）+ logLevel；补齐这些，否则合法 protocol 测试会被无关字段误触发错误。 */
 function makeConfig(over: Partial<UserConfig> = {}): UserConfig {
   return {
     subscriptions: [],

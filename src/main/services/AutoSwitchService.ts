@@ -24,6 +24,7 @@ import type { LogManager } from './LogManager';
 import type { ProxyManager } from './ProxyManager';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { ProxyErrorCode } from '../../shared/types';
+import { localProxyPort } from '../../shared/proxy-ports';
 
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30 秒检测一次
 const MAX_CONSECUTIVE_FAILURES = 3; // 连续 3 次失败触发换节点
@@ -114,8 +115,8 @@ export class AutoSwitchService extends EventEmitter {
     const server = config.servers.find((s) => s.id === config.selectedServerId);
     if (!server) return;
 
-    // 应用层连通性检测：经本地代理 HTTP 端口请求 generate_204，验证整条代理链而非裸 TCP 端口
-    const httpPort = config.httpPort || 2080;
+    // 应用层连通性检测：经本地 mixed 代理端口请求 generate_204，验证整条代理链而非裸 TCP 端口
+    const httpPort = localProxyPort(config);
     const alive = await this.checkProxyConnectivity(httpPort);
 
     if (alive) {

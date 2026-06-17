@@ -605,9 +605,13 @@ export interface UserConfig {
   customAppPresets?: CustomAppPreset[];
 
   // 端口配置
-  socksPort: number;
-  httpPort: number;
-  mixedPort?: number; // 混合端口（可选，同时支持 HTTP 和 SOCKS5，0 或 undefined 表示禁用）
+  /** @deprecated mixed-only 架构已弃用独立端口；仅旧配置兼容 + 迁移读取（见 shared/proxy-ports）。 */
+  socksPort?: number;
+  /** @deprecated 同上；迁移时若 mixedPort 未设则以此为 mixedPort 种子。 */
+  httpPort?: number;
+  // 本地混合代理端口（mixed inbound 同口 HTTP+SOCKS）。mixed-only 架构 canonical 端口，恒 >0、无开关。
+  // 新装缺省 7890（DEFAULT_MIXED_PORT，对齐业内）；旧配置迁移自 httpPort。统一经 shared/proxy-ports#localProxyPort 取用。
+  mixedPort?: number;
   allowLan?: boolean; // 局域网共享代理（允许其他设备连接）
   bypassLAN?: boolean; // 绕过局域网（将内网 IP 设置为直连）
   // 系统代理「忽略代理列表」(OS proxy 例外)。仅系统代理模式生效（TUN 直连走 sing-box route）。

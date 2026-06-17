@@ -4,6 +4,7 @@ import type { SubscriptionConfig } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { SubscriptionService, SubscriptionUpdateResult } from '../../services/SubscriptionService';
 import { ConfigManager } from '../../services/ConfigManager';
+import { localProxyPort } from '../../../shared/proxy-ports';
 import { randomUUID } from 'crypto';
 
 /**
@@ -106,7 +107,7 @@ export function registerSubscriptionHandlers(
           subscription.url,
           subscription.id,
           config.subscriptionUpdateViaProxy === true,
-          config.httpPort || 2080,
+          localProxyPort(config),
           subscription.userAgent ?? config.subscriptionUserAgent
         );
         const fetchedServers = result.servers;

@@ -7,6 +7,7 @@ import { TrayManager } from './services/TrayManager';
 import { ProxyManager } from './services/ProxyManager';
 import { createSystemProxyManager, SystemProxyBase } from './services/SystemProxyManager';
 import { createSystemDnsManager, SystemDnsBase } from './services/SystemDnsManager';
+import { localProxyPort } from '../shared/proxy-ports';
 import { resourceManager } from './services/ResourceManager';
 import { SubscriptionService } from './services/SubscriptionService';
 import { registerPrivacyHandlers } from './ipc/handlers/privacy-handlers';
@@ -1185,7 +1186,7 @@ if (gotTheLock) {
         const running = proxyManager?.getStatus().running ?? false;
         const on = running && cfg.mainSessionViaProxy !== false;
         if (on) {
-          const proxyUrl = `http://127.0.0.1:${cfg.httpPort || 2080}`;
+          const proxyUrl = `http://127.0.0.1:${localProxyPort(cfg)}`;
           await session.defaultSession.setProxy({
             proxyRules: proxyUrl,
             // IPv6 字面量须加方括号才是合法 Chromium bypass 规则（loopback 本就隐式 bypass，[::1] 仅为显式）

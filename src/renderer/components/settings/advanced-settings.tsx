@@ -42,8 +42,10 @@ export function AdvancedSettings() {
 
   if (!config) return null;
 
-  const httpPort = (config.httpPort ?? 2080).toString();
-  const socksPort = (config.socksPort ?? 2081).toString();
+  // mixed-only：HTTP 与 SOCKS 同口（mixed inbound）。
+  const localPort = (config.mixedPort || config.httpPort || 7890).toString();
+  const httpPort = localPort;
+  const socksPort = localPort;
 
   return (
     <div className="space-y-6">

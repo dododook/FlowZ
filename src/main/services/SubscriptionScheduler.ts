@@ -15,6 +15,7 @@ import type { ConfigManager } from './ConfigManager';
 import type { LogManager } from './LogManager';
 import { SubscriptionService } from './SubscriptionService';
 import type { UserConfig } from '../../shared/types';
+import { localProxyPort } from '../../shared/proxy-ports';
 
 export class SubscriptionScheduler {
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -146,7 +147,7 @@ export class SubscriptionScheduler {
             sub.url,
             sub.id,
             viaProxy,
-            config.httpPort || 2080,
+            localProxyPort(config),
             sub.userAgent ?? config.subscriptionUserAgent
           );
           fetched.push({
