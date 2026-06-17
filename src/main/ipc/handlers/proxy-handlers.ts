@@ -77,6 +77,12 @@ export function registerProxyHandlers(
     return { ok: res.ok };
   });
 
+  // 用户主动关闭系统代理（TUN 残留提示的一键动作）：经 ProxyManager 收口 systemProxyManager.disableProxy。
+  registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.SYSTEM_PROXY_DISABLE, async () => {
+    await proxyManager.clearSystemProxyManually();
+    return { ok: true };
+  });
+
   // 连接页订阅/退订（P1 watcher 引用计数）：仅连接页打开时主进程才裁剪+推送连接快照，
   // 「代理连着但没盯连接页」稳态下省掉全量裁剪与大包广播。fire-and-forget（渲染端不关心返回值）。
   registerIpcHandler<void, void>(IPC_CHANNELS.CONNECTIONS_WATCH, async () => {

@@ -34,6 +34,13 @@
     "disabledOpenSettings": "Open System Settings",
     "backgroundRestored": "\"Allow in the Background\" restored — the privileged helper is available"
   },
+  "proxy": {
+    "systemProxyResidualTitle": "System proxy may interfere with TUN",
+    "systemProxyResidualDesc": "A system proxy is still enabled ({{proxy}}) in TUN mode. It wasn't set by FlowZ and may cause connection issues. Consider disabling it unless you need it.",
+    "disableSystemProxy": "Disable system proxy",
+    "systemProxyDisabled": "System proxy disabled",
+    "systemProxyDisableFailed": "Failed to disable system proxy"
+  },
   "common": {
     "cancel": "Cancel",
     "confirm": "Confirm",

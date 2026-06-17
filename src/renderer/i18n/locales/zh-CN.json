@@ -34,6 +34,13 @@
     "disabledOpenSettings": "打开系统设置",
     "backgroundRestored": "「允许在后台」已恢复，提权助手可用"
   },
+  "proxy": {
+    "systemProxyResidualTitle": "系统代理可能干扰 TUN",
+    "systemProxyResidualDesc": "TUN 模式下检测到系统代理仍开启（{{proxy}}），它不是 FlowZ 设置的，可能导致连接异常。如非必要建议关闭。",
+    "disableSystemProxy": "关闭系统代理",
+    "systemProxyDisabled": "已关闭系统代理",
+    "systemProxyDisableFailed": "关闭系统代理失败"
+  },
   "common": {
     "cancel": "取消",
     "confirm": "确定",

@@ -982,6 +982,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         );
       } else {
         await this.ensureSystemProxyCleared();
+        // TUN 进入：清掉 FlowZ 自己的(marker)系统代理后，若仍有系统代理开着 = 无 marker 残留(外部/他软件/丢 marker)。
+        // 不自动清(7890 等是业内共用端口、无法证明归属，自动清会误伤别的代理软件)→ 一次性提示，交用户决定。
+        await this.adviseIfResidualSystemProxy();
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -7090,6 +7093,38 @@ exit 0
     } finally {
       this.clearingSystemProxy = false;
     }
+  }
+
+  /**
+   * TUN 进入后的残留系统代理提示：ensureSystemProxyCleared 已清掉 FlowZ 自己的(marker)；若系统代理仍开着，
+   * 即为**无 marker 残留**——可能是别的代理软件(Clash/Stash 等共用 7890)或外部/企业代理，也可能是我们丢了 marker。
+   * 因 7890 等是业内共用端口、无法据地址证明归属，**绝不自动清**(会误伤别的软件)→ 发一次性 advisory 交用户一键关。
+   * best-effort：读状态失败/无残留则静默。
+   */
+  private async adviseIfResidualSystemProxy(): Promise<void> {
+    const mgr = this.systemProxyManager;
+    if (!mgr) return;
+    try {
+      const status = await mgr.getProxyStatus().catch(() => null);
+      if (!status?.enabled) return;
+      const proxy = status.httpProxy || status.httpsProxy || status.socksProxy || '';
+      this.logToManager(
+        'warn',
+        `TUN 模式下检测到非 FlowZ 设置的系统代理仍开启(${proxy || '未知地址'})，已提示用户（不自动清，避免误伤其它代理软件）`
+      );
+      this.sendEventToRenderer(IPC_CHANNELS.EVENT_SYSTEM_PROXY_RESIDUAL, { proxy });
+    } catch {
+      /* best-effort：提示失败不影响 TUN 启动 */
+    }
+  }
+
+  /**
+   * 用户主动关闭系统代理（TUN 残留提示的「关闭系统代理」一键动作）。用户显式意图 → 直接 disable
+   * (ProxyEnable=0 / restore 原始)，不 marker 门控(残留本就无我们的 marker)。供 IPC SYSTEM_PROXY_DISABLE 调。
+   */
+  async clearSystemProxyManually(): Promise<void> {
+    await this.systemProxyManager?.disableProxy();
+    this.logToManager('info', '已按用户请求关闭系统代理（TUN 残留提示）');
   }
 
   /**

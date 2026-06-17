@@ -73,6 +73,13 @@ export const proxyApi = {
   },
 
   /**
+   * 用户主动关闭系统代理（TUN 残留提示的「关闭系统代理」一键动作）。
+   */
+  async disableSystemProxy(): Promise<{ ok: boolean }> {
+    return ipcClient.invoke(IPC_CHANNELS.SYSTEM_PROXY_DISABLE);
+  },
+
+  /**
    * 监听代理启动事件
    */
   onStarted(
@@ -128,6 +135,13 @@ export const proxyApi = {
    */
   onTailscaleAuth(listener: (data: { nodeName: string; url: string }) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, listener);
+  },
+
+  /**
+   * 监听 TUN 启动后的「无 marker 系统代理残留」提示（非 FlowZ 设的代理仍开着，可能干扰 TUN）。
+   */
+  onSystemProxyResidual(listener: (data: { proxy: string }) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_SYSTEM_PROXY_RESIDUAL, listener);
   },
 };
 
