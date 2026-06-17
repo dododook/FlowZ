@@ -420,6 +420,8 @@
       "description": "DNS, ports, traffic, speed test & subscription updates",
       "connection": "Connection",
       "enableIPv6Desc": "Enable global IPv6 resolution & routing; may hang on nodes without IPv6, not recommended",
+      "ipv6NodeFakeIpHint": "If the node lacks IPv6, some sites may be unreachable; enabling FakeIP is recommended.",
+      "enableFakeIpAction": "Enable FakeIP",
       "logs": "Logs",
       "updateAndSpeedTest": "Updates & Speed Test",
       "advancedDns": "Advanced DNS",

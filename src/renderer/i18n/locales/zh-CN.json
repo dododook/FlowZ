@@ -420,6 +420,8 @@
       "description": "DNS、端口、流量、测速与订阅更新",
       "connection": "连接",
       "enableIPv6Desc": "启用全局 IPv6 解析及路由；节点不支持时可能假死，不建议开启",
+      "ipv6NodeFakeIpHint": "若节点不支持 IPv6，部分网站可能无法访问；建议开启 FakeIP。",
+      "enableFakeIpAction": "开启 FakeIP",
       "logs": "日志",
       "updateAndSpeedTest": "更新与测速",
       "advancedDns": "高级 DNS",

@@ -520,6 +520,27 @@ export function NetworkSettings() {
                 onCheckedChange={(c) => setBool('enableIPv6', c)}
               />
             </SettingsRow>
+            {/* 仅 TUN + IPv6 开 + FakeIP 关 才提示：TUN 下客户端会直接试 v6，节点若无 v6 则部分站点连不通；
+                FakeIP 让节点按域名出站、规避此问题。系统代理模式经 127.0.0.1+域名(remote DNS)不犯此问题，故不提示。 */}
+            {config.proxyModeType === 'tun' &&
+              config.enableIPv6 === true &&
+              config.dnsConfig?.enableFakeIp === false && (
+                <div className="flex items-center justify-between gap-3 py-2">
+                  <p className="text-xs font-medium text-warning">
+                    {t(
+                      'settings.network.ipv6NodeFakeIpHint',
+                      '若节点不支持 IPv6，部分网站可能无法访问；建议开启 FakeIP。'
+                    )}
+                  </p>
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => updateDns({ enableFakeIp: true })}
+                  >
+                    {t('settings.network.enableFakeIpAction', '开启 FakeIP')}
+                  </Button>
+                </div>
+              )}
           </SettingsCollapsible>
         </CardContent>
       </Card>
