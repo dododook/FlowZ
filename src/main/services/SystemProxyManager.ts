@@ -662,56 +662,34 @@ export class MacOSSystemProxy extends SystemProxyBase {
    */
   async getProxyStatus(): Promise<SystemProxyStatus> {
     try {
-      // 获取第一个网络服务的代理状态
-      const services = await this.getNetworkServices();
-      if (services.length === 0) {
-        return { enabled: false };
+      // 逐服务检查：代理可能设在非首个服务上（以太网优先 / VPN / 多网卡）。与 enable/disable 遍历全部服务同口径——
+      // 任一服务有启用代理即返回它，避免只看 services[0] 漏检非首服务上的残留代理（修 round-2：macOS 误判"无残留"）。
+      for (const service of await this.getNetworkServices()) {
+        const status = await this.readServiceProxy(service);
+        if (status.enabled) return status;
       }
-
-      const service = services[0];
-      const status: SystemProxyStatus = { enabled: false };
-
-      // 检查 HTTP 代理
-      const httpResult = await execAsync(`networksetup -getwebproxy "${service}"`);
-      const httpEnabled = httpResult.stdout.includes('Enabled: Yes');
-      if (httpEnabled) {
-        const serverMatch = httpResult.stdout.match(/Server: (.+)/);
-        const portMatch = httpResult.stdout.match(/Port: (\d+)/);
-        if (serverMatch && portMatch) {
-          status.httpProxy = `${serverMatch[1].trim()}:${portMatch[1].trim()}`;
-          status.enabled = true;
-        }
-      }
-
-      // 检查 HTTPS 代理
-      const httpsResult = await execAsync(`networksetup -getsecurewebproxy "${service}"`);
-      const httpsEnabled = httpsResult.stdout.includes('Enabled: Yes');
-      if (httpsEnabled) {
-        const serverMatch = httpsResult.stdout.match(/Server: (.+)/);
-        const portMatch = httpsResult.stdout.match(/Port: (\d+)/);
-        if (serverMatch && portMatch) {
-          status.httpsProxy = `${serverMatch[1].trim()}:${portMatch[1].trim()}`;
-          status.enabled = true;
-        }
-      }
-
-      // 检查 SOCKS 代理
-      const socksResult = await execAsync(`networksetup -getsocksfirewallproxy "${service}"`);
-      const socksEnabled = socksResult.stdout.includes('Enabled: Yes');
-      if (socksEnabled) {
-        const serverMatch = socksResult.stdout.match(/Server: (.+)/);
-        const portMatch = socksResult.stdout.match(/Port: (\d+)/);
-        if (serverMatch && portMatch) {
-          status.socksProxy = `${serverMatch[1].trim()}:${portMatch[1].trim()}`;
-          status.enabled = true;
-        }
-      }
-
-      return status;
+      return { enabled: false };
     } catch {
       // 查询失败，返回禁用状态
       return { enabled: false };
     }
+  }
+
+  /** 读单个网络服务的 http/https/socks 代理（任一启用即 enabled）。DRY 化原三段重复块。 */
+  private async readServiceProxy(service: string): Promise<SystemProxyStatus> {
+    const read = async (sub: string): Promise<string | undefined> => {
+      const { stdout } = await execAsync(`networksetup ${sub} "${service}"`);
+      if (!stdout.includes('Enabled: Yes')) return undefined;
+      const server = stdout.match(/Server: (.+)/);
+      const port = stdout.match(/Port: (\d+)/);
+      return server && port ? `${server[1].trim()}:${port[1].trim()}` : undefined;
+    };
+    const status: SystemProxyStatus = { enabled: false };
+    status.httpProxy = await read('-getwebproxy');
+    status.httpsProxy = await read('-getsecurewebproxy');
+    status.socksProxy = await read('-getsocksfirewallproxy');
+    status.enabled = !!(status.httpProxy || status.httpsProxy || status.socksProxy);
+    return status;
   }
 
   /**
@@ -722,12 +700,13 @@ export class MacOSSystemProxy extends SystemProxyBase {
       const { stdout } = await execAsync('networksetup -listallnetworkservices');
       const lines = stdout.split('\n');
 
-      // 第一行是提示信息，跳过
-      // 过滤掉空行和以 * 开头的禁用服务
+      // 跳过首行提示 + 空行 + 以 * 开头的禁用服务 + Bluetooth PAN。
+      // 排除 Bluetooth 与 disableProxySync 的退出兜底口径统一——否则 async enable 在 Bluetooth PAN 上设了代理，
+      // 而 sync 退出兜底跳过它 → 残留无法被关（round-2 LOW：async/sync 服务集不一致）。
       return lines
         .slice(1)
         .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith('*'));
+        .filter((line) => line && !line.startsWith('*') && !line.includes('Bluetooth'));
     } catch (error) {
       throw new Error(
         `获取网络服务列表失败: ${error instanceof Error ? error.message : String(error)}`
@@ -872,6 +851,8 @@ export class LinuxSystemProxy extends SystemProxyBase {
 
       const host = hostResult.stdout.replace(/'/g, '').trim();
       const port = portResult.stdout.trim();
+      // mode=manual 但 host 空 = 无实际代理（用户清了 host），不误报 enabled（否则 advisory 弹 ":port"）。
+      if (!host) return { enabled: false };
 
       return {
         enabled: true,

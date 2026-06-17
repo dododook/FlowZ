@@ -7112,6 +7112,16 @@ exit 0
       const status = await mgr.getProxyStatus().catch(() => null);
       if (!status?.enabled) return;
       const proxy = status.httpProxy || status.httpsProxy || status.socksProxy || '';
+      // 防自指：若残留指向 FlowZ 自己的本地端口(127.0.0.1:mixedPort)=我们自己的代理清理半失败(非外部)，不报「外部残留」
+      //（会误导）。仅 ensureSystemProxyCleared 的清理偶发部分失败时出现；下个终态点会重试清。修 round-2 MED:mac/linux 误报。
+      const ownHostPort = `127.0.0.1:${localProxyPort(this.currentConfig ?? {})}`;
+      if ([status.httpProxy, status.httpsProxy, status.socksProxy].some((p) => p === ownHostPort)) {
+        this.logToManager(
+          'warn',
+          `系统代理仍指向 FlowZ 自身(${proxy})但清理未净——非外部残留，跳过提示，下个终态点重试清理`
+        );
+        return;
+      }
       this.logToManager(
         'warn',
         `TUN 模式下检测到非 FlowZ 设置的系统代理仍开启(${proxy || '未知地址'})，已提示用户（不自动清，避免误伤其它代理软件）`
