@@ -197,8 +197,8 @@ export function NetworkInfoCard() {
         {/* 遥测:上行 / 下行 / 活动连接（mono + tabular） */}
         <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-border/60 pt-3">
           <div className="flex items-center gap-2">
-            <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-mono text-base font-semibold tabular-nums">
+            <ArrowUp className="h-3.5 w-3.5 text-info" />
+            <span className="font-mono text-base font-semibold tabular-nums text-info">
               {formatBytes(stats?.uploadSpeed ?? 0)}/s
             </span>
             <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
@@ -206,8 +206,8 @@ export function NetworkInfoCard() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-mono text-base font-semibold tabular-nums">
+            <ArrowDown className="h-3.5 w-3.5 text-success" />
+            <span className="font-mono text-base font-semibold tabular-nums text-success">
               {formatBytes(stats?.downloadSpeed ?? 0)}/s
             </span>
             <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
