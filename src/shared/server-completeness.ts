@@ -1,5 +1,5 @@
 import type { ServerConfig, Protocol } from './types';
-import { isAccountBasedProtocol } from './endpoint-routes';
+import { isAccountBasedProtocol, isMeshNodeUnroutable } from './endpoint-routes';
 
 /**
  * 协议「必填字段是否齐备」的**单一真值**——主侧 `ConfigManager.validateConfig`（缺则 throw）
@@ -105,5 +105,7 @@ export function isServerComplete(server: ServerConfig | undefined | null): boole
     if (!server.address || server.address.trim() === '') return false;
     if (!server.port || server.port <= 0) return false;
   }
+  // 组网节点关外网且无可路由网段：字段虽齐备，但生成期不发射（空 allowed_ips=FATAL）→ 实际不可用，连接闸门置灰。
+  if (isMeshNodeUnroutable(server)) return false;
   return protocolRequirementError(server) === null;
 }

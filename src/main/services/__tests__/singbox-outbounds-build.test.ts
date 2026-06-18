@@ -139,6 +139,48 @@ describe('buildOutbounds — endpoint + 门控', () => {
     expect(r.outbounds.find((o) => o.tag === 'proxy-selector')!.outbounds).toContain('WG');
   });
 
+  it('WireGuard 关外网且无可路由网段 → 不发射 endpoint，tag 不入 selector（D2 防空 allowed_ips FATAL）', () => {
+    const wgOff = {
+      id: 'w1',
+      name: 'WG-off',
+      protocol: 'wireguard',
+      address: 'wg.example.com',
+      port: 51820,
+      wireguardSettings: {
+        privateKey: 'pk',
+        peerPublicKey: 'pub',
+        localAddress: ['10.0.0.2/32'],
+        allowedIPs: ['0.0.0.0/0', '::/0'],
+        allowInternet: false,
+      },
+    } as unknown as ServerConfig;
+    const node = vless('s1', '香港'); // 另备一个可用节点，避免「全部不可用」抛错
+    const r = buildOutbounds(node, cfg([node, wgOff]), idMap([node, wgOff]), deps());
+    expect(r.pendingEndpoints.map((e) => e.tag)).not.toContain('WG-off');
+    expect(r.outbounds.find((o) => o.tag === 'proxy-selector')!.outbounds).not.toContain('WG-off');
+  });
+
+  it('WireGuard 关外网但有具体段 → 发射 endpoint（仅承载具体段）', () => {
+    const wgOff = {
+      id: 'w1',
+      name: 'WG-lan',
+      protocol: 'wireguard',
+      address: 'wg.example.com',
+      port: 51820,
+      wireguardSettings: {
+        privateKey: 'pk',
+        peerPublicKey: 'pub',
+        localAddress: ['10.0.0.2/32'],
+        allowedIPs: ['10.8.0.0/24'],
+        allowInternet: false,
+      },
+    } as unknown as ServerConfig;
+    const r = buildOutbounds(wgOff, cfg([wgOff]), idMap([wgOff]), deps());
+    const ep = r.pendingEndpoints.find((e) => e.tag === 'WG-lan');
+    expect(ep).toBeDefined();
+    expect(ep!.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
+  });
+
   it('gateInvalidNodes 命中 → 跳过该节点出站', () => {
     const servers = [vless('s1', '香港'), vless('s2', '日本')];
     const gate = new Map<string, InvalidNodeInfo>([

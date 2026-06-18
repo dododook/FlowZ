@@ -38,6 +38,8 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
           localAddress: draft.localAddress,
           peerPublicKey: draft.peerPublicKey,
           allowedIPs: draft.allowedIPs,
+          // WARP 即全隧道隐私出口 → 默认允许访问外网（与 WG 缺省一致）。后续可在「编辑」(WG 表单) 里关闭/调整。
+          allowInternet: true,
           persistentKeepalive: 25,
           mtu: draft.mtu,
           reserved: draft.reserved,

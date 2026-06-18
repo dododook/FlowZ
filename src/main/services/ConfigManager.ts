@@ -435,18 +435,27 @@ export class ConfigManager implements IConfigManager {
         droppedCidrs += list.length - cleaned.length;
         return cleaned;
       };
+      // allowInternet（组网「允许访问外网」开关）：纯开关字段，非 boolean 一律剔除而非 throw（缺省=true，向后兼容
+      // D5）。throw 在 loadConfig 路径会触发默认配置覆盖落盘致用户节点全丢，不值当（同 appRoutingEnabled 标准）。
+      const sanitizeAllowInternet = (s: { allowInternet?: boolean } | undefined): void => {
+        if (s && s.allowInternet !== undefined && typeof s.allowInternet !== 'boolean') {
+          delete s.allowInternet;
+        }
+      };
       if (server.wireguardSettings) {
         // localAddress 是接口地址（进 endpoint.address），同样必须是合法 IP/CIDR，否则内核 FATAL。
         // localAddress 为必填 string[]（protocolRequirementError 已保证此处非空数组），仅在确为数组时回写。
         const cleanedLocal = sanitizeCidrs(server.wireguardSettings.localAddress);
         if (Array.isArray(cleanedLocal)) server.wireguardSettings.localAddress = cleanedLocal;
         server.wireguardSettings.allowedIPs = sanitizeCidrs(server.wireguardSettings.allowedIPs);
+        sanitizeAllowInternet(server.wireguardSettings);
       }
       if (server.tailscaleSettings) {
         server.tailscaleSettings.routes = sanitizeCidrs(server.tailscaleSettings.routes);
         server.tailscaleSettings.advertiseRoutes = sanitizeCidrs(
           server.tailscaleSettings.advertiseRoutes
         );
+        sanitizeAllowInternet(server.tailscaleSettings);
       }
     }
     if (droppedCidrs > 0) {

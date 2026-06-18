@@ -15,12 +15,15 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { parseWgQuickConf } from '../../../shared/wg-quick';
+// 全网段由「允许访问外网」开关接管，列表只显示/录入具体段——剥离/判定复用 shared 单一真值，避免字面量漂移。
+import { stripCatchAll, hasCatchAll } from '../../../shared/endpoint-routes';
 
 const createWireGuardSchema = (t: any) =>
   z.object({
@@ -34,6 +37,7 @@ const createWireGuardSchema = (t: any) =>
       .string()
       .min(1, t('servers.wgPeerPublicKeyRequired', 'Peer public key is required')),
     preSharedKey: z.string().optional(),
+    allowInternet: z.boolean(),
     allowedIPs: z.string().optional(),
     persistentKeepalive: z.number().min(0).max(65535),
     mtu: z.number().min(0).max(9000).optional(),
@@ -70,7 +74,8 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       localAddress: '',
       peerPublicKey: '',
       preSharedKey: '',
-      // 留空=全量（buildWireGuardEndpoint 空值默认 0/0,::/0）。不预填 0/0：降理解成本 + 不给 system 模式种「默认注入 0/0」隐患。
+      allowInternet: true, // 新建默认开（全隧道）
+      // 仅录入「具体路由段」（对端内网/子网）；全网段 0/0,::/0 由 allowInternet 开关接管，不在此预填。
       allowedIPs: '',
       persistentKeepalive: 25, // 默认 25s：避免 NAT 空闲断连（WireGuard 无连接 UDP）
       mtu: 1408,
@@ -88,7 +93,9 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         localAddress: (wg?.localAddress || []).join(', '),
         peerPublicKey: wg?.peerPublicKey || '',
         preSharedKey: wg?.preSharedKey || '',
-        allowedIPs: (wg?.allowedIPs || ['0.0.0.0/0', '::/0']).join(', '),
+        allowInternet: wg?.allowInternet !== false, // 缺省 true（向后兼容）
+        // 全网段由开关接管，列表仅显示具体段（剥离存量 allowedIPs 里的 catch-all）。
+        allowedIPs: stripCatchAll(wg?.allowedIPs).join(', '),
         persistentKeepalive: wg?.persistentKeepalive ?? 25,
         mtu: wg?.mtu ?? 1408,
         reserved: (wg?.reserved || []).join(', '),
@@ -116,7 +123,9 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       localAddress: parsed.settings.localAddress.join(', '),
       peerPublicKey: parsed.settings.peerPublicKey,
       preSharedKey: parsed.settings.preSharedKey || '',
-      allowedIPs: (parsed.settings.allowedIPs || ['0.0.0.0/0', '::/0']).join(', '),
+      // 忠实 wg-quick 语义：AllowedIPs 含 0/0,::/0=全隧道→开关开；缺则默认全隧道。列表仅留具体段。
+      allowInternet: parsed.settings.allowedIPs ? hasCatchAll(parsed.settings.allowedIPs) : true,
+      allowedIPs: stripCatchAll(parsed.settings.allowedIPs).join(', '),
       persistentKeepalive: parsed.settings.persistentKeepalive ?? 25,
       mtu: parsed.settings.mtu ?? 1408,
       reserved: '',
@@ -133,7 +142,9 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         localAddress: splitTextList(values.localAddress),
         peerPublicKey: values.peerPublicKey.trim(),
         preSharedKey: values.preSharedKey?.trim() || undefined,
-        allowedIPs: splitTextList(values.allowedIPs),
+        allowInternet: values.allowInternet,
+        // 仅保存具体路由段；全网段 0/0,::/0 由 allowInternet=on 在生成期注入 peer.allowed_ips。
+        allowedIPs: stripCatchAll(splitTextList(values.allowedIPs)),
         persistentKeepalive: values.persistentKeepalive,
         mtu: values.mtu || undefined,
         reserved: parseReserved(values.reserved),
@@ -141,6 +152,9 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
     };
     await onSubmit(config);
   };
+
+  const allowInternet = form.watch('allowInternet');
+  const hasSpecificRoutes = stripCatchAll(splitTextList(form.watch('allowedIPs'))).length > 0;
 
   return (
     <Form {...form}>
@@ -219,15 +233,39 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             <FieldSpan>
               <FormField
                 control={form.control}
+                name="allowInternet"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'servers.allowInternetDesc',
+                          'When off, this node only routes the subnets listed below (e.g. peer LAN); it will not carry your default outbound traffic.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
                 name="allowedIPs"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('servers.wgAllowedIPs', 'Allowed IPs')}</FormLabel>
+                    <FormLabel>
+                      {t('servers.wgAllowedIPs', 'Routed subnets (Allowed IPs)')}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         placeholder={t(
                           'servers.wgAllowedIPsPlaceholder',
-                          '留空=全量；或 10.10.10.0/24'
+                          '留空=全隧道；或 10.8.0.0/24'
                         )}
                         {...field}
                       />
@@ -235,9 +273,22 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                     <FormDescription>
                       {t(
                         'servers.wgAllowedIPsDesc',
-                        'Leave empty = all traffic via this node (full tunnel); to send only certain subnets here, list specific CIDRs (e.g. 10.10.10.0/24) — only those go here, the rest still use your globally selected node'
+                        'Subnets (CIDR) to route through this node, comma/newline-separated. Empty = full tunnel (all traffic). For peer LAN only, list specific CIDRs like 10.8.0.0/24.'
                       )}
                     </FormDescription>
+                    {!allowInternet && (
+                      <p className="text-sm text-amber-600 dark:text-amber-500">
+                        {hasSpecificRoutes
+                          ? t(
+                              'servers.allowInternetOffHint',
+                              'Internet access off: this node only routes the subnets listed above.'
+                            )
+                          : t(
+                              'servers.allowInternetOffNoRoutes',
+                              '⚠ This node currently carries no traffic (internet off and no subnets listed). Add a subnet or turn internet access back on.'
+                            )}
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

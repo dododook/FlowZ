@@ -54,7 +54,11 @@ import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { getSortedProtocolOptions } from './shared/protocol-options';
-import { isAccountBasedProtocol } from '../../../shared/endpoint-routes';
+import {
+  isAccountBasedProtocol,
+  isEndpointProtocol,
+  meshAllowsInternet,
+} from '../../../shared/endpoint-routes';
 
 type ServerConfigWithId = ServerConfig;
 type ViewMode = 'card' | 'list';
@@ -115,6 +119,10 @@ const isWarpNode = (s: ServerConfigWithId): boolean =>
 /** Tailscale 节点未配置 authKey → 首次连接需浏览器交互登录，列表给提示角标降低「为何连不上」的困惑。 */
 const tailscaleNeedsLogin = (s: ServerConfigWithId): boolean =>
   s.protocol?.toLowerCase() === 'tailscale' && !s.tailscaleSettings?.authKey?.trim();
+
+/** 组网节点（WG/Tailscale）已关闭「允许访问外网」→ 列表角标提示「仅内网」，避免误以为它能作全局出口。 */
+const meshInternetOff = (s: ServerConfigWithId): boolean =>
+  isEndpointProtocol(s.protocol) && !meshAllowsInternet(s);
 
 interface ServerListProps {
   servers: ServerConfigWithId[];
@@ -874,6 +882,14 @@ export function ServerList({
                         {t('servers.tsNeedsLogin', 'Login needed')}
                       </Badge>
                     )}
+                    {meshInternetOff(server) && (
+                      <Badge
+                        variant="outline"
+                        className="text-xs h-4 px-1 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+                      >
+                        {t('servers.noInternetBadge', 'LAN only')}
+                      </Badge>
+                    )}
                     {selectedServerId === server.id && (
                       <Badge variant="outline" className="text-xs h-4 px-1">
                         {t('servers.current')}
@@ -1002,6 +1018,14 @@ export function ServerList({
                         className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
                       >
                         {t('servers.tsNeedsLogin', 'Login needed')}
+                      </Badge>
+                    )}
+                    {meshInternetOff(server) && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+                      >
+                        {t('servers.noInternetBadge', 'LAN only')}
                       </Badge>
                     )}
                     {server.shadowTlsSettings && (

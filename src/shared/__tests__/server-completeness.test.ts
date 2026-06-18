@@ -86,4 +86,30 @@ describe('server-completeness（主/渲染共用单一真值）', () => {
     expect(protocolRequirementError(node('mystery' as Protocol))).toMatch(/unsupported/i);
     expect(isServerComplete(node('mystery' as Protocol))).toBe(false);
   });
+
+  it('WG 关外网且无可路由网段 → 字段虽齐备仍不可启动（空 allowed_ips=FATAL，生成期跳过）', () => {
+    const off = node('wireguard', {
+      wireguardSettings: {
+        privateKey: 'k',
+        peerPublicKey: 'pk',
+        localAddress: ['10.0.0.2/32'],
+        allowedIPs: ['0.0.0.0/0', '::/0'],
+        allowInternet: false,
+      } as any,
+    });
+    // 协议必填项齐备（不报错），但 isServerComplete 因不可路由置为 false。
+    expect(protocolRequirementError(off)).toBeNull();
+    expect(isServerComplete(off)).toBe(false);
+    // 补一个具体段 → 可路由、可启动。
+    const withSubnet = node('wireguard', {
+      wireguardSettings: {
+        privateKey: 'k',
+        peerPublicKey: 'pk',
+        localAddress: ['10.0.0.2/32'],
+        allowedIPs: ['10.8.0.0/24'],
+        allowInternet: false,
+      } as any,
+    });
+    expect(isServerComplete(withSubnet)).toBe(true);
+  });
 });

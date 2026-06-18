@@ -122,7 +122,10 @@ export interface WireGuardSettings {
   localAddress: string[]; // 本地隧道地址（wg-quick [Interface].Address），如 ['10.0.0.2/32','fd00::2/128']
   peerPublicKey: string; // 对端公钥（base64）
   preSharedKey?: string; // 可选预共享密钥（base64）
-  allowedIPs?: string[]; // 缺省 ['0.0.0.0/0','::/0']
+  allowedIPs?: string[]; // 「具体路由段」(对端内网/子网)；全网段 0/0,::/0 由 allowInternet 接管（缺 catch-all 时仅承载列表段）
+  // 是否允许此节点作外网出口（缺省 true=向后兼容+新建默认开）。true→peer.allowed_ips 含 0/0,::/0（全隧道）；
+  // false→仅 allowedIPs 具体段（不当默认出网；若无具体段则空 allowed_ips=FATAL，生成期不发射该节点）。
+  allowInternet?: boolean;
   persistentKeepalive?: number; // 保活间隔（秒）
   reserved?: number[]; // 3 字节 reserved（Cloudflare WARP 等需要）
   mtu?: number; // 缺省 1408
@@ -131,6 +134,9 @@ export interface WireGuardSettings {
 // Tailscale（sing-box endpoint，账号制 mesh，无 server address/port——连控制面）。Phase 1 userspace。
 export interface TailscaleSettings {
   authKey?: string; // pre-auth key（可选；无则核日志出 `Waiting for authentication: <url>` 交互登录）
+  // 是否允许此节点作外网出口（缺省 true=向后兼容+新建默认开）。WG 等价物：true→可下发 exit_node（全隧道）；
+  // false→即便填了 exitNode 也不下发，仅承载 tailnet/routes 段（不当默认出网）。
+  allowInternet?: boolean;
   exitNode?: string; // 出口节点 name/IP（选它当全局代理时填；空=仅通 tailnet 内网/accept_routes 段）
   exitNodeAllowLanAccess?: boolean; // 用 exit node 时本地 LAN 仍直连
   acceptRoutes?: boolean; // 接受其它节点广告的子网路由（访问 tailnet 内网段）

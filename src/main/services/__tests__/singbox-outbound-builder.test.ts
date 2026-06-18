@@ -39,7 +39,7 @@ describe('buildWireGuardEndpoint', () => {
     expect(peer.pre_shared_key).toBeUndefined();
   });
 
-  it('显式 keepalive/allowedIPs/preSharedKey/mtu/reserved → 原样下发', () => {
+  it('显式 keepalive/preSharedKey/mtu/reserved 原样下发；allowInternet 缺省 on → 具体段并入全网段', () => {
     const ep = buildWireGuardEndpoint(
       wgServer({
         wireguardSettings: {
@@ -57,10 +57,44 @@ describe('buildWireGuardEndpoint', () => {
     );
     expect(ep.mtu).toBe(1280);
     const peer = ep.peers![0];
-    expect(peer.allowed_ips).toEqual(['192.168.50.0/24']);
+    // allowInternet 缺省 true（向后兼容）→ allowed_ips = 具体段 ∪ {0/0,::/0}（Layer A，两族全给）。
+    expect(peer.allowed_ips).toEqual(['192.168.50.0/24', '0.0.0.0/0', '::/0']);
     expect(peer.pre_shared_key).toBe('psk');
     expect(peer.persistent_keepalive_interval).toBe(15);
     expect(peer.reserved).toEqual([1, 2, 3]);
+  });
+
+  it('allowInternet=off + 具体段 → allowed_ips 仅具体段（剥离全网段）', () => {
+    const ep = buildWireGuardEndpoint(
+      wgServer({
+        wireguardSettings: {
+          privateKey: 'pk',
+          peerPublicKey: 'pub',
+          localAddress: ['10.0.0.3/32'],
+          allowedIPs: ['10.8.0.0/24', '0.0.0.0/0', '::/0'],
+          allowInternet: false,
+        },
+      } as unknown as Partial<ServerConfig>),
+      'WG3'
+    );
+    expect(ep.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
+  });
+
+  it('allowInternet=off + 无具体段 → 抛错（空 allowed_ips=FATAL，调用方预拦不发射）', () => {
+    expect(() =>
+      buildWireGuardEndpoint(
+        wgServer({
+          wireguardSettings: {
+            privateKey: 'pk',
+            peerPublicKey: 'pub',
+            localAddress: ['10.0.0.3/32'],
+            allowedIPs: ['0.0.0.0/0', '::/0'],
+            allowInternet: false,
+          },
+        } as unknown as Partial<ServerConfig>),
+        'WG4'
+      )
+    ).toThrow(/外网访问|allowed/i);
   });
 
   it('缺 privateKey/peerPublicKey/localAddress → 抛错', () => {

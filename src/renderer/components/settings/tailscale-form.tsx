@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 const createTailscaleSchema = () =>
   z.object({
     authKey: z.string().optional(),
+    allowInternet: z.boolean(),
     exitNode: z.string().optional(),
     acceptRoutes: z.boolean(),
     routes: z.string().optional(),
@@ -46,6 +47,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
     resolver: zodResolver(createTailscaleSchema()),
     defaultValues: {
       authKey: '',
+      allowInternet: true, // 新建默认开
       exitNode: '',
       acceptRoutes: false,
       routes: '',
@@ -61,6 +63,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
       const ts = serverConfig.tailscaleSettings;
       form.reset({
         authKey: ts?.authKey || '',
+        allowInternet: ts?.allowInternet !== false, // 缺省 true（向后兼容）
         exitNode: ts?.exitNode || '',
         acceptRoutes: ts?.acceptRoutes ?? false,
         routes: (ts?.routes || []).join(', '),
@@ -78,6 +81,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
       protocol: 'tailscale' as const,
       tailscaleSettings: {
         authKey: values.authKey?.trim() || undefined,
+        allowInternet: values.allowInternet,
         exitNode: values.exitNode?.trim() || undefined,
         // 填了 routes 自动开 acceptRoutes（否则 tsnet 不接收这些 advertised 子网，路由白配）
         acceptRoutes: values.acceptRoutes || routes.length > 0,
@@ -90,6 +94,8 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
     };
     await onSubmit(config);
   };
+
+  const allowInternet = form.watch('allowInternet');
 
   return (
     <Form {...form}>
@@ -126,12 +132,38 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
             <FieldSpan>
               <FormField
                 control={form.control}
+                name="allowInternet"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'servers.tsAllowInternetDesc',
+                          'When off, this node never acts as a full-tunnel exit (the exit node below is ignored); it only reaches the tailnet and routed subnets.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
                 name="exitNode"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t('servers.tsExitNode', 'Exit Node (optional)')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="100.x.y.z / hostname" {...field} />
+                      <Input
+                        placeholder="100.x.y.z / hostname"
+                        {...field}
+                        disabled={!allowInternet}
+                      />
                     </FormControl>
                     <FormDescription>
                       {t(
@@ -139,6 +171,14 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                         'Route all traffic through this tailnet node (full-tunnel). Empty = only reach tailnet / accepted routes.'
                       )}
                     </FormDescription>
+                    {!allowInternet && (
+                      <p className="text-sm text-amber-600 dark:text-amber-500">
+                        {t(
+                          'servers.tsAllowInternetOffHint',
+                          'Internet access off: exit node ignored; this node only reaches the tailnet / routed subnets.'
+                        )}
+                      </p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}

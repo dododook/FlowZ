@@ -9,7 +9,12 @@ import type { ServerConfig, UserConfig, InvalidNodeInfo } from '../../shared/typ
 import type { SingBoxOutbound, SingBoxEndpoint } from './singbox-config-types';
 import { resourceManager } from './ResourceManager';
 import { coreVersionAtLeast } from '../../shared/version';
-import { isEndpointProtocol } from '../../shared/endpoint-routes';
+import {
+  isEndpointProtocol,
+  meshAllowsInternet,
+  wireguardPeerAllowedIps,
+  isMeshNodeUnroutable,
+} from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { getUserDataPath } from '../utils/paths';
 import {
@@ -45,6 +50,14 @@ export function buildWireGuardEndpoint(server: ServerConfig, tag: string): SingB
   if (!s || !s.privateKey || !s.peerPublicKey || !s.localAddress?.length) {
     throw new Error('WireGuard 配置缺少 privateKey/peerPublicKey/localAddress');
   }
+  // Layer A：allowInternet=on→specific ∪ {0/0,::/0}；off→specific；off+无具体段→null。
+  // null 表示空 allowed_ips（FATAL），调用方应已用 isMeshNodeUnroutable 预拦不发射；此处兜底抛错（防直调，如测速）。
+  const allowedIps = wireguardPeerAllowedIps(server);
+  if (allowedIps === null) {
+    throw new Error(
+      'WireGuard 节点已关闭外网访问且无可路由网段（空 allowed_ips 会致 sing-box FATAL）'
+    );
+  }
   return {
     type: 'wireguard',
     tag,
@@ -57,7 +70,7 @@ export function buildWireGuardEndpoint(server: ServerConfig, tag: string): SingB
         address: server.address,
         port: server.port,
         public_key: s.peerPublicKey,
-        allowed_ips: s.allowedIPs?.length ? s.allowedIPs : ['0.0.0.0/0', '::/0'],
+        allowed_ips: allowedIps,
         ...(s.preSharedKey ? { pre_shared_key: s.preSharedKey } : {}),
         // keepalive 缺省强制 25s：WireGuard 是无连接 UDP，client 多在 NAT 后，无 keepalive 则 NAT 映射超时
         // → 入向不可达、隧道静默断连。故未显式设置时兜 25s 维持映射，避免断连（用户可在表单调大）。
@@ -521,7 +534,9 @@ function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpo
   if (controlUrl) ep.control_url = controlUrl;
   const hostname = ts.hostname?.trim();
   if (hostname) ep.hostname = hostname;
-  const exitNode = ts.exitNode?.trim();
+  // allowInternet=off（关外网）→ 即便填了 exitNode 也不下发（exit_node=全隧道，等价 WG 的 allowed_ips 含 0/0）；
+  // 节点仍承载 tailnet/routes 段（force-route）。on（缺省 true）+ 填了 exitNode 才下发全隧道出口。
+  const exitNode = meshAllowsInternet(server) ? ts.exitNode?.trim() : undefined;
   if (exitNode) {
     ep.exit_node = exitNode;
     if (ts.exitNodeAllowLanAccess) ep.exit_node_allow_lan_access = true;
@@ -637,9 +652,25 @@ export function buildOutbounds(
       }
       // WireGuard：endpoint（非 outbound）。建进 pendingEndpoints，tag 仍入 nodeTags 参与选择器/路由。
       if (server.protocol.toLowerCase() === 'wireguard') {
+        // 关外网且无可路由网段 → 空 allowed_ips 会致整份配置 FATAL（D2 实测）。生成期拦截不发射、tag 不入
+        // nodeTags（走 isNodeUsable 同款不可用路径，路由层死引用由 fixRouteDeadReferences 兜底）。
+        if (isMeshNodeUnroutable(server)) {
+          deps.log(
+            'warn',
+            `跳过组网节点「${server.name}」：已关闭外网访问且无可路由网段（无外网访问权限）`
+          );
+          continue;
+        }
         try {
           pendingEndpoints.push(buildWireGuardEndpoint(server, tag));
           nodeTags.push(tag);
+          // 关外网但有具体段：节点可用、仅承载列表网段（不当默认出网）。warn 进诊断报告，便于排查「选它却不出网」。
+          if (!meshAllowsInternet(server)) {
+            deps.log(
+              'warn',
+              `组网节点「${server.name}」已关闭外网访问：仅路由其指定网段，不承载默认出网流量`
+            );
+          }
         } catch (e: any) {
           deps.log(
             'warn',
@@ -660,6 +691,13 @@ export function buildOutbounds(
         try {
           pendingEndpoints.push(buildTailscaleEndpoint(server, tag));
           nodeTags.push(tag);
+          // 关外网但填了 exitNode：exit_node 已被 buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
+          if (!meshAllowsInternet(server) && ts?.exitNode?.trim()) {
+            deps.log(
+              'warn',
+              `组网节点「${server.name}」已关闭外网访问：已忽略 exit_node，仅访问 tailnet / 子网路由`
+            );
+          }
         } catch (e: any) {
           deps.log(
             'warn',

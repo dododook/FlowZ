@@ -12,7 +12,11 @@ import * as path from 'path';
 import type { UserConfig } from '../../shared/types';
 import { coreVersionAtLeast } from '../../shared/version';
 import { BOOTSTRAP_DIRECT_DNS_IPS } from '../../shared/dns';
-import { endpointForcedRouteCidrs, meshForcedRouteCidrs } from '../../shared/endpoint-routes';
+import {
+  endpointForcedRouteCidrs,
+  meshForcedRouteCidrs,
+  meshGlobalFinalFallsBackToDirect,
+} from '../../shared/endpoint-routes';
 import { cidrOverlapsAny } from '../../shared/ip';
 import { ruleIpCidrs } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
@@ -220,14 +224,23 @@ export function buildRouteConfig(
     outbound: 'direct',
   });
 
+  // D4：global 模式选中「关闭外网的组网节点」(WG/Tailscale, allowInternet=off) → final 兜底 'direct'。否则非具体段
+  // 流量进该节点用户态栈被 cryptokey routing 丢弃 → 黑洞断网；兜底直连后用户仍能上网，具体段仍由 force-route 经组网。
+  const meshFinalFallback = meshGlobalFinalFallsBackToDirect(config);
+  if (meshFinalFallback) {
+    deps.log(
+      'warn',
+      '全局模式选中的组网节点已关闭外网访问：默认出口已回退直连（具体网段仍经组网节点），如需全隧道请开启该节点「允许访问外网」'
+    );
+  }
   const routeConfig: SingBoxRouteConfig = {
     rules,
     // 核心修复：default_domain_resolver 使用 IP-based DoH 引导解析器 (dns-bootstrap)，
     // 既避免解析 doh.pub 域名时的死循环，又免疫 UDP 53 限速/劫持（dns-bootstrap 同为 IP-based）。
     default_domain_resolver: 'dns-bootstrap',
     auto_detect_interface: true,
-    // 如果模式是全局代理 (global/proxy)，则最终出口是所选节点
-    final: proxyMode === 'direct' ? 'direct' : selectedServerTag,
+    // 如果模式是全局代理 (global/proxy)，则最终出口是所选节点（经 proxy-selector）；direct 模式或 D4 兜底→direct。
+    final: proxyMode === 'direct' || meshFinalFallback ? 'direct' : selectedServerTag,
   };
 
   // 【DNS 引导与辅助直连】：
