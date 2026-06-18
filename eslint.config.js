@@ -60,12 +60,26 @@ module.exports = [
         ...globals.browser,
       },
     },
+    rules: {
+      // UI 防偏移:渲染层禁裸 hex 颜色字面量,一律走 Conduit token(className bg-/text-/fill-* 或 hsl(var(--x)))。
+      // 色值真值只在 index.css 的 :root/.dark token 块;新色必须深/浅双主题都加;SVG 用 fill-*/style var,不写 hex。
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'Literal[value=/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/]',
+          message:
+            '禁裸 hex 颜色(UI 防偏移):改用 Conduit token——className 走 bg-primary/text-success/fill-primary 等,或 hsl(var(--xxx));色值定义只在 index.css token 块。确需 hex(如 Electron API/非颜色)请就地加 eslint-disable 并注明理由。',
+        },
+      ],
+    },
   },
   {
     // 测试文件放宽规则
     files: ['src/**/__tests__/**/*.ts', 'src/**/*.test.ts'],
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
+      'no-restricted-syntax': 'off', // 测试可断言 hex 输出,不受 UI 防偏移规则约束
     },
   },
   {
