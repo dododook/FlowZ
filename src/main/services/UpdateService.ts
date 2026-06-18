@@ -14,6 +14,7 @@ import { system32 } from '../utils/win-system32';
 import { compareSemver } from '../../shared/version';
 import { ghMirrorUrl } from '../../shared/gh-proxy';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
+import { findSuitableUpdateAsset } from './update-asset';
 
 // 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
@@ -619,27 +620,15 @@ open "${installerPath}"
   }
 
   private findSuitableAsset(assets: any[]): any | null {
-    const platform = process.platform;
-    const arch = process.arch;
-
-    if (platform === 'win32') {
-      const winAsset = assets.find((a: any) => a.name.endsWith('.exe') && a.name.includes('win'));
-      return winAsset || null;
-    } else if (platform === 'darwin') {
-      const archPattern = arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
-      let asset = assets.find((a: any) => a.name.includes(archPattern) && a.name.endsWith('.dmg'));
-      if (!asset) {
-        asset = assets.find((a: any) => a.name.endsWith('.dmg'));
-      }
-      return asset || null;
-    } else if (platform === 'linux') {
-      let asset = assets.find((a: any) => a.name.endsWith('.AppImage'));
-      if (!asset) {
-        asset = assets.find((a: any) => a.name.endsWith('.deb'));
-      }
-      return asset || null;
-    }
-    return null;
+    // 纯逻辑在 update-asset，此处仅注入 process 平台/架构 + 便携态（PORTABLE_EXECUTABLE_DIR
+    // 由 electron-builder portable 运行时注入，与 paths/ResourceManager 的便携判定同源），
+    // 使 Windows 便携/安装版各取对应 .exe（#72）。
+    return findSuitableUpdateAsset(
+      assets,
+      process.platform,
+      process.arch,
+      !!process.env.PORTABLE_EXECUTABLE_DIR
+    );
   }
 
   private isNewerVersion(latest: string, current: string): boolean {
