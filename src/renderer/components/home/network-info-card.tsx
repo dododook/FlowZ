@@ -36,6 +36,18 @@ function countryNameOf(cc: string | undefined, lang: string): string | undefined
   }
 }
 
+/** 导流连接线：连上=live 绿 + 流动光点（motion-safe，reduced-motion 下静止）；未连=暗线。 */
+function ConduitLink({ running }: { running: boolean }) {
+  return (
+    <div className="relative h-px flex-1">
+      <div className={running ? 'h-px w-full bg-success/40' : 'h-px w-full bg-border'} />
+      {running && (
+        <span className="absolute top-1/2 h-1 w-1 -translate-y-1/2 rounded-full bg-success shadow-[0_0_6px] shadow-success motion-safe:animate-conduit-flow" />
+      )}
+    </div>
+  );
+}
+
 export function NetworkInfoCard() {
   const { t, i18n } = useTranslation();
   const ipInfo = useAppStore((s) => s.ipInfo);
@@ -140,69 +152,74 @@ export function NetworkInfoCard() {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          {/* 本地出口 */}
+        {/* 导流脊:你 ● ── 出口 ◉(连上 live 绿锁定) ── Internet。签名,数据见下方 IP 详情 */}
+        <div className="mb-5 flex items-center gap-2.5 px-1">
+          <span className="shrink-0 text-xs font-medium">{t('home.myDevice')}</span>
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-muted-foreground/50" />
+          <ConduitLink running={running} />
+          <span
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${running ? 'border-success shadow-[0_0_8px] shadow-success/40' : 'border-muted-foreground/40'}`}
+            title={t('home.proxyExit')}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${running ? 'bg-success motion-safe:animate-pulse' : 'bg-muted-foreground/40'}`}
+            />
+          </span>
+          <ConduitLink running={running} />
+          <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 text-xs text-muted-foreground">Internet</span>
+        </div>
+
+        {/* IP 详情:本地出口 / 代理出口（含国旗 + IP + 地区，保留全部信息） */}
+        <div className="grid grid-cols-2 gap-4">
           <div className="min-w-0 space-y-1">
             <p className="text-xs text-muted-foreground">{t('home.localExit')}</p>
             <div className="flex min-w-0 items-start gap-1.5">
               <Flag cc={masked ? undefined : directInfo?.countryCode} />
               {renderIpValue(directInfo, t('home.ipFetchFailed'))}
             </div>
-            <p className="text-[11px] text-muted-foreground/70 truncate">
+            <p className="truncate text-[11px] text-muted-foreground/70">
               {renderIpSub(directInfo, t('home.directLabel'))}
             </p>
           </div>
-
-          {/* 代理出口 */}
           <div className="min-w-0 space-y-1">
             <p className="text-xs text-muted-foreground">{t('home.proxyExit')}</p>
             <div className="flex min-w-0 items-start gap-1.5">
               <Flag cc={masked ? undefined : proxyInfo?.countryCode} />
               {renderIpValue(proxyInfo, proxyEmpty)}
             </div>
-            <p className="text-[11px] text-muted-foreground/70 truncate">
+            <p className="truncate text-[11px] text-muted-foreground/70">
               {renderIpSub(proxyInfo, '')}
             </p>
           </div>
+        </div>
 
-          {/* 上行 */}
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <ArrowUp className="h-3 w-3" />
-              {t('home.upload')}
-            </p>
-            <p className="text-base font-mono font-semibold tabular-nums">
+        {/* 遥测:上行 / 下行 / 活动连接（mono + tabular） */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-border/60 pt-3">
+          <div className="flex items-center gap-2">
+            <ArrowUp className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-mono text-base font-semibold tabular-nums">
               {formatBytes(stats?.uploadSpeed ?? 0)}/s
-            </p>
-            <p className="text-[11px] font-mono tabular-nums text-muted-foreground/70">
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
               {formatBytes(stats?.totalUpload ?? 0)}
-            </p>
+            </span>
           </div>
-
-          {/* 下行 */}
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <ArrowDown className="h-3 w-3" />
-              {t('home.download')}
-            </p>
-            <p className="text-base font-mono font-semibold tabular-nums">
+          <div className="flex items-center gap-2">
+            <ArrowDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-mono text-base font-semibold tabular-nums">
               {formatBytes(stats?.downloadSpeed ?? 0)}/s
-            </p>
-            <p className="text-[11px] font-mono tabular-nums text-muted-foreground/70">
+            </span>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
               {formatBytes(stats?.totalDownload ?? 0)}
-            </p>
+            </span>
           </div>
-
-          {/* 活动连接（2 列布局下落单 → 跨整行；5 列布局下正常单格） */}
-          <div className="space-y-1 col-span-2 lg:col-span-1">
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Activity className="h-3 w-3" />
-              {t('home.activeConnections')}
-            </p>
-            <p className="text-base font-mono font-semibold tabular-nums">
+          <div className="flex items-center gap-2">
+            <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-mono text-base font-semibold tabular-nums">
               {stats?.activeConnections ?? 0}
-            </p>
-            <p className="text-[11px] text-muted-foreground/70">&nbsp;</p>
+            </span>
+            <span className="text-xs text-muted-foreground">{t('home.activeConnections')}</span>
           </div>
         </div>
       </CardContent>
