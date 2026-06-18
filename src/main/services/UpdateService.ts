@@ -15,6 +15,12 @@ import { compareSemver } from '../../shared/version';
 import { ghMirrorUrl } from '../../shared/gh-proxy';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { findSuitableUpdateAsset } from './update-asset';
+import {
+  buildWindowsUpdateVbs,
+  buildLinuxAppImageScript,
+  buildMacUpdateScript,
+  macAppBundleFromExe,
+} from './update-install-script';
 
 // 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
@@ -201,20 +207,18 @@ export class UpdateService {
       }
 
       if (process.platform === 'win32') {
-        // Windows: 使用 VBScript 完全隐藏窗口运行安装程序
+        // Windows: 用 VBScript 隐藏窗口运行。便携态(PORTABLE_EXECUTABLE_FILE)=覆盖回原 exe 原位更新；
+        // 否则=跑 NSIS setup（注册表记住目录原位升级）。两者都只动产物、不碰 data。
         const { spawn } = require('child_process');
         const vbsPath = path.join(app.getPath('temp'), 'flowz_update.vbs');
 
-        // VBScript: 等待 2 秒确保应用完全退出，然后静默启动安装程序
-        // WScript.Shell.Run 的第二个参数 0 表示隐藏窗口，第三个参数 false 表示不等待
-        const vbsContent = [
-          'WScript.Sleep 2000',
-          `Set WshShell = CreateObject("WScript.Shell")`,
-          `WshShell.Run """${installerPath.replace(/\\/g, '\\\\')}""", 1, False`,
-          // 删除自身
-          `Set fso = CreateObject("Scripting.FileSystemObject")`,
-          `fso.DeleteFile WScript.ScriptFullName, True`,
-        ].join('\r\n');
+        const portableTarget = process.env.PORTABLE_EXECUTABLE_FILE || null;
+        this.logManager.addLog(
+          'info',
+          portableTarget ? '便携版：覆盖原 exe 原位更新' : 'NSIS：运行安装器原位升级',
+          'UpdateService'
+        );
+        const vbsContent = buildWindowsUpdateVbs({ installerPath, portableTarget });
 
         fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
 
@@ -234,18 +238,17 @@ export class UpdateService {
           app.exit(0);
         }, 500);
       } else if (process.platform === 'darwin') {
-        // macOS: 打开 DMG 文件，用户需要手动拖拽安装
+        // macOS: 自动挂载 DMG → 原子替换 .app（定位到则自动；定位不到回退手动 open DMG）。只换 .app、不碰 data。
         const { spawn } = require('child_process');
-
-        // 创建一个 shell 脚本来处理更新
         const scriptPath = path.join(app.getPath('temp'), 'flowz_update.sh');
 
-        // 脚本内容：等待应用退出，挂载 DMG，复制新版本，卸载 DMG，启动新版本
-        const scriptContent = `#!/bin/bash
-sleep 2
-# 打开 DMG 文件让用户手动安装
-open "${installerPath}"
-`;
+        const appBundlePath = macAppBundleFromExe(app.getPath('exe'));
+        this.logManager.addLog(
+          'info',
+          appBundlePath ? `自动替换 .app: ${appBundlePath}` : '定位 .app 失败，回退手动拖拽',
+          'UpdateService'
+        );
+        const scriptContent = buildMacUpdateScript({ dmgPath: installerPath, appBundlePath });
 
         fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
 
@@ -263,9 +266,21 @@ open "${installerPath}"
           app.exit(0);
         }, 1000);
       } else {
-        // Linux: 直接打开安装包
-        await shell.openPath(installerPath);
-        this.logManager.addLog('info', '安装程序已启动，正在退出应用...', 'UpdateService');
+        // Linux: AppImage(loose, $APPIMAGE) → 覆盖原 AppImage 原位更新 + 重启（只换文件、不碰 ~/.config）；
+        // deb(installed) → 交 dpkg/GUI 安装器原位升级（openPath，原行为）。
+        const appImageTarget = process.env.APPIMAGE || null;
+        if (appImageTarget && installerPath.endsWith('.AppImage')) {
+          const { spawn } = require('child_process');
+          const scriptPath = path.join(app.getPath('temp'), 'flowz_update.sh');
+          const scriptContent = buildLinuxAppImageScript({ installerPath, appImageTarget });
+          fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
+          const child = spawn('/bin/bash', [scriptPath], { detached: true, stdio: 'ignore' });
+          child.unref();
+          this.logManager.addLog('info', `AppImage 原位更新: ${appImageTarget}`, 'UpdateService');
+        } else {
+          await shell.openPath(installerPath);
+          this.logManager.addLog('info', '安装程序已启动，正在退出应用...', 'UpdateService');
+        }
         setTimeout(() => {
           this.destroyTrayForExit();
           app.exit(0);
@@ -620,15 +635,16 @@ open "${installerPath}"
   }
 
   private findSuitableAsset(assets: any[]): any | null {
-    // 纯逻辑在 update-asset，此处仅注入 process 平台/架构 + 便携态（PORTABLE_EXECUTABLE_DIR
-    // 由 electron-builder portable 运行时注入，与 paths/ResourceManager 的便携判定同源），
-    // 使 Windows 便携/安装版各取对应 .exe（#72）。
-    return findSuitableUpdateAsset(
-      assets,
-      process.platform,
-      process.arch,
-      !!process.env.PORTABLE_EXECUTABLE_DIR
-    );
+    // 纯逻辑在 update-asset，此处仅注入 process 平台/架构 + 运行形态（loose vs installed），
+    // 使每平台各取对应包（#72）。loose 检测：win=PORTABLE_EXECUTABLE_DIR / linux=APPIMAGE
+    // （均 electron-builder 运行时注入，与 paths/ResourceManager 的便携判定同源）；mac 只有 DMG、不用。
+    const looseForm =
+      process.platform === 'win32'
+        ? !!process.env.PORTABLE_EXECUTABLE_DIR
+        : process.platform === 'linux'
+          ? !!process.env.APPIMAGE
+          : false;
+    return findSuitableUpdateAsset(assets, process.platform, process.arch, looseForm);
   }
 
   private isNewerVersion(latest: string, current: string): boolean {

@@ -1,18 +1,20 @@
 /**
- * App 更新安装包的资产选择（纯逻辑，process 平台/架构/便携态由调用方注入，便于单测）。
+ * App 更新安装包的资产选择（纯逻辑，process 平台/架构/运行形态由调用方注入，便于单测）。
  *
  * 与 singbox-asset.findSuitableSingboxAsset 同模式：UpdateService.findSuitableAsset 仅注入 process.*。
  *
- * #72 根因：Windows 同时发布 setup(NSIS) 与 portable 两种 .exe（electron-builder.json win.target），
- * 旧逻辑 `assets.find(.exe && includes('win'))` 取首个匹配、**不区分 setup/portable** → 便携版可能命中
- * setup 包 → 跑 NSIS 装出一份全新 FlowZ（落 %LOCALAPPDATA%\Programs\FlowZ，与便携 exe 非同处）→
- * 用户「每次更新完多一个 flowz、不知在哪」。这里按运行形态（PORTABLE_EXECUTABLE_DIR）选对应包。
+ * #72：每平台都有「loose（无安装器，单文件原位跑）」与「installed（经安装器/包管理器）」两形态，
+ * 必须按**当前运行形态**选对应包，否则错配（如便携被发 NSIS setup → 装出多余副本「凭空多一个 flowz」）。
+ *   - Windows：portable.exe(loose) / nsis setup.exe(installed)
+ *   - Linux：  AppImage(loose) / .deb(installed)
+ *   - macOS：  只有 DMG（.app 始终 loose），不分形态。
+ * `looseForm` = 当前是否以 loose 形态运行（win: PORTABLE_EXECUTABLE_DIR / linux: APPIMAGE；mac 不用）。
  */
 export function findSuitableUpdateAsset(
   assets: any[],
   platform: NodeJS.Platform,
   arch: string,
-  portable: boolean
+  looseForm: boolean
 ): any | null {
   if (platform === 'win32') {
     // 保持旧筛选口径（.exe 且名含 'win'），仅在其中按运行形态消歧 setup/portable。
@@ -22,11 +24,11 @@ export function findSuitableUpdateAsset(
     // 不为它牺牲正常包的「顺序无关」（见 update-asset.test.ts 钉死现状）。
     const isPortable = (a: any) => a.name.toLowerCase().includes('portable');
     const isSetup = (a: any) => a.name.toLowerCase().includes('setup');
-    if (portable) {
-      // 便携版：取 portable 包；无则退取非 setup；再不行取首个（单包 release 兜底）。
+    if (looseForm) {
+      // 便携(loose)：取 portable 包；无则退取非 setup；再不行取首个（单包 release 兜底）。
       return winExe.find(isPortable) ?? winExe.find((a: any) => !isSetup(a)) ?? winExe[0];
     }
-    // 安装版(NSIS)：取 setup 包；无则退取非 portable；再不行取首个。
+    // 安装(NSIS)：取 setup 包；无则退取非 portable；再不行取首个。
     return winExe.find(isSetup) ?? winExe.find((a: any) => !isPortable(a)) ?? winExe[0];
   } else if (platform === 'darwin') {
     const archPattern = arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
@@ -36,11 +38,15 @@ export function findSuitableUpdateAsset(
     }
     return asset || null;
   } else if (platform === 'linux') {
-    let asset = assets.find((a: any) => a.name.endsWith('.AppImage'));
-    if (!asset) {
-      asset = assets.find((a: any) => a.name.endsWith('.deb'));
+    // 形态感知（修旧逻辑「恒先 AppImage」致 deb 用户被发 AppImage、无法经 dpkg 更新）：
+    const appImage = assets.filter((a: any) => a.name.endsWith('.AppImage'));
+    const deb = assets.filter((a: any) => a.name.endsWith('.deb'));
+    if (looseForm) {
+      // AppImage(loose) 运行：取 AppImage；无则退 .deb。
+      return appImage[0] ?? deb[0] ?? null;
     }
-    return asset || null;
+    // deb 安装：取 .deb（dpkg 原位升级）；无则退 AppImage。
+    return deb[0] ?? appImage[0] ?? null;
   }
   return null;
 }
