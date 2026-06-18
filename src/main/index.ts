@@ -551,7 +551,7 @@ async function createWindow(forceShow = false) {
     title: 'FlowZ',
     icon: resourceManager.getAppIconPath(),
     show: false, // 先不显示，等待加载完成
-    backgroundColor: isMac ? '#00000000' : cfg.uiTheme === 'dark' ? '#121217' : '#f1f5f9',
+    backgroundColor: isMac ? '#00000000' : cfg.uiTheme === 'dark' ? '#0B0F14' : '#E9EEF3',
     transparent: isMac,
     autoHideMenuBar: true, // 自动隐藏菜单栏
     webPreferences: {
@@ -580,7 +580,7 @@ async function createWindow(forceShow = false) {
     const onThemeUpdated = () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         const isDark = nativeTheme.shouldUseDarkColors;
-        mainWindow.setBackgroundColor(isDark ? '#121217' : '#f1f5f9');
+        mainWindow.setBackgroundColor(isDark ? '#0B0F14' : '#E9EEF3');
       }
     };
     nativeTheme.on('updated', onThemeUpdated);
