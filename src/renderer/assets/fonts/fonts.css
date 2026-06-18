@@ -1,0 +1,58 @@
+/* Conduit 字体（#24 B2）— SIL OFL 1.1 自托管，latin 子集，woff2，font-display:swap。
+   中文走系统 CJK 兜底（见 index.css 字体栈）；Plex Sans SC 子集打包推 B2b。
+   许可证见同目录 LICENSE-IBM-Plex.txt / LICENSE-Space-Grotesk.txt（OFL 合规随附）。 */
+
+/* IBM Plex Sans — UI / 正文 */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./ibm-plex-sans-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./ibm-plex-sans-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./ibm-plex-sans-latin-600-normal.woff2') format('woff2');
+}
+
+/* IBM Plex Mono — 遥测数据（IP/端口/延迟/吞吐），tabular */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./ibm-plex-mono-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+
+/* Space Grotesk — display / wordmark / 大号数字 */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./space-grotesk-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./space-grotesk-latin-700-normal.woff2') format('woff2');
+}
