@@ -414,8 +414,8 @@ export function ConnectionTopology() {
                 y1="0"
                 y2="0"
               >
-                <stop offset="0%" stopColor="#818cf8" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#34d399" stopOpacity="0.4" />
+                <stop offset="0%" stopColor="#19C2CE" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#34E0A1" stopOpacity="0.4" />
               </linearGradient>
               <linearGradient
                 id="gradient-rule"
@@ -425,8 +425,8 @@ export function ConnectionTopology() {
                 y1="0"
                 y2="0"
               >
-                <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.4" />
+                <stop offset="0%" stopColor="#34E0A1" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#F2B23E" stopOpacity="0.4" />
               </linearGradient>
             </defs>
 
