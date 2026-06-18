@@ -282,7 +282,7 @@
   }
 
   /* Main content card */
-  /* light: 用 --background(微灰 #f7f9fb) 作为内容区底，让内部白色 Card 浮起形成三层。
+  /* light: 用 --background(冷纸) 作为内容区底，让内部白色 Card 浮起形成三层。
      仅改非 vibrancy 的实色底；darwin/win/linux 的 sidebar/shell 透明或硬编码分支不在此规则内，未受影响。 */
   .main-content-card {
     background-color: hsl(var(--background));
