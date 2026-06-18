@@ -114,10 +114,8 @@
   }
 
   body {
-    @apply text-foreground;
-    font-family:
-      'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC',
-      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    /* font-sans=tailwind fontFamily.sans(单一真值:Plex Sans + 系统 CJK 兜底),不再手写字体栈 */
+    @apply text-foreground font-sans;
   }
 
   /* 字体平滑按平台分流：仅 macOS 用 grayscale antialiased（macOS 观感）。

@@ -414,8 +414,12 @@ export function ConnectionTopology() {
                 y1="0"
                 y2="0"
               >
-                <stop offset="0%" stopColor="#19C2CE" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#34E0A1" stopOpacity="0.4" />
+                <stop offset="0%" style={{ stopColor: 'hsl(var(--primary))' }} stopOpacity="0.4" />
+                <stop
+                  offset="100%"
+                  style={{ stopColor: 'hsl(var(--success))' }}
+                  stopOpacity="0.4"
+                />
               </linearGradient>
               <linearGradient
                 id="gradient-rule"
@@ -425,8 +429,12 @@ export function ConnectionTopology() {
                 y1="0"
                 y2="0"
               >
-                <stop offset="0%" stopColor="#34E0A1" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="#F2B23E" stopOpacity="0.4" />
+                <stop offset="0%" style={{ stopColor: 'hsl(var(--success))' }} stopOpacity="0.4" />
+                <stop
+                  offset="100%"
+                  style={{ stopColor: 'hsl(var(--warning))' }}
+                  stopOpacity="0.4"
+                />
               </linearGradient>
             </defs>
 
@@ -454,7 +462,7 @@ export function ConnectionTopology() {
                 onContextMenu={(e) => handleNodeContextMenu(e, node)}
                 style={node.type === 'rule' ? { cursor: 'context-menu' } : undefined}
               >
-                <rect width={NODE_WIDTH} height={node.height} fill={node.color} rx={1} />
+                <rect width={NODE_WIDTH} height={node.height} className={node.color} rx={1} />
                 <text
                   x={node.type === 'outbound' ? NODE_WIDTH + 8 : -8}
                   y={node.height / 2}

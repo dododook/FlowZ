@@ -60,7 +60,7 @@ describe('computeTopologyLayout — 单连接精确坐标（width=800）', () =>
       x: 55, // PADDING_LEFT(20)+SHIFT_RIGHT(35)
       y: 210, // (450-30)/2
       height: 30, // scale 封顶 30 * 1
-      color: '#19C2CE',
+      color: 'fill-primary',
     });
   });
 
@@ -72,7 +72,7 @@ describe('computeTopologyLayout — 单连接精确坐标（width=800）', () =>
       x: 395, // 800*0.45+35
       y: 210,
       height: 30,
-      color: '#34E0A1',
+      color: 'fill-success',
     });
   });
 
@@ -84,7 +84,7 @@ describe('computeTopologyLayout — 单连接精确坐标（width=800）', () =>
       x: 695, // 800-20-120+35
       y: 210,
       height: 30,
-      color: '#F2B23E',
+      color: 'fill-warning',
     });
   });
 
@@ -151,7 +151,7 @@ describe('computeTopologyLayout — Top-N + Others 收敛', () => {
     const others = byId(nodes, 'mid-home.others');
     expect(others.name).toBe('home.others');
     expect(others.value).toBe(1); // 仅 host1(1 条) 被收敛
-    expect(others.color).toBe('#9AA7B6'); // Others 用 slate(Conduit)
+    expect(others.color).toBe('fill-muted-foreground'); // Others 用 slate(token)
   });
 });
 

@@ -48,6 +48,37 @@ function ConduitLink({ running }: { running: boolean }) {
   );
 }
 
+/** 单条遥测:icon + mono 主值 + 副标签。上行/下行/活动连接共用,色由 color token 一处传入。 */
+function TelemetryStat({
+  icon: Icon,
+  color,
+  value,
+  sub,
+  subMono = true,
+}: {
+  icon: typeof ArrowUp;
+  color: string;
+  value: string;
+  sub: string;
+  subMono?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className={`h-3.5 w-3.5 ${color}`} />
+      <span className={`font-mono text-base font-semibold tabular-nums ${color}`}>{value}</span>
+      <span
+        className={
+          subMono
+            ? 'font-mono text-[11px] tabular-nums text-muted-foreground/70'
+            : 'text-xs text-muted-foreground'
+        }
+      >
+        {sub}
+      </span>
+    </div>
+  );
+}
+
 export function NetworkInfoCard() {
   const { t, i18n } = useTranslation();
   const ipInfo = useAppStore((s) => s.ipInfo);
@@ -196,31 +227,25 @@ export function NetworkInfoCard() {
 
         {/* 遥测:上行 / 下行 / 活动连接（mono + tabular） */}
         <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-border/60 pt-3">
-          <div className="flex items-center gap-2">
-            <ArrowUp className="h-3.5 w-3.5 text-info" />
-            <span className="font-mono text-base font-semibold tabular-nums text-info">
-              {formatBytes(stats?.uploadSpeed ?? 0)}/s
-            </span>
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
-              {formatBytes(stats?.totalUpload ?? 0)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <ArrowDown className="h-3.5 w-3.5 text-success" />
-            <span className="font-mono text-base font-semibold tabular-nums text-success">
-              {formatBytes(stats?.downloadSpeed ?? 0)}/s
-            </span>
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
-              {formatBytes(stats?.totalDownload ?? 0)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Activity className="h-3.5 w-3.5 text-warning" />
-            <span className="font-mono text-base font-semibold tabular-nums text-warning">
-              {stats?.activeConnections ?? 0}
-            </span>
-            <span className="text-xs text-muted-foreground">{t('home.activeConnections')}</span>
-          </div>
+          <TelemetryStat
+            icon={ArrowUp}
+            color="text-info"
+            value={`${formatBytes(stats?.uploadSpeed ?? 0)}/s`}
+            sub={formatBytes(stats?.totalUpload ?? 0)}
+          />
+          <TelemetryStat
+            icon={ArrowDown}
+            color="text-success"
+            value={`${formatBytes(stats?.downloadSpeed ?? 0)}/s`}
+            sub={formatBytes(stats?.totalDownload ?? 0)}
+          />
+          <TelemetryStat
+            icon={Activity}
+            color="text-warning"
+            value={String(stats?.activeConnections ?? 0)}
+            sub={t('home.activeConnections')}
+            subMono={false}
+          />
         </div>
       </CardContent>
     </Card>
