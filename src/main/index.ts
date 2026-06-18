@@ -1215,6 +1215,11 @@ if (gotTheLock) {
     };
 
     proxyManager.on('started', async () => {
+      // 托盘刷新（与 on('stopped') 对称，#75）：所有 start 路径最终都汇入此事件——含 switchMode / 节点回退 /
+      // 崩溃后 attemptAutoRestart 的内部 stop→start（stopped 腿已把托盘刷成断开态，此处不刷则卡在
+      // 「已断开 / 启用代理」而进程实际在跑）。放在首行确保后续 await 抛错也不漏刷；IPC/托盘/startup 的
+      // 显式 updateTrayMenuState(true) 退化为幂等冗余。
+      void updateTrayMenuState(true);
       statsService?.start();
       subscriptionScheduler?.onProxyStarted(); // 代理就绪 → 补跑因 viaProxy 跳过的启动订阅更新
       try {
