@@ -215,8 +215,8 @@ export function NetworkInfoCard() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Activity className="h-3.5 w-3.5 text-primary" />
-            <span className="font-mono text-base font-semibold tabular-nums text-primary">
+            <Activity className="h-3.5 w-3.5 text-warning" />
+            <span className="font-mono text-base font-semibold tabular-nums text-warning">
               {stats?.activeConnections ?? 0}
             </span>
             <span className="text-xs text-muted-foreground">{t('home.activeConnections')}</span>
