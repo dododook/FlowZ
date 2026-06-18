@@ -52,7 +52,7 @@ describe('buildOutbounds — 基础装配 + 载体', () => {
     expect(tags).toContain('block');
     const sel = r.outbounds.find((o) => o.tag === 'proxy-selector')!;
     expect(sel.type).toBe('selector');
-    expect(sel.outbounds).toEqual(['香港']);
+    expect(sel.outbounds).toEqual(['香港', 'direct']);
     expect(sel.default).toBe('香港');
     expect(r.pendingEndpoints).toEqual([]);
     expect(r.pendingRuleSelectors).toEqual([]);
@@ -67,8 +67,28 @@ describe('buildOutbounds — 基础装配 + 载体', () => {
       deps()
     );
     const sel = r.outbounds.find((o) => o.tag === 'proxy-selector')!;
-    expect(sel.outbounds).toEqual(['香港', '日本']);
+    expect(sel.outbounds).toEqual(['香港', '日本', 'direct']);
     expect(sel.default).toBe('日本');
+  });
+
+  it('全局直连哨兵 → proxy-selector 含 direct 成员、default=direct（#73）', () => {
+    const servers = [vless('s1', '香港')];
+    const r = buildOutbounds(
+      null,
+      cfg(servers, { selectedServerId: '__direct__' }),
+      idMap(servers),
+      deps()
+    );
+    const sel = r.outbounds.find((o) => o.tag === 'proxy-selector')!;
+    expect(sel.outbounds).toEqual(['香港', 'direct']);
+    expect(sel.default).toBe('direct');
+  });
+
+  it('全局直连 + 0 节点 → 不抛；proxy-selector=[direct]、default=direct', () => {
+    const r = buildOutbounds(null, cfg([], { selectedServerId: '__direct__' }), new Map(), deps());
+    const sel = r.outbounds.find((o) => o.tag === 'proxy-selector')!;
+    expect(sel.outbounds).toEqual(['direct']);
+    expect(sel.default).toBe('direct');
   });
 
   it('1.12 → 增 direct-loopback；1.13 → 无', () => {
@@ -151,7 +171,10 @@ describe('buildOutbounds — endpoint + 门控', () => {
       deps({ gateInvalidNodes: gate })
     );
     expect(r.outbounds.map((o) => o.tag)).not.toContain('香港');
-    expect(r.outbounds.find((o) => o.tag === 'proxy-selector')!.outbounds).toEqual(['日本']);
+    expect(r.outbounds.find((o) => o.tag === 'proxy-selector')!.outbounds).toEqual([
+      '日本',
+      'direct',
+    ]);
   });
 
   it('所有节点不可用 → 抛错', () => {

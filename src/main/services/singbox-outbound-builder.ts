@@ -17,6 +17,7 @@ import {
   effectiveAppRules,
   getNodeResolverTag,
 } from './singbox-config-helpers';
+import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 
 /** 节点是否可用：naive 需要 libcronet 核心库，缺库时不可用（会被跳过、分流/选中回退到 selector）。 */
 export function isNodeUsable(server: ServerConfig): boolean {
@@ -599,7 +600,7 @@ function generateRuleSelectors(
  * （由 generateSingBoxConfig 回写 this.*，供顶层 endpoints[] 注入与 hotSwitch/clash_api 回读）。
  */
 export function buildOutbounds(
-  selectedServer: ServerConfig,
+  selectedServer: ServerConfig | null,
   config: UserConfig,
   idToTagMap: Map<string, string>,
   deps: OutboundsDeps
@@ -653,7 +654,7 @@ export function buildOutbounds(
       if (server.protocol.toLowerCase() === 'tailscale') {
         const ts = server.tailscaleSettings;
         const ready = !!ts?.authKey?.trim() || tailscaleStateExists(server.id);
-        if (server.id !== selectedServer.id && !ready) {
+        if (server.id !== selectedServer?.id && !ready) {
           deps.log('info', `Tailscale 节点「${server.name}」未就绪(需登录)且非选中，已跳过`);
           continue;
         }
@@ -740,15 +741,22 @@ export function buildOutbounds(
     // 开关决定（默认 false=优雅切换，现有连接保留至自然关闭）。clash_api `PUT /proxies/proxy-selector`
     // 据此热切换、无需重启 sing-box（详见 switchMode）。路由的 final 与「→代理」规则统一指向本 selector。
     // nodeTags 已在节点循环中按序累积（含 endpoint tag）；空=所有节点生成失败/不可用。
-    if (nodeTags.length === 0) {
+    // 全局直连哨兵（#73）：无真实选中节点，default=direct；direct 恒为 proxy-selector 成员，
+    // 支持 clash_api 热切换「直连↔节点」不重启。proxifier 时即便 0 节点也不抛（纯直连合法）。
+    const isDirect = isDirectSelection(config.selectedServerId);
+    if (nodeTags.length === 0 && !isDirect) {
       throw new Error('没有可用的代理节点出站（所有节点配置生成失败）');
     }
-    const selectedServerTag = idToTagMap.get(selectedServer.id) || 'proxy';
+    const selectedServerTag = resolveGlobalExitTag(config.selectedServerId, idToTagMap) || 'proxy';
     outbounds.push({
       type: 'selector',
       tag: 'proxy-selector',
-      outbounds: nodeTags,
-      default: nodeTags.includes(selectedServerTag) ? selectedServerTag : nodeTags[0],
+      outbounds: [...nodeTags, 'direct'],
+      default: isDirect
+        ? 'direct'
+        : nodeTags.includes(selectedServerTag)
+          ? selectedServerTag
+          : nodeTags[0],
       interrupt_exist_connections: config.interruptConnectionsOnSwitch === true,
     });
 
@@ -762,7 +770,7 @@ export function buildOutbounds(
     if ((config.proxyMode || 'smart').toLowerCase() === 'smart') {
       generateRuleSelectors(config, idToTagMap, nodeTags, outbounds, pendingRuleSelectors);
     }
-  } else {
+  } else if (selectedServer) {
     // Fallback if config is missing (shouldn't happen)
     outbounds.push(
       buildProxyOutbound(selectedServer, idToTagMap, getNodeResolverTag(config, 'dial'))
@@ -843,7 +851,7 @@ export function buildOutbounds(
       return undefined;
     };
     const selector = outbounds.find((o) => o.tag === 'proxy-selector');
-    const selectedTag = idToTagMap.get(selectedServer.id);
+    const selectedTag = selectedServer ? idToTagMap.get(selectedServer.id) : undefined;
     let mutated = false;
     // 反复扫描：剔一个引用方可能让别的 detour 链断裂，收敛到不再有死引用。
 

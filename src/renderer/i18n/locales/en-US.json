@@ -217,6 +217,7 @@
   "home": {
     "connectionStatus": "Connection Status",
     "currentServer": "Current Server",
+    "directGlobalHint": "Global Direct: unmatched traffic goes direct; only rule-matched traffic uses proxy",
     "selectServer": "Select Server",
     "connecting": "Connecting...",
     "proxyControl": "Proxy Control",
@@ -806,6 +807,7 @@
     "selectProtocol": "Select your proxy server protocol",
     "detour": "Proxy Chain (Detour)",
     "directConnection": "Direct (No Chain)",
+    "directGlobal": "Direct",
     "detourDesc": "Connect to this node through another proxy server (proxy chain)",
     "selectFingerprint": "Select TLS Fingerprint",
     "flowDesc": "XTLS flow control, Reality recommends xtls-rprx-vision",

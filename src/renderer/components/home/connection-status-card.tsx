@@ -8,6 +8,7 @@ import { Plus, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { deriveConnectionStatus } from './connection-status';
+import { isDirectSelection } from '@shared/direct-selection';
 
 export function ConnectionStatusCard() {
   const connectionStatus = useAppStore((state) => state.connectionStatus);
@@ -21,6 +22,8 @@ export function ConnectionStatusCard() {
   const servers = config?.servers || [];
   const selectedServerId = config?.selectedServerId;
   const selectedServer = servers.find((s) => s.id === selectedServerId);
+  // 全局直连哨兵（#73）：selectedServerId='__direct__' 时无真实节点，但不是「未选择」——需走当前选择分支显示「直连」。
+  const isDirect = isDirectSelection(selectedServerId);
   const { t } = useTranslation();
 
   const handleServerChange = async (serverId: string) => {
@@ -73,7 +76,7 @@ export function ConnectionStatusCard() {
         </div>
 
         {/* 服务器选择区域 */}
-        {servers.length === 0 ? (
+        {servers.length === 0 && !isDirect ? (
           <div className="space-y-3">
             <div className="p-4 border border-dashed border-muted-foreground/25 rounded-lg text-center">
               <p className="text-sm text-muted-foreground mb-3">{t('home.noServerConfig')}</p>
@@ -90,7 +93,7 @@ export function ConnectionStatusCard() {
               </div>
             </div>
           </div>
-        ) : !selectedServer ? (
+        ) : !selectedServer && !isDirect ? (
           <div className="space-y-3">
             <div className="p-4 border border-warning/50 bg-warning/10 rounded-lg">
               <p className="text-sm text-warning mb-3 flex items-center gap-1.5">
@@ -102,7 +105,7 @@ export function ConnectionStatusCard() {
                   <SelectValue placeholder={t('home.selectServer')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <ServerSelectGroups servers={servers} />
+                  <ServerSelectGroups servers={servers} includeDirect />
                 </SelectContent>
               </Select>
             </div>
@@ -121,36 +124,45 @@ export function ConnectionStatusCard() {
                     <ServerSelectGroups
                       servers={servers}
                       selectedId={selectedServerId ?? undefined}
+                      includeDirect
                     />
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            {/* 服务器详细信息 */}
-            <div className="space-y-2 pt-2 border-t">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t('home.protocol')}</span>
-                <Badge variant="outline" className="text-xs">
-                  {selectedServer.protocol}
-                </Badge>
+            {/* 全局直连：未命中规则的流量直连、仅按规则走代理（与「直连模式」不同，规则仍生效） */}
+            {isDirect ? (
+              <div className="space-y-2 pt-2 border-t">
+                <p className="text-xs text-muted-foreground">
+                  {t('home.directGlobalHint', '全局直连：未命中规则的流量直连，仅按规则走代理')}
+                </p>
               </div>
+            ) : selectedServer ? (
+              <div className="space-y-2 pt-2 border-t">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{t('home.protocol')}</span>
+                  <Badge variant="outline" className="text-xs">
+                    {selectedServer.protocol}
+                  </Badge>
+                </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t('home.address')}</span>
-                <span
-                  className="text-sm font-medium truncate max-w-[150px]"
-                  title={selectedServer.address}
-                >
-                  {selectedServer.address}
-                </span>
-              </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{t('home.address')}</span>
+                  <span
+                    className="text-sm font-medium truncate max-w-[150px]"
+                    title={selectedServer.address}
+                  >
+                    {selectedServer.address}
+                  </span>
+                </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{t('home.port')}</span>
-                <span className="text-sm font-medium">{selectedServer.port}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">{t('home.port')}</span>
+                  <span className="text-sm font-medium">{selectedServer.port}</span>
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         )}
 

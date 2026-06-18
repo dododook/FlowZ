@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { DIRECT_SERVER_ID } from '@shared/direct-selection';
 
 interface ServerSelectGroupsProps {
   servers: ServerConfig[];
@@ -19,6 +20,8 @@ interface ServerSelectGroupsProps {
   itemClassName?: string;
   /** 当前选中的节点 id：决定默认展开哪个分组（其余默认折叠），并天然定位当前节点 */
   selectedId?: string;
+  /** 顶部加「直连」项（仅首页全局节点选择用；应用分流/路由规则/detour 不传——它们有各自 action=直连） */
+  includeDirect?: boolean;
 }
 
 /**
@@ -36,6 +39,7 @@ export function ServerSelectGroups({
   valuePrefix = '',
   itemClassName,
   selectedId,
+  includeDirect,
 }: ServerSelectGroupsProps) {
   const { t } = useTranslation();
   const subscriptions = useAppStore((s) => s.config?.subscriptions || []);
@@ -46,6 +50,12 @@ export function ServerSelectGroups({
   );
   const groups = groupServersBySubscription(list, subscriptions);
   const val = (id: string) => `${valuePrefix}${id}`;
+  // 「直连」置顶项（全局直连哨兵，#73）：选中即 proxy-selector default=direct；不分组、恒第一项。
+  const directItem = includeDirect ? (
+    <SelectItem value={val(DIRECT_SERVER_ID)} className={itemClassName}>
+      {t('servers.directGlobal', '直连')}
+    </SelectItem>
+  ) : null;
 
   // 默认展开组：当前选中节点所在组；无则第一组。
   // 注意：ServerSelectGroups 挂在 radix Select 的常驻 Content 子树里，会在 config 加载完成前先挂载，
@@ -68,6 +78,7 @@ export function ServerSelectGroups({
   if (groups.length <= 1) {
     return (
       <>
+        {directItem}
         {list.map((s) => (
           <SelectItem key={s.id} value={val(s.id)} className={itemClassName}>
             {s.name}
@@ -79,6 +90,7 @@ export function ServerSelectGroups({
 
   return (
     <>
+      {directItem}
       {groups.map((g) => {
         const open = expanded.has(g.id);
         const label = g.isMesh

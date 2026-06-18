@@ -28,6 +28,7 @@ import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager'
 import { type ISystemDnsManager } from './SystemDnsManager';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
+import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 import {
   isIpv4Host,
   isIpv6Host,
@@ -383,9 +384,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       throw new Error('No server selected');
     }
 
-    // 查找选中的服务器
-    const selectedServer = config.servers.find((s) => s.id === config.selectedServerId);
-    if (!selectedServer) {
+    // 查找选中的服务器（'__direct__' 哨兵=全局直连，无真实节点，跳过存在性校验）
+    const isDirect = isDirectSelection(config.selectedServerId);
+    const selectedServer = isDirect
+      ? undefined
+      : config.servers.find((s) => s.id === config.selectedServerId);
+    if (!isDirect && !selectedServer) {
       throw new Error('Selected server not found');
     }
 
@@ -994,13 +998,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     const puts: { selectorTag: string; memberTag: string }[] = [];
     let globalChanged = false;
 
-    // 全局节点变化
+    // 全局节点变化（含切到/切出"直连"哨兵：memberTag=direct，direct 恒是 proxy-selector 成员→可热切换不重启）
     if (old.selectedServerId !== newConfig.selectedServerId && newConfig.selectedServerId) {
-      // 目标节点必须已存在于运行中的 selector（= 启动时 servers），否则 PUT 指向不存在的成员
-      if (!old.servers.some((s) => s.id === newConfig.selectedServerId)) {
+      const toDirect = isDirectSelection(newConfig.selectedServerId);
+      // 目标节点必须已存在于运行中的 selector（= 启动时 servers），否则 PUT 指向不存在的成员；direct 豁免（恒为成员）
+      if (!toDirect && !old.servers.some((s) => s.id === newConfig.selectedServerId)) {
         return { kind: 'none', puts: [] };
       }
-      const targetTag = this.currentIdToTagMap?.get(newConfig.selectedServerId);
+      const targetTag = resolveGlobalExitTag(newConfig.selectedServerId, this.currentIdToTagMap);
       if (!targetTag) return { kind: 'none', puts: [] };
       puts.push({ selectorTag: 'proxy-selector', memberTag: targetTag });
       globalChanged = true;
@@ -1657,13 +1662,19 @@ done
    * 生成 sing-box 配置（sing-box 1.12.x / 1.13.x 兼容格式）
    */
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig {
-    const selectedServer = config.servers.find((s) => s.id === config.selectedServerId);
-    if (!selectedServer) {
-      throw new Error('Selected server not found');
-    }
-    // 选中节点不可用（naive 缺 libcronet）→ 明确报错，不静默切到别的节点（修 review M1）
-    if (!isNodeUsable(selectedServer)) {
-      throw new Error(this.naiveUnavailableReason(selectedServer));
+    // 全局直连哨兵（#73 proxifier）：无真实选中节点，proxy-selector default=direct（在 buildOutbounds 内置）。
+    const isDirect = isDirectSelection(config.selectedServerId);
+    const selectedServer = isDirect
+      ? null
+      : (config.servers.find((s) => s.id === config.selectedServerId) ?? null);
+    if (!isDirect) {
+      if (!selectedServer) {
+        throw new Error('Selected server not found');
+      }
+      // 选中节点不可用（naive 缺 libcronet）→ 明确报错，不静默切到别的节点（修 review M1）
+      if (!isNodeUsable(selectedServer)) {
+        throw new Error(this.naiveUnavailableReason(selectedServer));
+      }
     }
 
     // 获取用户数据目录用于缓存文件

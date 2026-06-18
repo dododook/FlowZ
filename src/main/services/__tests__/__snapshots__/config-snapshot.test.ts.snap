@@ -220,6 +220,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -883,6 +884,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -1501,6 +1503,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -2149,6 +2152,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -2749,6 +2753,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -3336,6 +3341,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -3897,6 +3903,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -4529,6 +4536,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -5153,6 +5161,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -5807,6 +5816,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -6424,6 +6434,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "WG-US",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -7026,6 +7037,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -7698,6 +7710,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -8278,6 +8291,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -8881,6 +8895,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -9461,6 +9476,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HTTPUpgrade",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -10071,6 +10087,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "Naive",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -10687,6 +10704,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -11303,6 +11321,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -11905,6 +11924,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -12545,6 +12565,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "SSH",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -13147,6 +13168,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "HK",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -13774,6 +13796,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "outbounds": [
           "WS",
           "GRPC",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -14405,6 +14428,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "outbounds": [
           "Reality",
           "ShadowTLS",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -15109,6 +15133,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "AnyTLS",
           "SOCKS",
           "HTTP",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -15726,6 +15751,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "outbounds": [
           "香港",
           "日本",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",
@@ -16356,6 +16382,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "interrupt_exist_connections": false,
         "outbounds": [
           "AntiCensor",
+          "direct",
         ],
         "tag": "proxy-selector",
         "type": "selector",

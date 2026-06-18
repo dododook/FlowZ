@@ -217,6 +217,7 @@
   "home": {
     "connectionStatus": "连接状态",
     "currentServer": "当前服务器",
+    "directGlobalHint": "全局直连：未命中规则的流量直连，仅按规则走代理",
     "selectServer": "选择服务器",
     "connecting": "连接中...",
     "proxyControl": "代理控制",
@@ -806,6 +807,7 @@
     "selectProtocol": "选择您的代理服务器协议类型",
     "detour": "前置代理 (Proxy Chain)",
     "directConnection": "直连 (Direct)",
+    "directGlobal": "直连",
     "detourDesc": "选择通过另一个代理服务器连接此节点（链式代理）",
     "selectFingerprint": "选择 TLS 指纹",
     "flowDesc": "XTLS 流控，Reality 推荐使用 xtls-rprx-vision",

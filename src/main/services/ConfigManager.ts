@@ -27,6 +27,7 @@ import {
   protocolRequirementError,
 } from '../../shared/server-completeness';
 import { isAccountBasedProtocol } from '../../shared/endpoint-routes';
+import { isDirectSelection } from '../../shared/direct-selection';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -456,8 +457,8 @@ export class ConfigManager implements IConfigManager {
       );
     }
 
-    // 验证 selectedServerId
-    if (config.selectedServerId !== null) {
+    // 验证 selectedServerId（'__direct__' 哨兵=全局直连，非真实节点，豁免存在性校验，见 shared/direct-selection）
+    if (config.selectedServerId !== null && !isDirectSelection(config.selectedServerId)) {
       if (typeof config.selectedServerId !== 'string') {
         throw new Error('selectedServerId must be a string or null');
       }

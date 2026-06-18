@@ -10,6 +10,7 @@ import {
 import { LogManager } from './LogManager';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
+import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
 
 // 托盘菜单状态圆点（macOS 系统色，18px 抗锯齿）——替代旧的 emoji 大圆圈，更克制现代。
 const STATUS_DOT_PNG: Record<'connected' | 'disconnected' | 'error', string> = {
@@ -327,6 +328,15 @@ export class TrayManager implements ITrayManager {
         click: () => this.handleSelectServer(server.id),
       };
     };
+
+    // 「直连」置顶项（全局直连哨兵，#73）：与首页节点选择同概念、同步；选中即 proxy-selector→direct（热切换）。
+    serverSubmenu.push({
+      label: this.t('直连', 'Direct'),
+      type: 'radio' as const,
+      checked: isDirectSelection(data.selectedServerId),
+      click: () => this.handleSelectServer(DIRECT_SERVER_ID),
+    });
+    serverSubmenu.push({ type: 'separator' });
 
     if (data.servers.length === 0) {
       serverSubmenu.push({
