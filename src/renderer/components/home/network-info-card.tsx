@@ -171,10 +171,10 @@ export function NetworkInfoCard() {
               <ArrowUp className="h-3 w-3" />
               {t('home.upload')}
             </p>
-            <p className="text-base font-semibold tabular-nums">
+            <p className="text-base font-mono font-semibold tabular-nums">
               {formatBytes(stats?.uploadSpeed ?? 0)}/s
             </p>
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-[11px] font-mono tabular-nums text-muted-foreground/70">
               {formatBytes(stats?.totalUpload ?? 0)}
             </p>
           </div>
@@ -185,10 +185,10 @@ export function NetworkInfoCard() {
               <ArrowDown className="h-3 w-3" />
               {t('home.download')}
             </p>
-            <p className="text-base font-semibold tabular-nums">
+            <p className="text-base font-mono font-semibold tabular-nums">
               {formatBytes(stats?.downloadSpeed ?? 0)}/s
             </p>
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-[11px] font-mono tabular-nums text-muted-foreground/70">
               {formatBytes(stats?.totalDownload ?? 0)}
             </p>
           </div>
@@ -199,7 +199,9 @@ export function NetworkInfoCard() {
               <Activity className="h-3 w-3" />
               {t('home.activeConnections')}
             </p>
-            <p className="text-base font-semibold tabular-nums">{stats?.activeConnections ?? 0}</p>
+            <p className="text-base font-mono font-semibold tabular-nums">
+              {stats?.activeConnections ?? 0}
+            </p>
             <p className="text-[11px] text-muted-foreground/70">&nbsp;</p>
           </div>
         </div>

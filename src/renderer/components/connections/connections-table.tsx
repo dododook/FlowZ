@@ -142,8 +142,8 @@ const ConnectionRow = memo(
           </button>
         </TableCell>
         <TableCell className="py-2 text-xs">{typeOf(c)}</TableCell>
-        <TableCell className="py-2 font-mono text-xs">{sourceOf(c)}</TableCell>
-        <TableCell className="max-w-[220px] truncate py-2 text-xs" title={destOf(c)}>
+        <TableCell className="py-2 font-mono tabular-nums text-xs">{sourceOf(c)}</TableCell>
+        <TableCell className="max-w-[220px] truncate py-2 font-mono text-xs" title={destOf(c)}>
           {destOf(c)}
         </TableCell>
         <TableCell className="max-w-[200px] py-2 text-xs" title={rv.full || undefined}>
@@ -164,14 +164,14 @@ const ConnectionRow = memo(
         <TableCell className="max-w-[160px] truncate py-2 text-xs" title={chainOf(c)}>
           {chainOf(c)}
         </TableCell>
-        <TableCell className="whitespace-nowrap py-2 text-xs">
+        <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs">
           <span className="text-success">↓ {formatBytes(s.down)}/s</span>
           <span className="ml-2 text-info">↑ {formatBytes(s.up)}/s</span>
         </TableCell>
-        <TableCell className="whitespace-nowrap py-2 text-xs text-muted-foreground">
+        <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs text-muted-foreground">
           ↓ {formatBytes(c.download ?? 0)} / ↑ {formatBytes(c.upload ?? 0)}
         </TableCell>
-        <TableCell className="whitespace-nowrap py-2 text-xs">
+        <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs">
           <DurationCell start={c.start} />
         </TableCell>
         <TableCell className="max-w-[180px] truncate py-2 text-xs" title={proc}>
