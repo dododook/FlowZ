@@ -1220,6 +1220,10 @@ if (gotTheLock) {
       // 「已断开 / 启用代理」而进程实际在跑）。放在首行确保后续 await 抛错也不漏刷；IPC/托盘/startup 的
       // 显式 updateTrayMenuState(true) 退化为幂等冗余。
       void updateTrayMenuState(true);
+
+      // 出口 IP：start 瞬间即置「获取中」，消除「running 已 true 但下方延迟 1.5s 刷新尚未开始」窗口内
+      // 代理出口闪「代理出口暂不可用」。随后的延迟 refresh(true) 接力真正探测（带重试）。
+      ipInfoService?.markProxyConnecting();
       statsService?.start();
       subscriptionScheduler?.onProxyStarted(); // 代理就绪 → 补跑因 viaProxy 跳过的启动订阅更新
       try {

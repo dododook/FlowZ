@@ -104,6 +104,16 @@ export class IpInfoService {
     return { ...this.snapshot };
   }
 
+  /**
+   * 代理启动瞬间立即置「获取中」(loading=true) 并广播：由调用方在 running 翻转的同刻调用，消除「running 已 true
+   * 但探测尚未开始（启动后延迟 refresh）」窗口内代理出口闪「代理出口暂不可用」。不清旧 proxy 值（切节点时旧 IP
+   * 仍显示到新值到达；启动时 proxy 本为 null → 直接显「获取中」骨架）。随后的 refresh/refreshProxy 接力真正探测。
+   */
+  markProxyConnecting(): void {
+    this.snapshot = { ...this.snapshot, loading: true };
+    this.onUpdate(this.getSnapshot());
+  }
+
   /** 把刷新任务排到当前在途之后（链式），避免 force/proxy 刷新被 in-flight 去重静默吞掉。 */
   private enqueue(fn: () => Promise<void>): Promise<void> {
     const prev = this.inflight;

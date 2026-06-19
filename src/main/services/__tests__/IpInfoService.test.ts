@@ -472,4 +472,12 @@ describe('IpInfoService 传输层', () => {
     expect(snap.proxy).toBeNull();
     expect(snap.error).toBe('fetch_failed');
   });
+
+  it('markProxyConnecting：立即置 loading=true 并广播（消除启动瞬间闪「代理出口暂不可用」）', () => {
+    const { svc, snapshots } = makeService();
+    expect(svc.getSnapshot().loading).not.toBe(true);
+    svc.markProxyConnecting();
+    expect(svc.getSnapshot().loading).toBe(true); // 同步置「获取中」
+    expect(snapshots[snapshots.length - 1].loading).toBe(true); // 已广播给渲染端
+  });
 });
