@@ -280,6 +280,19 @@ export interface DnsConfig {
 }
 
 // ============================================================================
+// 地区分流（4.1.0）：智能分流的 geo 基线场景
+// ============================================================================
+
+/** 地区 ID：选用哪套地区 geo（cn/ir/ru）。 */
+export type RegionId = 'cn' | 'ir' | 'ru';
+/** 地区分流配置。undefined（存量/新装未改）= 默认中国大陆正向 = 今日智能分流行为（零迁移，见 shared/region-routing）。 */
+export interface RegionRoutingConfig {
+  enabled: boolean; // 总开关：true=按地区自动分流(本地直连·海外代理)；false=只用自定义规则
+  region: RegionId; // 选用哪套地区 geo
+  reverse: boolean; // 反向：本地走代理·海外直连（region=cn+reverse=回国）
+}
+
+// ============================================================================
 // 用户配置
 // ============================================================================
 
@@ -300,6 +313,9 @@ export interface UserConfig {
 
   // 路由规则
   customRules: Rule[];
+
+  // 地区分流（4.1.0）：智能分流 geo 基线场景。undefined=默认中国大陆正向(=今日行为，零迁移)。
+  regionRouting?: RegionRoutingConfig;
 
   // 应用设置
   autoStart: boolean;
