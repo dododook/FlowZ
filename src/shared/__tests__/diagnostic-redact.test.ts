@@ -278,6 +278,30 @@ describe('collectNodeIdentifiers — 节点标识符提取 + 类型化占位（P
     expect(ids).toHaveLength(1);
     expect(ids[0].placeholder).toBe('<domain-1>');
   });
+
+  it('#57 resolve-ahead：extraAddresses（预解析节点 IP）按 <ip-N> 一并收集、去重', () => {
+    const ids = collectNodeIdentifiers(
+      { servers: [{ address: 'hk.airport.com' }] }, // 域名 → <domain-1>
+      ['203.0.113.55', '203.0.113.55', '198.51.100.9'] // 预解析 IP（含重复）
+    );
+    const map = Object.fromEntries(ids.map((i) => [i.value, i.placeholder]));
+    expect(map['hk.airport.com']).toBe('<domain-1>');
+    expect(map['203.0.113.55']).toBe('<ip-1>');
+    expect(map['198.51.100.9']).toBe('<ip-2>');
+    expect(ids).toHaveLength(3); // 重复 IP 去重
+  });
+
+  it('#57：预解析 IP 经 redactIdentifiers 在配置文本里被打码（杜绝真实节点 IP 明文泄漏）', () => {
+    const ids = collectNodeIdentifiers({ servers: [{ address: 'hk.airport.com' }] }, [
+      '203.0.113.55',
+    ]);
+    // 模拟报告里 outbound.server 已是预解析 IP 的配置 JSON 片段
+    const cfgText = '"server": "203.0.113.55",\n"tls": { "server_name": "hk.airport.com" }';
+    const out = redactIdentifiers(cfgText, ids);
+    expect(out).not.toContain('203.0.113.55'); // IP 被打码
+    expect(out).toContain('<ip-1>');
+    expect(out).toContain('<domain-1>'); // SNI 域名仍按域名打码
+  });
 });
 
 describe('redactIdentifiers — 文本统一打码 + 主机边界锚定（P0.6 / H1）', () => {

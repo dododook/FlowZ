@@ -5,6 +5,7 @@
  */
 import {
   buildWireGuardEndpoint,
+  buildProxyOutbound,
   isNodeUsable,
   prunedSelectorDefault,
 } from '../singbox-outbound-builder';
@@ -101,5 +102,88 @@ describe('prunedSelectorDefault', () => {
     expect(prunedSelectorDefault('proxy-selector', [])).toBeUndefined();
     // rule-sel 恒嵌套回 proxy-selector，与成员是否剔空无关。
     expect(prunedSelectorDefault('rule-sel-y', [])).toBe('proxy-selector');
+  });
+});
+
+// #57 resolve-ahead：buildProxyOutbound 的 resolvedHosts 仅改 outbound.server，绝不动 SNI/server_name。
+describe('buildProxyOutbound — resolve-ahead（resolvedHosts → outbound.server）', () => {
+  const DOMAIN = 'node.example.com';
+  const IP = '203.0.113.7';
+  const idMap = new Map<string, string>();
+  const RESOLVED: ReadonlyMap<string, string> = new Map([[DOMAIN, IP]]);
+  const srv = (over: Partial<ServerConfig>): ServerConfig =>
+    ({ id: 'x', name: 'X', address: DOMAIN, port: 443, ...over }) as unknown as ServerConfig;
+
+  it('命中：server=IP，但 tls.server_name 仍= 显式 SNI（不被 IP 覆盖）', () => {
+    const ob = buildProxyOutbound(
+      srv({
+        protocol: 'vless',
+        uuid: 'u',
+        security: 'tls',
+        tlsSettings: { serverName: 'sni.example.net' },
+      }),
+      idMap,
+      'dns-bootstrap',
+      RESOLVED
+    );
+    expect(ob.server).toBe(IP);
+    expect(ob.tls?.server_name).toBe('sni.example.net');
+    expect(ob.domain_resolver).toBe('dns-bootstrap'); // 档位 tag 保留（回退路径仍用）
+  });
+
+  it('命中且无显式 SNI：server=IP，但 tls.server_name 回退【原域名】而非 IP（核心断言）', () => {
+    const ob = buildProxyOutbound(
+      srv({ protocol: 'trojan', password: 'pw', security: 'tls' }),
+      idMap,
+      'dns-bootstrap',
+      RESOLVED
+    );
+    expect(ob.server).toBe(IP);
+    expect(ob.tls?.server_name).toBe(DOMAIN);
+  });
+
+  it('reality 无 SNI：server=IP，server_name 仍 undefined（不被 IP 顶替）', () => {
+    const ob = buildProxyOutbound(
+      srv({
+        protocol: 'vless',
+        uuid: 'u',
+        security: 'reality',
+        realitySettings: { publicKey: 'pk', shortId: 'sid' },
+      }),
+      idMap,
+      'dns-bootstrap',
+      RESOLVED
+    );
+    expect(ob.server).toBe(IP);
+    expect(ob.tls?.server_name).toBeUndefined();
+  });
+
+  it('naive：server=IP，tls.server_name 回退原域名', () => {
+    const ob = buildProxyOutbound(
+      srv({ protocol: 'naive', username: 'u', password: 'p' }),
+      idMap,
+      'dns-bootstrap',
+      RESOLVED
+    );
+    expect(ob.server).toBe(IP);
+    expect(ob.tls?.server_name).toBe(DOMAIN);
+  });
+
+  it('未命中（map 无此域名）/ 不传 resolvedHosts → server 保持原域名（现状）', () => {
+    const base = srv({ protocol: 'trojan', password: 'pw', security: 'tls' });
+    expect(buildProxyOutbound(base, idMap, 'dns-bootstrap', new Map()).server).toBe(DOMAIN);
+    expect(buildProxyOutbound(base, idMap, 'dns-bootstrap').server).toBe(DOMAIN);
+  });
+
+  it('IP 字面量节点不在 map → server 原样（前置层不会把 IP 当 key）', () => {
+    const ipNode = srv({
+      address: '198.51.100.9',
+      protocol: 'trojan',
+      password: 'pw',
+      security: 'tls',
+    });
+    expect(buildProxyOutbound(ipNode, idMap, 'dns-bootstrap', RESOLVED).server).toBe(
+      '198.51.100.9'
+    );
   });
 });

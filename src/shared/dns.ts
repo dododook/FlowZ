@@ -60,7 +60,8 @@ function isIpv6Literal(host: string): boolean {
   return /^[0-9a-fA-F:]+$/.test(h) && (h.match(/:/g)?.length ?? 0) >= 2;
 }
 
-function isIpLiteral(host: string): boolean {
+/** 主机字符串是否 IP 字面量（v4 严格 + v6 去括号≥2 冒号）。节点域名预解析跳过判定亦复用，避免多处 v6 判定漂移。 */
+export function isIpLiteral(host: string): boolean {
   return isIpv4Literal(host) || isIpv6Literal(host);
 }
 

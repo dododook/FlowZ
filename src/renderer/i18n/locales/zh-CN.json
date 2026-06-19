@@ -475,6 +475,8 @@
       "nodeResolverDnspod": "DNSPod",
       "nodeResolverSystem": "系统 DNS",
       "nodeResolverExperimental": "实验性",
+      "resolveNodeDomainsAhead": "节点域名解析前置",
+      "resolveNodeDomainsAheadDesc": "连接前用并发多上游 DoH 把节点服务器域名预解析为 IP，避免单点 DNS 被限速/劫持导致整条代理连不上（解析失败自动回退域名，SNI 仍用原域名）。建议开启。",
       "takeoverSystemDns": "TUN 接管系统 DNS",
       "takeoverSystemDnsDesc": "TUN 模式临时把系统 DNS 改为 8.8.8.8，让代理域名经隧道正确解析（停止自动还原）。关闭更利于内网域名，但部分代理域名可能解析异常。建议开启。",
       "mainSessionViaProxy": "更新检查走代理",

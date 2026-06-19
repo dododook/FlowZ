@@ -266,6 +266,11 @@ export interface DnsConfig {
   // auto（缺省）=AliDNS IP-DoH（dns-bootstrap，零行为变化）/ dnspod=DNSPod IP-DoH（dns-node，1.12.12.12）/
   // system=系统 DNS（dns-local；TUN 下 rule ctx 仍强制 IP-DoH 防递归）。旧配置无此字段 → 视为 auto。
   nodeDomainResolver?: 'auto' | 'dnspod' | 'system';
+  // 节点域名解析前置（#57 resolve-ahead）：缺省/true=开（默认）。开 → start 前在主进程用并发多上游 DoH
+  // 把代理节点【服务器域名】预解析为 IP 写进 outbound.server（SNI/Host 仍保留原域名），使拨号不依赖运行时
+  // 单点 DNS，规避节点域名解析失败导致全断流。解析失败的域名自动回退原域名（走既有 dns-bootstrap）。
+  // 关 → 不预解析、保持现状（域名 + domain_resolver 引导解析）。旧配置无此字段 → 视为开。
+  resolveNodeDomainsAhead?: boolean;
   // TUN 模式强制接管系统 DNS（SystemDnsManager）：缺省/true=开（默认）。on-link 的 LAN/ISP DNS 不进 TUN →
   // hijack-dns 看不到 → 需代理的域名走系统解析得到真实/错族 IP（双栈站 ERR_CONNECTION_CLOSED / 真 v6 泄漏）。
   // 开 → TUN 启动把系统 DNS 改为可路由的 8.8.8.8 使其经 TUN 被 hijack；停止/退出/崩溃还原。

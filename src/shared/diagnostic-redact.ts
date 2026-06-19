@@ -180,7 +180,10 @@ function addHostHeaders(headers: unknown, add: (v: unknown) => void): void {
  * 节点名 <4 字符跳过（防误伤日志普通词）；地址类不设长度阈值（靠 redactIdentifiers 的主机边界锚定防误替）。
  */
 export function collectNodeIdentifiers(
-  config: { servers?: ReadonlyArray<ServerLike> } | null | undefined
+  config: { servers?: ReadonlyArray<ServerLike> } | null | undefined,
+  // #57 resolve-ahead：节点域名被预解析成 IP 写进生成 config 的 outbound.server，这些 IP 不在 config.servers 里、
+  // 否则会以明文漏进诊断报告 → 调用方（DiagnosticService）把它们传入，一并按节点 IP 身份打码为 <ip-N>。
+  extraAddresses?: Iterable<string>
 ): NodeIdentifier[] {
   const out: NodeIdentifier[] = [];
   const seen = new Set<string>();
@@ -223,6 +226,8 @@ export function collectNodeIdentifiers(
     collectHostsDeep(s?.customSettings?.outbound, (v) => add(v, 'addr'));
     add(s?.name, 'name');
   }
+  // resolve-ahead 预解析得到的节点 IP（在 config.servers 之外）：按 IP 身份打码，杜绝真实节点 IP 漏进报告。
+  for (const ip of extraAddresses ?? []) add(ip, 'addr');
   return out;
 }
 

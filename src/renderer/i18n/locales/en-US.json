@@ -475,6 +475,8 @@
       "nodeResolverDnspod": "DNSPod",
       "nodeResolverSystem": "System DNS",
       "nodeResolverExperimental": "experimental",
+      "resolveNodeDomainsAhead": "Resolve node domains ahead",
+      "resolveNodeDomainsAheadDesc": "Before connecting, pre-resolve node server domains to IPs via concurrent multi-upstream DoH, so a single throttled/hijacked DNS can't take down the whole proxy (falls back to the domain on failure; SNI still uses the original domain). Recommended.",
       "takeoverSystemDns": "Take over system DNS in TUN",
       "takeoverSystemDnsDesc": "In TUN, temporarily set system DNS to 8.8.8.8 so proxied domains resolve through the tunnel (auto-restored on stop). Off is friendlier for internal domains but some proxied domains may resolve wrong. Recommended on.",
       "mainSessionViaProxy": "Update checks via proxy",

@@ -364,6 +364,18 @@ export function NetworkSettings() {
               </Select>
             </SettingsRow>
             <SettingsRow
+              label={t('settings.advanced.resolveNodeDomainsAhead', '节点域名解析前置')}
+              description={t(
+                'settings.advanced.resolveNodeDomainsAheadDesc',
+                '连接前用并发多上游 DoH 把节点服务器域名预解析为 IP，避免单点 DNS 被限速/劫持导致整条代理连不上（解析失败自动回退域名）。建议开启。'
+              )}
+            >
+              <Switch
+                checked={config.dnsConfig?.resolveNodeDomainsAhead !== false}
+                onCheckedChange={(c) => updateDns({ resolveNodeDomainsAhead: c })}
+              />
+            </SettingsRow>
+            <SettingsRow
               label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
               description={t(
                 'settings.advanced.takeoverSystemDnsDesc',

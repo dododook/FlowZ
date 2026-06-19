@@ -51,6 +51,7 @@ import {
   buildOutbounds,
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
+import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
@@ -116,6 +117,7 @@ export interface IProxyManager {
   getStatus(): ProxyStatus;
   isStartedViaHelper(): boolean;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
+  getResolvedNodeIps(): string[];
   on(
     event: 'started' | 'stopped' | 'error' | 'node-hot-switched',
     listener: (...args: any[]) => void
@@ -151,6 +153,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 供 generateDnsConfig 把内网/captive 域名重定向到它（takeover 后 dns-local=公网解不了内网）+ rule C 直连放行防环。
   // null=无可用 LAN 解析器（非 TUN/关/DHCP 读不到/仅公网）→ 退回 dns-local。每次 start 入口重置重读。
   private lanResolverForDns: string | null = null;
+  // #57 resolve-ahead：节点服务器域名→IP 预解析表（域名作 key）。仅 start 路径（开关开时）在 generateSingBoxConfig
+  // 前用并发多上游 DoH 填充，由 generateSingBoxConfig 透传 buildOutbounds → buildProxyOutbound 写 outbound.server。
+  // 空 Map=现状（域名）：snapshot/preflight/speedtest/未启动路径恒空 → 生成物逐字节回现状。模块级 TTL 缓存使重启廉价。
+  private lastResolvedHosts: Map<string, string> = new Map();
   // 杀核前「静默 clash_api 客户端」回调（停 StatsService 轮询 + 关其到 9090 的 keep-alive 连接）：让 client 主动关
   // → 9090 不进 TIME_WAIT → 下次用户态 sing-box 免撞 root TIME_WAIT 等 30s（P0-2 治本 TIME_WAIT）。
   private quiesceClashClients: (() => void) | null = null;
@@ -450,6 +456,44 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           'info',
           `DNS 接管：内网/captive 域名将经原 LAN 解析器 ${this.lanResolverForDns} 解析`
         );
+      }
+    }
+
+    // 3.9 #57 resolve-ahead：start 前把代理节点【服务器域名】并发多上游(DoH)预解析为 IP → this.lastResolvedHosts，
+    //     供 generateSingBoxConfig→buildProxyOutbound 写 outbound.server（SNI/Host 仍原域名），使拨号不依赖运行时
+    //     单点 DNS（#57 L1 根治）。开关 resolveNodeDomainsAhead 默认开；解析失败的域名不进表→回退原域名（既有
+    //     dns-bootstrap 兜底，零回归）。整批受预算硬约束，绝不无限阻塞 start。与上方 resolvedServerIps（Windows
+    //     TUN route_exclude，serverId→IP）正交：键/用途不同、互不影响。
+    this.lastResolvedHosts = new Map();
+    if (config.dnsConfig?.resolveNodeDomainsAhead !== false) {
+      // 仅普通拨号出站参与（buildProxyOutbound 路径）；custom 透传 / wireguard·tailscale endpoint 走各自构造、
+      // 不读 resolvedHosts，故不预解析（与 doc：v1 不纳入 WG peer / 账号制 mesh）。IP 字面量由 resolveNodeDomains 跳过。
+      const skipProtocols = new Set(['custom', 'wireguard', 'tailscale']);
+      const nodeDomains = new Set<string>();
+      for (const s of config.servers) {
+        if (skipProtocols.has((s.protocol || '').toLowerCase())) continue;
+        const addr = s.address?.trim();
+        if (addr) nodeDomains.add(addr); // resolveNodeDomains 内部再去重 + 跳过 IP 字面量
+      }
+      if (nodeDomains.size > 0) {
+        const t0 = Date.now();
+        try {
+          // 解析档位（nodeDomainResolver）决定预解析上游：auto=AliDNS+DNSPod DoH / dnspod=DNSPod / system=纯系统 DNS。
+          this.lastResolvedHosts = await resolveNodeDomains([...nodeDomains], {
+            upstreams: upstreamsForResolverMode(config.dnsConfig?.nodeDomainResolver),
+          });
+          this.logToManager(
+            'info',
+            `节点域名解析前置：已将 ${this.lastResolvedHosts.size} 个节点域名预解析为 IP，耗时 ${Date.now() - t0}ms`
+          );
+        } catch (e) {
+          // 预解析整体异常绝不阻断启动：清空表 → 全部回退原域名（现状行为）。
+          this.lastResolvedHosts = new Map();
+          this.logToManager(
+            'warn',
+            `节点域名解析前置失败，回退域名: ${(e as Error)?.message ?? e}`
+          );
+        }
       }
     }
 
@@ -1654,6 +1698,14 @@ done
   }
 
   /**
+   * #57 resolve-ahead：本次预解析得到的节点 IP（写进了 outbound.server）。供 DiagnosticService 把这些
+   * config.servers 之外的真实节点 IP 一并按节点身份脱敏（<ip-N>），杜绝漏进诊断报告（红线：零节点身份明文）。
+   */
+  getResolvedNodeIps(): string[] {
+    return [...this.lastResolvedHosts.values()];
+  }
+
+  /**
    * 生成 sing-box 配置（sing-box 1.12.x / 1.13.x 兼容格式）
    */
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig {
@@ -1708,6 +1760,8 @@ done
       coreVersion: this.coreVersion,
       gateInvalidNodes: this.gateInvalidNodes,
       log: (level, message) => this.logToManager(level, message),
+      // #57 resolve-ahead：透传预解析表（startInternal 前置填充）。空 Map → buildProxyOutbound 回退原域名（现状）。
+      resolvedHosts: this.lastResolvedHosts,
     });
     this.pendingEndpoints = outboundsResult.pendingEndpoints;
     this.pendingRuleSelectors = outboundsResult.pendingRuleSelectors;
