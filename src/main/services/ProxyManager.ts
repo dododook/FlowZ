@@ -57,6 +57,7 @@ import { meshUsesSystemInterface } from '../../shared/endpoint-routes';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
+import { tailscaleStateExists, pollTailscaleLoginSuccess } from './tailscale-state';
 import {
   getUserDataPath,
   getSingBoxConfigPath,
@@ -4726,6 +4727,8 @@ exit 0
 
   /** 已推送过的 Tailscale 登录 URL（核会重复打印同一行，按 url 去重防刷屏）。urls 为一次性 token、量小，不清理。 */
   private tailscaleAuthSeen = new Set<string>();
+  /** 正在轮询登录成功的节点 serverId 集合（每节点最多一个在飞轮询，防同一节点重复 URL 各起一轮）。 */
+  private tailscaleAuthPolling = new Set<string>();
 
   /**
    * 抓 Tailscale 交互登录 URL（无 auth_key 时核日志出 `endpoint/tailscale[<tag>]: Waiting for authentication: <url>`）
@@ -4739,6 +4742,39 @@ exit 0
     this.tailscaleAuthSeen.add(url);
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, { nodeName, url });
     this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
+    // 登录成功检测（log-level 无关）：nodeName=tag=server.name，反查 server.id 后轮询其 state 目录。
+    // 会话文件出现即判成功 → 推 EVENT_TAILSCALE_AUTH_OK（渲染端 dismiss Infinity toast + 刷新角标）。
+    const server = this.currentConfig?.servers.find(
+      (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === nodeName
+    );
+    if (server) this.watchTailscaleLogin(server.id, nodeName);
+  }
+
+  /**
+   * 轮询某 Tailscale 节点的 state 目录直到登录成功 / 超时 / 进程已停（取消）。每节点单飞。
+   * 成功 → 发 EVENT_TAILSCALE_AUTH_OK + 记 info 日志；超时/取消静默收尾（toast 仍在，用户可重试）。
+   * 轮询纯逻辑在 tailscale-state.pollTailscaleLoginSuccess（check/sleep 可注入、单测覆盖）。
+   */
+  private watchTailscaleLogin(serverId: string, nodeName: string): void {
+    if (this.tailscaleAuthPolling.has(serverId)) return; // 同节点已在轮询
+    this.tailscaleAuthPolling.add(serverId);
+    void pollTailscaleLoginSuccess({
+      check: () => tailscaleStateExists(serverId),
+      // 进程已停（singboxProcess 置空 / cleanup）→ 取消轮询，避免后台空转到 2min。
+      isCancelled: () => this.singboxProcess === null,
+    })
+      .then((result) => {
+        if (result === 'success') {
+          this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, { serverId, nodeName });
+          this.logToManager('info', `Tailscale 节点「${nodeName}」登录成功`, 'sing-box');
+        }
+      })
+      .catch(() => {
+        /* 轮询本身失败安全（check 已 try/catch），此处兜底防 unhandled rejection */
+      })
+      .finally(() => {
+        this.tailscaleAuthPolling.delete(serverId);
+      });
   }
 
   /**

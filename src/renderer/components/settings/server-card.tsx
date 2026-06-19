@@ -26,6 +26,7 @@ interface ServerCardProps {
   isSelecting: boolean;
   selectedIds: Set<string>;
   invalidNodes: Record<string, InvalidNodeInfo>;
+  tailscaleLoginStates: Record<string, boolean>;
   shadowedCidrs: Map<string, string[]>;
   onSelectServer: (serverId: string) => void;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
@@ -38,6 +39,7 @@ export function ServerCard({
   isSelecting,
   selectedIds,
   invalidNodes,
+  tailscaleLoginStates,
   shadowedCidrs,
   onSelectServer,
   onToggleSelect,
@@ -108,7 +110,7 @@ export function ServerCard({
               WARP
             </Badge>
           )}
-          {tailscaleNeedsLogin(server) && (
+          {tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
             <Badge
               variant="outline"
               className="text-xs h-4 px-1 bg-badge-amber/15 text-badge-amber border-badge-amber/30"

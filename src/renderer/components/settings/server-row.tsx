@@ -27,6 +27,7 @@ interface ServerRowProps {
   isSelecting: boolean;
   selectedIds: Set<string>;
   invalidNodes: Record<string, InvalidNodeInfo>;
+  tailscaleLoginStates: Record<string, boolean>;
   shadowedCidrs: Map<string, string[]>;
   onSelectServer: (serverId: string) => void;
   onToggleSelectId: (serverId: string) => void;
@@ -39,6 +40,7 @@ export function ServerRow({
   isSelecting,
   selectedIds,
   invalidNodes,
+  tailscaleLoginStates,
   shadowedCidrs,
   onSelectServer,
   onToggleSelectId,
@@ -117,7 +119,7 @@ export function ServerRow({
               WARP
             </Badge>
           )}
-          {tailscaleNeedsLogin(server) && (
+          {tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
             <Badge
               variant="outline"
               className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"

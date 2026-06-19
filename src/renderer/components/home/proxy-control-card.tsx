@@ -23,6 +23,8 @@ import {
   isEndpointProtocol,
   meshNodeCarriesFullTunnel,
 } from '../../../shared/endpoint-routes';
+import { effectiveLogLevel } from '../../../shared/log-level';
+import { tailscaleNeedsLogin } from '../settings/server-list-helpers';
 
 /**
  * 首页代理控制卡：两行 OpenClash 风格分段切换（接管方式 / 分流策略）+ 启停按钮。
@@ -40,6 +42,8 @@ export function ProxyControlCard() {
   const saveConfig = useAppStore((s) => s.saveConfig);
   const startProxy = useAppStore((s) => s.startProxy);
   const stopProxy = useAppStore((s) => s.stopProxy);
+  const isPrivacyMode = useAppStore((s) => s.isPrivacyMode);
+  const tailscaleLoginStates = useAppStore((s) => s.tailscaleLoginStates);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingModeType, setPendingModeType] = useState<ProxyModeType | null>(null);
@@ -115,11 +119,27 @@ export function ProxyControlCard() {
     }
   };
 
+  // §1.4 兜底提示：选中的 Tailscale 节点需登录，但当前日志级别（effectiveLogLevel ≥ warn）或关日志
+  // 会让核心的登录 URL 行（INFO 级）根本不被捕获 → 连接也弹不出登录窗。连接前提示用户调日志级别。
+  // Phase 1 无「登录」按钮（Phase 2 才有），故文案先只引导调日志级别；用户态登录链路不受影响。
+  const tailscaleLoginUncapturable = (): boolean => {
+    if (!selectedServer || selectedServer.protocol?.toLowerCase() !== 'tailscale') return false;
+    if (!tailscaleNeedsLogin(selectedServer, tailscaleLoginStates[selectedServer.id])) return false;
+    if (!config) return false;
+    const level = effectiveLogLevel(config.logLevel, isPrivacyMode);
+    return (
+      level === 'warn' || level === 'error' || level === 'fatal' || config.disableLogFile === true
+    );
+  };
+
   // 启停：helper 引导（macOS TUN 未就绪）由主进程 start() 的 native gate 统一承接，此处直接启停。
   const handleToggleProxy = async () => {
     if (isConnected) {
       await stopProxy();
       return;
+    }
+    if (tailscaleLoginUncapturable()) {
+      toast.warning(t('servers.tsLogLevelHint'), { duration: 8000 });
     }
     await startProxy();
   };

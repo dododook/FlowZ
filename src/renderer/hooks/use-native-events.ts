@@ -38,6 +38,7 @@ interface NativeEventData {
   autoNodeSwitched: { reason: string; newServerName: string; latency: number };
   invalidNodes: InvalidNodeInfo[];
   tailscaleAuth: { nodeName: string; url: string };
+  tailscaleAuthOk: { serverId: string; nodeName: string };
   systemProxyResidual: { proxy: string };
 }
 
@@ -78,6 +79,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'tailscaleAuth':
         unsubscribe = api.proxy.onTailscaleAuth(callback as any);
+        break;
+      case 'tailscaleAuthOk':
+        unsubscribe = api.proxy.onTailscaleAuthOk(callback as any);
         break;
       case 'systemProxyResidual':
         unsubscribe = api.proxy.onSystemProxyResidual(callback as any);
@@ -181,9 +185,12 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
   useAppStore.setState({ invalidNodes: map });
 }
 
+/** 登录 toast 固定 id（按节点名）：登录成功事件据此 toast.dismiss 那条 Infinity toast。 */
+const tsAuthToastId = (nodeName: string): string => `ts-auth-${nodeName}`;
+
 function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   // Tailscale 无 auth_key 节点：核给出交互登录 URL → 持久 toast + 「打开登录页」action（openExternal）。
-  // duration:Infinity——登录需用户去浏览器操作，不能自动消失。
+  // duration:Infinity——登录需用户去浏览器操作，不能自动消失。固定 id：登录成功后由 handleTailscaleAuthOk dismiss。
   // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
   let safeUrl: string | null = null;
   try {
@@ -193,6 +200,7 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
     safeUrl = null;
   }
   toast.info(i18n.t('servers.tsLoginNeeded', { name: data.nodeName }), {
+    id: tsAuthToastId(data.nodeName),
     description: i18n.t('servers.tsLoginNeededDesc'),
     duration: Infinity,
     action: safeUrl
@@ -204,6 +212,16 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
         }
       : undefined,
   });
+}
+
+function handleTailscaleAuthOk(data: NativeEventData['tailscaleAuthOk']) {
+  // 交互登录成功（主进程轮询 state 目录检出，log-level 无关）：dismiss 那条 Infinity 登录 toast、
+  // 即时点亮该节点登录态（角标随之消失），并整体刷新与磁盘真值对齐。修 P5「toast 不消、状态不更新」。
+  toast.dismiss(tsAuthToastId(data.nodeName));
+  toast.success(i18n.t('servers.tsLoginOk', { name: data.nodeName }), { duration: 4000 });
+  const store = useAppStore.getState();
+  store.setTailscaleLoginState(data.serverId, true);
+  void store.refreshTailscaleLoginStates();
 }
 
 // 一次性：本渲染会话只提示一次残留系统代理，避免每次连 TUN（含切节点重启）反复唠叨（用户「忽略」即不再提示）。
@@ -243,5 +261,6 @@ export function useNativeEventListeners() {
   useNativeEvent('autoNodeSwitched', handleAutoNodeSwitched);
   useNativeEvent('invalidNodes', handleInvalidNodes);
   useNativeEvent('tailscaleAuth', handleTailscaleAuth);
+  useNativeEvent('tailscaleAuthOk', handleTailscaleAuthOk);
   useNativeEvent('systemProxyResidual', handleSystemProxyResidual);
 }

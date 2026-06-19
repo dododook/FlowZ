@@ -4,7 +4,6 @@
  * 与测速（buildSpeedTestOutbound）共用。逐协议字段映射 + TLS/Reality/传输层 + PR-6 抗封后处理。
  */
 
-import * as path from 'path';
 import type { ServerConfig, UserConfig, InvalidNodeInfo } from '../../shared/types';
 import type { SingBoxOutbound, SingBoxEndpoint } from './singbox-config-types';
 import { resourceManager } from './ResourceManager';
@@ -17,7 +16,7 @@ import {
   isMeshNodeUnroutable,
 } from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
-import { getUserDataPath } from '../utils/paths';
+import { tailscaleStateDir, tailscaleStateExists } from './tailscale-state';
 import {
   effectiveCustomRules,
   effectiveAppRules,
@@ -534,20 +533,6 @@ export interface OutboundsDeps {
   // Phase 2：本次启动 sing-box 是否会以提权运行（内核接口可创建）= TUN 模式 + helper。缺省 undefined/false
   // （preflight/speedtest/snapshot/系统代理路径）→ reverseMesh 节点不发射（system:true 需提权，否则启动 FATAL）。
   systemInterfaceAvailable?: boolean;
-}
-
-/** Tailscale state 目录：`<userData>/tailscale/<serverId>`，跨重启免重认证、删节点时清理。 */
-function tailscaleStateDir(serverId: string): string {
-  return path.join(getUserDataPath(), 'tailscale', serverId);
-}
-
-function tailscaleStateExists(serverId: string): boolean {
-  try {
-    // readdirSync 在目录缺失时抛 ENOENT → catch 返 false，无需先 existsSync（省一次 stat）。
-    return require('fs').readdirSync(tailscaleStateDir(serverId)).length > 0;
-  } catch {
-    return false;
-  }
 }
 
 /**

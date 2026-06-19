@@ -918,6 +918,8 @@
     "tsLoginNeeded": "Tailscale 节点「{{name}}」需要登录",
     "tsLoginNeededDesc": "在浏览器中完成 Tailscale 授权后即可入网（仅首次，之后免登录）。",
     "tsOpenLogin": "打开登录页",
+    "tsLoginOk": "Tailscale 节点「{{name}}」已登录",
+    "tsLogLevelHint": "当前日志级别无法捕获登录链接，请用节点「登录」按钮，或临时把日志级别调到 info。",
     "alpn": "ALPN",
     "alpnDesc": "应用层协议协商，例如 h3",
     "naive": {

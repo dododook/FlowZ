@@ -77,9 +77,14 @@ export const isWarpNode = (s: ServerConfigWithId): boolean =>
   s.protocol?.toLowerCase() === 'wireguard' &&
   (s.address || '').toLowerCase().includes('cloudflareclient.com');
 
-/** Tailscale 节点未配置 authKey → 首次连接需浏览器交互登录，列表给提示角标降低「为何连不上」的困惑。 */
-export const tailscaleNeedsLogin = (s: ServerConfigWithId): boolean =>
-  s.protocol?.toLowerCase() === 'tailscale' && !s.tailscaleSettings?.authKey?.trim();
+/**
+ * Tailscale 节点是否「需登录」（Phase 1：真实登录态驱动，非静态 !authKey）。
+ * 真实登录态 = authKey || loggedIn（主进程 state 目录真值，经 store.tailscaleLoginStates 透传）。
+ * loggedIn 缺省 false（store 未刷新到该节点时按「需登录」保守显示，刷新后即收敛）。
+ * 这样交互登录成功（产出 state 会话、loggedIn=true）后角标会自动消失，修 P3「登录后不消」。
+ */
+export const tailscaleNeedsLogin = (s: ServerConfigWithId, loggedIn = false): boolean =>
+  s.protocol?.toLowerCase() === 'tailscale' && !(s.tailscaleSettings?.authKey?.trim() || loggedIn);
 
 /** 组网节点（WG/Tailscale）不承载全隧道（关外网 或 Phase2 system 内核接口）→ 列表角标提示「仅内网」，
  *  避免误以为它能作全局出口。system 节点恒 specific-only，故用 meshNodeCarriesFullTunnel 单一真值判定。 */

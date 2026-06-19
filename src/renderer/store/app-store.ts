@@ -78,6 +78,11 @@ interface AppState {
   // 仅会话内存，由 EVENT_PROXY_INVALID_NODES 事件覆盖（空数组=清空）。
   invalidNodes: Record<string, InvalidNodeInfo>;
 
+  // Tailscale 节点真实登录态（serverId → loggedIn = hasAuthKey || state 目录存在）。Phase 1：
+  // 「需登录」角标由此真实态驱动（替代静态 !authKey），故交互登录成功后角标会自动消失。
+  // 仅 Tailscale 节点入表；挂载 / 节点增删 / 登录成功事件时由 refreshTailscaleLoginStates 刷新。
+  tailscaleLoginStates: Record<string, boolean>;
+
   // Privacy Protection Mode
   isPrivacyMode: boolean;
 
@@ -113,6 +118,9 @@ interface AppState {
   // Status Actions
   refreshConnectionStatus: () => Promise<void>;
   refreshStatistics: () => Promise<void>;
+  // Tailscale 登录态：整体刷新（挂载/节点增删后）+ 单条覆盖（登录成功事件即时更新，免一次 IPC 往返）。
+  refreshTailscaleLoginStates: () => Promise<void>;
+  setTailscaleLoginState: (serverId: string, loggedIn: boolean) => void;
 
   // Server Management Actions
   deleteServer: (serverId: string) => Promise<void>;
@@ -143,6 +151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   ipInfo: null,
   latencyMap: {},
   invalidNodes: {},
+  tailscaleLoginStates: {},
   isPrivacyMode: false,
   helperStatus: null,
   availableAppUpdate: null,
@@ -369,12 +378,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // 整体刷新 Tailscale 登录态（主进程按 hasAuthKey || state 目录存在 判定，整表覆盖）。
+  refreshTailscaleLoginStates: async () => {
+    try {
+      const states = await api.server.getTailscaleLoginStates();
+      set({ tailscaleLoginStates: states });
+    } catch (error) {
+      console.error('Failed to refresh tailscale login states:', error);
+    }
+  },
+
+  // 单条覆盖（登录成功事件即时点亮，无需等整表 IPC；下次整体刷新会与磁盘真值对齐）。
+  setTailscaleLoginState: (serverId, loggedIn) =>
+    set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } })),
+
   // Server Management Actions
   deleteServer: async (serverId) => {
     try {
       await api.server.delete(serverId);
       // Reload config to get updated server list
       await get().loadConfig();
+      // 节点增删后登录态表可能含已删节点或缺新节点 → 刷新对齐。
+      await get().refreshTailscaleLoginStates();
     } catch (error) {
       console.error('[Store] Exception deleting server:', error);
       throw error; // 调用点 catch + toast

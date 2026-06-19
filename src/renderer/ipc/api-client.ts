@@ -138,6 +138,14 @@ export const proxyApi = {
   },
 
   /**
+   * 监听 Tailscale 交互登录成功（主进程轮询 state 目录检出，log-level 无关）。
+   * 渲染端据此 dismiss 那条 Infinity 登录 toast + 刷新登录态角标。
+   */
+  onTailscaleAuthOk(listener: (data: { serverId: string; nodeName: string }) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, listener);
+  },
+
+  /**
    * 监听 TUN 启动后的「无 marker 系统代理残留」提示（非 FlowZ 设的代理仍开着，可能干扰 TUN）。
    */
   onSystemProxyResidual(listener: (data: { proxy: string }) => void): () => void {
@@ -254,6 +262,14 @@ export const serverApi = {
    */
   async delete(serverId: string): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_DELETE, { serverId });
+  },
+
+  /**
+   * Tailscale 节点真实登录态（Phase 1）：serverId → loggedIn（hasAuthKey || state 目录存在）。
+   * 仅含 Tailscale 节点；渲染端据此驱动「需登录」角标，与日志等级无关。
+   */
+  async getTailscaleLoginStates(): Promise<Record<string, boolean>> {
+    return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_GET_LOGIN_STATES);
   },
 
   /**

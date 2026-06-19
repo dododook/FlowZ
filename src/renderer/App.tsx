@@ -25,6 +25,7 @@ function App() {
   const setSettingsSection = useAppStore((state) => state.setSettingsSection);
   const loadConfig = useAppStore((state) => state.loadConfig);
   const refreshConnectionStatus = useAppStore((state) => state.refreshConnectionStatus);
+  const refreshTailscaleLoginStates = useAppStore((state) => state.refreshTailscaleLoginStates);
   const setPrivacyMode = useAppStore((state) => state.setPrivacyMode);
 
   // 离开设置页重置子节的逻辑已下沉到 store.setCurrentView，此处直接用 setCurrentView
@@ -36,6 +37,8 @@ function App() {
   useEffect(() => {
     loadConfig();
     refreshConnectionStatus();
+    // Tailscale 真实登录态：挂载时刷新一次（驱动「需登录」角标，交互登录成功事件后再刷新对齐）。
+    refreshTailscaleLoginStates();
 
     // Sync initial language to main process for tray menu
     api.config.setLanguage(i18n.language).catch(console.error);
@@ -46,7 +49,7 @@ function App() {
     }, 2000);
 
     return () => clearInterval(statusInterval);
-  }, [loadConfig, refreshConnectionStatus]);
+  }, [loadConfig, refreshConnectionStatus, refreshTailscaleLoginStates]);
 
   // Listen to navigate events from main process (tray menu)
   useEffect(() => {

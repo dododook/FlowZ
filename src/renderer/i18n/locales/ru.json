@@ -918,6 +918,8 @@
     "tsLoginNeeded": "Узлу Tailscale «{{name}}» требуется вход",
     "tsLoginNeededDesc": "Завершите аутентификацию Tailscale в браузере, чтобы присоединиться (только в первый раз).",
     "tsOpenLogin": "Открыть страницу входа",
+    "tsLoginOk": "Узел Tailscale «{{name}}» вошёл в систему",
+    "tsLogLevelHint": "Текущий уровень логирования не позволяет получить ссылку для входа. Используйте кнопку «Вход» у узла или временно установите уровень логов info.",
     "alpn": "ALPN",
     "alpnDesc": "Application-Layer Protocol Negotiation, например h3",
     "naive": {

@@ -912,6 +912,8 @@
     "tsLoginNeeded": "Tailscale 節點「{{name}}」需要登入",
     "tsLoginNeededDesc": "在瀏覽器中完成 Tailscale 授權後即可入網（僅首次，之後免登入）。",
     "tsOpenLogin": "開啟登入頁",
+    "tsLoginOk": "Tailscale 節點「{{name}}」已登入",
+    "tsLogLevelHint": "目前日誌級別無法擷取登入連結，請用節點「登入」按鈕，或暫時把日誌級別調到 info。",
     "alpn": "ALPN",
     "alpnDesc": "應用層協定協商，例如 h3",
     "naive": {

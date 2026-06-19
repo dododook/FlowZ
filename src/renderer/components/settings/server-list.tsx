@@ -92,6 +92,8 @@ export function ServerList({
   const latencyMap = useAppStore((state) => state.latencyMap);
   // 启动前配置校验 gate 剔除的非法节点：列表标灰 + tooltip（不禁用点击，用户仍可选/编辑/删除）。
   const invalidNodes = useAppStore((state) => state.invalidNodes);
+  // Tailscale 节点真实登录态（serverId → loggedIn）：驱动「需登录」角标，交互登录成功后角标自动消失。
+  const tailscaleLoginStates = useAppStore((state) => state.tailscaleLoginStates);
   // shadow 角标的 engaged gate 输入（与 route-builder 同口径）：仅出网且未 engaged 节点不参与「首声明者占段」。
   const customRules = useAppStore((state) => state.config?.customRules);
   const appRules = useAppStore((state) => state.config?.appRules);
@@ -539,6 +541,7 @@ export function ServerList({
               isSelecting={isSelecting}
               selectedIds={selectedIds}
               invalidNodes={invalidNodes}
+              tailscaleLoginStates={tailscaleLoginStates}
               shadowedCidrs={shadowedCidrs}
               onSelectServer={onSelectServer}
               onToggleSelect={toggleSelect}
@@ -557,6 +560,7 @@ export function ServerList({
               isSelecting={isSelecting}
               selectedIds={selectedIds}
               invalidNodes={invalidNodes}
+              tailscaleLoginStates={tailscaleLoginStates}
               shadowedCidrs={shadowedCidrs}
               onSelectServer={onSelectServer}
               onToggleSelectId={toggleSelectId}
