@@ -23,7 +23,7 @@ export function LogsPage() {
             label={
               <span>
                 {t('logs.settingsTitle', '日志与诊断')}
-                <span className="ml-2 font-normal text-muted-foreground">
+                <span className="ms-2 font-normal text-muted-foreground">
                   · {t('logs.currentLevel', '级别')}: {level}
                 </span>
               </span>
