@@ -39,6 +39,7 @@ export function ExternalControlSection() {
       <SettingsRow
         label={t('settings.advanced.clashApiAddress')}
         description={t('settings.advanced.externalControlDesc')}
+        tooltip={t('settings.advanced.externalControlDescFull')}
         stacked
       >
         <div className="flex items-center gap-2">

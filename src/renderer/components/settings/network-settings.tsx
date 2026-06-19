@@ -335,6 +335,7 @@ export function NetworkSettings() {
             <SettingsRow
               label={t('settings.advanced.nodeDomainResolver')}
               description={t('settings.advanced.nodeDomainResolverDesc')}
+              tooltip={t('settings.advanced.nodeDomainResolverDescFull')}
             >
               <Select
                 value={config.dnsConfig?.nodeDomainResolver ?? 'auto'}
@@ -500,6 +501,7 @@ export function NetworkSettings() {
               <SettingsRow
                 label={t('settings.network.webrtcLeakProtection')}
                 description={t('settings.network.webrtcLeakProtectionDesc')}
+                tooltip={t('settings.network.webrtcLeakProtectionDescFull')}
               >
                 <Select
                   value={config.webrtcLeakProtection ?? 'off'}
@@ -539,6 +541,7 @@ export function NetworkSettings() {
             <SettingsRow
               label={t('settings.advanced.tlsFragment')}
               description={t('settings.advanced.tlsFragmentDesc')}
+              tooltip={t('settings.advanced.tlsFragmentDescFull')}
             >
               <Switch
                 checked={config.tlsFragment === true}
@@ -642,6 +645,7 @@ export function NetworkSettings() {
           <SettingsRow
             label={t('settings.network.speedTestUrl')}
             description={t('settings.network.speedTestUrlDesc')}
+            tooltip={t('settings.network.speedTestUrlDescFull')}
             stacked
           >
             <Input
