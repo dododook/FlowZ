@@ -20,7 +20,8 @@ import {
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
 } from '../../shared/endpoint-routes';
-import { cidrOverlapsAny } from '../../shared/ip';
+import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
+import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
 import { ruleIpCidrs } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
 import { getRuleResourcesPath } from '../utils/paths';
@@ -553,7 +554,21 @@ export function buildRouteConfig(
   if (config.bypassLAN !== false) {
     // 与 mesh force-route 块一致：空数组不发射规则（用户把 bypassLANList 编辑成只剩域名时 cidrs 为空，
     // 避免 `ip_cidr:[]` 空规则；域名直连仍由下方 geosite-private 兜底）。
-    const bypassCidrs = bypassLanCidrs(effectiveBypassLan(config));
+    // FakeIP 护栏：剔除与 fakeip 假 IP 段相交的旁路条目，否则假 IP 被当私网直连→绕过 fakeip 反查→服务端收不到域名
+    // （IPv6 撞墙根因：fc00::/18 曾被 fc00::/7 吃掉；v4 段 198.18/15 在私网外天然不撞，护栏防用户自定义清单/未来改动再撞）。
+    const fakeipRanges = usesFakeIp(config)
+      ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]
+      : [];
+    const { overlapping, disjoint: bypassCidrs } = partitionCidrsByOverlap(
+      bypassLanCidrs(effectiveBypassLan(config)),
+      fakeipRanges
+    );
+    if (overlapping.length > 0) {
+      deps.log(
+        'warn',
+        `旁路局域网清单含与 FakeIP 段(${fakeipRanges.join(', ')})相交的条目，已剔除以免假 IP 被当私网直连：${overlapping.join(', ')}`
+      );
+    }
     if (bypassCidrs.length > 0) {
       rules.push({ ip_cidr: bypassCidrs, action: 'route', outbound: 'direct' });
     }

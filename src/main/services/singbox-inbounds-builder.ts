@@ -17,6 +17,9 @@ import {
   getCustomDomesticDnsEndpoint,
 } from './singbox-config-helpers';
 import { bypassLanCidrs, effectiveBypassLan } from '../../shared/system-proxy-bypass';
+import { partitionCidrsByOverlap } from '../../shared/ip';
+import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
+import { usesFakeIp } from './custom-rule-files';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
 export interface InboundsDeps {
@@ -92,9 +95,13 @@ export function buildInbounds(
     // 恢复 3.3.18 能完美工作的排除列表。
     // 注意：macOS 下绝对不能在底层排除物理局域网段，否则 macOS NetworkExtension 的路由逆向拦截机制会导致从 TUN (172.19.0.1) 发回 192.168.x.x 的 TCP 回执包被当作非法源 IP 丢弃，导致网页无限 HANG。
     // 但是在 Windows 下，Wintun 如果不排除局域网物理网关，发往本地路由器的 DHCP/网关查询会被死循环拦截，导致全局断网。
+    // FakeIP 护栏：Win TUN 排除清单同样剔除与 fakeip 段相交的条目，否则假 IP 被排除出 TUN→sing-box 收不到→断（同 route 侧）。
+    const winFakeipRanges = usesFakeIp(config)
+      ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]
+      : [];
     const excludeAddr =
       process.platform === 'win32' && shouldBypassLAN
-        ? bypassLanCidrs(effectiveBypassLan(config))
+        ? partitionCidrsByOverlap(bypassLanCidrs(effectiveBypassLan(config)), winFakeipRanges).disjoint
         : ['127.0.0.0/8', '::1/128'];
     // 【已知限制 / Windows 真机待验】Windows+bypassLAN 下这里用宽私网段(10/8、192.168/16 等)整体排除出 TUN，
     // 会顺带把落在私网段内的 endpoint(WG/Tailscale) force-route 段(如 mesh 192.168.50.0/24)也排除 → 该段到不了
