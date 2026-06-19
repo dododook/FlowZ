@@ -60,6 +60,11 @@ const APP_GEOSITE_TAGS = [
 ];
 const APP_GEOIP_TAGS = ['netflix', 'telegram', 'twitter', 'private'];
 
+// 地区分流场景（4.1.0）：伊朗/俄罗斯本地 geo —— 随包 bundle（resources/data），本地优先、离线可用。
+// CN 用上方三件套（geosite-cn / geosite-geolocation-!cn / geoip-cn），故此处只补 ir/ru。
+const REGION_GEOSITE_TAGS = ['category-ir', 'category-ru'];
+const REGION_GEOIP_TAGS = ['ir', 'ru'];
+
 const MRD_GEO_RAW = 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo';
 const appGeoEntry = (cat: 'geosite' | 'geoip', tag: string): BuiltinGeoRuleSet => {
   // category-ai 在 MetaCubeX 用 category-ai-!cn（裸 category-ai 不单独成 .srs）；tag 仍为 geosite-category-ai（与 app-rule 生成对齐）。
@@ -100,6 +105,9 @@ export const BUILTIN_GEO_RULESETS: BuiltinGeoRuleSet[] = [
   // 内置应用分流预设的 geo（随包，本地优先）
   ...APP_GEOSITE_TAGS.map((t) => appGeoEntry('geosite', t)),
   ...APP_GEOIP_TAGS.map((t) => appGeoEntry('geoip', t)),
+  // 地区分流场景的 geo（伊朗/俄罗斯，随包本地优先；CN 已在上方三件套）
+  ...REGION_GEOSITE_TAGS.map((t) => appGeoEntry('geosite', t)),
+  ...REGION_GEOIP_TAGS.map((t) => appGeoEntry('geoip', t)),
 ];
 
 /** 本地 geo 规则集运行时目录（内置 .srs 拷贝落地处）。copy 与 route 生成共用，单一真值。 */
