@@ -139,6 +139,32 @@ describe('WarpDeregisterQueue.drain', () => {
     await p1;
     expect(store).toEqual([]); // 第一次正常完成出队
   });
+
+  it('lost-update 回归：drain 网络往返期间 enqueue 新条目，写回不抹掉新条目（重读-剔除-合并）', async () => {
+    // 修复前：drain 读旧快照 [a] → await unregister 期间 enqueue(b) → drain 用旧 keep 覆盖 → b 丢失（永久孤儿）。
+    // 修复后：drain 写回前重读最新磁盘队列，仅剔除本次处理掉的 deviceId（a），保留 enqueue 新增的 b。
+    let resolveUnreg: (r: DeregisterResult) => void = () => {};
+    let store = [mk('a')];
+    const q = new WarpDeregisterQueue({
+      unregister: () =>
+        new Promise<DeregisterResult>((res) => {
+          resolveUnreg = res;
+        }),
+      now: () => NOW,
+      readQueue: async () => [...store],
+      writeQueue: async (next) => {
+        store = [...next];
+      },
+    });
+    const p1 = q.drain(); // 读快照 [a]，卡在 unregister('a')
+    await Promise.resolve(); // 让 drain 推进到 await unregister
+    await q.enqueue(mk('b')); // 网络往返期间删新节点入队 → store=[a,b]
+    expect(store.map((e) => e.deviceId)).toEqual(['a', 'b']);
+    resolveUnreg('done'); // a 注销成功
+    await p1;
+    // a 出队（done），b 保留（未被旧快照覆盖）。这是核心断言：新凭据没丢。
+    expect(store.map((e) => e.deviceId)).toEqual(['b']);
+  });
 });
 
 describe('WarpDeregisterQueue.enqueue', () => {

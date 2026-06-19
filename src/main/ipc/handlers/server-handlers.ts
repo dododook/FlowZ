@@ -11,7 +11,7 @@ import { registerIpcHandler } from '../ipc-handler';
 import { ProtocolParser } from '../../services/ProtocolParser';
 import { ConfigManager } from '../../services/ConfigManager';
 import { WarpService, type WarpWireGuardDraft } from '../../services/WarpService';
-import { WarpDeregisterQueue } from '../../services/WarpDeregisterQueue';
+import { getWarpDeregisterQueue } from '../../services/WarpDeregisterQueue';
 import { tailscaleStateDir, tailscaleStateExists } from '../../services/tailscale-state';
 import type { LogManager } from '../../services/LogManager';
 
@@ -25,11 +25,8 @@ export function registerServerHandlers(
   logManager?: LogManager
 ): void {
   // WARP 待注销队列（删除带 warpDevice 凭据的节点 → 入队；成功注册后机会式 drain）。
-  // unregister 注入 WarpService，文件 IO 默认 <userData>/warp/pending-deregister.json；无常驻定时器。
-  const warpDeregisterQueue = new WarpDeregisterQueue({
-    unregister: (deviceId, token) => new WarpService(logManager).unregister(deviceId, token),
-    logManager,
-  });
+  // 进程内单例：与 startup-tasks 启动 drain 共用同一实例，使串行链（opChain）覆盖全部触发点、杜绝跨实例并发写。
+  const warpDeregisterQueue = getWarpDeregisterQueue(logManager);
   // 解析协议 URL
   registerIpcHandler<{ url: string }, ServerConfig>(
     IPC_CHANNELS.SERVER_PARSE_URL,

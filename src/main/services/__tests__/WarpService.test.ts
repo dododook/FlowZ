@@ -120,6 +120,18 @@ describe('WarpService.unregister', () => {
     await expect(new WarpService().unregister('d', 't')).resolves.toBe('drop');
   });
 
+  it('403 + body code 1020（WAF/版本串失效）→ retry（集成回归：body 须传入分类，否则误判 drop）', async () => {
+    // 真实场景：CF 版本串过期时注销返 403 携带 body {"code":1020}。若 unregister 丢弃 body 只传 status，
+    // 会命中 403→drop 永久误放弃所有设备注销。修复后 requestStatus 保留截断 body 喂 classifyDeregisterResult → retry。
+    installHttps([{ statusCode: 403, body: '{"success":false,"errors":[{"code":1020}]}' }]);
+    expect(await new WarpService().unregister('d', 't')).toBe('retry');
+  });
+
+  it('403 无 1020 body（纯 token 死）→ drop（与上条区分：仅 1020 才豁免 drop）', async () => {
+    installHttps([{ statusCode: 403, body: '{"errors":[{"code":1012}]}' }]);
+    expect(await new WarpService().unregister('d', 't')).toBe('drop');
+  });
+
   it('500 → retry', async () => {
     installHttps([{ statusCode: 500 }]);
     expect(await new WarpService().unregister('d', 't')).toBe('retry');

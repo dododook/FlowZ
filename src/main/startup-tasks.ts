@@ -12,8 +12,7 @@ import type { ConfigManager } from './services/ConfigManager';
 import type { ProxyManager } from './services/ProxyManager';
 import type { UpdateService } from './services/UpdateService';
 import type { CoreUpdateService } from './services/CoreUpdateService';
-import { WarpService } from './services/WarpService';
-import { WarpDeregisterQueue } from './services/WarpDeregisterQueue';
+import { getWarpDeregisterQueue } from './services/WarpDeregisterQueue';
 
 /** 注入依赖：服务单例 + proxyManager getter（call-time 取值）+ 托盘状态刷新。 */
 export interface StartupTaskDeps {
@@ -113,11 +112,8 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
 
   // 启动后机会式 drain WARP 待注销队列（延迟 8 秒，让网络/服务先就绪；fire-and-forget 不阻塞、绝不抛）。
   // 与「成功注册 WARP 后」并为两个触发点；无常驻定时器——不重开 app 者既不 drain 也不产生新孤儿（副作用自洽）。
+  // 复用进程内单例（与 server-handlers 同实例）：串行链覆盖启动 drain 与删除入队，杜绝跨实例并发写同一队列文件。
   setTimeout(() => {
-    const queue = new WarpDeregisterQueue({
-      unregister: (deviceId, token) => new WarpService(logManager).unregister(deviceId, token),
-      logManager,
-    });
-    queue.drainInBackground();
+    getWarpDeregisterQueue(logManager).drainInBackground();
   }, 8000);
 }

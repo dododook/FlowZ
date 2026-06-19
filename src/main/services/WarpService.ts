@@ -170,8 +170,11 @@ export class WarpService {
     const { url, headers } = buildUnregisterRequest(WARP_API_VERSION, deviceId, token);
     const idPrefix = deviceId.slice(0, 8);
     try {
-      const status = await this.requestStatus('DELETE', url, headers);
-      const result = classifyDeregisterResult(status, undefined);
+      const { status, body } = await this.requestStatus('DELETE', url, headers);
+      // 关键：把响应体一并传给分类——Cloudflare WAF 1020（版本串失效）常以 **403 携带 body code 1020** 返回，
+      // 须优先于 401/403 的 drop 判定走 retry。若只传 status，403+1020 会被误当「token 死」放弃 → 版本过期时
+      // 全部设备注销被永久误放弃。body 作 err 文本喂 classifyDeregisterResult，使 1020 检测在注销路径真正生效。
+      const result = classifyDeregisterResult(status, body || undefined);
       this.log('info', `WARP 设备注销 ${idPrefix}… → HTTP ${status}（${result}）`);
       return result;
     } catch (e: any) {
@@ -183,14 +186,15 @@ export class WarpService {
   }
 
   /**
-   * 同 request 的 TLS1.2-only + HTTP/1.1，但**返回 HTTP 状态码而非按 2xx 抛错**（注销需据 4xx/5xx 分类，
-   * 不能像 register 那样非 2xx 即抛丢失状态）。响应体被读尽丢弃（注销只关心状态码）。仅网络层错误才 reject。
+   * 同 request 的 TLS1.2-only + HTTP/1.1，但**返回 HTTP 状态码 + 截断响应体**（注销需据 4xx/5xx 分类，不能像
+   * register 那样非 2xx 即抛丢失状态）。保留响应体前段（≤512B）供调用方判 body-code-1020（WAF/版本失效）——
+   * 若丢弃 body，403+1020 与「token 死的 403」无法区分。仅网络层错误才 reject。
    */
   private requestStatus(
     method: string,
     url: string,
     headers: Record<string, string>
-  ): Promise<number> {
+  ): Promise<{ status: number; body: string }> {
     return new Promise((resolve, reject) => {
       const u = new URL(url);
       const req = https.request(
@@ -208,12 +212,16 @@ export class WarpService {
           res.setEncoding('utf8');
           // 响应流错误（对端收 header 后 RST/提前关闭）发在 res 上而非 req → 必须显式 reject，否则永挂。
           res.on('error', (e) => reject(e instanceof Error ? e : new Error(String(e))));
-          let len = 0;
+          let body = '';
+          let total = 0; // 累计字节（独立于 body——body 前 512B 后早停拼接，不能复用其长度判超大）。
           res.on('data', (c) => {
-            len += c.length;
-            if (len > 1_000_000) req.destroy(new Error('WARP 响应过大'));
+            total += c.length;
+            // 只保留前 512 字节（足够含 CF body code 如 1020），但与 request 一致对超大响应主动 destroy，
+            // 防异常/恶意对端持续涌数据（timeout 是空闲超时、连续数据不触发）。
+            if (body.length < 512) body += c;
+            if (total > 1_000_000) req.destroy(new Error('WARP 响应过大'));
           });
-          res.on('end', () => resolve(res.statusCode || 0));
+          res.on('end', () => resolve({ status: res.statusCode || 0, body: body.slice(0, 512) }));
         }
       );
       req.on('error', reject);
