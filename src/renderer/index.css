@@ -62,7 +62,7 @@
     --muted-foreground: 214 12% 60%;
     --accent: 214 16% 17%;
     --accent-foreground: 184 78% 58%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 62.8% 48%;
     --destructive-foreground: 0 0% 98%;
     /* 语义色（暗）：饱和度降、亮度提，与暗 destructive 同梯度 */
     --success: 158 70% 54%;
