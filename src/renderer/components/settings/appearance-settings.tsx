@@ -1,11 +1,27 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { SegmentedControl } from '@/components/ui/segmented-control';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useTheme } from '@/components/theme-provider';
 import { toast } from 'sonner';
 import i18n from '@/i18n';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/ipc';
 import { SettingsRow } from './settings-row';
+
+// 语言列表：每项以「母语自名」展示，便于使用者识别（不随界面语言翻译）。
+// 新增语言时在此追加一项，并在 src/renderer/i18n/index.ts 注册对应 resources。
+const LANGUAGE_OPTIONS = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
+  { value: 'en-US', label: 'English' },
+  { value: 'ru', label: 'Русский' },
+];
 
 export function AppearanceSettings() {
   const { t } = useTranslation();
@@ -39,15 +55,19 @@ export function AppearanceSettings() {
           />
         </SettingsRow>
         <SettingsRow label={t('settings.appearance.language')} stacked>
-          <SegmentedControl
-            className="max-w-xs"
-            value={i18n.language}
-            onChange={handleLanguageChange}
-            options={[
-              { value: 'zh-CN', label: '简体中文' },
-              { value: 'en-US', label: 'English' },
-            ]}
-          />
+          <Select value={i18n.language} onValueChange={handleLanguageChange}>
+            <SelectTrigger className="max-w-xs">
+              <SelectValue />
+            </SelectTrigger>
+            {/* 固定 max-h-96：避免 radix popper 按可用高度算 max-h 造成顶部项命中死区 */}
+            <SelectContent className="max-h-96">
+              {LANGUAGE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingsRow>
       </CardContent>
     </Card>
