@@ -216,7 +216,12 @@ describe('buildOutbounds — endpoint + 门控', () => {
         reverseMesh: true,
       },
     } as unknown as ServerConfig;
-    const r = buildOutbounds(wgSys, cfg([wgSys]), idMap([wgSys]), deps());
+    const r = buildOutbounds(
+      wgSys,
+      cfg([wgSys]),
+      idMap([wgSys]),
+      deps({ systemInterfaceAvailable: true })
+    );
     const ep = r.pendingEndpoints.find((e) => e.tag === 'WG-sys')!;
     expect(ep.system).toBe(true);
     expect(ep.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
@@ -238,7 +243,7 @@ describe('buildOutbounds — endpoint + 门控', () => {
       tsSys,
       cfg([tsSys], { selectedServerId: 't1' }),
       idMap([tsSys]),
-      deps()
+      deps({ systemInterfaceAvailable: true })
     );
     const ep = r.pendingEndpoints.find((e) => e.tag === 'TS-sys')!;
     expect(ep.type).toBe('tailscale');
@@ -262,6 +267,27 @@ describe('buildOutbounds — endpoint + 门控', () => {
     const ep = r.pendingEndpoints.find((e) => e.tag === 'TS')!;
     expect(ep.system_interface).toBeUndefined();
     expect(ep.exit_node).toBe('exit-node-1');
+  });
+
+  it('Phase2 B 门控：reverseMesh 节点 + 非提权(systemInterfaceAvailable 缺省 false) → 跳过不发射', () => {
+    const wgSys = {
+      id: 'w1',
+      name: 'WG-sys',
+      protocol: 'wireguard',
+      address: 'wg.example.com',
+      port: 51820,
+      wireguardSettings: {
+        privateKey: 'pk',
+        peerPublicKey: 'pub',
+        localAddress: ['10.0.0.2/32'],
+        allowedIPs: ['10.8.0.0/24'],
+        reverseMesh: true,
+      },
+    } as unknown as ServerConfig;
+    const node = vless('s1', '香港'); // 备一可用节点，避免「全部不可用」抛错
+    const r = buildOutbounds(node, cfg([node, wgSys]), idMap([node, wgSys]), deps());
+    expect(r.pendingEndpoints.map((e) => e.tag)).not.toContain('WG-sys');
+    expect(r.outbounds.find((o) => o.tag === 'proxy-selector')!.outbounds).not.toContain('WG-sys');
   });
 
   it('gateInvalidNodes 命中 → 跳过该节点出站', () => {

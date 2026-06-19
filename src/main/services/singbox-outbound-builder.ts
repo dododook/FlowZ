@@ -513,6 +513,9 @@ export interface OutboundsDeps {
   // #57 resolve-ahead：域名→IP 预解析表（this.lastResolvedHosts），透传 buildProxyOutbound 写 outbound.server。
   // 缺省 undefined（preflight/speedtest/snapshot/未启动路径）= 现状（域名）。
   resolvedHosts?: ReadonlyMap<string, string>;
+  // Phase 2：本次启动 sing-box 是否会以提权运行（内核接口可创建）= TUN 模式 + helper。缺省 undefined/false
+  // （preflight/speedtest/snapshot/系统代理路径）→ reverseMesh 节点不发射（system:true 需提权，否则启动 FATAL）。
+  systemInterfaceAvailable?: boolean;
 }
 
 /** Tailscale state 目录：`<userData>/tailscale/<serverId>`，跨重启免重认证、删节点时清理。 */
@@ -665,6 +668,16 @@ export function buildOutbounds(
       // 启动前配置校验 gate 已标记为非法的节点：跳过、不进 outbounds/selector（防 onRetry 重生成复活）。
       // 路由层对其 tag 的死引用由 generateSingBoxConfig 末尾 fixRouteDeadReferences 统一修正为 selector。
       if (deps.gateInvalidNodes.has(server.id)) {
+        continue;
+      }
+      // Phase 2：reverseMesh(system:true 内核接口)需提权——仅 TUN 模式 + helper 下可行。非提权路径（系统代理 /
+      // preflight / 测速）跳过不发射（同 isMeshNodeUnroutable 跳过路径），避免 sing-box 创建内核接口失败致启动 FATAL；
+      // 选中它时其死引用由 fixRouteDeadReferences 兜底改写 selector。各平台 system 行为真机另验（设计 §11.7）。
+      if (meshUsesSystemInterface(server) && !deps.systemInterfaceAvailable) {
+        deps.log(
+          'warn',
+          `跳过组网节点「${server.name}」：反向 mesh(system 内核接口)需 TUN 模式 + 提权 helper，当前模式不支持`
+        );
         continue;
       }
       // WireGuard：endpoint（非 outbound）。建进 pendingEndpoints，tag 仍入 nodeTags 参与选择器/路由。
