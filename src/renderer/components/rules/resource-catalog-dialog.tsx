@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { SegmentedControl } from '@/components/ui/segmented-control';
+import { HighlightText } from '@/components/ui/highlight-text';
 import {
   CheckCircle2,
   CircleAlert,
@@ -195,8 +196,12 @@ export function ResourceCatalogDialog({
   const renderItem = (d: DisplayItem) => {
     const meta = (
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{d.name}</div>
-        <div className="truncate font-mono text-xs text-muted-foreground">{d.path}</div>
+        <div className="truncate text-sm font-medium">
+          <HighlightText text={d.name} query={search} />
+        </div>
+        <div className="truncate font-mono text-xs text-muted-foreground">
+          <HighlightText text={d.path} query={search} />
+        </div>
       </div>
     );
     const badges = (
