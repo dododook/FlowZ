@@ -194,17 +194,17 @@ export function ProxyControlCard() {
           >
             {proxyPhase !== 'idle' ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 {proxyPhase === 'stopping' ? t('home.disconnecting') : t('home.connecting')}
               </>
             ) : isConnected ? (
               <>
-                <Square className="mr-2 h-4 w-4" />
+                <Square className="me-2 h-4 w-4" />
                 {t('home.stopProxy')}
               </>
             ) : (
               <>
-                <Play className="mr-2 h-4 w-4" />
+                <Play className="me-2 h-4 w-4" />
                 {t('home.startProxy')}
               </>
             )}

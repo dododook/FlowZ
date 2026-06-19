@@ -58,7 +58,7 @@ export function ServerCard({
     >
       {countryCode && (
         <div
-          className="absolute -right-4 -bottom-4 z-0 h-28 w-28 opacity-[0.08] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.15]"
+          className="absolute -end-4 -bottom-4 z-0 h-28 w-28 opacity-[0.08] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.15]"
           style={{
             backgroundImage: `url('https://flagcdn.com/w160/${countryCode}.png')`,
             backgroundSize: 'cover',
@@ -72,11 +72,11 @@ export function ServerCard({
       )}
       {/* 批量选择 checkbox */}
       {isSelecting && (
-        <div className="absolute top-2 left-2 z-10 pointer-events-none">
+        <div className="absolute top-2 start-2 z-10 pointer-events-none">
           <Checkbox checked={selectedIds.has(server.id)} />
         </div>
       )}
-      <CardHeader className={`pb-2 ${isSelecting ? 'pl-8' : ''}`}>
+      <CardHeader className={`pb-2 ${isSelecting ? 'ps-8' : ''}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <CardTitle

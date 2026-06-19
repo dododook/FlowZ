@@ -49,7 +49,7 @@ export function EchField({ control, t }: { control: AnyControl; t: TFn }) {
         control={control}
         name="ech"
         render={({ field }) => (
-          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+          <FormItem className="flex flex-row items-start space-x-3 rtl:space-x-reverse space-y-0">
             <FormControl>
               <Checkbox checked={field.value === true} onCheckedChange={field.onChange} />
             </FormControl>
@@ -114,7 +114,7 @@ export function MultiplexFields({
         control={control}
         name="muxEnabled"
         render={({ field }) => (
-          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+          <FormItem className="flex flex-row items-start space-x-3 rtl:space-x-reverse space-y-0">
             <FormControl>
               <Checkbox
                 checked={field.value === true && !disabled}
@@ -135,7 +135,7 @@ export function MultiplexFields({
       />
 
       {enabled && !disabled && (
-        <div className="space-y-3 pl-6">
+        <div className="space-y-3 ps-6">
           <FormField
             control={control}
             name="muxProtocol"
@@ -208,7 +208,7 @@ export function MultiplexFields({
             control={control}
             name="muxPadding"
             render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+              <FormItem className="flex flex-row items-start space-x-3 rtl:space-x-reverse space-y-0">
                 <FormControl>
                   <Checkbox checked={field.value === true} onCheckedChange={field.onChange} />
                 </FormControl>

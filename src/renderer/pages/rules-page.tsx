@@ -265,7 +265,7 @@ export function RulesPage() {
           )}
         </div>
         <Button onClick={() => setIsAddDialogOpen(true)} disabled={isOrderEditing}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="me-2 h-4 w-4" />
           {t('rules.addRule')}
         </Button>
       </div>
@@ -291,11 +291,11 @@ export function RulesPage() {
                     onClick={cancelOrderEdit}
                     disabled={savingOrder}
                   >
-                    <X className="mr-1 h-4 w-4" />
+                    <X className="me-1 h-4 w-4" />
                     {t('common.cancel')}
                   </Button>
                   <Button size="sm" onClick={saveOrderEdit} disabled={savingOrder}>
-                    <Check className="mr-1 h-4 w-4" />
+                    <Check className="me-1 h-4 w-4" />
                     {t('rules.saveOrder', '保存顺序')}
                   </Button>
                 </div>
@@ -312,7 +312,7 @@ export function RulesPage() {
                       : undefined
                   }
                 >
-                  <ListOrdered className="mr-1 h-4 w-4" />
+                  <ListOrdered className="me-1 h-4 w-4" />
                   {t('rules.editOrder', '编辑顺序')}
                 </Button>
               ))}
@@ -320,12 +320,12 @@ export function RulesPage() {
           {/* 搜索框：>阈值 或 已有查询（删到 ≤阈值时仍显示，否则隐形过滤无法清除）；非排序编辑态 */}
           {(customRules.length > SEARCH_THRESHOLD || search.trim() !== '') && !isOrderEditing && (
             <div className="relative mt-3">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('rules.searchPlaceholder', '搜索规则（备注 / 值 / 类型 / 策略）')}
-                className="pl-8"
+                className="ps-8"
               />
             </div>
           )}
@@ -335,7 +335,7 @@ export function RulesPage() {
             <div className="text-center py-12">
               <p className="text-muted-foreground mb-4">{t('rules.noRules')}</p>
               <Button variant="outline" onClick={() => setIsAddDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="me-2 h-4 w-4" />
                 {t('rules.addFirstRule')}
               </Button>
             </div>
@@ -360,7 +360,7 @@ export function RulesPage() {
                       {t('rules.typeColumn', '类型')}
                     </TableHead>
                     <TableHead className="w-[120px]">{t('rules.policy')}</TableHead>
-                    <TableHead className="w-[100px] text-right">{t('common.actions')}</TableHead>
+                    <TableHead className="w-[100px] text-end">{t('common.actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

@@ -160,7 +160,7 @@ export function BackupRestoreSection() {
         </Button>
 
         {lastExportTime && (
-          <span className="text-xs text-muted-foreground ml-1 flex items-center gap-1">
+          <span className="text-xs text-muted-foreground ms-1 flex items-center gap-1">
             <CheckCircle2 className="h-3 w-3 text-success" />
             {t('settings.advanced.backup.lastExport')}：{lastExportTime}
           </span>

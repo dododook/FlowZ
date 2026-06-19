@@ -209,7 +209,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                 control={form.control}
                 name="obfsEnabled"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormItem className="flex flex-row items-start space-x-3 rtl:space-x-reverse space-y-0">
                     <FormControl>
                       <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>

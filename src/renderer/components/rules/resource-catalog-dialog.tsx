@@ -265,7 +265,7 @@ export function ResourceCatalogDialog({
             <DialogTitle>{t('ruleResources.library', '资源库')}</DialogTitle>
             {/* 刷新仅外置 TAB 需要（内置=随包，无远程清单可刷）。带文字 outline 按钮，比纯图标更可发现。 */}
             {tab === 'external' && (
-              <div className="flex items-center gap-2 pr-6">
+              <div className="flex items-center gap-2 pe-6">
                 {catalog?.fetchedAt && (
                   <span className="text-xs text-muted-foreground">
                     {t('ruleResources.catalogUpdatedAt', '更新于')}{' '}
@@ -273,7 +273,7 @@ export function ResourceCatalogDialog({
                   </span>
                 )}
                 <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing}>
-                  <RotateCw className={`mr-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  <RotateCw className={`me-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                   {t('ruleResources.refreshCatalogBtn', '刷新清单')}
                 </Button>
               </div>
@@ -302,12 +302,12 @@ export function ResourceCatalogDialog({
           />
 
           <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute start-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('ruleResources.searchCatalog', '搜索规则集')}
-              className="pl-8"
+              className="ps-8"
             />
           </div>
 
@@ -345,7 +345,7 @@ export function ResourceCatalogDialog({
           <ScrollArea className="h-80 rounded-md border">
             {loading ? (
               <div className="flex h-80 items-center justify-center text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 {t('common.loading', '加载中...')}
               </div>
             ) : filtered.items.length === 0 ? (

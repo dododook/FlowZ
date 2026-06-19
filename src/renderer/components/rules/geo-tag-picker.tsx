@@ -60,7 +60,7 @@ export function GeoTagPicker({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((tag) => (
-            <Badge key={tag} variant="secondary" className="gap-1 pr-1 font-normal">
+            <Badge key={tag} variant="secondary" className="gap-1 pe-1 font-normal">
               {tag}
               <button
                 type="button"
@@ -77,12 +77,12 @@ export function GeoTagPicker({
 
       {/* 搜索 */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          className="h-9 border-none bg-background/60 pl-8 text-sm focus-visible:ring-1"
+          className="h-9 border-none bg-background/60 ps-8 text-sm focus-visible:ring-1"
         />
       </div>
 
@@ -99,7 +99,7 @@ export function GeoTagPicker({
                 key={o}
                 type="button"
                 onClick={() => add(o)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted/60"
+                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-start text-xs hover:bg-muted/60"
               >
                 <span className="truncate">{o}</span>
                 <span className="shrink-0 text-[10px] text-muted-foreground">
@@ -134,7 +134,7 @@ export function GeoTagPicker({
           disabled={refreshing}
           className="h-auto p-0 text-[10px] text-muted-foreground"
         >
-          <RotateCw className={`mr-1 h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+          <RotateCw className={`me-1 h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
           {refreshing
             ? t('rules.customApp.geoRefreshing', '加载中…')
             : t('rules.customApp.geoLoadFull', '加载完整分类清单')}

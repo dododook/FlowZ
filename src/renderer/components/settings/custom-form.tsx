@@ -190,7 +190,7 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
 
       <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
         <div className="flex items-center justify-between rounded-md border p-3">
-          <div className="space-y-0.5 pr-3">
+          <div className="space-y-0.5 pe-3">
             <p className="text-sm font-medium">{t('servers.customIsEndpoint', 'Endpoint type')}</p>
             <p className="text-xs text-muted-foreground">
               {t(
@@ -221,7 +221,7 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
 
       <div className="flex gap-4">
         <Button type="button" onClick={handleSubmit} disabled={submitting || !!jsonError}>
-          {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
           {t('common.save')}
         </Button>
       </div>

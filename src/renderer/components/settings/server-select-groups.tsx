@@ -111,7 +111,7 @@ export function ServerSelectGroups({
               <span className="truncate" title={label}>
                 {label}
               </span>
-              <span className="ml-auto shrink-0 text-[10px] opacity-60">{g.servers.length}</span>
+              <span className="ms-auto shrink-0 text-[10px] opacity-60">{g.servers.length}</span>
             </div>
             {open &&
               g.servers.map((s) => (

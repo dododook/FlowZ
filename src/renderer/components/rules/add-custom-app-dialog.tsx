@@ -200,7 +200,7 @@ export function AddCustomAppDialog({
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">{t('rules.customApp.iconLabel')}</Label>
+                <Label className="text-end">{t('rules.customApp.iconLabel')}</Label>
                 <div className="col-span-3">
                   <Button
                     variant="outline"
@@ -231,7 +231,7 @@ export function AddCustomAppDialog({
                 </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
+                <Label htmlFor="name" className="text-end">
                   {t('rules.customApp.nameLabel')}
                 </Label>
                 <Input
@@ -243,7 +243,7 @@ export function AddCustomAppDialog({
                 />
               </div>
               <div className="grid grid-cols-4 items-start gap-4">
-                <Label className="pt-3 text-right">Geosite</Label>
+                <Label className="pt-3 text-end">Geosite</Label>
                 <div className="col-span-3">
                   <GeoTagPicker
                     options={geositeOptions}
@@ -258,7 +258,7 @@ export function AddCustomAppDialog({
                 </div>
               </div>
               <div className="grid grid-cols-4 items-start gap-4">
-                <Label className="pt-3 text-right">GeoIP</Label>
+                <Label className="pt-3 text-end">GeoIP</Label>
                 <div className="col-span-3">
                   <GeoTagPicker
                     options={geoipOptions}

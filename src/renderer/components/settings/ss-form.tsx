@@ -268,7 +268,7 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
               control={form.control}
               name="enableShadowTls"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                <FormItem className="flex flex-row items-center space-x-3 rtl:space-x-reverse space-y-0">
                   <FormControl>
                     <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>

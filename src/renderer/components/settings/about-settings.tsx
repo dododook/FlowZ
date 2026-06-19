@@ -252,7 +252,7 @@ export function AboutSettings() {
                   disabled={checkingUpdate}
                   className="w-full sm:w-auto"
                 >
-                  {checkingUpdate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {checkingUpdate && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                   {checkingUpdate ? t('settings.about.checking') : t('settings.about.checkUpdate')}
                 </Button>
               )}
@@ -266,15 +266,15 @@ export function AboutSettings() {
               </h4>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button variant="outline" onClick={handleReportIssue} className="w-full sm:w-auto">
-                  <Bug className="mr-2 h-4 w-4 shrink-0" />
-                  <span className="flex-1 text-left">
+                  <Bug className="me-2 h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-start">
                     {t('settings.about.reportIssue', '报告问题')}
                   </span>
-                  <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-50 shrink-0" />
+                  <ExternalLink className="ms-2 h-3.5 w-3.5 opacity-50 shrink-0" />
                 </Button>
                 <Button variant="outline" onClick={handleOpenGitHub} className="w-full sm:w-auto">
                   <svg
-                    className="mr-2 h-4 w-4 shrink-0"
+                    className="me-2 h-4 w-4 shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
@@ -284,8 +284,8 @@ export function AboutSettings() {
                       fill="currentColor"
                     />
                   </svg>
-                  <span className="flex-1 text-left">GitHub</span>
-                  <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-50 shrink-0" />
+                  <span className="flex-1 text-start">GitHub</span>
+                  <ExternalLink className="ms-2 h-3.5 w-3.5 opacity-50 shrink-0" />
                 </Button>
                 <Button
                   variant="outline"
@@ -293,7 +293,7 @@ export function AboutSettings() {
                   className="w-full sm:w-auto text-[#2AABEE] hover:text-[#229ED9]"
                 >
                   <svg
-                    className="mr-2 h-5 w-5 shrink-0"
+                    className="me-2 h-5 w-5 shrink-0"
                     viewBox="0 0 24 24"
                     fill="none"
                     xmlns="http://www.w3.org/2000/svg"
@@ -303,10 +303,10 @@ export function AboutSettings() {
                       fill="currentColor"
                     />
                   </svg>
-                  <span className="flex-1 text-left">
+                  <span className="flex-1 text-start">
                     {t('settings.about.tgChannel', 'FLOWZ频道')}
                   </span>
-                  <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-50 shrink-0" />
+                  <ExternalLink className="ms-2 h-3.5 w-3.5 opacity-50 shrink-0" />
                 </Button>
               </div>
             </div>

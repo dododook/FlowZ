@@ -166,7 +166,7 @@ const ConnectionRow = memo(
         </TableCell>
         <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs">
           <span className="text-success">↓ {formatBytes(s.down)}/s</span>
-          <span className="ml-2 text-info">↑ {formatBytes(s.up)}/s</span>
+          <span className="ms-2 text-info">↑ {formatBytes(s.up)}/s</span>
         </TableCell>
         <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs text-muted-foreground">
           ↓ {formatBytes(c.download ?? 0)} / ↑ {formatBytes(c.upload ?? 0)}
@@ -362,11 +362,11 @@ export function ConnectionsTable() {
   };
 
   const SortIcon = ({ k }: { k: SortKey }) => {
-    if (sortKey !== k) return <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-40" />;
+    if (sortKey !== k) return <ArrowUpDown className="ms-1 inline h-3 w-3 opacity-40" />;
     return sortDir === 'asc' ? (
-      <ArrowUp className="ml-1 inline h-3 w-3" />
+      <ArrowUp className="ms-1 inline h-3 w-3" />
     ) : (
-      <ArrowDown className="ml-1 inline h-3 w-3" />
+      <ArrowDown className="ms-1 inline h-3 w-3" />
     );
   };
 
@@ -389,23 +389,23 @@ export function ConnectionsTable() {
         </span>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+            <Search className="absolute start-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder={t('connections.search')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-[200px] pl-8 text-xs"
+              className="h-8 w-[200px] ps-8 text-xs"
             />
           </div>
           <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
             {paused ? (
               <>
-                <Play className="mr-1 h-4 w-4" />
+                <Play className="me-1 h-4 w-4" />
                 {t('connections.resume')}
               </>
             ) : (
               <>
-                <Pause className="mr-1 h-4 w-4" />
+                <Pause className="me-1 h-4 w-4" />
                 {t('connections.pause')}
               </>
             )}
@@ -416,7 +416,7 @@ export function ConnectionsTable() {
             onClick={() => setConfirmCloseAll(true)}
             disabled={connections.length === 0}
           >
-            <Ban className="mr-1 h-4 w-4" />
+            <Ban className="me-1 h-4 w-4" />
             {t('connections.closeAll')}
           </Button>
         </div>

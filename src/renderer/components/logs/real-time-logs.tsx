@@ -178,14 +178,14 @@ export function RealTimeLogs({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>{t('home.realTimeLogs')}</CardTitle>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 rtl:space-x-reverse">
             <div className="relative">
-              <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute start-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder={t('home.searchLogs')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-8 w-[160px] pl-8 text-xs"
+                className="h-8 w-[160px] ps-8 text-xs"
               />
             </div>
             <Button
@@ -194,7 +194,7 @@ export function RealTimeLogs({
               onClick={handleClearLogs}
               disabled={logs.length === 0}
             >
-              <Trash2 className="h-4 w-4 mr-1" />
+              <Trash2 className="h-4 w-4 me-1" />
               {t('home.clear')}
             </Button>
           </div>
@@ -221,10 +221,10 @@ export function RealTimeLogs({
                 return (
                   <div key={log._id} className="text-xs font-mono select-text">
                     <span className="text-muted-foreground">[{timestamp}]</span>
-                    <span className={`ml-2 font-semibold ${getLevelColor(log.level)}`}>
+                    <span className={`ms-2 font-semibold ${getLevelColor(log.level)}`}>
                       {log.level.toUpperCase()}:
                     </span>
-                    <span className="ml-2">{log.message}</span>
+                    <span className="ms-2">{log.message}</span>
                   </div>
                 );
               })}
@@ -246,7 +246,7 @@ export function RealTimeLogs({
               }}
               className="text-xs h-7"
             >
-              <ArrowDown className="h-3 w-3 mr-1" />
+              <ArrowDown className="h-3 w-3 me-1" />
               {t('home.scrollToBottom')}
             </Button>
           )}

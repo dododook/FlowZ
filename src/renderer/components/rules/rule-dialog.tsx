@@ -420,7 +420,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                       className="h-9 shrink-0"
                       onClick={() => setPickerType(ct)}
                     >
-                      <ListPlus className="mr-1 h-3.5 w-3.5" />
+                      <ListPlus className="me-1 h-3.5 w-3.5" />
                       {t('rules.pickProcess')}
                     </Button>
                   )}
@@ -452,7 +452,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                 className="w-full"
                 onClick={addCondition}
               >
-                <Plus className="mr-1 h-3.5 w-3.5" />
+                <Plus className="me-1 h-3.5 w-3.5" />
                 {t('rules.addCondition')}
               </Button>
             )}
@@ -462,7 +462,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
           <div className="space-y-2">
             <label className="text-sm font-medium">
               {t('rules.remarksLabel')}
-              <span className="ml-0.5 text-destructive">*</span>
+              <span className="ms-0.5 text-destructive">*</span>
             </label>
             <Input
               value={remarks}
@@ -536,7 +536,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             {t('servers.cancel')}
           </Button>
           <Button type="button" onClick={onSubmit} disabled={submitting}>
-            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {mode === 'add' ? t('rules.add') : t('rules.save')}
           </Button>
         </DialogFooter>

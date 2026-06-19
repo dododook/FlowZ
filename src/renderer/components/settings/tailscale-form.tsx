@@ -148,7 +148,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="allowInternet"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
                       <FormDescription>
                         {reverseMesh
@@ -217,7 +217,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="exitNodeAllowLanAccess"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>
                         {t('servers.tsExitNodeAllowLan', 'Allow LAN access via exit node')}
                       </FormLabel>
@@ -245,7 +245,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="acceptRoutes"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>{t('servers.tsAcceptRoutes', 'Accept Routes')}</FormLabel>
                       <FormDescription>
                         {t(
@@ -288,7 +288,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="alwaysRouteSubnets"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>
                         {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
                       </FormLabel>
@@ -312,7 +312,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="reverseMesh"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>
                         {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
                       </FormLabel>
@@ -394,7 +394,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="ephemeral"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>{t('servers.tsEphemeral', 'Ephemeral')}</FormLabel>
                       <FormDescription>
                         {t(

@@ -398,4 +398,56 @@
   html.platform-linux.dark .sidebar {
     background: #0B0F14;
   }
+
+  /* ──────────────────────────────────────────────────────────────
+     RTL（fa 等）：布局主轴由 flexbox 自动镜像（侧栏移到右侧），
+     但下列硬编码物理方向的几何需手动翻面到镜像边，否则错位：
+       - nav-item 文本对齐 / active 指示条（原 left:-6px）
+       - 内容卡片的圆角、边框、阴影、内切角伪元素（原都在左缘）
+     仅在 dir=rtl 下覆盖，LTR 行为完全不变。  */
+  html[dir='rtl'] .nav-item {
+    text-align: right;
+  }
+
+  html[dir='rtl'] .nav-item-indicator {
+    left: auto;
+    right: -6px;
+  }
+
+  /* 内容卡片：圆角朝向、单边边框、投影方向整体翻到右缘（贴向右移的侧栏） */
+  html[dir='rtl'] .main-content-card {
+    border-radius: 0 12px 12px 0;
+    border-left: none;
+    border-right: 1px solid hsl(var(--border));
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.04);
+  }
+
+  html[dir='rtl'].dark .main-content-card {
+    border-right-color: hsl(214 16% 13%);
+    box-shadow: 6px 0 22px rgba(0, 0, 0, 0.28);
+  }
+
+  /* 内切角伪元素镜像：方块移到卡片右缘外侧，圆角由「右下/右上」翻为「左下/左上」 */
+  html[dir='rtl'] .main-content-card::before,
+  html[dir='rtl'] .main-content-card::after {
+    left: auto;
+    right: -13px;
+  }
+
+  html[dir='rtl'] .main-content-card::before {
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 12px;
+  }
+
+  html[dir='rtl'] .main-content-card::after {
+    border-top-right-radius: 0;
+    border-top-left-radius: 12px;
+  }
+
+  /* 方向性图标镜像：给「返回/前进/上一页」这类承载方向语义的图标加 .rtl-mirror，
+     RTL 下水平翻转（返回箭头从指左变指右）。不要加在「展开/折叠」chevron 上——
+     那类靠 rotate-90 切换，scaleX 会与其 transform 冲突。 */
+  html[dir='rtl'] .rtl-mirror {
+    transform: scaleX(-1);
+  }
 }

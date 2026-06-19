@@ -32,7 +32,7 @@ export function AppPolicyPage() {
             {t('rules.appRulesExperimental')}
           </Badge>
           <Switch
-            className="ml-auto"
+            className="ms-auto"
             checked={enabled}
             onCheckedChange={toggle}
             disabled={!config}

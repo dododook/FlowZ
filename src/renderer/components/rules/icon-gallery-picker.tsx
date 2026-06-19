@@ -105,15 +105,15 @@ export function IconGalleryPicker({
       </DialogHeader>
       <div className="space-y-4 py-2">
         <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={t('rules.customApp.searchIconPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-10 text-sm bg-muted/30 border-none focus-visible:ring-1"
+            className="ps-9 h-10 text-sm bg-muted/30 border-none focus-visible:ring-1"
           />
         </div>
-        <ScrollArea className="h-[300px] pr-4">
+        <ScrollArea className="h-[300px] pe-4">
           <div className="grid grid-cols-5 gap-3 p-1">
             {isLoadingIcons ? (
               <div className="col-span-5 py-20 text-center text-sm text-muted-foreground animate-pulse">

@@ -111,7 +111,7 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
             {t('servers.cancel', '取消')}
           </Button>
           <Button type="button" variant="destructive" onClick={handleDelete} disabled={isDeleting}>
-            {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isDeleting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {t('rules.delete', '删除')}
           </Button>
         </DialogFooter>

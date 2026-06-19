@@ -368,7 +368,7 @@ export function ConnectionTopology() {
                 </div>
                 <div className="py-1">
                   <button
-                    className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors"
+                    className="w-full text-start px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors"
                     onClick={() => addDomainRule(contextMenu.domain, 'proxy')}
                   >
                     <span
@@ -377,7 +377,7 @@ export function ConnectionTopology() {
                     {t('home.ruleProxy')}
                   </button>
                   <button
-                    className="w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors"
+                    className="w-full text-start px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors"
                     onClick={() => addDomainRule(contextMenu.domain, 'direct')}
                   >
                     <span
@@ -386,7 +386,7 @@ export function ConnectionTopology() {
                     {t('home.ruleDirect')}
                   </button>
                   <button
-                    className={`w-full text-left px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors ${getRuleActionStyle('block').text}`}
+                    className={`w-full text-start px-3 py-2 hover:bg-accent flex items-center gap-2 transition-colors ${getRuleActionStyle('block').text}`}
                     onClick={() => addDomainRule(contextMenu.domain, 'block')}
                   >
                     <span

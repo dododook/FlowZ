@@ -270,7 +270,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 name="allowInternet"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
                       <FormDescription>
                         {reverseMesh
@@ -301,7 +301,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 name="alwaysRouteSubnets"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>
                         {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
                       </FormLabel>
@@ -325,7 +325,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 name="reverseMesh"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>
                         {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
                       </FormLabel>

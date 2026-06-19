@@ -239,7 +239,7 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
                 name="zeroRttHandshake"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
+                    <div className="space-y-0.5 pe-3">
                       <FormLabel>{t('servers.tuicZeroRtt')}</FormLabel>
                       <FormDescription>{t('servers.tuicZeroRttDesc')}</FormDescription>
                     </div>

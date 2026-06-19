@@ -267,11 +267,11 @@ export function RuleResourcesPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setCatalogOpen(true)}>
-            <Library className="mr-2 h-4 w-4" />
+            <Library className="me-2 h-4 w-4" />
             {t('ruleResources.library', '资源库')}
           </Button>
           <Button variant="outline" onClick={() => setUrlOpen(true)}>
-            <LinkIcon className="mr-2 h-4 w-4" />
+            <LinkIcon className="me-2 h-4 w-4" />
             {t('ruleResources.manualUrl', 'URL 下载')}
           </Button>
         </div>
@@ -360,7 +360,7 @@ export function RuleResourcesPage() {
                 onClick={handleUpdateAll}
                 disabled={items.length === 0 || activeRows.length > 0}
               >
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <RefreshCw className="me-2 h-4 w-4" />
                 {t('ruleResources.updateAll', '全部更新')}
               </Button>
             </div>
@@ -394,7 +394,7 @@ export function RuleResourcesPage() {
                     {t('ruleResources.colUpdated', '更新于')}
                   </TableHead>
                   <TableHead className="w-[120px]">{t('ruleResources.colRef', '引用')}</TableHead>
-                  <TableHead className="w-[100px] text-right">
+                  <TableHead className="w-[100px] text-end">
                     {t('common.actions', '操作')}
                   </TableHead>
                 </TableRow>
@@ -432,7 +432,7 @@ export function RuleResourcesPage() {
                         t('ruleResources.downloadAllFailed', '下载失败')
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <Button variant="ghost" size="sm" onClick={() => dismissError(p.id)}>
                         <X className="h-4 w-4" />
                       </Button>
@@ -485,7 +485,7 @@ export function RuleResourcesPage() {
                           ? t('ruleResources.builtinRef', '智能分流')
                           : '—'}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-end">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"

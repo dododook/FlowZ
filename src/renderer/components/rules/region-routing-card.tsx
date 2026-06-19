@@ -67,7 +67,7 @@ export function RegionRoutingCard() {
             </div>
           </div>
           <div className="flex items-center justify-between rounded-md border p-3">
-            <div className="space-y-0.5 pr-3">
+            <div className="space-y-0.5 pe-3">
               <p className="text-sm font-medium">
                 {region.region === 'cn'
                   ? t('rules.regionReverseCn', 'Back to China')

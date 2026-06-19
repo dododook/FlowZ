@@ -341,11 +341,11 @@ export function ServerList({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={onAddServer}>
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="h-4 w-4 me-2" />
                   {t('servers.manualAdd')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
-                  <Link className="h-4 w-4 mr-2" />
+                  <Link className="h-4 w-4 me-2" />
                   {t('servers.importFromUrl')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -357,9 +357,9 @@ export function ServerList({
       {/* 搜索 + 过滤 + 排序栏 */}
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
-            className="pl-8 h-9"
+            className="ps-8 h-9"
             placeholder={t('servers.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

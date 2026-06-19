@@ -468,7 +468,7 @@ export function CoreManagementCard() {
                     disabled={busy || isForkCore}
                     className="w-full sm:w-auto"
                   >
-                    {updatingCore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {updatingCore && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                     {t('settings.coreManagement.updateNow')}
                   </Button>
                 </div>
@@ -483,7 +483,7 @@ export function CoreManagementCard() {
             disabled={busy || isForkCore}
             className="w-full sm:w-auto"
           >
-            {checkingCoreUpdate && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {checkingCoreUpdate && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
             {t('settings.coreManagement.checkUpdate')}
           </Button>
           {hasBackup && (
@@ -494,9 +494,9 @@ export function CoreManagementCard() {
               className="w-full sm:w-auto"
             >
               {rollingBack ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
               ) : (
-                <RotateCcw className="mr-2 h-4 w-4" />
+                <RotateCcw className="me-2 h-4 w-4" />
               )}
               {t('settings.coreManagement.rollback')}
             </Button>
@@ -508,9 +508,9 @@ export function CoreManagementCard() {
             className="w-full sm:w-auto"
           >
             {replacingManual ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
-              <FolderUp className="mr-2 h-4 w-4" />
+              <FolderUp className="me-2 h-4 w-4" />
             )}
             {t('settings.coreManagement.manualReplace')}
           </Button>
@@ -555,7 +555,7 @@ export function CoreManagementCard() {
               disabled={busy || isForkCore}
               title={t('settings.coreManagement.applyNowWarn')}
             >
-              {applyingStaged && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              {applyingStaged && <Loader2 className="me-2 h-3.5 w-3.5 animate-spin" />}
               {t('settings.coreManagement.applyNow')}
             </Button>
           </div>
@@ -591,9 +591,9 @@ export function CoreManagementCard() {
             className="w-full sm:w-auto"
           >
             {resettingFactory ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
-              <Undo2 className="mr-2 h-4 w-4" />
+              <Undo2 className="me-2 h-4 w-4" />
             )}
             {t('settings.coreManagement.resetFactory')}
           </Button>
@@ -604,9 +604,9 @@ export function CoreManagementCard() {
             className="w-full sm:w-auto"
           >
             {uninstalling ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
             ) : (
-              <Trash2 className="mr-2 h-4 w-4" />
+              <Trash2 className="me-2 h-4 w-4" />
             )}
             {t('settings.coreManagement.uninstallAll')}
           </Button>
@@ -666,7 +666,7 @@ export function CoreManagementCard() {
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>{t('settings.coreManagement.uninstallDesc')}</p>
-                <ul className="list-disc space-y-1 pl-5">
+                <ul className="list-disc space-y-1 ps-5">
                   <li>{t('settings.coreManagement.uninstallItemHelper')}</li>
                   <li>{t('settings.coreManagement.uninstallItemCore')}</li>
                   <li>{t('settings.coreManagement.uninstallItemConfig')}</li>

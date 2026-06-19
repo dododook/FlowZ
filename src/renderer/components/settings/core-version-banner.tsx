@@ -131,12 +131,12 @@ export function CoreVersionBanner() {
               >
                 {isRollingBack ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                    <Loader2 className="me-1.5 h-3 w-3 animate-spin" />
                     {t('settings.coreVersion.rollingBack')}
                   </>
                 ) : (
                   <>
-                    <RotateCcw className="mr-1.5 h-3 w-3" />
+                    <RotateCcw className="me-1.5 h-3 w-3" />
                     {t('settings.coreVersion.rollback')}
                   </>
                 )}
@@ -151,12 +151,12 @@ export function CoreVersionBanner() {
             >
               {isReplacing ? (
                 <>
-                  <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                  <Loader2 className="me-1.5 h-3 w-3 animate-spin" />
                   {t('settings.about.updating')}
                 </>
               ) : (
                 <>
-                  <FolderUp className="mr-1.5 h-3 w-3" />
+                  <FolderUp className="me-1.5 h-3 w-3" />
                   {t('settings.about.manualReplace')}
                 </>
               )}

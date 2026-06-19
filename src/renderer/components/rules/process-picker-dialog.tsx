@@ -98,12 +98,12 @@ export function ProcessPickerDialog({ open, onOpenChange, mode, onAdd }: Process
         <div className="min-w-0 space-y-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute start-2 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('rules.processPicker.search', '搜索进程名 / 路径')}
-                className="pl-8"
+                className="ps-8"
               />
             </div>
             <Button variant="outline" size="icon" onClick={() => void load()} disabled={loading}>
@@ -121,7 +121,7 @@ export function ProcessPickerDialog({ open, onOpenChange, mode, onAdd }: Process
           <ScrollArea className="h-72 rounded-md border">
             {loading ? (
               <div className="flex h-72 items-center justify-center text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 {t('common.loading', '加载中...')}
               </div>
             ) : filtered.length === 0 ? (

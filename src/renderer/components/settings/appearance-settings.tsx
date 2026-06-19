@@ -21,6 +21,7 @@ const LANGUAGE_OPTIONS = [
   { value: 'zh-TW', label: '繁體中文' },
   { value: 'en-US', label: 'English' },
   { value: 'ru', label: 'Русский' },
+  { value: 'fa-IR', label: 'فارسی' },
 ];
 
 export function AppearanceSettings() {

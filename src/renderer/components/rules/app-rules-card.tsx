@@ -176,12 +176,12 @@ export function AppRulesCard() {
         {/* 顶部搜索框：补齐视觉突兀感 */}
         <div className="flex items-center gap-2 mb-4">
           <div className="relative flex-1 group">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50 transition-colors group-focus-within:text-primary" />
+            <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50 transition-colors group-focus-within:text-primary" />
             <Input
               placeholder={t('rules.searchApps')}
               value={appSearchQuery}
               onChange={(e) => setAppSearchQuery(e.target.value)}
-              className="pl-10 h-11 bg-muted/40 border-muted-foreground/10 focus:border-primary/30 transition-all rounded-xl text-sm"
+              className="ps-10 h-11 bg-muted/40 border-muted-foreground/10 focus:border-primary/30 transition-all rounded-xl text-sm"
             />
           </div>
 
@@ -234,12 +234,12 @@ export function AppRulesCard() {
                     className={`${viewMode === 'comfortable' ? 'h-[110px] p-3.5' : 'h-[88px] p-2.5'} w-full flex flex-col items-start rounded-xl border border-muted-foreground/10 transition-all duration-300 shadow-none focus:ring-0 [&>svg]:hidden bg-muted/40 hover:bg-muted/60 relative overflow-hidden`}
                   >
                     {/* 可点击 affordance：span 包裹避开 [&>svg]:hidden；pointer-events-none 不挡点击；hover 提亮 */}
-                    <span className="pointer-events-none absolute right-2 top-2 text-muted-foreground/40 transition-colors group-hover:text-primary">
+                    <span className="pointer-events-none absolute end-2 top-2 text-muted-foreground/40 transition-colors group-hover:text-primary">
                       <ChevronDown className="h-3.5 w-3.5" />
                     </span>
                     {/* 左上脚标：策略选择器入口提示。提升可见度（10px/80% 半粗）+ hover 提亮，与右上 chevron 联动暗示可点击 */}
                     <div
-                      className={`text-[10px] text-muted-foreground/80 font-semibold tracking-tight leading-none mt-0.5 mb-1 transition-colors group-hover:text-primary ${viewMode === 'comfortable' ? 'ml-1.5' : 'ml-2.5'}`}
+                      className={`text-[10px] text-muted-foreground/80 font-semibold tracking-tight leading-none mt-0.5 mb-1 transition-colors group-hover:text-primary ${viewMode === 'comfortable' ? 'ms-1.5' : 'ms-2.5'}`}
                     >
                       {t('rules.appRulesManualSelection')}
                     </div>
@@ -247,8 +247,8 @@ export function AppRulesCard() {
                     <div
                       className={
                         viewMode === 'comfortable'
-                          ? 'flex items-center gap-2.5 w-full flex-1 ml-1.5'
-                          : 'flex items-center gap-2 w-full mt-0.5 ml-2.5'
+                          ? 'flex items-center gap-2.5 w-full flex-1 ms-1.5'
+                          : 'flex items-center gap-2 w-full mt-0.5 ms-2.5'
                       }
                     >
                       <div
@@ -285,7 +285,7 @@ export function AppRulesCard() {
                     <div
                       className={
                         viewMode === 'comfortable'
-                          ? `absolute bottom-1.5 left-2.5 right-3.5 text-[9.5px] w-full text-left font-bold tracking-normal truncate ${
+                          ? `absolute bottom-1.5 start-2.5 end-3.5 text-[9.5px] w-full text-start font-bold tracking-normal truncate ${
                               !rule || !isEnabled
                                 ? 'text-primary'
                                 : rule.action === 'direct'
@@ -294,7 +294,7 @@ export function AppRulesCard() {
                                     ? 'text-destructive'
                                     : 'text-primary'
                             }`
-                          : `text-[9px] w-full text-left font-bold tracking-normal truncate ml-2 ${
+                          : `text-[9px] w-full text-start font-bold tracking-normal truncate ms-2 ${
                               !rule || !isEnabled
                                 ? 'text-primary'
                                 : rule.action === 'direct'
@@ -368,7 +368,7 @@ export function AppRulesCard() {
                 {/* 规则集缺失角标：该应用引用的 geo 已删除/文件丢失 → geo 半暂不生效（进程名仍生效），需到「规则资源」页恢复。 */}
                 {affectedAppIds.has(preset.id) && (
                   <span
-                    className="absolute -top-1 -left-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm"
+                    className="absolute -top-1 -start-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm"
                     title={t(
                       'rules.appGeoMissingTip',
                       '该应用引用的分流规则集缺失（已删除或文件丢失），仅按进程名生效；请到「规则资源」页下载恢复'
@@ -384,7 +384,7 @@ export function AppRulesCard() {
                       e.stopPropagation();
                       handleDeleteCustomApp(preset.id);
                     }}
-                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm z-10"
+                    className="absolute -top-1 -end-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm z-10"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>

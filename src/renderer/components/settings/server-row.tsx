@@ -76,7 +76,7 @@ export function ServerRow({
       {/* 背景国旗 */}
       {countryCode && (
         <div
-          className="absolute right-12 top-1/2 -translate-y-1/2 z-0 h-24 w-24 opacity-[0.05] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.1]"
+          className="absolute end-12 top-1/2 -translate-y-1/2 z-0 h-24 w-24 opacity-[0.05] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.1]"
           style={{
             backgroundImage: `url('https://flagcdn.com/w80/${countryCode}.png')`,
             backgroundSize: 'contain',
@@ -165,7 +165,7 @@ export function ServerRow({
           {!isAccountBasedProtocol(server.protocol) &&
             server.protocol?.toLowerCase() !== 'custom' &&
             getTransportLabel(server) !== 'tcp' && (
-              <span className="ml-2">{getTransportLabel(server)}</span>
+              <span className="ms-2">{getTransportLabel(server)}</span>
             )}
         </p>
       </div>

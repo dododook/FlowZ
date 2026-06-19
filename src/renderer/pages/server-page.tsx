@@ -141,9 +141,9 @@ export function ServerPage() {
           {/* 可滚动的 Tab 区域，两侧渐变遮罩提示还有更多内容 */}
           <div className="relative min-w-0 flex-1">
             {/* 左侧渐变遮罩 */}
-            <div className="pointer-events-none absolute left-0 top-0 z-10 h-full w-8 bg-gradient-to-r from-background to-transparent" />
+            <div className="pointer-events-none absolute start-0 top-0 z-10 h-full w-8 bg-gradient-to-r from-background to-transparent" />
             {/* 右侧渐变遮罩 */}
-            <div className="pointer-events-none absolute right-0 top-0 z-10 h-full w-8 bg-gradient-to-l from-background to-transparent" />
+            <div className="pointer-events-none absolute end-0 top-0 z-10 h-full w-8 bg-gradient-to-l from-background to-transparent" />
 
             <div
               ref={scrollContainerRef}
@@ -155,7 +155,7 @@ export function ServerPage() {
                   <Server className="h-3.5 w-3.5" />
                   {t('servers.manualNodes')}
                   {manualProxyServers.length > 0 && (
-                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                    <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
                       {manualProxyServers.length}
                     </Badge>
                   )}
@@ -166,7 +166,7 @@ export function ServerPage() {
                   <TabsTrigger value="mesh" className="flex items-center gap-1.5 whitespace-nowrap">
                     <Network className="h-3.5 w-3.5" />
                     {t('servers.meshNodes')}
-                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                    <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
                       {meshServers.length}
                     </Badge>
                   </TabsTrigger>
@@ -185,7 +185,7 @@ export function ServerPage() {
                       <Rss className="h-3.5 w-3.5" />
                       {sub.name}
                       {subServers.length > 0 && (
-                        <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                        <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
                           {isUpdating ? '…' : subServers.length}
                         </Badge>
                       )}
@@ -259,7 +259,7 @@ export function ServerPage() {
                         : t('servers.never')}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  <div className="flex items-center gap-2 ms-4 flex-shrink-0">
                     <Button
                       size="sm"
                       variant="outline"

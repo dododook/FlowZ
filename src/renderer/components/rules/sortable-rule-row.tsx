@@ -146,7 +146,7 @@ export function SortableRuleRow({
             >
               <GripVertical className="h-4 w-4" />
             </button>
-            <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">
+            <span className="w-6 text-end text-xs tabular-nums text-muted-foreground">
               {index + 1}
             </span>
           </div>
@@ -159,7 +159,7 @@ export function SortableRuleRow({
         <div className="flex items-center gap-1.5">
           <HoverCard openDelay={120} closeDelay={80}>
             <HoverCardTrigger asChild>
-              <button type="button" className="block max-w-[360px] cursor-default text-left">
+              <button type="button" className="block max-w-[360px] cursor-default text-start">
                 {rule.remarks ? (
                   <span className="block truncate text-sm font-semibold text-foreground">
                     {rule.remarks}
@@ -252,7 +252,7 @@ export function SortableRuleRow({
           )}
         </div>
       </TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-end">
         <div className="flex justify-end gap-0.5">
           {isOrderEditing ? (
             <>

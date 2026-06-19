@@ -134,7 +134,7 @@ export function Sidebar({
               style={{ color: 'hsl(var(--muted-foreground))' }}
             >
               <ChevronLeft
-                className="h-4 w-4 flex-shrink-0"
+                className="h-4 w-4 flex-shrink-0 rtl-mirror"
                 style={{ color: 'hsl(var(--muted-foreground))' }}
               />
               <span style={{ color: 'hsl(var(--muted-foreground))' }}>

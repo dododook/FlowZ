@@ -258,7 +258,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
                 <CardTitle className="text-base flex items-center gap-2">
                   <Server className="h-4 w-4" />
                   {t('importUrl.parseResult', 'Parse Result')}
-                  <Badge variant="secondary" className="ml-1">
+                  <Badge variant="secondary" className="ms-1">
                     {parsedServers.length}
                   </Badge>
                 </CardTitle>
@@ -335,7 +335,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
                 <CardTitle className="text-base text-destructive flex items-center gap-2">
                   <X className="h-4 w-4" />
                   {t('importUrl.parseFailed', 'Parse Failed')}
-                  <Badge variant="destructive" className="ml-1">
+                  <Badge variant="destructive" className="ms-1">
                     {failedLines.length}
                   </Badge>
                 </CardTitle>
@@ -361,7 +361,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
           <Button onClick={handleImport} disabled={parsedServers.length === 0 || isImporting}>
             {isImporting ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <Loader2 className="h-4 w-4 animate-spin me-2" />
                 {t('importUrl.importing', 'Importing...')}
               </>
             ) : parsedServers.length > 1 ? (

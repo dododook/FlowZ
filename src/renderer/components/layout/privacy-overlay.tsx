@@ -65,13 +65,15 @@ export function PrivacyOverlay() {
 
       <form onSubmit={handleUnlock} className="flex flex-col gap-3 items-center w-full max-w-sm">
         {hasPassword ? (
-          <div className={`flex w-full space-x-2 ${errorShake ? 'animate-shake' : ''}`}>
+          <div
+            className={`flex w-full space-x-2 rtl:space-x-reverse ${errorShake ? 'animate-shake' : ''}`}
+          >
             <div className="relative flex-1">
-              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Lock className="absolute start-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="password"
                 placeholder={t('privacy.passwordPlaceholder')}
-                className="pl-9 w-full"
+                className="ps-9 w-full"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 autoFocus

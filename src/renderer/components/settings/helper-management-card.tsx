@@ -148,7 +148,7 @@ export function HelperManagementCard() {
         <div className="flex gap-2 pt-1">
           {!installed && (
             <Button onClick={handleInstall} disabled={busy !== null}>
-              {busy === 'install' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {busy === 'install' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               {t('helper.install')}
             </Button>
           )}
@@ -159,19 +159,19 @@ export function HelperManagementCard() {
           )}
           {installed && needsRepair && !backgroundDisabled && (
             <Button onClick={handleInstall} disabled={busy !== null}>
-              {busy === 'install' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {busy === 'install' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               {t('helper.repair')}
             </Button>
           )}
           {installed && upgradeable && !needsRepair && !backgroundDisabled && (
             <Button onClick={handleInstall} disabled={busy !== null}>
-              {busy === 'install' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {busy === 'install' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               {t('helper.upgrade', '升级')}
             </Button>
           )}
           {installed && (
             <Button variant="destructive" onClick={handleUninstall} disabled={busy !== null}>
-              {busy === 'uninstall' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {busy === 'uninstall' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               {t('helper.uninstall')}
             </Button>
           )}

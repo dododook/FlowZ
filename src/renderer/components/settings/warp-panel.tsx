@@ -93,7 +93,7 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
           disabled={loading || nameMissing}
           className="w-full sm:w-auto"
         >
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {loading && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
           {t('servers.warpGenerateSave', 'Generate & Add WARP node')}
         </Button>
         {nameMissing && (

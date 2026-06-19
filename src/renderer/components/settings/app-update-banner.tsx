@@ -38,7 +38,7 @@ export function AppUpdateBanner({
               onClick={onUpdate}
               className="h-7 text-xs border-primary/50 text-primary hover:bg-primary/20"
             >
-              {downloading && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+              {downloading && <Loader2 className="me-1.5 h-3 w-3 animate-spin" />}
               {t('settings.about.updateNow')}
             </Button>
           </div>
