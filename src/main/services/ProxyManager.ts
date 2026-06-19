@@ -4590,6 +4590,13 @@ exit 0
     return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
+  /** 内核高频「每连接」route/连接 INFO 行（found process path / inbound·outbound connection）→ 降 debug，避免刷屏。 */
+  private isNoisyConnectionLog(message: string): boolean {
+    return /router: found process path|inbound connection (from|to)|outbound connection to/i.test(
+      message
+    );
+  }
+
   /**
    * 解析并记录日志行
    */
@@ -4620,7 +4627,13 @@ exit 0
 
       // 空消息不记录（如私有 IP 超时）
       if (friendlyMessage) {
-        this.logToManager(logInfo.level, friendlyMessage, 'sing-box');
+        // 内核每连接的高频 route/连接 INFO（found process path / inbound·outbound connection）降到 debug：
+        // 它们是逐连接流量日志、非操作性事件，info 下刷屏；降级后常规日志干净，debug 仍可见。
+        const level =
+          logInfo.level === 'info' && this.isNoisyConnectionLog(logInfo.message)
+            ? 'debug'
+            : logInfo.level;
+        this.logToManager(level, friendlyMessage, 'sing-box');
       }
     } else {
       // 无法解析的日志，尝试对原始行也进行标签转换
