@@ -165,6 +165,47 @@ describe('WarpDeregisterQueue.drain', () => {
     // a 出队（done），b 保留（未被旧快照覆盖）。这是核心断言：新凭据没丢。
     expect(store.map((e) => e.deviceId)).toEqual(['b']);
   });
+
+  // #86-122 复审 #6：drain 进行中再次触发不丢——置补跑标志，当前 drain 结束后补跑一次。
+  it('补跑：drain 进行中再次触发被合并到补跑，当前 drain 结束后补跑处理在途新条目', async () => {
+    let store = [mk('a')];
+    const unregistered: string[] = [];
+    // a 的 unregister 用受控 promise 卡住（造在途 drain 窗口）；b（补跑时处理）立即 done。
+    let resolveA: (r: DeregisterResult) => void = () => {};
+    const q = new WarpDeregisterQueue({
+      unregister: (deviceId) => {
+        unregistered.push(deviceId);
+        if (deviceId === 'a') {
+          return new Promise<DeregisterResult>((res) => {
+            resolveA = res;
+          });
+        }
+        return Promise.resolve('done'); // b：补跑里立即注销成功
+      },
+      now: () => NOW,
+      readQueue: async () => [...store],
+      writeQueue: async (next) => {
+        store = [...next];
+      },
+    });
+
+    const p1 = q.drain(); // 读快照 [a]，卡在 unregister('a')
+    await Promise.resolve();
+    await q.enqueue(mk('b')); // 在途入队 b → store=[a,b]
+    // 第二次触发：撞 draining → 返回零 + 置补跑标志（不立即处理 b）。
+    const stats2 = await q.drain();
+    expect(stats2).toEqual({ done: 0, dropped: 0, retried: 0, expired: 0 });
+    expect(unregistered).toEqual(['a']); // 此刻仅 a 被处理过，b 尚未
+
+    resolveA('done'); // a 完成 → 第一次 drain 收尾 → finally 触发补跑
+    await p1;
+    // 补跑是 fire-and-forget；刷若干 microtask 让其跑完（含 unregister('b') + 写回）。
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    // 补跑处理了在途的 b（不再等下次启动）；队列清空。
+    expect(unregistered).toContain('b');
+    expect(store.map((e) => e.deviceId)).toEqual([]);
+  });
 });
 
 describe('WarpDeregisterQueue.enqueue', () => {

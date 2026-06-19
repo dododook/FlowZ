@@ -58,6 +58,12 @@ export class WarpDeregisterQueue {
   /** 防并发重入（启动 drain 与注册后 drain 可能并发）：同一时刻只跑一次 drain。 */
   private draining = false;
   /**
+   * drain 进行中再次触发的「补跑」标志（#86-122 复审 #6）：注册成功后 drainInBackground 若撞上正在跑的启动 drain，
+   * 旧实现直接被 draining 互斥静默丢弃 → 注册时点想立即处理的 pending 条目要等下次启动才 drain。改为置位本标志，
+   * 当前 drain 结束后补跑一次（合并多次在途触发为一次补跑，不致风暴），确保该次触发不丢。
+   */
+  private drainPending = false;
+  /**
    * 队列「读改写」串行化链（critical section mutex）。drain 的写回阶段与 enqueue 全程都排进此链 →
    * 杜绝二者 read-modify-write 交错导致的 lost-update：drain 进行中（await unregister 网络往返数秒）用户删
    * 新节点触发 enqueue，若无串行化，drain 用旧快照 keep 全量覆盖会抹掉 enqueue 刚追加的新凭据 → 永久孤儿。
@@ -139,7 +145,11 @@ export class WarpDeregisterQueue {
    */
   async drain(): Promise<{ done: number; dropped: number; retried: number; expired: number }> {
     const stats = { done: 0, dropped: 0, retried: 0, expired: 0 };
-    if (this.draining) return stats; // 并发重入保护
+    if (this.draining) {
+      // 并发重入：不丢这次触发——置补跑标志，当前 drain 结束后补跑一次（见 finally）。
+      this.drainPending = true;
+      return stats;
+    }
     this.draining = true;
     try {
       const queue = await this.readQueueImpl();
@@ -209,6 +219,12 @@ export class WarpDeregisterQueue {
       return stats;
     } finally {
       this.draining = false;
+      // 本次 drain 期间有触发被合并到补跑标志 → 补跑一次（draining 已释放可进），不丢该次触发。
+      // fire-and-forget：不 await（避免补跑链拉长本次返回），自吞异常（drain 内部已兜底）。
+      if (this.drainPending) {
+        this.drainPending = false;
+        void this.drain().catch(() => {});
+      }
     }
   }
 

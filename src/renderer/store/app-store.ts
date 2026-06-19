@@ -15,6 +15,7 @@ import type { UpdateInfo } from '../../shared/types/update';
 import { api } from '../ipc';
 import { toast } from 'sonner';
 import i18n from '../i18n';
+import { mergeTailscaleLoginStates } from './tailscale-login-merge';
 
 // 兼容旧的类型定义
 type ProxyMode = UserConfig['proxyMode'];
@@ -397,16 +398,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const genAtStart = tailscaleOptimisticGen;
     try {
       const states = await api.server.getTailscaleLoginStates();
-      set((s) => {
-        const merged: Record<string, boolean> = { ...states };
-        for (const [serverId, gen] of tailscaleOptimisticTrueAt) {
-          // 仅保护「refresh 发起之后」新点亮且磁盘尚未反映为 true 的乐观值（磁盘写入延迟未落地）。
-          if (gen > genAtStart && !merged[serverId] && s.tailscaleLoginStates[serverId]) {
-            merged[serverId] = true;
-          }
-        }
-        return { tailscaleLoginStates: merged };
-      });
+      set((s) => ({
+        tailscaleLoginStates: mergeTailscaleLoginStates(
+          states,
+          s.tailscaleLoginStates,
+          tailscaleOptimisticTrueAt,
+          genAtStart
+        ),
+      }));
     } catch (error) {
       console.error('Failed to refresh tailscale login states:', error);
     }

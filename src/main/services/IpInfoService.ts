@@ -16,7 +16,13 @@ const TTL_MS = 60_000;
 const REQ_TIMEOUT_MS = 5000; // 单个探测请求超时上限（httpText）——重试不会无限阻塞
 // 出口 IP 启动初期隧道/DNS 未就绪 → 首测易失败。重试至 MAX_PROBE_ATTEMPTS 上限、每次间隔 RETRY_DELAY_MS，
 // 期间保持 loading（界面显「获取中」）；全部失败才报错（界面友好提示，不闪「获取失败」）。
-const MAX_PROBE_ATTEMPTS = 3;
+//
+// 收敛重试预算（#86-122 复审 #10）：原 3 次重试 × 链内 3 端点串行 × 5s 超时 ≈ 最坏 45s，全失败时经
+// enqueue 串行链堵住后续 refreshProxy（切节点连点会叠加）。每次 attempt 内 queryViaProxy/queryDirectChain
+// 已串行多端点容错，第 3 轮边际收益低却贡献 1/3 最坏延迟 → 降到 2 轮：最坏 ~45s→~30s，成功路径零影响
+// （成功首跳即返回，不触发重试/超时）；startup 初期仍有 2 轮 × 多端点 + 间隔重试覆盖隧道抖动。
+// 真机复核项：2 轮对启动初期隧道/DNS 未就绪的探测成功率是否仍足够（不足则回调或注入提高）。
+const MAX_PROBE_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 1000;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

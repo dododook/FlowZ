@@ -214,9 +214,14 @@ export async function resolveNodeDomains(
   const ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
   const totalBudgetMs = opts.totalBudgetMs ?? DEFAULT_TOTAL_BUDGET_MS;
 
-  const unique = Array.from(new Set(domains.map((d) => d.trim()).filter(Boolean))).filter(
-    (d) => !isIpLiteral(d)
-  );
+  const deduped = Array.from(new Set(domains.map((d) => d.trim()).filter(Boolean)));
+  const unique = deduped.filter((d) => !isIpLiteral(d));
+  // 跳过 IP 字面量（节点本就是 IP，无需预解析；直接复用原值，调用方按未解析回退原值）。补 debug 可观测，
+  // 排查「节点为何没走预解析」时一眼看到是 IP 字面量跳过而非解析失败（#57 真机排查）。
+  if (unique.length !== deduped.length) {
+    const skipped = deduped.filter((d) => isIpLiteral(d));
+    opts.log?.('debug', `节点域名预解析跳过 ${skipped.length} 个 IP 字面量：${skipped.join(', ')}`);
+  }
 
   const maxConcurrency = opts.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
 
