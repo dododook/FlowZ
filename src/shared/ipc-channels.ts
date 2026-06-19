@@ -129,6 +129,8 @@ export const IPC_CHANNELS = {
   EVENT_STATS_UPDATED: 'event:statsUpdated',
   EVENT_CONNECTIONS_UPDATED: 'event:connectionsUpdated',
   EVENT_ENTER_PRIVACY_MODE: 'event:enterPrivacyMode',
+  EVENT_EXIT_PRIVACY_MODE: 'event:exitPrivacyMode', // 退出隐私模式（解锁/idle 计时复位）
+  EVENT_NAVIGATE: 'navigate', // 托盘菜单 -> 渲染端路由跳转
   EVENT_CORE_VERSION_CHANGED: 'event:coreVersionChanged',
   EVENT_CORE_AUTO_UPDATE_STATUS: 'event:coreAutoUpdateStatus', // 内核自动更新状态变更（staged 待生效 / 跨带提示）
   EVENT_AUTO_NODE_SWITCHED: 'event:autoNodeSwitched', // 自动换节点成功通知

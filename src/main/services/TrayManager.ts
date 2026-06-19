@@ -11,6 +11,7 @@ import { LogManager } from './LogManager';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
+import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
 // 托盘菜单状态圆点（macOS 系统色，18px 抗锯齿）——替代旧的 emoji 大圆圈，更克制现代。
 const STATUS_DOT_PNG: Record<'connected' | 'disconnected' | 'error', string> = {
@@ -662,7 +663,7 @@ export class TrayManager implements ITrayManager {
       // 默认行为：显示窗口并导航到设置页面
       this.handleShowWindow();
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('navigate', '/settings');
+        this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/settings');
       }
     }
   }
@@ -691,7 +692,7 @@ export class TrayManager implements ITrayManager {
       // 默认行为：显示窗口并导航到服务器页面
       this.handleShowWindow();
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('navigate', '/server');
+        this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/server');
       }
     }
   }
@@ -740,7 +741,7 @@ export class TrayManager implements ITrayManager {
 
     // 发送到渲染进程显示 toast
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('speedTestResult', resultList);
+      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, resultList);
     }
   }
 

@@ -425,7 +425,9 @@ export class ProtocolParser implements IProtocolParser {
     }
 
     // Others like zero_rtt_handshake / heartbeat
-    const heartbeat = params.get('heartbeat');
+    // heartbeat 经 normalizeDuration（与同文件 parseAnyTls idle 对齐）：订阅写裸毫秒整数（如 "10000"）补 ms 单位，
+    // 防 sing-box "missing unit"；已带单位（10s/500ms）透传。
+    const heartbeat = normalizeDuration(params.get('heartbeat'));
     if (heartbeat) {
       config.tuicSettings!.heartbeat = heartbeat;
     }

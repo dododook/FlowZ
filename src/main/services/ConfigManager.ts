@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 import type { UserConfig, Rule, RuleCondition, LogLevel, Protocol } from '../../shared/types';
 import type { LogManager } from './LogManager';
 import { getConfigPath } from '../utils/paths';
+import { writeFileAtomic } from '../utils/atomic-write';
 import { readPrivacyHash, writePrivacyHash, hashPasswordSync } from '../utils/privacy-lock';
 import {
   RULE_TYPE_IDS,
@@ -249,20 +250,13 @@ export class ConfigManager implements IConfigManager {
     // 原子落盘：先写唯一 tmp（随机后缀防并发 saveConfig 互相覆盖半写）→ rename 替换。
     // 防崩溃/进程被杀写到一半截断 config.json → loadConfig 校验失败回落默认配置并覆盖落盘 → 整份配置丢失
     //（节点/订阅/规则全丢）。与本项目 .srs/catalog 落盘同原子写规范（同样无 fsync → 断电 durability 为尽力而为）。
+    // 收敛到 writeFileAtomic：mode:0o600 在 open(2) 即生效（绝不出现 0644 携密窗口）+ 非 Win chmod 双保险；
+    // 后缀保留 `<rand6hex>.tmp`（不带 pid）以匹配既有 sweepStaleTmpFiles 清扫正则（行为字节保持）。
     const content = JSON.stringify(config, null, 2);
-    const tmp = `${this.configPath}.${randomBytes(6).toString('hex')}.tmp`;
-    try {
-      // mode 在 open(2) 即生效（umask 只清位不加位）→ tmp 从创建起就是 0600，绝不出现 0644 携密窗口；
-      // 否则崩溃落在 writeFile→chmod 之间会残留含全量 secrets 的 0644 文件。chmod 保留作双保险（兼容旧 fd 语义）。
-      await fs.writeFile(tmp, content, { encoding: 'utf-8', mode: 0o600 });
-      if (process.platform !== 'win32') {
-        await fs.chmod(tmp, 0o600);
-      }
-      await fs.rename(tmp, this.configPath);
-    } catch (e) {
-      await fs.unlink(tmp).catch(() => {}); // 清理半写 tmp，避免脏文件堆积
-      throw e;
-    }
+    await writeFileAtomic(this.configPath, content, {
+      mode: 0o600,
+      makeTmpSuffix: () => randomBytes(6).toString('hex'),
+    });
 
     // 更新缓存
     this.currentConfig = config;

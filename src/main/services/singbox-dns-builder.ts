@@ -33,6 +33,12 @@ import {
 /** 日志回调：注入 ProxyManager.logToManager（source 默认 'ProxyManager'）。 */
 type DnsLogFn = (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
 
+/** 域名 → [精确域名, `.域名`(后缀匹配)]：同时覆盖 exact 与 subdomain（sing-box domain_suffix 语义）。 */
+const withDotPrefix = (d: string): string[] => [d, `.${d}`];
+
+/** 内网 / 反向解析后缀（非 .local 组播）：内网域 .lan / .home.arpa + 反查 .arpa。 */
+const INTERNAL_DNS_SUFFIXES = ['.arpa', '.lan', '.home.arpa'];
+
 export function buildDnsConfig(
   config: UserConfig,
   selectedServerTag: string,
@@ -236,7 +242,7 @@ export function buildDnsConfig(
   // 关接管均走此路）。否则拆三条（mac/Win 有 LAN 解析器，或 Win+takeover 无 LAN 解析器）。
   if (internalResolverTag === 'dns-local' && bankResolverTag === 'dns-local') {
     dnsRules.push({
-      domain_suffix: ['.local', '.arpa', '.lan', '.home.arpa', ...DOMESTIC_BANK_AND_STOCK_DOMAINS],
+      domain_suffix: ['.local', ...INTERNAL_DNS_SUFFIXES, ...DOMESTIC_BANK_AND_STOCK_DOMAINS],
       server: 'dns-local',
     } as SingBoxDnsRule);
   } else {
@@ -246,7 +252,7 @@ export function buildDnsConfig(
       server: bankResolverTag,
     } as SingBoxDnsRule);
     dnsRules.push({
-      domain_suffix: ['.arpa', '.lan', '.home.arpa'],
+      domain_suffix: INTERNAL_DNS_SUFFIXES,
       server: internalResolverTag,
     } as SingBoxDnsRule);
   }
@@ -262,7 +268,7 @@ export function buildDnsConfig(
         server: internalResolverTag,
       } as SingBoxDnsRule);
       dnsRules.push({
-        domain_suffix: FAKEIP_FILTER_NTP_SUFFIXES.flatMap((d) => [d, `.${d}`]),
+        domain_suffix: FAKEIP_FILTER_NTP_SUFFIXES.flatMap(withDotPrefix),
         domain_keyword: FAKEIP_FILTER_NTP_STUN_KEYWORDS,
         server: 'dns-domestic',
       } as SingBoxDnsRule);
@@ -277,7 +283,7 @@ export function buildDnsConfig(
       }
       if (others.length > 0) {
         dnsRules.push({
-          domain_suffix: others.flatMap((d) => [d, `.${d}`]),
+          domain_suffix: others.flatMap(withDotPrefix),
           server: 'dns-domestic',
         } as SingBoxDnsRule);
       }
@@ -330,7 +336,7 @@ export function buildDnsConfig(
       const bypassRule: Record<string, unknown> = { server: 'dns-bootstrap' };
       if (bypassDomains.length) bypassRule.domain = bypassDomains;
       if (bypassSuffixes.length) {
-        bypassRule.domain_suffix = bypassSuffixes.flatMap((d) => [d, `.${d}`]);
+        bypassRule.domain_suffix = bypassSuffixes.flatMap(withDotPrefix);
       }
       if (bypassKeywords.length) bypassRule.domain_keyword = bypassKeywords;
       dnsRules.push(bypassRule as unknown as SingBoxDnsRule);

@@ -9,6 +9,7 @@ import { ErrorHandler, ErrorCategory, proxyErrorCategory } from '../lib/error-ha
 import { toast } from 'sonner';
 import i18n from '../i18n';
 import { openExternal } from '../bridge/api-wrapper';
+import { safeHttpUrl } from '../../shared/url';
 import type {
   TrafficStats,
   IpInfoSnapshot,
@@ -194,13 +195,7 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   // transient（Phase 2 按需登录核）：主进程已自动开浏览器 + 发系统通知 → 降级为可关闭普通 toast（短时长、
   //   文案「正在打开浏览器完成登录」），固定 id 仍便于登录成功后 dismiss。
   // 非 transient（Phase 1 主核路径）：duration:Infinity——登录需用户去浏览器操作、未自动开，不能自动消失。
-  let safeUrl: string | null = null;
-  try {
-    const u = new URL(data.url);
-    if (u.protocol === 'https:' || u.protocol === 'http:') safeUrl = u.href;
-  } catch {
-    safeUrl = null;
-  }
+  const safeUrl = safeHttpUrl(data.url);
   const action = safeUrl
     ? {
         label: i18n.t('servers.tsOpenLogin'),

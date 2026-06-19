@@ -53,11 +53,12 @@ import {
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
 import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
-import { meshUsesSystemInterface } from '../../shared/endpoint-routes';
+import { meshUsesSystemInterface, isEndpointProtocol } from '../../shared/endpoint-routes';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
-import { tailscaleStateExists, pollTailscaleLoginSuccess } from './tailscale-state';
+import { safeHttpUrl } from '../../shared/url';
+import { tailscaleStateExists } from './tailscale-state';
 import {
   buildTailscaleLoginConfig,
   tailscaleEndpointInRunningCore,
@@ -1993,7 +1994,8 @@ done
       if (server.protocol.toLowerCase() === 'custom' && server.customSettings?.isEndpoint)
         return null;
       // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
-      if (server.protocol.toLowerCase() === 'wireguard') {
+      // 此处用 isEndpointProtocol 单一真值（tailscale 已上方 return null 排除，剩余 endpoint 协议即 wireguard）。
+      if (isEndpointProtocol(server.protocol)) {
         return buildWireGuardEndpoint(server, tag);
       }
       const map = new Map<string, string>([[server.id, tag]]);
@@ -3813,6 +3815,9 @@ exit 0
     // 进程已停 → 探针端口失效，置 null 让 IpInfoService 知道代理出口不可测
     this.probeDirectPort = null;
     this.probeProxyPort = null;
+    // Tailscale 登录 URL 去重集随核会话收尾清空（绑定核会话而非整进程）：下个核会话若再触发交互登录，
+    // 同一 URL 应重新弹「需登录」提示。tailscaleAuthPolling 有自身 delete 收尾，不在此动（勿破在飞登录）。
+    this.tailscaleAuthSeen.clear();
   }
 
   /** 注入 macOS 提权 helper（index.ts 启动时调用）。 */
@@ -4759,28 +4764,36 @@ exit 0
     if (server) this.watchTailscaleLogin(server.id, nodeName);
   }
 
+  /** 交互登录成功统一发射：推 EVENT_TAILSCALE_AUTH_OK + 记 info 日志（Phase1 主核检测 / Phase2 瞬态核两路共用）。 */
+  private emitTailscaleAuthOk(serverId: string, nodeName: string): void {
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, { serverId, nodeName });
+    this.logToManager('info', `Tailscale 节点「${nodeName}」登录成功`, 'sing-box');
+  }
+
   /**
    * 轮询某 Tailscale 节点的 state 目录直到登录成功 / 超时 / 进程已停（取消）。每节点单飞。
    * 成功 → 发 EVENT_TAILSCALE_AUTH_OK + 记 info 日志；超时/取消静默收尾（toast 仍在，用户可重试）。
    * 轮询纯逻辑在 tailscale-state.pollTailscaleLoginSuccess（check/sleep 可注入、单测覆盖）。
+   * 生命周期编排复用 runLoginPollLifecycle（与 Phase2 瞬态核同路径）；Phase1 是主核日志检测、无瞬态核可杀，
+   * 故 kill 为 no-op（不动主核生命周期）。tailscaleAuthPolling 单飞去重收尾不变。
    */
   private watchTailscaleLogin(serverId: string, nodeName: string): void {
     if (this.tailscaleAuthPolling.has(serverId)) return; // 同节点已在轮询
     this.tailscaleAuthPolling.add(serverId);
-    void pollTailscaleLoginSuccess({
-      check: () => tailscaleStateExists(serverId),
-      // 进程已停 → 取消轮询，避免后台空转到 2min。判据用 getStatus().running（同 UI/健康检查的
-      // activePid 存活口径）：覆盖全部启动路径——helper 零提权 / osascript / UAC 后台进程经 singboxPid，
-      // 直接 spawn（system 代理 / Linux TUN）经 pid。⚠️ 不能用 `singboxProcess === null`：helper 路径
-      // 经 socket 起核、从不 spawn 子进程，singboxProcess 恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
-      isCancelled: () => !this.getStatus().running,
+    void runLoginPollLifecycle({
+      poll: makeLoginPoll(
+        () => tailscaleStateExists(serverId),
+        // 进程已停 → 取消轮询，避免后台空转到 2min。判据用 getStatus().running（同 UI/健康检查的
+        // activePid 存活口径）：覆盖全部启动路径——helper 零提权 / osascript / UAC 后台进程经 singboxPid，
+        // 直接 spawn（system 代理 / Linux TUN）经 pid。⚠️ 不能用 `singboxProcess === null`：helper 路径
+        // 经 socket 起核、从不 spawn 子进程，singboxProcess 恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
+        () => !this.getStatus().running
+      ),
+      onSuccess: () => this.emitTailscaleAuthOk(serverId, nodeName),
+      kill: () => {
+        /* Phase1：主核日志检测，无瞬态核可杀（不动主核生命周期） */
+      },
     })
-      .then((result) => {
-        if (result === 'success') {
-          this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, { serverId, nodeName });
-          this.logToManager('info', `Tailscale 节点「${nodeName}」登录成功`, 'sing-box');
-        }
-      })
       .catch(() => {
         /* 轮询本身失败安全（check 已 try/catch），此处兜底防 unhandled rejection */
       })
@@ -4926,13 +4939,7 @@ exit 0
         () => tailscaleStateExists(server.id),
         () => handle.cancelled
       ),
-      onSuccess: () => {
-        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, {
-          serverId: server.id,
-          nodeName: server.name,
-        });
-        this.logToManager('info', `Tailscale 节点「${server.name}」登录成功`, 'sing-box');
-      },
+      onSuccess: () => this.emitTailscaleAuthOk(server.id, server.name),
       kill: () => this.killTailscaleLogin(server.id),
     });
 
@@ -4942,13 +4949,7 @@ exit 0
   /** 抓到瞬态登录核的 URL：自动开浏览器 + 系统通知（点击再开）+ 推渲染端可关闭 toast（Phase 1 提示条复用）。 */
   private handleTailscaleLoginUrl(server: ServerConfig, url: string): void {
     // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
-    let safeUrl: string | null = null;
-    try {
-      const u = new URL(url);
-      if (u.protocol === 'https:' || u.protocol === 'http:') safeUrl = u.href;
-    } catch {
-      safeUrl = null;
-    }
+    const safeUrl = safeHttpUrl(url);
     if (!safeUrl) {
       this.logToManager('warn', `Tailscale 登录 URL 非法已忽略: ${url}`, 'sing-box');
       return;

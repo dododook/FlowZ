@@ -14,10 +14,10 @@
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import * as crypto from 'crypto';
 import type { LogManager } from './LogManager';
 import { WarpService } from './WarpService';
 import { getUserDataPath } from '../utils/paths';
+import { writeFileAtomic } from '../utils/atomic-write';
 import {
   planDeregisterDrain,
   enqueuePendingDeregister,
@@ -129,14 +129,8 @@ export class WarpDeregisterQueue {
    */
   private async writeQueueToDisk(queue: PendingDeregisterEntry[]): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-    try {
-      await fs.writeFile(tmp, JSON.stringify(queue, null, 2), 'utf8');
-      await fs.rename(tmp, this.filePath);
-    } catch (e) {
-      await fs.rm(tmp, { force: true }).catch(() => {}); // 失败清理临时文件，不留孤儿
-      throw e;
-    }
+    // 原子写（唯一后缀 <pid>.<rand6hex>.tmp + rename + 失败清理）收敛到 writeFileAtomic（语义字节保持）。
+    await writeFileAtomic(this.filePath, JSON.stringify(queue, null, 2));
   }
 
   /**
