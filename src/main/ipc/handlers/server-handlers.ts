@@ -11,15 +11,25 @@ import { registerIpcHandler } from '../ipc-handler';
 import { ProtocolParser } from '../../services/ProtocolParser';
 import { ConfigManager } from '../../services/ConfigManager';
 import { WarpService, type WarpWireGuardDraft } from '../../services/WarpService';
+import { WarpDeregisterQueue } from '../../services/WarpDeregisterQueue';
 import { tailscaleStateDir, tailscaleStateExists } from '../../services/tailscale-state';
+import type { LogManager } from '../../services/LogManager';
 
 /**
  * 注册服务器管理相关的 IPC 处理器
+ * @param logManager 可选，供 WARP 设备注销队列记录日志（只打 deviceId 前缀，绝不打 token）
  */
 export function registerServerHandlers(
   protocolParser: ProtocolParser,
-  configManager: ConfigManager
+  configManager: ConfigManager,
+  logManager?: LogManager
 ): void {
+  // WARP 待注销队列（删除带 warpDevice 凭据的节点 → 入队；成功注册后机会式 drain）。
+  // unregister 注入 WarpService，文件 IO 默认 <userData>/warp/pending-deregister.json；无常驻定时器。
+  const warpDeregisterQueue = new WarpDeregisterQueue({
+    unregister: (deviceId, token) => new WarpService(logManager).unregister(deviceId, token),
+    logManager,
+  });
   // 解析协议 URL
   registerIpcHandler<{ url: string }, ServerConfig>(
     IPC_CHANNELS.SERVER_PARSE_URL,
@@ -119,6 +129,20 @@ export function registerServerHandlers(
           .rm(tailscaleStateDir(args.serverId), { recursive: true, force: true })
           .catch(() => {});
       }
+
+      // WARP 节点删除 → 若带自删凭据（warpDevice.token 存在）则把 {deviceId, token, enqueuedAt} 入待注销队列，
+      // 后台机会式 drain 远端注销（删除恒瞬时、不内联调网络，不阻断）。判据=token 存在与否（零误判，不靠端点启发式）：
+      // 本特性前的旧 WARP 节点无 warpDevice → 跳过入队、仅删本地、不报错（注定孤儿、无凭可注销，已接受的历史债）。
+      const warpDevice = removed?.wireguardSettings?.warpDevice;
+      if (warpDevice?.token && warpDevice?.deviceId) {
+        await warpDeregisterQueue
+          .enqueue({
+            deviceId: warpDevice.deviceId,
+            token: warpDevice.token,
+            enqueuedAt: Date.now(),
+          })
+          .catch(() => {}); // 入队失败不阻断删除（本地已删，凭据丢失=退化为旧节点孤儿，可接受）
+      }
     }
   );
 
@@ -168,7 +192,10 @@ export function registerServerHandlers(
   registerIpcHandler<{ licenseKey?: string }, WarpWireGuardDraft>(
     IPC_CHANNELS.WARP_REGISTER,
     async (_event: IpcMainInvokeEvent, args: { licenseKey?: string }) => {
-      return new WarpService().register({ licenseKey: args?.licenseKey });
+      const draft = await new WarpService(logManager).register({ licenseKey: args?.licenseKey });
+      // 成功注册后机会式 drain 待注销队列（fire-and-forget，不阻塞返回；网络已通的好时机）。
+      warpDeregisterQueue.drainInBackground();
+      return draft;
     }
   );
 }

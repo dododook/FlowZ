@@ -1270,7 +1270,7 @@ if (gotTheLock) {
     // 注册 IPC 处理器（需要在 ProxyManager 创建后）
     registerConfigHandlers(configManager);
     registerPrivacyHandlers();
-    registerServerHandlers(protocolParser, configManager);
+    registerServerHandlers(protocolParser, configManager, logManager);
     registerLogHandlers(logManager, proxyManager);
     registerProxyHandlers(proxyManager, statsService);
     registerIpInfoHandlers(ipInfoService);

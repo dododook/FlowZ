@@ -43,6 +43,9 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
           persistentKeepalive: 25,
           mtu: draft.mtu,
           reserved: draft.reserved,
+          // 不再丢弃注册产出的自删凭据：随节点落 wireguardSettings.warpDevice（与 privateKey 同脱敏），
+          // 删除此节点时据它注销远端匿名设备（见 WARP 设计 §设备移除 / 方案 F）。保存路径不变，仍走 dialog handleSave。
+          warpDevice: draft.warpDevice,
         },
       });
     } catch (e: any) {

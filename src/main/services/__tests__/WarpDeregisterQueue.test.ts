@@ -1,0 +1,150 @@
+/**
+ * WarpDeregisterQueue 单测（注入式，不触网/不碰真实 FS）。
+ * unregister / readQueue / writeQueue / now 全注入；验 drain 的 done/drop/retry 出入队、超龄 expire、
+ * MAX_PER_DRAIN 截断、并发重入保护、enqueue 护栏，及「队列无变化跳过写」。
+ * 纯阈值/分流逻辑在 shared/warp.test.ts，此处只验服务编排。
+ */
+import { WarpDeregisterQueue } from '../WarpDeregisterQueue';
+import {
+  WARP_DEREGISTER_MAX_AGE_MS,
+  WARP_DEREGISTER_MAX_PER_DRAIN,
+  type PendingDeregisterEntry,
+  type DeregisterResult,
+} from '../../../shared/warp';
+
+const NOW = 2_000_000_000_000;
+const mk = (id: string, ageMs = 1000): PendingDeregisterEntry => ({
+  deviceId: id,
+  token: `t-${id}`,
+  enqueuedAt: NOW - ageMs,
+});
+
+/** 构造一个注入式队列：内存队列 + 可编排的 unregister 结果。 */
+function makeQueue(
+  initial: PendingDeregisterEntry[],
+  results: Record<string, DeregisterResult> | ((id: string) => DeregisterResult)
+) {
+  let store = [...initial];
+  const writes: PendingDeregisterEntry[][] = [];
+  const unregistered: string[] = [];
+  const q = new WarpDeregisterQueue({
+    unregister: async (deviceId: string) => {
+      unregistered.push(deviceId);
+      return typeof results === 'function' ? results(deviceId) : (results[deviceId] ?? 'retry');
+    },
+    now: () => NOW,
+    readQueue: async () => [...store],
+    writeQueue: async (queue) => {
+      store = [...queue];
+      writes.push([...queue]);
+    },
+  });
+  return { q, getStore: () => store, writes, unregistered };
+}
+
+describe('WarpDeregisterQueue.drain', () => {
+  it('done → 出队；retry → 留队', async () => {
+    const { q, getStore, unregistered } = makeQueue([mk('a'), mk('b')], { a: 'done', b: 'retry' });
+    const stats = await q.drain();
+    expect(stats).toMatchObject({ done: 1, retried: 1 });
+    expect(unregistered.sort()).toEqual(['a', 'b']);
+    expect(getStore().map((e) => e.deviceId)).toEqual(['b']); // a 出队，b 留队
+  });
+
+  it('drop → 出队（凭据死，不再重试）', async () => {
+    const { q, getStore } = makeQueue([mk('a')], { a: 'drop' });
+    const stats = await q.drain();
+    expect(stats).toMatchObject({ dropped: 1 });
+    expect(getStore()).toEqual([]);
+  });
+
+  it('超 7 天 → expire 出队，且不调 unregister（不调网络）', async () => {
+    const { q, getStore, unregistered } = makeQueue(
+      [mk('old', WARP_DEREGISTER_MAX_AGE_MS + 5000), mk('fresh', 1000)],
+      { fresh: 'done' }
+    );
+    const stats = await q.drain();
+    expect(stats).toMatchObject({ expired: 1, done: 1 });
+    expect(unregistered).toEqual(['fresh']); // old 未调网络
+    expect(getStore()).toEqual([]); // 都出队
+  });
+
+  it('单次至多 MAX_PER_DRAIN 条，余下留队等下次', async () => {
+    const entries = Array.from({ length: WARP_DEREGISTER_MAX_PER_DRAIN + 4 }, (_, i) =>
+      mk(`e${i}`, 1000)
+    );
+    const { q, getStore, unregistered } = makeQueue(entries, () => 'retry');
+    await q.drain();
+    expect(unregistered.length).toBe(WARP_DEREGISTER_MAX_PER_DRAIN); // 只处理前 N 条
+    expect(getStore().length).toBe(entries.length); // 全 retry → 全留队（无变化）
+  });
+
+  it('空队列 → no-op，不写回', async () => {
+    const { q, writes, unregistered } = makeQueue([], {});
+    const stats = await q.drain();
+    expect(stats).toEqual({ done: 0, dropped: 0, retried: 0, expired: 0 });
+    expect(writes).toEqual([]);
+    expect(unregistered).toEqual([]);
+  });
+
+  it('全 retry 且无 expire/done/drop → 跳过写回（省 IO）', async () => {
+    const { q, writes } = makeQueue([mk('a'), mk('b')], { a: 'retry', b: 'retry' });
+    await q.drain();
+    expect(writes).toEqual([]); // 队列内容未变，不写
+  });
+
+  it('有出队（done）→ 写回新队列', async () => {
+    const { q, writes } = makeQueue([mk('a'), mk('b')], { a: 'done', b: 'retry' });
+    await q.drain();
+    expect(writes.length).toBe(1);
+    expect(writes[0].map((e) => e.deviceId)).toEqual(['b']);
+  });
+
+  it('unregister 抛异常 → 当 retry 兜底（留队，不崩 drain）', async () => {
+    let store = [mk('a')];
+    const q = new WarpDeregisterQueue({
+      unregister: async () => {
+        throw new Error('boom');
+      },
+      now: () => NOW,
+      readQueue: async () => [...store],
+      writeQueue: async (next) => {
+        store = [...next];
+      },
+    });
+    const stats = await q.drain();
+    expect(stats).toMatchObject({ retried: 1 });
+    expect(store.map((e) => e.deviceId)).toEqual(['a']); // 留队
+  });
+
+  it('并发重入保护：第二次 drain 在第一次进行中直接返回零', async () => {
+    let resolveUnreg: (r: DeregisterResult) => void = () => {};
+    let store = [mk('a')];
+    const q = new WarpDeregisterQueue({
+      unregister: () =>
+        new Promise<DeregisterResult>((res) => {
+          resolveUnreg = res;
+        }),
+      now: () => NOW,
+      readQueue: async () => [...store],
+      writeQueue: async (next) => {
+        store = [...next];
+      },
+    });
+    const p1 = q.drain();
+    // p1 卡在 unregister；此时第二次 drain 应被重入保护直接返回零。
+    const stats2 = await q.drain();
+    expect(stats2).toEqual({ done: 0, dropped: 0, retried: 0, expired: 0 });
+    resolveUnreg('done');
+    await p1;
+    expect(store).toEqual([]); // 第一次正常完成出队
+  });
+});
+
+describe('WarpDeregisterQueue.enqueue', () => {
+  it('追加新条目并写回', async () => {
+    const { q, getStore } = makeQueue([mk('a')], {});
+    await q.enqueue(mk('new'));
+    expect(getStore().map((e) => e.deviceId)).toEqual(['a', 'new']);
+  });
+});

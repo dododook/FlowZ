@@ -18,7 +18,10 @@ import {
   WARP_ALLOWED_IPS,
   buildRegisterBody,
   parseRegisterResponse,
+  buildUnregisterRequest,
+  classifyDeregisterResult,
   type WarpWireGuardDraft,
+  type DeregisterResult,
 } from '../../shared/warp';
 
 export type { WarpWireGuardDraft };
@@ -150,6 +153,72 @@ export class WarpService {
         license: result.license,
         warpPlus: result.warpPlus,
       },
+      // 破当前「token 用后即弃」：保留 deviceId+token 随节点落 wireguardSettings.warpDevice，作远端设备自删凭据
+      // （与 privateKey 同信任类、同脱敏）。无 token 时存空串——register 应返 token，缺则后续删除按「无凭据」跳过入队。
+      warpDevice: { deviceId: result.deviceId, token: token || '' },
     };
+  }
+
+  /**
+   * 注销一台已注册的 WARP 设备（删除节点时调）。裸 DELETE /{version}/reg/{deviceId} + Bearer token + 同
+   * register 的 TLS1.2/okhttp 指纹（否则 1020）。**捕获 HTTP 状态码**（不像 register 非 2xx 即抛丢失状态）→
+   * 经 classifyDeregisterResult 返 done/drop/retry；网络异常 → classify(null, err)=retry。
+   * 不抛异常（队列重试语义靠返回值，不靠 try/catch）。日志只打 deviceId 前缀，绝不打 token。
+   */
+  async unregister(deviceId: string, token: string): Promise<DeregisterResult> {
+    if (!deviceId || !token) return 'drop'; // 无凭据无从注销（旧节点 / 缺 token），视作放弃出队。
+    const { url, headers } = buildUnregisterRequest(WARP_API_VERSION, deviceId, token);
+    const idPrefix = deviceId.slice(0, 8);
+    try {
+      const status = await this.requestStatus('DELETE', url, headers);
+      const result = classifyDeregisterResult(status, undefined);
+      this.log('info', `WARP 设备注销 ${idPrefix}… → HTTP ${status}（${result}）`);
+      return result;
+    } catch (e: any) {
+      // 网络失败 / 超时：无 HTTP 状态 → retry（等网络恢复）。
+      const result = classifyDeregisterResult(null, e);
+      this.log('info', `WARP 设备注销 ${idPrefix}… 网络异常（${result}）: ${e?.message ?? e}`);
+      return result;
+    }
+  }
+
+  /**
+   * 同 request 的 TLS1.2-only + HTTP/1.1，但**返回 HTTP 状态码而非按 2xx 抛错**（注销需据 4xx/5xx 分类，
+   * 不能像 register 那样非 2xx 即抛丢失状态）。响应体被读尽丢弃（注销只关心状态码）。仅网络层错误才 reject。
+   */
+  private requestStatus(
+    method: string,
+    url: string,
+    headers: Record<string, string>
+  ): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const u = new URL(url);
+      const req = https.request(
+        {
+          method,
+          hostname: u.hostname,
+          path: u.pathname + u.search,
+          port: 443,
+          headers,
+          timeout: REQ_TIMEOUT_MS,
+          minVersion: 'TLSv1.2',
+          maxVersion: 'TLSv1.2',
+        },
+        (res) => {
+          res.setEncoding('utf8');
+          // 响应流错误（对端收 header 后 RST/提前关闭）发在 res 上而非 req → 必须显式 reject，否则永挂。
+          res.on('error', (e) => reject(e instanceof Error ? e : new Error(String(e))));
+          let len = 0;
+          res.on('data', (c) => {
+            len += c.length;
+            if (len > 1_000_000) req.destroy(new Error('WARP 响应过大'));
+          });
+          res.on('end', () => resolve(res.statusCode || 0));
+        }
+      );
+      req.on('error', reject);
+      req.on('timeout', () => req.destroy(new Error('WARP API 超时')));
+      req.end();
+    });
   }
 }

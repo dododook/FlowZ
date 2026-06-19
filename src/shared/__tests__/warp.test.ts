@@ -3,8 +3,19 @@ import {
   splitEndpoint,
   buildRegisterBody,
   parseRegisterResponse,
+  buildUnregisterRequest,
+  classifyDeregisterResult,
+  enqueuePendingDeregister,
+  planDeregisterDrain,
+  WARP_API_BASE,
+  WARP_USER_AGENT,
+  WARP_CLIENT_VERSION,
+  WARP_DEREGISTER_MAX_AGE_MS,
+  WARP_DEREGISTER_MAX_QUEUE,
+  WARP_DEREGISTER_MAX_PER_DRAIN,
   WARP_DEFAULT_ENDPOINT_HOST,
   WARP_DEFAULT_ENDPOINT_PORT,
+  type PendingDeregisterEntry,
 } from '../warp';
 
 describe('reservedFromClientId', () => {
@@ -100,5 +111,120 @@ describe('parseRegisterResponse', () => {
         config: { peers: [{ public_key: 'P', endpoint: { host: 'h:1' } }], interface: {} },
       })
     ).toThrow();
+  });
+});
+
+// ── 设备注销 / 待注销队列 ──────────────────────────────────────────────
+
+describe('buildUnregisterRequest', () => {
+  it('裸 DELETE /{version}/reg/{deviceId} + Bearer + UA/CF-Client-Version', () => {
+    const { url, headers } = buildUnregisterRequest('v0a2158', 'dev-123', 'tok-abc');
+    expect(url).toBe(`${WARP_API_BASE}/v0a2158/reg/dev-123`);
+    expect(headers.Authorization).toBe('Bearer tok-abc');
+    expect(headers['User-Agent']).toBe(WARP_USER_AGENT);
+    expect(headers['CF-Client-Version']).toBe(WARP_CLIENT_VERSION);
+  });
+  it('版本段随入参（应对 CF 版本滚动）', () => {
+    expect(buildUnregisterRequest('v9x9', 'd', 't').url).toBe(`${WARP_API_BASE}/v9x9/reg/d`);
+  });
+});
+
+describe('classifyDeregisterResult（全矩阵）', () => {
+  it('204 / 404 → done（已注销 / 别处已销）', () => {
+    expect(classifyDeregisterResult(204)).toBe('done');
+    expect(classifyDeregisterResult(404)).toBe('done');
+  });
+  it('401 / 403 → drop（token 死，重试浪费）', () => {
+    expect(classifyDeregisterResult(401)).toBe('drop');
+    expect(classifyDeregisterResult(403)).toBe('drop');
+  });
+  it('网络失败/超时(null) → retry', () => {
+    expect(classifyDeregisterResult(null)).toBe('retry');
+    expect(classifyDeregisterResult(null, new Error('ETIMEDOUT'))).toBe('retry');
+  });
+  it('5xx / 400 → retry（暂时不可达 / 待版本升级）', () => {
+    expect(classifyDeregisterResult(500)).toBe('retry');
+    expect(classifyDeregisterResult(502)).toBe('retry');
+    expect(classifyDeregisterResult(503)).toBe('retry');
+    expect(classifyDeregisterResult(400)).toBe('retry');
+  });
+  it('含 1020（WAF/版本失效）→ retry', () => {
+    expect(classifyDeregisterResult(403, new Error('WARP API 403: error 1020'))).toBe('retry');
+    // err 文本里带 1020，即便状态码非典型也 retry
+    expect(classifyDeregisterResult(429, { message: 'code 1020' })).toBe('retry');
+  });
+  it('其它未知 4xx（非 1020）→ drop（非暂时性，不无限占预算）', () => {
+    expect(classifyDeregisterResult(429)).toBe('drop');
+    expect(classifyDeregisterResult(410)).toBe('drop');
+  });
+});
+
+describe('enqueuePendingDeregister（MAX_QUEUE 丢最旧）', () => {
+  const mk = (id: string, at = 0): PendingDeregisterEntry => ({
+    deviceId: id,
+    token: `t-${id}`,
+    enqueuedAt: at,
+  });
+
+  it('未满 → 追加，无丢弃', () => {
+    const { queue, dropped } = enqueuePendingDeregister([mk('a'), mk('b')], mk('c'));
+    expect(queue.map((e) => e.deviceId)).toEqual(['a', 'b', 'c']);
+    expect(dropped).toEqual([]);
+  });
+  it('超 MAX_QUEUE → 丢最旧（FIFO），长度封顶', () => {
+    const full = Array.from({ length: WARP_DEREGISTER_MAX_QUEUE }, (_, i) => mk(`d${i}`));
+    const { queue, dropped } = enqueuePendingDeregister(full, mk('new'));
+    expect(queue.length).toBe(WARP_DEREGISTER_MAX_QUEUE);
+    expect(dropped.map((e) => e.deviceId)).toEqual(['d0']); // 最旧被挤掉
+    expect(queue[queue.length - 1].deviceId).toBe('new'); // 新条目在队尾
+    expect(queue[0].deviceId).toBe('d1');
+  });
+});
+
+describe('planDeregisterDrain（年龄 + MAX_PER_DRAIN 截断）', () => {
+  const NOW = 10_000_000_000;
+  const mk = (id: string, ageMs: number): PendingDeregisterEntry => ({
+    deviceId: id,
+    token: `t-${id}`,
+    enqueuedAt: NOW - ageMs,
+  });
+
+  it('超 7 天 → expire（不调网络）；在龄 → eligible', () => {
+    const queue = [
+      mk('old', WARP_DEREGISTER_MAX_AGE_MS + 1),
+      mk('fresh', WARP_DEREGISTER_MAX_AGE_MS - 1),
+    ];
+    const { plan, deferred } = planDeregisterDrain(queue, NOW);
+    expect(plan.find((p) => p.entry.deviceId === 'old')?.action).toBe('expire');
+    expect(plan.find((p) => p.entry.deviceId === 'fresh')?.action).toBe('eligible');
+    expect(deferred).toEqual([]);
+  });
+
+  it('恰好 7 天（边界）不算超龄 → eligible（> 才超）', () => {
+    const { plan } = planDeregisterDrain([mk('edge', WARP_DEREGISTER_MAX_AGE_MS)], NOW);
+    expect(plan[0].action).toBe('eligible');
+  });
+
+  it('eligible 至多 MAX_PER_DRAIN 条，余下 deferred（留队，不动）', () => {
+    const queue = Array.from({ length: WARP_DEREGISTER_MAX_PER_DRAIN + 3 }, (_, i) =>
+      mk(`e${i}`, 1000)
+    );
+    const { plan, deferred } = planDeregisterDrain(queue, NOW);
+    expect(plan.filter((p) => p.action === 'eligible').length).toBe(WARP_DEREGISTER_MAX_PER_DRAIN);
+    expect(deferred.length).toBe(3);
+  });
+
+  it('expire 不占 MAX_PER_DRAIN 预算（超龄直接计划 expire，不挤掉在龄的处理名额）', () => {
+    // 前置一批超龄 + 后置 MAX_PER_DRAIN 条在龄 → 在龄全应 eligible，超龄全 expire，无 deferred。
+    const expired = Array.from({ length: 5 }, (_, i) =>
+      mk(`x${i}`, WARP_DEREGISTER_MAX_AGE_MS + 1000)
+    );
+    const fresh = Array.from({ length: WARP_DEREGISTER_MAX_PER_DRAIN }, (_, i) =>
+      mk(`f${i}`, 1000)
+    );
+    const { plan, deferred } = planDeregisterDrain([...expired, ...fresh], NOW);
+    expect(plan.filter((p) => p.action === 'expire').length).toBe(5);
+    expect(plan.filter((p) => p.action === 'eligible').length).toBe(WARP_DEREGISTER_MAX_PER_DRAIN);
+    expect(deferred.length).toBe(0);
   });
 });

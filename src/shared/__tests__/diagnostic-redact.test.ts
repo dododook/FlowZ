@@ -69,6 +69,33 @@ describe('redactDeep — 密钥脱敏（红线：零明文密钥）', () => {
     expect(out.secret).toBe(REDACTED); // 对象整体打码
   });
 
+  it('WARP 节点 wireguardSettings.warpDevice.token 被脱敏，deviceId 保留（非密钥）', () => {
+    // 设备移除特性：token 随节点落 wireguardSettings.warpDevice + 入 pending-deregister.json。
+    // SECRET_KEYS 已含 token（归一化键名）→ 递归脱敏天然覆盖；deviceId 非密钥、保留以判形态/可追溯。
+    const out = redactDeep({
+      protocol: 'wireguard',
+      wireguardSettings: {
+        privateKey: 'PRIV',
+        peerPublicKey: 'PEERPUB',
+        warpDevice: { deviceId: 'device-abc-123', token: 'SECRET_TOKEN' },
+      },
+    }) as any;
+    expect(out.wireguardSettings.privateKey).toBe(REDACTED);
+    expect(out.wireguardSettings.peerPublicKey).toBe('PEERPUB'); // 公钥公开，保留
+    expect(out.wireguardSettings.warpDevice.token).toBe(REDACTED); // 红线：token 脱敏
+    expect(out.wireguardSettings.warpDevice.deviceId).toBe('device-abc-123'); // 非密钥，保留
+  });
+
+  it('pending-deregister.json 条目数组：每条 token 被脱敏（队列文件若进诊断也安全）', () => {
+    const out = redactDeep([
+      { deviceId: 'd1', token: 'TOK1', enqueuedAt: 1 },
+      { deviceId: 'd2', token: 'TOK2', enqueuedAt: 2 },
+    ]) as any[];
+    expect(out[0].token).toBe(REDACTED);
+    expect(out[1].token).toBe(REDACTED);
+    expect(out[0].deviceId).toBe('d1'); // deviceId 保留
+  });
+
   it('custom 协议：按节点 secretKeys 额外打码 outbound 内的密钥键', () => {
     const out = redactDeep({
       protocol: 'custom',

@@ -158,6 +158,8 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         persistentKeepalive: values.persistentKeepalive,
         mtu: values.mtu || undefined,
         reserved: parseReserved(values.reserved),
+        // WARP 自删凭据非表单字段：编辑保存时原样透传既有值，否则编辑过 WARP 节点后凭据丢失 → 删除时无从注销。
+        warpDevice: serverConfig?.wireguardSettings?.warpDevice,
       },
     };
     await onSubmit(config);
