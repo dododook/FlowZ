@@ -439,10 +439,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -568,6 +564,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -1083,10 +1086,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -1197,6 +1196,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -1703,10 +1709,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -1817,6 +1819,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -2351,10 +2360,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -2465,6 +2470,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -2954,10 +2966,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -3068,6 +3076,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -3540,10 +3555,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -3654,6 +3665,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -4114,10 +4132,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -4228,6 +4242,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -4671,10 +4692,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -4785,6 +4802,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -5304,10 +5328,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -5418,6 +5438,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -5929,10 +5956,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -6043,6 +6066,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -6584,10 +6614,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -6698,6 +6724,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -7202,10 +7235,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -7316,6 +7345,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "proxy-selector",
         },
         {
           "action": "reject",
@@ -7815,10 +7851,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -7948,6 +7980,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -8478,10 +8517,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -8566,6 +8601,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             ".1234567.com.cn",
             ".gw.com.cn",
             ".tdx.com.cn",
+          ],
+          "outbound": "direct",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
           ],
           "outbound": "direct",
         },
@@ -9059,10 +9101,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "port": [
             53,
           ],
-        },
-        {
-          "action": "reject",
-          "protocol": "icmp",
         },
         {
           "action": "route",
@@ -9663,10 +9701,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -9777,6 +9811,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -10244,10 +10285,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -10358,6 +10395,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -10855,10 +10899,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -10971,6 +11011,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -11486,10 +11533,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -11600,6 +11643,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -12089,10 +12139,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -12203,6 +12249,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -12702,10 +12755,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -12830,6 +12879,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -13333,10 +13389,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -13447,6 +13499,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -13936,10 +13995,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -14050,6 +14105,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -14564,10 +14626,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -14678,6 +14736,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -15212,10 +15277,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -15328,6 +15389,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -15843,10 +15911,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -15961,6 +16025,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -16475,10 +16546,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -16594,6 +16661,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -17083,10 +17157,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -17197,6 +17267,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -17698,10 +17775,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -17812,6 +17885,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -18308,10 +18388,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -18422,6 +18498,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -18906,10 +18989,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -19020,6 +19099,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -19565,10 +19651,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -19679,6 +19761,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -20183,10 +20272,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -20297,6 +20382,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",
@@ -20814,10 +20906,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
         },
         {
-          "action": "reject",
-          "protocol": "icmp",
-        },
-        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -20928,6 +21016,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "outbound": "direct",
           "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
         },
         {
           "action": "reject",

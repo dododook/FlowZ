@@ -42,7 +42,8 @@ export function endpointForcedRouteCidrs(server: ServerConfig): string[] {
   if (p === 'wireguard') {
     raw = stripCatchAll(server.wireguardSettings?.allowedIPs);
   } else if (p === 'tailscale') {
-    raw = [TAILNET_CGNAT, ...(server.tailscaleSettings?.routes || [])];
+    // 与 WireGuard 分支对齐：剥 catch-all（0/0），TS 全隧道走 exitNode，routes 不该承载 0.0.0.0/0。
+    raw = [TAILNET_CGNAT, ...stripCatchAll(server.tailscaleSettings?.routes)];
   } else {
     return [];
   }

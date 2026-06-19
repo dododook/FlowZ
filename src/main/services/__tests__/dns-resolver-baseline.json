@@ -146,10 +146,6 @@
         "action": "hijack-dns"
       },
       {
-        "protocol": "icmp",
-        "action": "reject"
-      },
-      {
         "process_name": [
           "Surge",
           "Surge 4",
@@ -263,6 +259,13 @@
           "240.0.0.0/4",
           "fd00::/8",
           "fe80::/10"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "network": [
+          "icmp"
         ],
         "action": "route",
         "outbound": "direct"
@@ -533,10 +536,6 @@
         "action": "hijack-dns"
       },
       {
-        "protocol": "icmp",
-        "action": "reject"
-      },
-      {
         "process_name": [
           "Surge",
           "Surge 4",
@@ -650,6 +649,13 @@
           "240.0.0.0/4",
           "fd00::/8",
           "fe80::/10"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "network": [
+          "icmp"
         ],
         "action": "route",
         "outbound": "direct"
@@ -888,10 +894,6 @@
         "action": "hijack-dns"
       },
       {
-        "protocol": "icmp",
-        "action": "reject"
-      },
-      {
         "process_name": [
           "Surge",
           "Surge 4",
@@ -1005,6 +1007,13 @@
           "240.0.0.0/4",
           "fd00::/8",
           "fe80::/10"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "network": [
+          "icmp"
         ],
         "action": "route",
         "outbound": "direct"

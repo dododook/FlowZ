@@ -12,6 +12,7 @@ import type { ServerConfig, UserConfig } from '../../../shared/types';
 import type { SingBoxEndpoint } from '../singbox-config-types';
 
 const wgEp = (tag: string, system = false): SingBoxEndpoint => ({ type: 'wireguard', tag, system });
+const tsEp = (tag: string, system = false): SingBoxEndpoint => ({ type: 'tailscale', tag, system });
 
 const deps = (
   pendingEndpoints: SingBoxEndpoint[],
@@ -39,6 +40,17 @@ const wgNode = (id: string, name: string, allowedIPs: string[], over: any = {}):
       peerPublicKey: 'pub',
       localAddress: ['10.0.0.2/32'],
       allowedIPs,
+      ...over,
+    },
+  }) as unknown as ServerConfig;
+
+const tsNode = (id: string, name: string, over: any = {}): ServerConfig =>
+  ({
+    id,
+    name,
+    protocol: 'tailscale',
+    tailscaleSettings: {
+      routes: [],
       ...over,
     },
   }) as unknown as ServerConfig;
@@ -234,5 +246,93 @@ describe('buildRouteConfig — WebRTC 防泄露（webrtcLeakProtection）', () =
         r.protocol === undefined
     );
     expect(udp443).toBeDefined();
+  });
+});
+
+// 找到 ICMP 兜底规则（network:['icmp'] + action:'route'）与已删的死规则（protocol:'icmp'）。
+const icmpRule = (rc: any): any =>
+  (rc.rules || []).find((r: any) => Array.isArray(r.network) && r.network.includes('icmp'));
+const hasProtocolIcmp = (rc: any): boolean =>
+  (rc.rules || []).some((r: any) => r.protocol === 'icmp');
+
+describe('buildRouteConfig — ICMP 路由（跟随 final 出口）', () => {
+  it('① 无任何 protocol:icmp 规则（死规则已删）', () => {
+    const n = proxyNode();
+    const rc = buildRouteConfig(cfg([n], { proxyMode: 'smart' }), idMap([n]), deps([]));
+    expect(hasProtocolIcmp(rc)).toBe(false);
+  });
+
+  it('② <1.13 核 → 无 network:icmp 规则（维持核默认）', () => {
+    const n = proxyNode();
+    const rc = buildRouteConfig(
+      cfg([n], { proxyMode: 'smart' }),
+      idMap([n]),
+      deps([], { coreVersion: '1.12.8' })
+    );
+    expect(icmpRule(rc)).toBeUndefined();
+    expect(hasProtocolIcmp(rc)).toBe(false);
+  });
+
+  it('③a 选中普通代理 → network:icmp → direct（普通代理转不了 ICMP）', () => {
+    const n = proxyNode();
+    const rc = buildRouteConfig(cfg([n], { proxyMode: 'smart' }), idMap([n]), deps([]));
+    const r = icmpRule(rc);
+    expect(r).toBeDefined();
+    expect(r.action).toBe('route');
+    expect(r.outbound).toBe('direct');
+  });
+
+  it('③b direct 模式 → network:icmp → direct', () => {
+    const wg = wgNode('w1', 'WG', ['10.8.0.0/24']); // 即便选中 endpoint，direct 模式恒直连
+    const rc = buildRouteConfig(
+      cfg([wg], { proxyMode: 'direct' }),
+      idMap([wg]),
+      deps([wgEp('WG')])
+    );
+    const r = icmpRule(rc);
+    expect(r).toBeDefined();
+    expect(r.outbound).toBe('direct');
+  });
+
+  it('③c specific-only mesh（关外网组网节点选中为主）→ network:icmp → direct（userExitTag 已= direct）', () => {
+    const wg = wgNode('w1', 'WG', ['10.8.0.0/24'], { allowInternet: false });
+    const rc = buildRouteConfig(cfg([wg], { proxyMode: 'smart' }), idMap([wg]), deps([wgEp('WG')]));
+    const r = icmpRule(rc);
+    expect(r).toBeDefined();
+    expect(r.outbound).toBe('direct');
+  });
+
+  it('③d 选中 WG 全隧道节点 → network:icmp → userExitTag(proxy-selector)', () => {
+    const wg = wgNode('w1', 'WG', ['10.8.0.0/24']); // allowInternet 缺省=on，非 system → 承载 0/0
+    const rc = buildRouteConfig(cfg([wg], { proxyMode: 'smart' }), idMap([wg]), deps([wgEp('WG')]));
+    const r = icmpRule(rc);
+    expect(r).toBeDefined();
+    expect(r.action).toBe('route');
+    expect(r.outbound).toBe('proxy-selector');
+  });
+
+  it('③e 选中 Tailscale 全隧道节点 → network:icmp → userExitTag(proxy-selector)', () => {
+    const ts = tsNode('t1', 'TS'); // allowInternet 缺省=on，非 system → 承载 0/0
+    const rc = buildRouteConfig(cfg([ts], { proxyMode: 'smart' }), idMap([ts]), deps([tsEp('TS')]));
+    const r = icmpRule(rc);
+    expect(r).toBeDefined();
+    expect(r.outbound).toBe('proxy-selector');
+  });
+
+  it('④ mesh force-route 仍在、且排在 network:icmp 兜底之前', () => {
+    const wg = wgNode('w1', 'WG', ['10.8.0.0/24']);
+    const rc = buildRouteConfig(cfg([wg], { proxyMode: 'smart' }), idMap([wg]), deps([wgEp('WG')]));
+    const forceRoute = meshRule(rc, 'WG');
+    expect(forceRoute).toBeDefined();
+    expect(forceRoute.ip_cidr).toContain('10.8.0.0/24');
+    const forceIdx = (rc.rules || []).findIndex(
+      (r: any) => r.outbound === 'WG' && r.action === 'route' && Array.isArray(r.ip_cidr)
+    );
+    const icmpIdx = (rc.rules || []).findIndex(
+      (r: any) => Array.isArray(r.network) && r.network.includes('icmp')
+    );
+    expect(forceIdx).toBeGreaterThan(-1);
+    expect(icmpIdx).toBeGreaterThan(-1);
+    expect(forceIdx).toBeLessThan(icmpIdx);
   });
 });

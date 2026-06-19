@@ -19,6 +19,7 @@ import {
   shouldForceRouteSubnets,
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
+  isEndpointProtocol,
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
@@ -235,13 +236,6 @@ export function buildRouteConfig(
   rules.push({
     port: [53],
     action: 'hijack-dns',
-  });
-
-  // F. 静默屏蔽 ICMP 流量（FakeIP 下常见，但代理节点通常不支持）
-  // 放置在靠前位置，防止 ICMP 流量误入不支持的代理出站引发报错
-  rules.push({
-    protocol: 'icmp',
-    action: 'reject',
   });
 
   rules.push({
@@ -621,6 +615,21 @@ export function buildRouteConfig(
     if (isValidSrsFile(path.join(getRuntimeRulesDir(), 'geosite-private.srs'))) {
       rules.push({ rule_set: 'geosite-private', action: 'route', outbound: 'direct' });
     }
+  }
+
+  // ICMP 兜底（仅 sing-box ≥1.13 支持 network:icmp 匹配）：放在 mesh force-route(块 0c) + bypass-LAN 之后，
+  // 故组网具体段经其 endpoint、局域网私网段直连先匹配，本条只兜底其余（外网）ICMP。
+  //   · final 出口为 WG/Tailscale 全隧道节点（isEndpoint 且非 direct 模式）→ 经其出口 userExitTag：
+  //     endpoint 出站能转 ICMP，与 0/0 全隧道一致、防 ping 泄露真实 IP。
+  //   · 普通代理（转不了 ICMP）/ specific-only mesh(userExitTag 已= 'direct' 经 D4/D7 兜底)/ direct 模式 → 直连。
+  // 版本门 <1.13 → 不发射，维持核默认（gVisor 栈本地伪应答 ICMP echo）。
+  if (coreVersionAtLeast(deps.coreVersion, 1, 13)) {
+    const selectedServer = config.servers.find((s) => s.id === config.selectedServerId);
+    const icmpOutbound =
+      proxyMode !== 'direct' && isEndpointProtocol(selectedServer?.protocol)
+        ? userExitTag
+        : 'direct';
+    rules.push({ network: ['icmp'], action: 'route', outbound: icmpOutbound });
   }
 
   // 【QUIC 阻断】：放在自定义规则和应用分流之后，确保用户的 direct/proxy 规则优先级更高

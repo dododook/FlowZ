@@ -65,6 +65,15 @@ describe('endpointForcedRouteCidrs', () => {
   it('TS: 无 routes → 仅 tailnet 段（达 tailnet peer 的必需路由）', () => {
     expect(endpointForcedRouteCidrs(ts())).toEqual([TAILNET_CGNAT]);
   });
+  it('TS: routes 含 catch-all(0/0) → 被剥、tailnet 保留（与 WG 对齐）', () => {
+    expect(endpointForcedRouteCidrs(ts(['0.0.0.0/0', '::/0', '192.168.50.0/24']))).toEqual([
+      TAILNET_CGNAT,
+      '192.168.50.0/24',
+    ]);
+  });
+  it('TS: routes 仅 catch-all → 仅 tailnet 段（0/0 全剥）', () => {
+    expect(endpointForcedRouteCidrs(ts(['0.0.0.0/0', '::/0']))).toEqual([TAILNET_CGNAT]);
+  });
   it('trim/去空/去重', () => {
     expect(endpointForcedRouteCidrs(wg([' 10.10.10.0/24 ', '10.10.10.0/24', '', '  ']))).toEqual([
       '10.10.10.0/24',
