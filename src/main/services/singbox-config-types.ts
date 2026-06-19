@@ -141,7 +141,8 @@ export interface SingBoxOutbound {
   transport?: {
     type: string;
     path?: string;
-    host?: string;
+    host?: string | string[];
+    method?: string;
     headers?: Record<string, string | string[]>;
     service_name?: string;
     max_early_data?: number;

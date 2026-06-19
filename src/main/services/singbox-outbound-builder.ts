@@ -414,6 +414,19 @@ function generateTransportConfig(server: ServerConfig): SingBoxOutbound['transpo
     };
   }
 
+  // HTTP/2 传输（v2ray http transport，需 TLS）：host 为 string[]、path 默认 '/'。
+  // 不严格门控 httpSettings——任何 network=http 都生成 http 传输，避免回退裸 TCP（导入/表单两路统一）。
+  // 'h2' 为旧表单遗留的 network 值（现已统一为 'http'）；兼容旧配置：不必重新编辑即生效。
+  if (server.network === 'http' || (server.network as string) === 'h2') {
+    return {
+      type: 'http',
+      host: server.httpSettings?.host,
+      path: server.httpSettings?.path || '/',
+      method: server.httpSettings?.method,
+      headers: server.httpSettings?.headers,
+    };
+  }
+
   // httpupgrade：较 ws 更隐蔽的 HTTP Upgrade 传输（复用 ws 的 path / Host）
   if (server.network === 'httpupgrade') {
     return {

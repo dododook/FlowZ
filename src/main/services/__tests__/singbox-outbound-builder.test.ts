@@ -221,3 +221,79 @@ describe('buildProxyOutbound — resolve-ahead（resolvedHosts → outbound.serv
     );
   });
 });
+
+// H2(http)/gRPC 传输：generateTransportConfig 之前漏 http 分支 → network=http 静默降级裸 TCP（表单 + 导入两路皆坏）。
+// 此处锁 http 分支生成真 http 传输、grpc 照常、tcp 无 transport。
+describe('buildProxyOutbound — http(H2)/gRPC 传输生成', () => {
+  const tags = new Map<string, string>();
+  const node = (over: Partial<ServerConfig>): ServerConfig =>
+    ({
+      id: 'n',
+      name: 'N',
+      address: 'node.example.com',
+      port: 443,
+      ...over,
+    }) as unknown as ServerConfig;
+
+  it('http(H2)：httpSettings → transport {type:http, host[], path}', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'vless',
+        uuid: 'u',
+        security: 'tls',
+        network: 'http',
+        httpSettings: { path: '/h2', host: ['a.com', 'b.com'] },
+      }),
+      tags
+    );
+    expect(ob.transport).toEqual({ type: 'http', host: ['a.com', 'b.com'], path: '/h2' });
+  });
+
+  it('http 无 httpSettings：仍生成 http 传输（path 默认 /），不回退裸 TCP', () => {
+    const ob = buildProxyOutbound(
+      node({ protocol: 'vless', uuid: 'u', security: 'tls', network: 'http' }),
+      tags
+    );
+    expect(ob.transport?.type).toBe('http');
+    expect(ob.transport?.path).toBe('/');
+  });
+
+  it('grpc：grpcSettings → transport {type:grpc, service_name}', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'p',
+        security: 'tls',
+        network: 'grpc',
+        grpcSettings: { serviceName: 'GunSvc' },
+      }),
+      tags
+    );
+    expect(ob.transport).toEqual({ type: 'grpc', service_name: 'GunSvc' });
+  });
+
+  it('network=tcp：无 transport', () => {
+    const ob = buildProxyOutbound(
+      node({ protocol: 'vless', uuid: 'u', security: 'tls', network: 'tcp' }),
+      tags
+    );
+    expect(ob.transport).toBeUndefined();
+  });
+
+  it("legacy 'h2'（旧表单遗留 network 值）→ 兼容生成 http 传输（非裸 TCP）", () => {
+    const ob = buildProxyOutbound(
+      {
+        id: 'n',
+        name: 'N',
+        address: 'node.example.com',
+        port: 443,
+        protocol: 'vless',
+        uuid: 'u',
+        security: 'tls',
+        network: 'h2',
+      } as unknown as ServerConfig,
+      tags
+    );
+    expect(ob.transport?.type).toBe('http');
+  });
+});

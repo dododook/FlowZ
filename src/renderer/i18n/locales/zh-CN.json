@@ -776,6 +776,8 @@
     "wsPathDesc": "WebSocket 连接路径",
     "wsHost": "WebSocket 主机头",
     "wsHostDesc": "WebSocket Host 请求头",
+    "grpcServiceName": "gRPC 服务名",
+    "grpcServiceNameDesc": "gRPC service_name，需与服务端一致",
     "none": "无",
     "optional": "可选",
     "random": "随机",

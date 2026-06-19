@@ -58,3 +58,23 @@ export function WsHostField({ control, t }: { control: AnyControl; t: TFn }) {
     />
   );
 }
+
+/** gRPC service name。约定字段名：grpcServiceName?: string。 */
+export function GrpcServiceNameField({ control, t }: { control: AnyControl; t: TFn }) {
+  return (
+    <FormField
+      control={control}
+      name="grpcServiceName"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('servers.grpcServiceName')}</FormLabel>
+          <FormControl>
+            <Input placeholder="GunService" {...field} />
+          </FormControl>
+          <FormDescription>{t('servers.grpcServiceNameDesc')}</FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
