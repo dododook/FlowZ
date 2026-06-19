@@ -38,7 +38,7 @@ interface NativeEventData {
   proxyModeSwitchFailed: { success: boolean; error: string };
   autoNodeSwitched: { reason: string; newServerName: string; latency: number };
   invalidNodes: InvalidNodeInfo[];
-  tailscaleAuth: { nodeName: string; url: string; transient?: boolean };
+  tailscaleAuth: { nodeName: string; url: string; transient?: boolean; serverId?: string };
   tailscaleAuthOk: { serverId: string; nodeName: string };
   systemProxyResidual: { proxy: string };
 }
@@ -186,8 +186,12 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
   useAppStore.setState({ invalidNodes: map });
 }
 
-/** 登录 toast 固定 id（按节点名）：登录成功事件据此 toast.dismiss 那条 Infinity toast。 */
-const tsAuthToastId = (nodeName: string): string => `ts-auth-${nodeName}`;
+/**
+ * 登录 toast 固定 id：登录成功事件据此 toast.dismiss 那条 Infinity toast。
+ * key 优先用 serverId（NIT③：同 hostname 不同 serverId 的两个 Tailscale 节点 nodeName 相同，按 nodeName 作 id
+ * 会互相覆盖 toast、AUTH_OK 也会 dismiss 错条目）；serverId 缺失（旧主进程/节点已删）→ 回落 nodeName（与今日一致）。
+ */
+const tsAuthToastId = (key: string): string => `ts-auth-${key}`;
 
 function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   // Tailscale 无 auth_key 节点：核给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
@@ -204,9 +208,10 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
         },
       }
     : undefined;
+  const toastId = tsAuthToastId(data.serverId ?? data.nodeName);
   if (data.transient) {
     toast.info(i18n.t('servers.tsLoginOpening', { name: data.nodeName }), {
-      id: tsAuthToastId(data.nodeName),
+      id: toastId,
       description: i18n.t('servers.tsLoginOpeningDesc'),
       duration: 12000,
       action,
@@ -214,7 +219,7 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
     return;
   }
   toast.info(i18n.t('servers.tsLoginNeeded', { name: data.nodeName }), {
-    id: tsAuthToastId(data.nodeName),
+    id: toastId,
     description: i18n.t('servers.tsLoginNeededDesc'),
     duration: Infinity,
     action,
@@ -224,7 +229,7 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
 function handleTailscaleAuthOk(data: NativeEventData['tailscaleAuthOk']) {
   // 交互登录成功（主进程轮询 state 目录检出，log-level 无关）：dismiss 那条 Infinity 登录 toast、
   // 即时点亮该节点登录态（角标随之消失），并整体刷新与磁盘真值对齐。修 P5「toast 不消、状态不更新」。
-  toast.dismiss(tsAuthToastId(data.nodeName));
+  toast.dismiss(tsAuthToastId(data.serverId ?? data.nodeName));
   toast.success(i18n.t('servers.tsLoginOk', { name: data.nodeName }), { duration: 4000 });
   const store = useAppStore.getState();
   store.setTailscaleLoginState(data.serverId, true);

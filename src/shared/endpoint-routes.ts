@@ -206,6 +206,23 @@ export function meshSelectedExitFallsBackToDirect(config: UserConfig): boolean {
 }
 
 /**
+ * ICMP 兜底 outbound 是否走「选中节点的代理出口」(proxy-selector)，而非 direct（route-builder ICMP 规则单一真值）。
+ *
+ * route 侧 ICMP 兜底 = `proxyMode!=='direct' && isEndpointProtocol(selected) ? userExitTag : 'direct'`，其中
+ * userExitTag 已经过 D4/D7 兜底（exitFallback ⟺ isEndpoint && !carriesFullTunnel → direct）。展开等价于：
+ * 「非 direct 模式 ∧ 选中 endpoint 协议 ∧ 该节点承载全隧道」时 ICMP 经 proxy-selector，否则 direct。
+ * 即只有 WG/Tailscale 全隧道节点能转 ICMP（防 ping 泄露真实 IP）；普通代理转不了 ICMP / off-mesh 兜底 → 直连。
+ *
+ * 单一真值供 route-builder 发射 + ProxyManager 热切换跨边界判定共用：热切换（clash_api PUT，不重生成 config）
+ * 跨「ICMP 走 proxy ↔ 走 direct」边界时 ICMP 规则会错配 → planHotSwitch 据此退回重启（重生成 config 重算 ICMP）。
+ */
+export function selectedExitRoutesIcmpViaProxy(config: UserConfig): boolean {
+  if ((config.proxyMode || 'smart').toLowerCase() === 'direct') return false;
+  const selected = config.servers?.find((s) => s.id === config.selectedServerId);
+  return !!selected && isEndpointProtocol(selected.protocol) && meshNodeCarriesFullTunnel(selected);
+}
+
+/**
  * 全部节点的 mesh force-route 段并集（去重）。供「路由规则与组网段重叠」提醒共用：
  * main 的 config-gen warn + renderer 的内联 hint/列表角标。用全量 servers（非仅 emitted）以覆盖潜在重叠。
  */

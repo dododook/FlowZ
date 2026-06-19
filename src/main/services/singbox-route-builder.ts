@@ -16,10 +16,10 @@ import {
   endpointForcedRouteCidrs,
   meshForcedRouteCidrs,
   meshSelectedExitFallsBackToDirect,
+  selectedExitRoutesIcmpViaProxy,
   shouldForceRouteSubnets,
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
-  isEndpointProtocol,
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
@@ -624,11 +624,11 @@ export function buildRouteConfig(
   //   · 普通代理（转不了 ICMP）/ specific-only mesh(userExitTag 已= 'direct' 经 D4/D7 兜底)/ direct 模式 → 直连。
   // 版本门 <1.13 → 不发射，维持核默认（gVisor 栈本地伪应答 ICMP echo）。
   if (coreVersionAtLeast(deps.coreVersion, 1, 13)) {
-    const selectedServer = config.servers.find((s) => s.id === config.selectedServerId);
-    const icmpOutbound =
-      proxyMode !== 'direct' && isEndpointProtocol(selectedServer?.protocol)
-        ? userExitTag
-        : 'direct';
+    // ICMP→代理出口 ⟺ selectedExitRoutesIcmpViaProxy（单一真值，与 ProxyManager 热切换跨边界判定同源）：
+    //   选中 endpoint 全隧道节点时经其 userExitTag（=proxy-selector，承载全隧道）防 ping 泄露真实 IP；
+    //   普通代理 / specific-only mesh（D4/D7 兜底）/ direct 模式 → 直连。字节等价于原 isEndpoint?userExitTag:direct
+    //   展开（exitFallback ⟺ isEndpoint && !carriesFullTunnel）。
+    const icmpOutbound = selectedExitRoutesIcmpViaProxy(config) ? userExitTag : 'direct';
     rules.push({ network: ['icmp'], action: 'route', outbound: icmpOutbound });
   }
 

@@ -7,6 +7,7 @@ import {
   wireguardPeerAllowedIps,
   isMeshNodeUnroutable,
   meshSelectedExitFallsBackToDirect,
+  selectedExitRoutesIcmpViaProxy,
   meshShadowedCidrs,
   meshAlwaysRoutesSubnets,
   shouldForceRouteSubnets,
@@ -165,6 +166,51 @@ describe('meshSelectedExitFallsBackToDirect（D4/D7：global+smart 同兜底）'
     const v = { id: 'v', protocol: 'vless' } as any;
     expect(meshSelectedExitFallsBackToDirect(cfg(v, 'global'))).toBe(false);
     expect(meshSelectedExitFallsBackToDirect(cfg(v, 'smart'))).toBe(false);
+  });
+});
+
+// #9：ICMP 兜底 outbound 类型的单一真值（route-builder 发射 + ProxyManager 热切换跨边界判定共用）。
+// ICMP→proxy ⟺ 非 direct 模式 ∧ 选中 endpoint 全隧道节点（与 meshSelectedExitFallsBackToDirect 互补但非全反——
+//   普通代理两者皆 false）。热切换跨「proxy↔direct」边界即据此退回重启重生成 config。
+describe('selectedExitRoutesIcmpViaProxy（#9：ICMP 兜底单一真值）', () => {
+  const cfg = (server: ServerConfig, proxyMode: string): UserConfig =>
+    ({ proxyMode, servers: [server], selectedServerId: server.id }) as any;
+  it('smart + 选中 on WG（全隧道 endpoint）→ true（ICMP 经代理出口防 ping 泄露）', () => {
+    expect(selectedExitRoutesIcmpViaProxy(cfg(wg([], true), 'smart'))).toBe(true);
+  });
+  it('global + 选中 on TS（全隧道 endpoint）→ true', () => {
+    expect(selectedExitRoutesIcmpViaProxy(cfg(ts([], true), 'global'))).toBe(true);
+  });
+  it('smart + 选中 off WG（off-mesh，D4/D7 兜底）→ false（ICMP 直连）', () => {
+    expect(selectedExitRoutesIcmpViaProxy(cfg(wg([], false), 'smart'))).toBe(false);
+  });
+  it('smart + 选中 system 内核接口 WG（恒 specific-only）→ false', () => {
+    expect(selectedExitRoutesIcmpViaProxy(cfg(wg(['10.8.0.0/24'], true, true), 'smart'))).toBe(
+      false
+    );
+  });
+  it('smart + 选中普通代理（vless）→ false（普通代理转不了 ICMP）', () => {
+    expect(
+      selectedExitRoutesIcmpViaProxy(cfg({ id: 'v', protocol: 'vless' } as any, 'smart'))
+    ).toBe(false);
+  });
+  it('direct 模式 → false（恒直连，不适用）', () => {
+    expect(selectedExitRoutesIcmpViaProxy(cfg(wg([], true), 'direct'))).toBe(false);
+  });
+  it('跨边界判定：全隧道 endpoint ↔ 普通代理 不同侧（热切换须重启）', () => {
+    const endpoint = selectedExitRoutesIcmpViaProxy(cfg(wg([], true), 'smart'));
+    const plain = selectedExitRoutesIcmpViaProxy(
+      cfg({ id: 'v', protocol: 'vless' } as any, 'smart')
+    );
+    expect(endpoint).not.toBe(plain);
+  });
+  it('同侧判定：普通代理 ↔ off-mesh endpoint 同为 false（热切换无需重启）', () => {
+    const plain = selectedExitRoutesIcmpViaProxy(
+      cfg({ id: 'v', protocol: 'vless' } as any, 'smart')
+    );
+    const offMesh = selectedExitRoutesIcmpViaProxy(cfg(wg([], false), 'smart'));
+    expect(plain).toBe(offMesh);
+    expect(plain).toBe(false);
   });
 });
 

@@ -416,6 +416,21 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     ).toMatchSnapshot();
   });
 
+  // #3 DNS reverse 翻转：FakeIP 关 + 地区分流反向（回国）→ DNS 侧镜像 route reverse——region-local（geosite-cn）
+  //   域名 →dns-remote（经回国节点解析国内最优 IP）、其余 fallthrough →dns-domestic、dns.final 同步翻 dns-remote。
+  //   与 route 侧 localOut/foreignOut/final 翻转一一对应；正向 fixture（上方 ir / 「FakeIP 关闭」基线）逐字节不受影响。
+  it('FakeIP 关 + 地区分流 cn 反向 → 锁 DNS reverse 翻转（geosite-cn→dns-remote、fallthrough dns-domestic、final=dns-remote）', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          dnsConfig: { enableFakeIp: false },
+          regionRouting: { enabled: true, region: 'cn', reverse: true },
+        } as unknown as Partial<UserConfig>)
+      )
+    ).toMatchSnapshot();
+  });
+
   it('coreVersion 1.12（<1.13 sniff 分支）+ vless', () => {
     expect(snap(cfg({ servers: [server({})] }), '1.12.8')).toMatchSnapshot();
   });

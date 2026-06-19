@@ -53,7 +53,11 @@ import {
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
 import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
-import { meshUsesSystemInterface, isEndpointProtocol } from '../../shared/endpoint-routes';
+import {
+  meshUsesSystemInterface,
+  isEndpointProtocol,
+  selectedExitRoutesIcmpViaProxy,
+} from '../../shared/endpoint-routes';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
@@ -1126,6 +1130,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const toDirect = isDirectSelection(newConfig.selectedServerId);
       // 目标节点必须已存在于运行中的 selector（= 启动时 servers），否则 PUT 指向不存在的成员；direct 豁免（恒为成员）
       if (!toDirect && !old.servers.some((s) => s.id === newConfig.selectedServerId)) {
+        return { kind: 'none', puts: [] };
+      }
+      // ICMP 兜底跨边界 guard：ICMP 规则 outbound（selectedExitRoutesIcmpViaProxy 单一真值）随选中节点是否为
+      //   全隧道 endpoint 而异（proxy-selector ↔ direct）。clash_api PUT 只改 selector 指向、不重生成 config →
+      //   跨「ICMP 走 proxy ↔ 走 direct」边界（如 WG/TS 全隧道节点 ↔ 普通代理/off-mesh）热切换后 ICMP 规则错配。
+      //   跨界即退回去抖重启（重生成 config 重算 ICMP）；同侧切换（普通↔普通 / 全隧道 endpoint↔全隧道 endpoint）
+      //   ICMP outbound 不变，仍走 PUT 热切换不受影响。
+      if (selectedExitRoutesIcmpViaProxy(old) !== selectedExitRoutesIcmpViaProxy(newConfig)) {
         return { kind: 'none', puts: [] };
       }
       const targetTag = resolveGlobalExitTag(newConfig.selectedServerId, this.currentIdToTagMap);
@@ -4776,13 +4788,20 @@ exit 0
     const { nodeName, url } = hit;
     if (this.tailscaleAuthSeen.has(url)) return;
     this.tailscaleAuthSeen.add(url);
-    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, { nodeName, url });
-    this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
-    // 登录成功检测（log-level 无关）：nodeName=tag=server.name，反查 server.id 后轮询其 state 目录。
-    // 会话文件出现即判成功 → 推 EVENT_TAILSCALE_AUTH_OK（渲染端 dismiss Infinity toast + 刷新角标）。
+    // 反查 server.id 提到 emit 之前：登录 URL 事件带 serverId，渲染端 toast id 用 serverId（NIT③：防同
+    //   hostname 不同 serverId 的两个 Tailscale 节点登录 toast 互相覆盖 / AUTH_OK dismiss 错条目）。
+    //   nodeName=tag=server.name；server 缺失（节点已删/未在配置）时渲染端回落 nodeName 作 id（与今日一致）。
     const server = this.currentConfig?.servers.find(
       (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === nodeName
     );
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
+      nodeName,
+      url,
+      serverId: server?.id,
+    });
+    this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
+    // 登录成功检测（log-level 无关）：会话文件出现即判成功 → 推 EVENT_TAILSCALE_AUTH_OK
+    //   （渲染端 dismiss Infinity toast + 刷新角标，dismiss 用同一 serverId-优先 id）。
     if (server) this.watchTailscaleLogin(server.id, nodeName);
   }
 
@@ -4805,11 +4824,23 @@ exit 0
     void runLoginPollLifecycle({
       poll: makeLoginPoll(
         () => tailscaleStateExists(serverId),
-        // 进程已停 → 取消轮询，避免后台空转到 2min。判据用 getStatus().running（同 UI/健康检查的
-        // activePid 存活口径）：覆盖全部启动路径——helper 零提权 / osascript / UAC 后台进程经 singboxPid，
-        // 直接 spawn（system 代理 / Linux TUN）经 pid。⚠️ 不能用 `singboxProcess === null`：helper 路径
-        // 经 socket 起核、从不 spawn 子进程，singboxProcess 恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
-        () => !this.getStatus().running
+        // 取消轮询（避免后台空转到 2min + 对已切走的节点误发 AUTH_OK）：进程已停 **或** 该节点已不在运行主核里。
+        //   ① 进程存活判据用 getStatus().running（同 UI/健康检查的 activePid 口径）：覆盖全部启动路径——helper
+        //     零提权 / osascript / UAC 后台进程经 singboxPid，直接 spawn（system 代理 / Linux TUN）经 pid。
+        //     ⚠️ 不能只用 `singboxProcess === null`：helper 路径经 socket 起核、从不 spawn 子进程，singboxProcess
+        //     恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
+        //   ② tailscaleEndpointInRunningCore（单一真值，与双写防护同款）：节点已切走且未就绪、或已从运行配置删除
+        //     → 主核不再带其 endpoint，继续轮询既空转又可能对已切走节点误发 AUTH_OK。**不破坏成功路径**：登录成功
+        //     瞬间 state 落盘 → stateExists=true → ready=true → 仍判「在主核里」不取消 → check 命中发 AUTH_OK
+        //     （pollTailscaleLoginSuccess 同轮先 isCancelled 后 check，state 已落盘则 isCancelled 不会误杀）。
+        () =>
+          !this.getStatus().running ||
+          !tailscaleEndpointInRunningCore(
+            serverId,
+            this.getStatus().running,
+            this.currentConfig,
+            tailscaleStateExists(serverId)
+          )
       ),
       onSuccess: () => this.emitTailscaleAuthOk(serverId, nodeName),
       kill: () => {
@@ -5006,10 +5037,12 @@ exit 0
       /* 通知失败不阻断登录流程 */
     }
     // ③ 推渲染端（提示条记录用，降级为可关闭普通 toast，非 Infinity——浏览器已自动打开）。
+    //    带 serverId（NIT③）：与 Phase1 + AUTH_OK 用同一 serverId 作 toast id，dismiss 精确命中本节点。
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
       nodeName: server.name,
       url: safeUrl,
       transient: true,
+      serverId: server.id,
     });
     this.logToManager('info', `Tailscale 节点「${server.name}」已打开浏览器登录页`, 'sing-box');
   }
