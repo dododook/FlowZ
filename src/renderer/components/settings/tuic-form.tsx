@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -36,6 +37,8 @@ const createTuicSchema = (t: any) =>
     password: z.string().min(1, t('servers.passwordRequired')),
     congestionControl: z.enum(['bbr', 'cubic', 'new_reno']).optional(),
     udpRelayMode: z.enum(['native', 'quic']).optional(),
+    zeroRttHandshake: z.boolean().optional(),
+    heartbeat: z.string().optional(),
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
     alpn: z.string().optional(),
@@ -62,6 +65,8 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
       password: '',
       congestionControl: 'bbr',
       udpRelayMode: 'native',
+      zeroRttHandshake: false,
+      heartbeat: '',
       tlsServerName: '',
       tlsAllowInsecure: false,
       alpn: 'h3',
@@ -78,6 +83,8 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
         password: serverConfig.password || '',
         congestionControl: serverConfig.tuicSettings?.congestionControl || 'bbr',
         udpRelayMode: serverConfig.tuicSettings?.udpRelayMode || 'native',
+        zeroRttHandshake: serverConfig.tuicSettings?.zeroRttHandshake ?? false,
+        heartbeat: serverConfig.tuicSettings?.heartbeat || '',
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         alpn: serverConfig.tlsSettings?.alpn?.join(',') || 'h3',
@@ -105,6 +112,8 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
       tuicSettings: {
         congestionControl: values.congestionControl || undefined,
         udpRelayMode: values.udpRelayMode || undefined,
+        zeroRttHandshake: values.zeroRttHandshake || undefined,
+        heartbeat: values.heartbeat?.trim() || undefined,
       },
     };
 
@@ -202,6 +211,20 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="heartbeat"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.tuicHeartbeat')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="10s" {...field} />
+                  </FormControl>
+                  <FormDescription>{t('servers.tuicHeartbeatDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <TlsServerNameField control={form.control} t={t} />
             <AlpnField control={form.control} t={t} placeholder="h3" />
             <FieldSpan>
@@ -209,6 +232,23 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
             </FieldSpan>
             <FieldSpan>
               <EchField control={form.control} t={t} />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="zeroRttHandshake"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>{t('servers.tuicZeroRtt')}</FormLabel>
+                      <FormDescription>{t('servers.tuicZeroRttDesc')}</FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
             </FieldSpan>
           </FieldGrid>
         </FormSection>

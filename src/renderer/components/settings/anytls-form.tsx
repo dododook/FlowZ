@@ -45,6 +45,9 @@ const createAnyTlsSchema = (t: any) =>
     tlsAllowInsecure: z.boolean(),
     realityPublicKey: z.string().optional(),
     realityShortId: z.string().optional(),
+    idleSessionCheckInterval: z.string().optional(),
+    idleSessionTimeout: z.string().optional(),
+    minIdleSession: z.number().int().min(0).optional(),
     ...echSchemaShape,
   });
 
@@ -71,6 +74,9 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         realityPublicKey: serverConfig.realitySettings?.publicKey || '',
         realityShortId: serverConfig.realitySettings?.shortId || '',
+        idleSessionCheckInterval: serverConfig.anyTlsSettings?.idleSessionCheckInterval || '',
+        idleSessionTimeout: serverConfig.anyTlsSettings?.idleSessionTimeout || '',
+        minIdleSession: serverConfig.anyTlsSettings?.minIdleSession ?? undefined,
         ...readEchDefault(serverConfig),
       };
     }
@@ -84,6 +90,9 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
       tlsAllowInsecure: false,
       realityPublicKey: '',
       realityShortId: '',
+      idleSessionCheckInterval: '',
+      idleSessionTimeout: '',
+      minIdleSession: undefined,
       ...echDefaults,
     };
   };
@@ -115,6 +124,15 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         shortId: values.realityShortId?.trim() || undefined,
       };
     }
+
+    // 会话保活（全可选；任一填写才下发 anyTlsSettings）
+    const anyTlsSettings: any = {};
+    if (values.idleSessionCheckInterval?.trim())
+      anyTlsSettings.idleSessionCheckInterval = values.idleSessionCheckInterval.trim();
+    if (values.idleSessionTimeout?.trim())
+      anyTlsSettings.idleSessionTimeout = values.idleSessionTimeout.trim();
+    if (values.minIdleSession != null) anyTlsSettings.minIdleSession = values.minIdleSession;
+    if (Object.keys(anyTlsSettings).length > 0) config.anyTlsSettings = anyTlsSettings;
 
     await onSubmit(config);
   };
@@ -215,6 +233,84 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
             </FieldGrid>
           </FormSection>
         )}
+
+        <FormSection
+          title={t('servers.anytls.sessionTitle', 'Session keep-alive')}
+          collapsible
+          defaultOpen={false}
+        >
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="idleSessionCheckInterval"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    {t('servers.anytls.idleCheckInterval', 'Idle check interval')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="30s" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'servers.anytls.idleCheckIntervalDesc',
+                      'How often to check idle sessions, e.g. 30s.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="idleSessionTimeout"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.anytls.idleTimeout', 'Idle session timeout')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="30s" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'servers.anytls.idleTimeoutDesc',
+                      'Close a session after it stays idle this long, e.g. 30s.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="minIdleSession"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.anytls.minIdleSession', 'Min idle sessions')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                      {...field}
+                      value={field.value ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val ? parseInt(val) : undefined);
+                      }}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'servers.anytls.minIdleSessionDesc',
+                      'Minimum idle sessions to keep open. Default 0.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
+        </FormSection>
 
         <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>

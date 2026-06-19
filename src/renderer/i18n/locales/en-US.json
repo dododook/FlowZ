@@ -819,6 +819,10 @@
     "enableShadowTlsDesc": "Wrap Shadowsocks with a TLS obfuscation tunnel",
     "congestionControl": "Congestion Control",
     "udpRelayMode": "UDP Relay Mode",
+    "tuicZeroRtt": "0-RTT Handshake",
+    "tuicZeroRttDesc": "Enable 0-RTT QUIC handshake to cut connection latency; carries a replay-attack risk, enable as needed.",
+    "tuicHeartbeat": "Heartbeat",
+    "tuicHeartbeatDesc": "Keep-alive heartbeat interval, e.g. 10s. Empty uses the core default (10s).",
     "basic": "Basic",
     "advanced": "Advanced",
     "nameRequired": "Name is required",
@@ -875,6 +879,8 @@
     "tsAuthKeyDesc": "Pre-auth key for non-interactive login. Leave empty to log in via URL on start.",
     "tsExitNode": "Exit Node (optional)",
     "tsExitNodeDesc": "Route all traffic through this tailnet node (full-tunnel). Empty = only reach tailnet / accepted routes.",
+    "tsExitNodeAllowLan": "Allow LAN access via exit node",
+    "tsExitNodeAllowLanDesc": "When using an exit node, still reach the local LAN directly instead of routing it through the exit.",
     "tsAcceptRoutes": "Accept Routes",
     "tsAcceptRoutesDesc": "Accept subnet routes advertised by other nodes (reach mesh subnets).",
     "tsRoutes": "Routed subnets",
@@ -914,7 +920,20 @@
       "passphrasePlaceholder": "Private key passphrase",
       "hostKey": "Host Public Key (optional)",
       "hostKeyPlaceholder": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYA... (one per line)",
-      "hostKeyDesc": "Leave empty to accept all host keys (not recommended in production). Run <code>ssh-keyscan host</code> to obtain one."
+      "hostKeyDesc": "Leave empty to accept all host keys (not recommended in production). Run <code>ssh-keyscan host</code> to obtain one.",
+      "hostKeyAlgorithms": "Host Key Algorithms",
+      "hostKeyAlgorithmsDesc": "Restrict acceptable host-key algorithms, comma/newline separated. Empty uses core defaults.",
+      "clientVersion": "Client Version",
+      "clientVersionDesc": "SSH client version identifier string. Empty uses the core default."
+    },
+    "anytls": {
+      "sessionTitle": "Session keep-alive",
+      "idleCheckInterval": "Idle check interval",
+      "idleCheckIntervalDesc": "How often to check idle sessions, e.g. 30s. Empty uses the core default.",
+      "idleTimeout": "Idle session timeout",
+      "idleTimeoutDesc": "Close a session after it stays idle this long, e.g. 30s. Empty uses the core default.",
+      "minIdleSession": "Min idle sessions",
+      "minIdleSessionDesc": "Minimum idle sessions to keep open. Default 0."
     }
   },
   "rules": {

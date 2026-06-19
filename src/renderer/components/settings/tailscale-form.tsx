@@ -25,6 +25,7 @@ const createTailscaleSchema = () =>
     authKey: z.string().optional(),
     allowInternet: z.boolean(),
     exitNode: z.string().optional(),
+    exitNodeAllowLanAccess: z.boolean(),
     acceptRoutes: z.boolean(),
     routes: z.string().optional(),
     controlUrl: z.string().optional(),
@@ -49,6 +50,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
       authKey: '',
       allowInternet: true, // 新建默认开
       exitNode: '',
+      exitNodeAllowLanAccess: false,
       acceptRoutes: false,
       routes: '',
       controlUrl: '',
@@ -65,6 +67,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
         authKey: ts?.authKey || '',
         allowInternet: ts?.allowInternet !== false, // 缺省 true（向后兼容）
         exitNode: ts?.exitNode || '',
+        exitNodeAllowLanAccess: ts?.exitNodeAllowLanAccess ?? false,
         acceptRoutes: ts?.acceptRoutes ?? false,
         routes: (ts?.routes || []).join(', '),
         controlUrl: ts?.controlUrl || '',
@@ -83,6 +86,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
         authKey: values.authKey?.trim() || undefined,
         allowInternet: values.allowInternet,
         exitNode: values.exitNode?.trim() || undefined,
+        exitNodeAllowLanAccess: values.exitNodeAllowLanAccess || undefined,
         // 填了 routes 自动开 acceptRoutes（否则 tsnet 不接收这些 advertised 子网，路由白配）
         acceptRoutes: values.acceptRoutes || routes.length > 0,
         routes,
@@ -180,6 +184,34 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                       </p>
                     )}
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="exitNodeAllowLanAccess"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>
+                        {t('servers.tsExitNodeAllowLan', 'Allow LAN access via exit node')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'servers.tsExitNodeAllowLanDesc',
+                          'When using an exit node, still reach the local LAN directly instead of routing it through the exit.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={!allowInternet}
+                      />
+                    </FormControl>
                   </FormItem>
                 )}
               />

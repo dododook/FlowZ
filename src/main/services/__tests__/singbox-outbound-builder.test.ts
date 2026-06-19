@@ -221,3 +221,102 @@ describe('buildProxyOutbound — resolve-ahead（resolvedHosts → outbound.serv
     );
   });
 });
+
+// B 组：节点表单新增的可选协议设置经 buildProxyOutbound 正确下发为 sing-box 字段。
+// （tailscale exitNodeAllowLanAccess 属 endpoint 构造、依赖 electron stateDir，不在此单测，由类型检查 + 集成覆盖。）
+describe('buildProxyOutbound — 可选协议设置下发（B 组编辑项）', () => {
+  const tags = new Map<string, string>();
+  const node = (over: Partial<ServerConfig>): ServerConfig =>
+    ({
+      id: 'n',
+      name: 'N',
+      address: 'node.example.com',
+      port: 443,
+      ...over,
+    }) as unknown as ServerConfig;
+
+  it('tuic：zeroRttHandshake/heartbeat → zero_rtt_handshake/heartbeat', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'tuic',
+        uuid: 'u',
+        password: 'p',
+        tuicSettings: { udpRelayMode: 'native', zeroRttHandshake: true, heartbeat: '12s' },
+      }),
+      tags
+    ) as any;
+    expect(ob.zero_rtt_handshake).toBe(true);
+    expect(ob.heartbeat).toBe('12s');
+  });
+
+  it('tuic：zeroRttHandshake=false 显式下发；heartbeat 空则省略', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'tuic',
+        uuid: 'u',
+        password: 'p',
+        tuicSettings: { zeroRttHandshake: false },
+      }),
+      tags
+    ) as any;
+    expect(ob.zero_rtt_handshake).toBe(false);
+    expect(ob.heartbeat).toBeUndefined();
+  });
+
+  it('anytls：idle 三参数 → idle_session_*/min_idle_session（min=0 也下发）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'anytls',
+        password: 'p',
+        security: 'tls',
+        anyTlsSettings: {
+          idleSessionCheckInterval: '30s',
+          idleSessionTimeout: '60s',
+          minIdleSession: 0,
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.idle_session_check_interval).toBe('30s');
+    expect(ob.idle_session_timeout).toBe('60s');
+    expect(ob.min_idle_session).toBe(0);
+  });
+
+  it('ssh：hostKeyAlgorithms/clientVersion → host_key_algorithms/client_version', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'ssh',
+        port: 22,
+        sshSettings: {
+          user: 'root',
+          hostKeyAlgorithms: ['ssh-ed25519', 'rsa-sha2-256'],
+          clientVersion: 'SSH-2.0-OpenSSH_9.0',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.host_key_algorithms).toEqual(['ssh-ed25519', 'rsa-sha2-256']);
+    expect(ob.client_version).toBe('SSH-2.0-OpenSSH_9.0');
+  });
+
+  it('未设置这些可选项 → 不下发（向后兼容）', () => {
+    const tuic = buildProxyOutbound(
+      node({ protocol: 'tuic', uuid: 'u', password: 'p', tuicSettings: {} }),
+      tags
+    ) as any;
+    expect(tuic.zero_rtt_handshake).toBeUndefined();
+    expect(tuic.heartbeat).toBeUndefined();
+    const ssh = buildProxyOutbound(
+      node({ protocol: 'ssh', port: 22, sshSettings: { user: 'root' } }),
+      tags
+    ) as any;
+    expect(ssh.host_key_algorithms).toBeUndefined();
+    expect(ssh.client_version).toBeUndefined();
+    const anytls = buildProxyOutbound(
+      node({ protocol: 'anytls', password: 'p', security: 'tls', anyTlsSettings: {} }),
+      tags
+    ) as any;
+    expect(anytls.idle_session_check_interval).toBeUndefined();
+    expect(anytls.min_idle_session).toBeUndefined();
+  });
+});

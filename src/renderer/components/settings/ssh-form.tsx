@@ -33,6 +33,8 @@ const createSshSchema = (t: any) =>
     privateKeyPassphrase: z.string().optional(),
     // 主机密钥（可选）
     hostKey: z.string().optional(),
+    hostKeyAlgorithms: z.string().optional(),
+    clientVersion: z.string().optional(),
   });
 
 type SshFormValues = z.infer<ReturnType<typeof createSshSchema>>;
@@ -67,6 +69,8 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
         privateKeyPath: ssh?.privateKeyPath || '',
         privateKeyPassphrase: ssh?.privateKeyPassphrase || '',
         hostKey: ssh?.hostKey?.join('\n') || '',
+        hostKeyAlgorithms: ssh?.hostKeyAlgorithms?.join(', ') || '',
+        clientVersion: ssh?.clientVersion || '',
       };
     }
     return {
@@ -78,6 +82,8 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
       privateKeyPath: '',
       privateKeyPassphrase: '',
       hostKey: '',
+      hostKeyAlgorithms: '',
+      clientVersion: '',
     };
   };
 
@@ -106,6 +112,19 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
         .split('\n')
         .map((k: string) => k.trim())
         .filter(Boolean);
+    }
+
+    // 主机密钥算法（可选，逗号/换行分隔）
+    if (values.hostKeyAlgorithms?.trim()) {
+      sshSettings.hostKeyAlgorithms = values.hostKeyAlgorithms
+        .split(/[\n,]/)
+        .map((k: string) => k.trim())
+        .filter(Boolean);
+    }
+
+    // 客户端版本字符串（可选）
+    if (values.clientVersion?.trim()) {
+      sshSettings.clientVersion = values.clientVersion.trim();
     }
 
     const config: any = {
@@ -265,6 +284,36 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
               </FormItem>
             )}
           />
+          <FieldGrid cols={2}>
+            <FormField
+              control={form.control}
+              name="hostKeyAlgorithms"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.ssh.hostKeyAlgorithms')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="ssh-ed25519, rsa-sha2-256" {...field} />
+                  </FormControl>
+                  <FormDescription>{t('servers.ssh.hostKeyAlgorithmsDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="clientVersion"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.ssh.clientVersion')}</FormLabel>
+                  <FormControl>
+                    <Input placeholder="SSH-2.0-OpenSSH_9.0" {...field} />
+                  </FormControl>
+                  <FormDescription>{t('servers.ssh.clientVersionDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FieldGrid>
         </FormSection>
 
         <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
