@@ -28,7 +28,11 @@ import { ServerSelectGroups } from '@/components/settings/server-select-groups';
 import { useAppStore } from '@/store/app-store';
 import type { Rule, RuleType, RuleAction, RuleCondition } from '../../../shared/types';
 import { validateRuleValue, RULE_TYPE_IDS } from '../../../shared/rules';
-import { meshForcedRouteCidrs } from '../../../shared/endpoint-routes';
+import {
+  meshForcedRouteCidrs,
+  meshForceRoutedServers,
+  collectRuleTargetedServerIds,
+} from '../../../shared/endpoint-routes';
 import { cidrOverlapsAny } from '../../../shared/ip';
 import { parseLines } from '../../../shared/parse-lines';
 import { useTranslation } from 'react-i18next';
@@ -62,9 +66,23 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   const addCustomRule = useAppStore((state) => state.addCustomRule);
   const updateCustomRule = useAppStore((state) => state.updateCustomRule);
   const servers = useAppStore((state) => state.config?.servers || []);
+  const selectedServerId = useAppStore((state) => state.config?.selectedServerId ?? null);
+  const customRules = useAppStore((state) => state.config?.customRules);
+  const appRules = useAppStore((state) => state.config?.appRules);
   // 组网(WG/Tailscale)force-route 段：供 ipCidr 值「与组网重叠」内联提醒（优先级重排后自定义规则会覆盖组网路由）。
-  // memo 化避免每次按键 render 都重算（servers 未变时引用稳定）。
-  const meshCidrs = useMemo(() => meshForcedRouteCidrs(servers), [servers]);
+  // memo 化避免每次按键 render 都重算。基准与 route-builder 同 gate：仅「本轮实际发射 force-route」的节点
+  // （ON/选中/被规则指向），不含仅出网且未 engaged 节点，避免虚报「覆盖组网」。
+  const meshCidrs = useMemo(
+    () =>
+      meshForcedRouteCidrs(
+        meshForceRoutedServers(
+          servers,
+          selectedServerId,
+          collectRuleTargetedServerIds([...(customRules ?? []), ...(appRules ?? [])])
+        )
+      ),
+    [servers, selectedServerId, customRules, appRules]
+  );
   // 全局 FakeIP 开关（usesFakeIp 已统一为纯看此开关，缺省 true）：关时本规则的「绕过 FakeIP」天然 no-op，UI 置灰提示。
   const globalFakeIpEnabled = useAppStore((state) => state.config?.dnsConfig?.enableFakeIp ?? true);
 

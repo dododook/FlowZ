@@ -62,6 +62,72 @@ export function meshAllowsInternet(server: ServerConfig): boolean {
 }
 
 /**
+ * 组网节点是否「始终路由其内网段」(force-route 常驻)。缺省 true（向后兼容 + 新建默认开=网段恒可达）；仅显式
+ * false 关闭=「仅出网」语义：网段只在节点 engaged（被选中/被规则指向）时才路由。与 allowInternet 正交——
+ * allowInternet 控 0/0 全隧道出网，本开关控 specific 段是否常驻。**只 gate route.rules，绝不碰 allowed_ips。**
+ */
+export function meshAlwaysRoutesSubnets(server: ServerConfig): boolean {
+  const p = server.protocol?.toLowerCase();
+  if (p === 'wireguard') return server.wireguardSettings?.alwaysRouteSubnets !== false;
+  if (p === 'tailscale') return server.tailscaleSettings?.alwaysRouteSubnets !== false;
+  return true;
+}
+
+/**
+ * 该组网节点的 force-route 段本轮是否应发射（route-builder 块 0c 的 gate）。纯函数 + 注入式，全矩阵可单测：
+ *   - alwaysRouteSubnets ON（默认/旧配置）→ 恒发射（现状，网段恒可达）。
+ *   - OFF（仅出网）→ 仅当节点 engaged：被选中为主出口（selectedServerId），或被某条 enabled 规则/应用分流
+ *     显式指向（ruleTargetedServerIds，由 route-builder 从 effectiveCustomRules/AppRules 的 targetServerId 汇集）。
+ * 注意：本谓词只决定「是否把内网段 force-route 到自身 tag」，**不影响 peer.allowed_ips**——故 OFF 节点被选中时
+ * 网段仍可达（隧道接受 + 此时本谓词返回 true → 发 force-route 覆盖 bypass-LAN）。
+ */
+export function shouldForceRouteSubnets(
+  server: ServerConfig,
+  selectedServerId: string | null | undefined,
+  ruleTargetedServerIds: ReadonlySet<string>
+): boolean {
+  if (meshAlwaysRoutesSubnets(server)) return true;
+  if (server.id === selectedServerId) return true;
+  return ruleTargetedServerIds.has(server.id);
+}
+
+/**
+ * 收集「显式指向某节点」的规则目标 id：仅 `enabled && action==='proxy' && targetServerId`——与全库 targetServerId
+ * 消费口径一致（`targetServerId` 仅 action==='proxy' 时有效，见 Rule/AppRule 注释；非 proxy 的陈旧 targetServerId 不算）。
+ * 守卫单一真值：route-builder 块 0c 的 engaged 判定 + warn/shadow 同步过滤共用。backend 传 effective 规则、UI 传
+ * config 原始规则（结构兼容 `{enabled?, action?, targetServerId?}`，类型在各侧已知）。
+ */
+export function collectRuleTargetedServerIds(
+  rules: ReadonlyArray<{ enabled?: boolean; action?: string; targetServerId?: string }> | undefined
+): Set<string> {
+  const ids = new Set<string>();
+  for (const r of rules ?? []) {
+    if (r.enabled && r.action === 'proxy' && r.targetServerId) ids.add(r.targetServerId);
+  }
+  return ids;
+}
+
+/**
+ * 本轮「实际会发射 force-route」的组网节点（与块 0c `shouldForceRouteSubnets` 同口径）：alwaysRouteSubnets ON、
+ * 或被选中、或被规则显式指向。供「自定义规则与组网段重叠」warn / 「网段被覆盖」shadow 角标与**发射端同口径**，
+ * 杜绝对「仅出网且未 engaged」节点虚报覆盖/被覆盖（非组网协议恒保留，对 cidr/shadow 计算无副作用）。
+ *
+ * 注（advisory 边界，非路由层）：backend 调用方传 effective 规则（已按 proxyMode/appRoutingEnabled mode-gate），
+ * UI 调用方传 config 原始规则——故 global/direct 模式下 UI 的 ruleTargetedServerIds 估计可能偏宽（把失效规则也算
+ * engaged），极窄场景下角标指向略有偏差。仅影响提醒角标、不影响实际 route.rules / allowed_ips（backend 自洽）；
+ * 不在 UI 复制 backend mode-gate 以免脆弱重复，作为已知 advisory 近似。
+ */
+export function meshForceRoutedServers(
+  servers: ServerConfig[] | undefined,
+  selectedServerId: string | null | undefined,
+  ruleTargetedServerIds: ReadonlySet<string>
+): ServerConfig[] {
+  return (servers ?? []).filter((s) =>
+    shouldForceRouteSubnets(s, selectedServerId, ruleTargetedServerIds)
+  );
+}
+
+/**
  * Phase 2：组网节点是否启用 system 内核接口（reverseMesh=反向可达/被访问，WG `system:true` /
  * Tailscale `system_interface:true`）。缺省 false=userspace gVisor 栈（Phase 1）。**纯用户意图**：
  * 「reverseMesh ⟹ helper 提权已就位」由上层校验/连接闸门 + ProxyManager emit 门控强制（见 server-completeness

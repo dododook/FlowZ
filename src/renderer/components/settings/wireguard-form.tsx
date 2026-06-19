@@ -39,6 +39,7 @@ const createWireGuardSchema = (t: any) =>
     preSharedKey: z.string().optional(),
     allowInternet: z.boolean(),
     reverseMesh: z.boolean(),
+    alwaysRouteSubnets: z.boolean(),
     allowedIPs: z.string().optional(),
     persistentKeepalive: z.number().min(0).max(65535),
     mtu: z.number().min(0).max(9000).optional(),
@@ -77,6 +78,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       preSharedKey: '',
       allowInternet: true, // 新建默认开（全隧道）
       reverseMesh: false, // Phase 2：反向 mesh（system 内核接口），默认关=userspace
+      alwaysRouteSubnets: true, // 缺省开=网段恒可达(组网)；关=仅出网(选中/规则指向时才路由网段)
       // 仅录入「具体路由段」（对端内网/子网）；全网段 0/0,::/0 由 allowInternet 开关接管，不在此预填。
       allowedIPs: '',
       persistentKeepalive: 25, // 默认 25s：避免 NAT 空闲断连（WireGuard 无连接 UDP）
@@ -97,6 +99,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         preSharedKey: wg?.preSharedKey || '',
         allowInternet: wg?.allowInternet !== false, // 缺省 true（向后兼容）
         reverseMesh: wg?.reverseMesh === true, // 缺省 false
+        alwaysRouteSubnets: wg?.alwaysRouteSubnets !== false, // 缺省 true（向后兼容）
         // 全网段由开关接管，列表仅显示具体段（剥离存量 allowedIPs 里的 catch-all）。
         allowedIPs: stripCatchAll(wg?.allowedIPs).join(', '),
         persistentKeepalive: wg?.persistentKeepalive ?? 25,
@@ -129,6 +132,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       // 忠实 wg-quick 语义：AllowedIPs 含 0/0,::/0=全隧道→开关开；缺则默认全隧道。列表仅留具体段。
       allowInternet: parsed.settings.allowedIPs ? hasCatchAll(parsed.settings.allowedIPs) : true,
       reverseMesh: false, // wg-quick .conf 无 system 概念，导入恒 userspace
+      alwaysRouteSubnets: true, // 导入默认开（忠实 wg-quick：AllowedIPs 段即应路由）
       allowedIPs: stripCatchAll(parsed.settings.allowedIPs).join(', '),
       persistentKeepalive: parsed.settings.persistentKeepalive ?? 25,
       mtu: parsed.settings.mtu ?? 1408,
@@ -148,6 +152,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         preSharedKey: values.preSharedKey?.trim() || undefined,
         allowInternet: values.allowInternet,
         reverseMesh: values.reverseMesh,
+        alwaysRouteSubnets: values.alwaysRouteSubnets,
         // 仅保存具体路由段；全网段 0/0,::/0 由 allowInternet=on 在生成期注入 peer.allowed_ips。
         allowedIPs: stripCatchAll(splitTextList(values.allowedIPs)),
         persistentKeepalive: values.persistentKeepalive,
@@ -304,6 +309,30 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                         {t(
                           'servers.reverseMeshDesc',
                           'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode; this node then only carries the listed subnets (never the full tunnel).'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="alwaysRouteSubnets"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>
+                        {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'servers.alwaysRouteSubnetsDesc',
+                          'On: the subnets below are always reachable through this node, regardless of which node is active. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
                         )}
                       </FormDescription>
                     </div>

@@ -126,6 +126,10 @@ export interface WireGuardSettings {
   // 是否允许此节点作外网出口（缺省 true=向后兼容+新建默认开）。true→peer.allowed_ips 含 0/0,::/0（全隧道）；
   // false→仅 allowedIPs 具体段（不当默认出网；若无具体段则空 allowed_ips=FATAL，生成期不发射该节点）。
   allowInternet?: boolean;
+  // 是否「始终路由其内网段(组网)」（缺省 true=向后兼容+新建默认开=网段恒可达）。false=「仅出网」：allowedIPs 具体段
+  // 仅在此节点被选中为主出口、或被自定义规则/应用分流显式指向（targetServerId）时才 force-route，其余不强加给全局。
+  // **只 gate route.rules（force-route），不影响 peer.allowed_ips**（隧道仍接受这些段，故选中时网段照样可达）。
+  alwaysRouteSubnets?: boolean;
   persistentKeepalive?: number; // 保活间隔（秒）
   reserved?: number[]; // 3 字节 reserved（Cloudflare WARP 等需要）
   mtu?: number; // 缺省 1408
@@ -140,6 +144,9 @@ export interface TailscaleSettings {
   // 是否允许此节点作外网出口（缺省 true=向后兼容+新建默认开）。WG 等价物：true→可下发 exit_node（全隧道）；
   // false→即便填了 exitNode 也不下发，仅承载 tailnet/routes 段（不当默认出网）。
   allowInternet?: boolean;
+  // 是否「始终路由其内网段/tailnet(组网)」（缺省 true=向后兼容）。false=「仅出网」：tailnet 100.64.0.0/10 + routes 段
+  // 仅在此节点被选中为主出口、或被规则显式指向时才 force-route。纯 exit-node 用法（只借此出网、不想 tailnet 恒路由）受益。
+  alwaysRouteSubnets?: boolean;
   exitNode?: string; // 出口节点 name/IP（选它当全局代理时填；空=仅通 tailnet 内网/accept_routes 段）
   exitNodeAllowLanAccess?: boolean; // 用 exit node 时本地 LAN 仍直连
   acceptRoutes?: boolean; // 接受其它节点广告的子网路由（访问 tailnet 内网段）

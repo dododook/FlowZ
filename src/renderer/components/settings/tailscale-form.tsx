@@ -25,6 +25,7 @@ const createTailscaleSchema = () =>
     authKey: z.string().optional(),
     allowInternet: z.boolean(),
     reverseMesh: z.boolean(),
+    alwaysRouteSubnets: z.boolean(),
     exitNode: z.string().optional(),
     exitNodeAllowLanAccess: z.boolean(),
     acceptRoutes: z.boolean(),
@@ -51,6 +52,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
       authKey: '',
       allowInternet: true, // 新建默认开
       reverseMesh: false, // Phase 2：反向 mesh（system_interface），默认关=userspace
+      alwaysRouteSubnets: true, // 缺省开=tailnet/routes 恒可达(组网)；关=仅出网
       exitNode: '',
       exitNodeAllowLanAccess: false,
       acceptRoutes: false,
@@ -69,6 +71,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
         authKey: ts?.authKey || '',
         allowInternet: ts?.allowInternet !== false, // 缺省 true（向后兼容）
         reverseMesh: ts?.reverseMesh === true, // 缺省 false
+        alwaysRouteSubnets: ts?.alwaysRouteSubnets !== false, // 缺省 true（向后兼容）
         exitNode: ts?.exitNode || '',
         exitNodeAllowLanAccess: ts?.exitNodeAllowLanAccess ?? false,
         acceptRoutes: ts?.acceptRoutes ?? false,
@@ -89,6 +92,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
         authKey: values.authKey?.trim() || undefined,
         allowInternet: values.allowInternet,
         reverseMesh: values.reverseMesh,
+        alwaysRouteSubnets: values.alwaysRouteSubnets,
         exitNode: values.exitNode?.trim() || undefined,
         exitNodeAllowLanAccess: values.exitNodeAllowLanAccess || undefined,
         // 填了 routes 自动开 acceptRoutes（否则 tsnet 不接收这些 advertised 子网，路由白配）
@@ -298,6 +302,30 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                       )}
                     </FormDescription>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="alwaysRouteSubnets"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>
+                        {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'servers.alwaysRouteSubnetsTsDesc',
+                          'On: the tailnet and routed subnets above are always reachable through this node. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )}
               />

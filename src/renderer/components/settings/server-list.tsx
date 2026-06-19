@@ -47,7 +47,11 @@ import { ImportUrlDialog } from './import-url-dialog';
 import { generateShareUrl } from '@/bridge/api-wrapper';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
-import { meshShadowedCidrs } from '../../../shared/endpoint-routes';
+import {
+  meshShadowedCidrs,
+  meshForceRoutedServers,
+  collectRuleTargetedServerIds,
+} from '../../../shared/endpoint-routes';
 import { ServerCard } from './server-card';
 import { ServerRow } from './server-row';
 import {
@@ -88,6 +92,9 @@ export function ServerList({
   const latencyMap = useAppStore((state) => state.latencyMap);
   // 启动前配置校验 gate 剔除的非法节点：列表标灰 + tooltip（不禁用点击，用户仍可选/编辑/删除）。
   const invalidNodes = useAppStore((state) => state.invalidNodes);
+  // shadow 角标的 engaged gate 输入（与 route-builder 同口径）：仅出网且未 engaged 节点不参与「首声明者占段」。
+  const customRules = useAppStore((state) => state.config?.customRules);
+  const appRules = useAppStore((state) => state.config?.appRules);
   const { t } = useTranslation();
 
   // 测速态 + handler（hook 下沉，纯逻辑）
@@ -114,7 +121,19 @@ export function ServerList({
   } = useServerFilter(servers, latencyMap);
 
   // 组网同网段「被覆盖」检测（首声明者占有，与 route-builder 同一不变量）：列表角标提醒用，零布局破坏。
-  const shadowedCidrs = useMemo(() => meshShadowedCidrs(servers), [servers]);
+  // 基准与 route-builder 块 0c 同 gate：仅「本轮实际发射 force-route」的节点参与占段，否则仅出网且未 engaged 的
+  // 节点会先占段、把真正生效的 ON 节点误标「被覆盖」（方向相反的误报）。
+  const shadowedCidrs = useMemo(
+    () =>
+      meshShadowedCidrs(
+        meshForceRoutedServers(
+          servers,
+          selectedServerId,
+          collectRuleTargetedServerIds([...(customRules ?? []), ...(appRules ?? [])])
+        )
+      ),
+    [servers, selectedServerId, customRules, appRules]
+  );
 
   // 记住用户的视图偏好
   const [viewMode, setViewMode] = useState<ViewMode>(() => {

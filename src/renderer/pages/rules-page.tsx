@@ -13,7 +13,11 @@ import { DeleteRuleDialog } from '@/components/rules/delete-rule-dialog';
 import { SortableRuleRow } from '@/components/rules/sortable-rule-row';
 import type { Rule } from '@/bridge/types';
 import { ruleConditions, ruleIpCidrs } from '../../shared/rules';
-import { meshForcedRouteCidrs } from '../../shared/endpoint-routes';
+import {
+  meshForcedRouteCidrs,
+  meshForceRoutedServers,
+  collectRuleTargetedServerIds,
+} from '../../shared/endpoint-routes';
 import { cidrOverlapsAny } from '../../shared/ip';
 import { useTranslation, Trans } from 'react-i18next';
 import { toast } from 'sonner';
@@ -109,14 +113,27 @@ export function RulesPage() {
   // 与组网(WG/Tailscale)force-route 段重叠的规则 id（仅 smart）：优先级重排后这些规则覆盖组网路由 → 列内 ⚠ 角标提醒。
   // 依赖直接挂 config?.servers/customRules（store 引用稳定）而非本地 `|| []`（每 render 新数组会令 memo 失效空转）。
   const meshOverlapRuleIds = useMemo(() => {
-    const meshCidrs = meshForcedRouteCidrs(config?.servers ?? []);
+    // 基准与 route-builder 同 gate：仅「本轮实际发射 force-route」的节点（ON/选中/被规则指向），不含仅出网且未 engaged 节点。
+    const meshCidrs = meshForcedRouteCidrs(
+      meshForceRoutedServers(
+        config?.servers,
+        config?.selectedServerId,
+        collectRuleTargetedServerIds([...(config?.customRules ?? []), ...(config?.appRules ?? [])])
+      )
+    );
     if (!isSmartMode || meshCidrs.length === 0) return new Set<string>();
     const ids = new Set<string>();
     for (const r of config?.customRules ?? []) {
       if (r.enabled && ruleIpCidrs(r).some((c) => cidrOverlapsAny(c, meshCidrs))) ids.add(r.id);
     }
     return ids;
-  }, [isSmartMode, config?.servers, config?.customRules]);
+  }, [
+    isSmartMode,
+    config?.servers,
+    config?.customRules,
+    config?.selectedServerId,
+    config?.appRules,
+  ]);
 
   // ── 排序编辑态 ──────────────────────────────────────────────────────────
   const enterOrderEdit = () => {

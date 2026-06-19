@@ -16,6 +16,9 @@ import {
   endpointForcedRouteCidrs,
   meshForcedRouteCidrs,
   meshSelectedExitFallsBackToDirect,
+  shouldForceRouteSubnets,
+  collectRuleTargetedServerIds,
+  meshForceRoutedServers,
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny } from '../../shared/ip';
 import { ruleIpCidrs } from '../../shared/rules';
@@ -86,10 +89,20 @@ export function buildRouteConfig(
   const rules: SingBoxRouteRule[] = [];
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
 
+  // 组网 force-route 的「engaged」判定集（与块 0c shouldForceRouteSubnets 同口径，单一真值）：仅 enabled+action==='proxy'
+  // 的自定义规则/应用分流 targetServerId 计入。下方重叠 warn 与块 0c 发射端共用，杜绝对「仅出网且未 engaged」节点虚报。
+  const ruleTargetedServerIds = collectRuleTargetedServerIds([
+    ...effectiveCustomRules(config),
+    ...effectiveAppRules(config),
+  ]);
+
   // mesh 重叠提醒（layer-2 兜底，非阻断）：优先级重排后用户自定义规则高于组网(WG/Tailscale) force-route，
   // 自定义规则 ip_cidr 与组网段重叠 → 该段被规则改道、可能不走组网节点（静默断 mesh）。检出即 warn（进诊断报告），
   // 覆盖订阅导入/旧配置迁移等非 UI 录入盲区（UI 录入另有内联 hint/角标提醒）。仅 smart 有自定义规则故天然限定。
-  const meshCidrsForWarn = meshForcedRouteCidrs(config.servers);
+  // 基准只取「本轮实际会发射 force-route」的节点（与块 0c 同 gate），不对未 engaged 的仅出网节点虚报覆盖。
+  const meshCidrsForWarn = meshForcedRouteCidrs(
+    meshForceRoutedServers(config.servers, config.selectedServerId, ruleTargetedServerIds)
+  );
   if (meshCidrsForWarn.length > 0) {
     const overlapping = new Set<string>();
     for (const rule of effectiveCustomRules(config)) {
@@ -501,6 +514,8 @@ export function buildRouteConfig(
     // 其 tag 若仍 force-route 会被末尾 fixRouteDeadReferences 改写成 selector → 该段误流向全局选中节点。
     // emitted 集合天然只含 endpoint 协议（仅 WG/TS 进 pendingEndpoints），故无需再按协议预判。
     const emittedEndpointTags = new Set(deps.pendingEndpoints.map((e) => e.tag));
+    // 「仅出网」节点（alwaysRouteSubnets=false）的按需 force-route：仅在被选中或被规则/应用分流显式指向时发射其网段。
+    // engaged 判定集 ruleTargetedServerIds 已在函数顶部汇集（与重叠 warn 共用，口径一致）。
     // 跨 endpoint 去重：同一 CIDR 被多个 endpoint 声明（如两个 Tailscale 节点都含 tailnet 100.64.0.0/10，
     // 或两个 WG 节点 allowedIPs 重叠），sing-box 路由首条命中 → 后者静默失效。按 config.servers 顺序，
     // 先声明者占有该段（隐式优先级），后者重复段跳过 + 累计告警，杜绝「无声误路由到另一节点」。
@@ -509,6 +524,9 @@ export function buildRouteConfig(
     for (const s of config.servers) {
       const tag = idToTagMap.get(s.id);
       if (!tag || !emittedEndpointTags.has(tag)) continue;
+      // alwaysRouteSubnets=false 且未 engaged（未选中、无规则指向）→ 跳过其 force-route：纯作可选出口，
+      // 网段不强加给全局。注意只 gate route.rules，peer.allowed_ips 不变 → 被选中时网段仍可达（engaged→此处放行）。
+      if (!shouldForceRouteSubnets(s, config.selectedServerId, ruleTargetedServerIds)) continue;
       const cidrs = endpointForcedRouteCidrs(s).filter((c) => {
         if (claimedCidrs.has(c)) {
           forceRouteConflicts++;

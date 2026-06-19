@@ -8,6 +8,10 @@ import {
   isMeshNodeUnroutable,
   meshSelectedExitFallsBackToDirect,
   meshShadowedCidrs,
+  meshAlwaysRoutesSubnets,
+  shouldForceRouteSubnets,
+  collectRuleTargetedServerIds,
+  meshForceRoutedServers,
 } from '../endpoint-routes';
 import type { ServerConfig, UserConfig } from '../types';
 
@@ -269,4 +273,93 @@ describe('Phase 2: system 内核接口（reverseMesh）', () => {
       expect(meshSelectedExitFallsBackToDirect(cfg(wg([], true), 'smart'))).toBe(false);
     });
   });
+});
+
+// ---- alwaysRouteSubnets：始终路由内网段(组网) vs 仅出网 ----
+const wgSub = (alwaysRouteSubnets?: boolean): ServerConfig =>
+  ({
+    id: 'w',
+    name: 'w',
+    protocol: 'wireguard',
+    address: '1.2.3.4',
+    port: 51820,
+    wireguardSettings: {
+      privateKey: 'k',
+      peerPublicKey: 'p',
+      localAddress: ['10.0.0.2/32'],
+      allowedIPs: ['10.8.0.0/24'],
+      ...(alwaysRouteSubnets === undefined ? {} : { alwaysRouteSubnets }),
+    },
+  }) as any;
+
+describe('meshAlwaysRoutesSubnets', () => {
+  it('缺省（undefined）→ true（向后兼容，网段恒可达）', () =>
+    expect(meshAlwaysRoutesSubnets(wgSub())).toBe(true));
+  it('显式 true → true', () => expect(meshAlwaysRoutesSubnets(wgSub(true))).toBe(true));
+  it('显式 false → false（仅出网）', () =>
+    expect(meshAlwaysRoutesSubnets(wgSub(false))).toBe(false));
+  it('Tailscale 缺省 → true', () =>
+    expect(meshAlwaysRoutesSubnets(ts(['192.168.9.0/24']))).toBe(true));
+  it('Tailscale 显式 false → false', () => {
+    const node = ts(['192.168.9.0/24']) as any;
+    node.tailscaleSettings = { ...node.tailscaleSettings, alwaysRouteSubnets: false };
+    expect(meshAlwaysRoutesSubnets(node)).toBe(false);
+  });
+  it('非组网协议 → true（语义不适用）', () =>
+    expect(meshAlwaysRoutesSubnets({ protocol: 'vless' } as any)).toBe(true));
+});
+
+describe('shouldForceRouteSubnets（块 0c 的 gate 谓词）', () => {
+  const NONE = new Set<string>();
+  it('ON（缺省/显式）→ 恒发射，无视选中/指向', () => {
+    expect(shouldForceRouteSubnets(wgSub(true), null, NONE)).toBe(true);
+    expect(shouldForceRouteSubnets(wgSub(undefined), 'other', NONE)).toBe(true);
+  });
+  it('OFF + 未选中 + 未被指向 → 不发射（仅作可选出口）', () =>
+    expect(shouldForceRouteSubnets(wgSub(false), 'other', NONE)).toBe(false));
+  it('OFF + 被选中为主出口 → 发射（网段随之可达）', () =>
+    expect(shouldForceRouteSubnets(wgSub(false), 'w', NONE)).toBe(true));
+  it('OFF + 被规则/应用分流显式指向 → 发射', () =>
+    expect(shouldForceRouteSubnets(wgSub(false), 'other', new Set(['w']))).toBe(true));
+});
+
+describe('collectRuleTargetedServerIds（仅 enabled + action===proxy + targetServerId）', () => {
+  it('proxy + enabled + targetServerId → 计入', () =>
+    expect([
+      ...collectRuleTargetedServerIds([{ enabled: true, action: 'proxy', targetServerId: 'w' }]),
+    ]).toEqual(['w']));
+  it('direct/block 即便带 targetServerId → 不计入（F1：陈旧目标不误判 engaged）', () =>
+    expect(
+      collectRuleTargetedServerIds([
+        { enabled: true, action: 'direct', targetServerId: 'w' },
+        { enabled: true, action: 'block', targetServerId: 'x' },
+      ]).size
+    ).toBe(0));
+  it('disabled → 不计入', () =>
+    expect(
+      collectRuleTargetedServerIds([{ enabled: false, action: 'proxy', targetServerId: 'w' }]).size
+    ).toBe(0));
+  it('proxy 但无 targetServerId（跟全局）→ 不计入', () =>
+    expect(collectRuleTargetedServerIds([{ enabled: true, action: 'proxy' }]).size).toBe(0));
+  it('undefined/空 → 空集', () => {
+    expect(collectRuleTargetedServerIds(undefined).size).toBe(0);
+    expect(collectRuleTargetedServerIds([]).size).toBe(0);
+  });
+});
+
+describe('meshForceRoutedServers（warn/shadow 与块 0c 同 gate 的预过滤）', () => {
+  it('ON 保留 / OFF 未 engaged 剔除 / OFF 但被选中或被指向保留', () => {
+    const on = wgSub(true);
+    const off = { ...wgSub(false), id: 'off' } as any;
+    const offSel = { ...wgSub(false), id: 'sel' } as any;
+    const offTgt = { ...wgSub(false), id: 'tgt' } as any;
+    const out = meshForceRoutedServers([on, off, offSel, offTgt], 'sel', new Set(['tgt']));
+    expect(out.map((s) => s.id)).toEqual(['w', 'sel', 'tgt']); // off（OFF+未engaged）被剔
+  });
+  it('非组网协议恒保留（对 cidr/shadow 计算无副作用）', () =>
+    expect(
+      meshForceRoutedServers([{ id: 'v', protocol: 'vless' } as any], null, new Set()).map(
+        (s) => s.id
+      )
+    ).toEqual(['v']));
 });
