@@ -457,12 +457,7 @@ describe('IpInfoService 传输层', () => {
   it('重试：代理首轮全失败、次轮成功 → 取到 IP 不报错，且过程出现「获取中」(loading)', async () => {
     // maxAttempts=2：第 1 轮 PROXY_CHAIN 3 端点全 503 失败 → 间隔后第 2 轮首跳 trace 成功。
     const { svc, snapshots } = makeService({ maxAttempts: 2, retryDelayMs: 0 });
-    responders = [
-      respondStatus(503),
-      respondStatus(503),
-      respondStatus(503),
-      respondOk(TRACE_OK),
-    ];
+    responders = [respondStatus(503), respondStatus(503), respondStatus(503), respondOk(TRACE_OK)];
     const snap = await svc.refreshProxy();
     expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // 重试后取到
     expect(snap.error).toBeUndefined(); // 不报错（不闪「获取失败」）
