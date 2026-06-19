@@ -494,6 +494,39 @@ export function NetworkSettings() {
                 onCheckedChange={(c) => setBool('blockQuic', c)}
               />
             </SettingsRow>
+            {/* WebRTC 防泄露（三态：关/走代理/阻断）。仅 TUN 模式生效——系统代理模式浏览器 WebRTC 的 UDP
+                不经 sing-box 核，规则层拦不住，故非 TUN 时置灰 + 提示切到 TUN（避免用户误以为已防护）。 */}
+            <div>
+              <SettingsRow
+                label={t('settings.network.webrtcLeakProtection')}
+                description={t('settings.network.webrtcLeakProtectionDesc')}
+              >
+                <Select
+                  value={config.webrtcLeakProtection ?? 'off'}
+                  onValueChange={(v) =>
+                    saveConfig({
+                      ...config,
+                      webrtcLeakProtection: v as 'off' | 'proxy' | 'block',
+                    }).catch(() => toast.error(t('common.saveFailed')))
+                  }
+                  disabled={config.proxyModeType?.toLowerCase() !== 'tun'}
+                >
+                  <SelectTrigger className="h-8 w-[160px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="off">{t('settings.network.webrtcLeakOff')}</SelectItem>
+                    <SelectItem value="proxy">{t('settings.network.webrtcLeakProxy')}</SelectItem>
+                    <SelectItem value="block">{t('settings.network.webrtcLeakBlock')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+              {config.proxyModeType?.toLowerCase() !== 'tun' && (
+                <p className="pb-2 text-xs font-medium text-muted-foreground">
+                  {t('settings.network.webrtcLeakTunOnlyHint')}
+                </p>
+              )}
+            </div>
             <SettingsRow
               label={t('settings.advanced.interruptOnSwitch')}
               description={t('settings.advanced.interruptOnSwitchDesc')}

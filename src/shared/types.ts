@@ -392,6 +392,10 @@ export interface UserConfig {
   bypassLANList?: string[];
   blockQuic?: boolean; // 阻止 QUIC（对代理向 UDP 443 执行 reject，逼浏览器回退 TCP）；默认关；节点无关，对所有协议一视同仁
   tlsFragment?: boolean; // 全局 TLS 分片：对所有 TLS 节点切分 ClientHello 抗 SNI-DPI；默认关
+  // WebRTC 防泄露（仅 TUN 模式生效）：off=关；proxy=对 STUN 经协议嗅探强制走代理（srflx=代理 IP，WebRTC 正常）；
+  // block=reject STUN（断 P2P、零公网 IP 泄露）。默认 undefined=off（零行为变化）。系统代理模式拦不住（浏览器 WebRTC
+  // 的 UDP 不经 sing-box 核），UI 在系统代理模式置灰。
+  webrtcLeakProtection?: 'off' | 'proxy' | 'block';
   // 节点测速端点 URL（经各节点代理 GET 量 TTFB）。默认 generate_204（见 shared/speed-test）；用户可自配，兼容 http/https。
   // 非法值由 SpeedTestService 经 resolveSpeedTestTarget 回落默认，不阻断测速。
   speedTestUrl?: string;

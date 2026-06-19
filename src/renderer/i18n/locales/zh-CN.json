@@ -437,7 +437,13 @@
       "speedTest": "节点测速",
       "speedTestUrl": "测速端点",
       "speedTestUrlDesc": "经各节点代理请求该 URL 量 TTFB（默认 generate_204）。兼容 http/https；端点不可达时该节点显示超时，可换 cloudflare/自建端点。",
-      "speedTestUrlInvalid": "请输入合法的 http/https URL"
+      "speedTestUrlInvalid": "请输入合法的 http/https URL",
+      "webrtcLeakProtection": "WebRTC 防泄露",
+      "webrtcLeakProtectionDesc": "防止浏览器经 WebRTC(STUN) 暴露真实公网 IP。仅 TUN 模式生效。走代理：STUN 强制走代理，WebRTC 正常但隐藏真实 IP，需节点支持 UDP 中继。阻断：直接拒绝 STUN，最彻底但会断 P2P（可能影响视频通话）。",
+      "webrtcLeakOff": "关闭",
+      "webrtcLeakProxy": "走代理",
+      "webrtcLeakBlock": "阻断",
+      "webrtcLeakTunOnlyHint": "WebRTC 防泄露仅在 TUN 模式生效，请切换到 TUN 模式后启用。"
     },
     "proxyMode": {
       "systemProxyMode": "系统代理模式",

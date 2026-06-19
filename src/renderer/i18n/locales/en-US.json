@@ -437,7 +437,13 @@
       "speedTest": "Node Speed Test",
       "speedTestUrl": "Test URL",
       "speedTestUrlDesc": "Requests this URL through each node's proxy to measure TTFB (default generate_204). Supports http/https; if the endpoint is unreachable the node shows timeout — switch to cloudflare/self-hosted.",
-      "speedTestUrlInvalid": "Enter a valid http/https URL"
+      "speedTestUrlInvalid": "Enter a valid http/https URL",
+      "webrtcLeakProtection": "WebRTC Leak Protection",
+      "webrtcLeakProtectionDesc": "Prevents the browser from exposing your real public IP via WebRTC (STUN). Only takes effect in TUN mode. Via proxy: forces STUN through the proxy so WebRTC keeps working while hiding your real IP — requires a node with UDP relay. Block: rejects STUN outright (most thorough) but breaks P2P (may affect video calls).",
+      "webrtcLeakOff": "Off",
+      "webrtcLeakProxy": "Via proxy",
+      "webrtcLeakBlock": "Block",
+      "webrtcLeakTunOnlyHint": "WebRTC leak protection only works in TUN mode. Switch to TUN mode to enable it."
     },
     "proxyMode": {
       "systemProxyMode": "System Proxy Mode",

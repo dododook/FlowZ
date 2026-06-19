@@ -161,6 +161,11 @@ export function buildRouteConfig(
   const proxyUdpRejectFor = (matcher: Record<string, unknown>): SingBoxRouteRule | null =>
     blockProxyQuic ? udp443RejectRule(matcher) : null;
 
+  // WebRTC 防泄露（仅 TUN 模式有意义；系统代理模式浏览器 WebRTC 的 UDP 不经核，UI 已置灰）：
+  //   off=不注入；proxy=对 STUN(UDP) 经协议嗅探强制路由到代理（srflx=代理 IP）；block=reject STUN（断 P2P）。
+  // 见下方「STUN 强制路由/阻断」注入点（功能性强制规则区、smart 自定义规则块之前），以及为稳健补的显式 stun sniffer。
+  const webrtcLeak = config.webrtcLeakProtection ?? 'off';
+
   // A. 嗅探规则（必须在前，用于识别域名）
   // 1.13+ 必须在路由层开启 sniff，替代已移除的 inbound 级别 sniff 字段。
   // 注意（旧注释「等效 sniff_override_destination」不准确）：sniff 只把嗅出的域名用于【路由匹配】这半边——
@@ -170,6 +175,17 @@ export function buildRouteConfig(
     rules.push({
       action: 'sniff',
     });
+    // WebRTC 防泄露开启时为稳健补一条显式 UDP stun sniffer：裸 {action:'sniff'} 官方语义 sniffer 留空=嗅所有
+    // 协议（含 stun），理论上已足够让下方 protocol:'stun' 命中；显式 sniffer:['stun'] 仅为稳健、免一次真机往返
+    // 才发现裸 sniff 不命中。timeout 短（300ms）避免拖慢非 STUN 的 UDP 首包。（裸 sniff 是否已足够留 Phase-0 真机确认。）
+    if (webrtcLeak !== 'off') {
+      rules.push({
+        network: ['udp'],
+        action: 'sniff',
+        sniffer: ['stun'],
+        timeout: '300ms',
+      });
+    }
   }
 
   // A2. 出口 IP 探针钉死路由（必须紧随 sniff、先于一切分流/进程规则，确保短路不受分流策略影响）：
@@ -373,6 +389,20 @@ export function buildRouteConfig(
   // Bug 4 修复：删除此处重复的 QUIC 阻断规则
   // 第一条 QUIC reject 规则已在上方（生成 routeConfig 之前）添加，此处重复添加会造成规则冗余
   // reject 比 block 更合适（发 TCP RST 让浏览器立即回退到 TCP，而不是静默丢弃造成等待超时）
+
+  // WebRTC 防泄露：对嗅出的 STUN(UDP) 协议精确处理（sing-box protocol:'stun' 原生 matcher）。
+  // **位置**：功能性强制规则区（DoH-leak reject / 节点排除之后、smart 自定义规则块之前）——确保 STUN 不被
+  //   smart 国内/IP-literal 规则漏到直连（默认 smart 模式的真实泄露缺口）。
+  //   · proxy 档：仅非 direct 模式且有节点时把 STUN 路由到 proxy-selector（srflx=代理 IP，WebRTC 正常）。
+  //     global 已天然防（final=代理），此处注入冗余无害；direct 无代理跳过。off-mesh 选中致 userExitTag=direct
+  //     的边角不在本特性兜（属节点配置问题），此处用 selectedServerTag。
+  //   · block 档：恒 reject STUN（断 P2P、零公网 IP 泄露），与代理模式/节点无关。
+  //   仅 TUN 模式真生效（系统代理模式浏览器 WebRTC UDP 不经核，UI 已置灰）；off 档不注入、零行为变化。
+  if (webrtcLeak === 'proxy' && proxyMode !== 'direct' && config.servers.length > 0) {
+    rules.push({ protocol: 'stun', action: 'route', outbound: selectedServerTag });
+  } else if (webrtcLeak === 'block') {
+    rules.push({ protocol: 'stun', action: 'reject' });
+  }
 
   // 3. 自定义规则 + 应用分流（用户路由）——**仅 smart 模式**：global=真·全局忽略用户分流（一律走选中节点，
   //    下方 smart geo 也不加、final=proxy），direct=全直连。功能性强制直连（防环/LAN/网银/节点排除）在本块之外、不受影响。

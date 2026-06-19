@@ -604,6 +604,30 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     expect(snap(cfg({ servers: [server({})], blockQuic: true, customRules }))).toMatchSnapshot();
   });
 
+  it('webrtcLeakProtection=proxy（TUN + smart）→ 锁显式 stun sniffer + protocol:stun route 到 proxy-selector', () => {
+    expect(
+      snap(
+        cfg({
+          proxyModeType: 'tun',
+          servers: [server({})],
+          webrtcLeakProtection: 'proxy',
+        } as unknown as Partial<UserConfig>)
+      )
+    ).toMatchSnapshot();
+  });
+
+  it('webrtcLeakProtection=block（TUN + smart）→ 锁显式 stun sniffer + protocol:stun reject', () => {
+    expect(
+      snap(
+        cfg({
+          proxyModeType: 'tun',
+          servers: [server({})],
+          webrtcLeakProtection: 'block',
+        } as unknown as Partial<UserConfig>)
+      )
+    ).toMatchSnapshot();
+  });
+
   it('bypassLAN=false → 锁跳过私网直连 route 规则（bypassLAN ip_cidr / geosite-private 路由规则不注入；geosite-private 定义作为内置 geo 仍在）', () => {
     expect(
       snap(cfg({ servers: [server({})], bypassLAN: false } as unknown as Partial<UserConfig>))
