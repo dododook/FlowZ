@@ -7,6 +7,7 @@ import { formatBytes } from '@/lib/format';
 import { Eye, EyeOff, RotateCw, Globe, ArrowUp, ArrowDown, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { IpInfo } from '@/bridge/types';
+import { deriveSpineVisual, type SpineState } from './spine-state';
 
 const MASK_KEY = 'flowz:maskIp';
 const MASKED_IP = '••• ••• ••• •••';
@@ -37,13 +38,26 @@ function countryNameOf(cc: string | undefined, lang: string): string | undefined
 }
 
 /** 导流连接线：连上=live 绿 + 流动光点（motion-safe，reduced-motion 下静止）；未连=暗线。 */
-function ConduitLink({ running }: { running: boolean }) {
+function ConduitLink({ state }: { state: SpineState }) {
+  if (state === 'fault') {
+    // 断点段:琥珀虚线、无流光——与上游绿色活路对比,读作「流到这里断了」。
+    return (
+      <div className="relative h-px flex-1">
+        <div className="h-0 w-full border-t border-dashed border-warning/70" />
+      </div>
+    );
+  }
+  if (state === 'flow') {
+    return (
+      <div className="relative h-px flex-1">
+        <div className="h-px w-full bg-success/40" />
+        <span className="absolute top-1/2 h-1 w-1 -translate-y-1/2 rounded-full bg-success shadow-[0_0_6px] shadow-success motion-safe:animate-conduit-flow" />
+      </div>
+    );
+  }
   return (
     <div className="relative h-px flex-1">
-      <div className={running ? 'h-px w-full bg-success/40' : 'h-px w-full bg-border'} />
-      {running && (
-        <span className="absolute top-1/2 h-1 w-1 -translate-y-1/2 rounded-full bg-success shadow-[0_0_6px] shadow-success motion-safe:animate-conduit-flow" />
-      )}
+      <div className="h-px w-full bg-border" />
     </div>
   );
 }
@@ -88,6 +102,20 @@ export function NetworkInfoCard() {
 
   const running = connectionStatus?.proxyCore?.running ?? false;
   const loading = ipInfo?.loading ?? false;
+
+  // 导流脊三态。降级=连上但出口 IP 探测异常(error==='fetch_failed'),复用 IP 卡标题黄点的同源信号——
+  // 仅 running 时对脊有意义(未连时 error 是直连探测失败,与代理路径无关)。loading 中暂不判降级,等探测落定。
+  // error 是「本地+代理出口」探测的并集(IpInfoService.doRefresh),故末段琥珀是「出口探测降级」的保守提示,
+  // 非「外网确定不可达」;proxy 探测失败会保留旧 IP 值,故只能靠 error 判降级,不能靠 proxy 是否为空。
+  const degraded = running && !!ipInfo?.error && !loading;
+  const spine = deriveSpineVisual(running, degraded);
+  // 端点色档→class。中性提亮(muted→foreground,不染绿,绿留给流光+出口);降级转 warning。
+  const internetColor =
+    spine.internet === 'warning'
+      ? 'text-warning'
+      : spine.internet === 'foreground'
+        ? 'text-foreground'
+        : 'text-muted-foreground';
 
   const [masked, setMasked] = useState<boolean>(() => localStorage.getItem(MASK_KEY) === '1');
 
@@ -183,11 +211,14 @@ export function NetworkInfoCard() {
         </div>
       </CardHeader>
       <CardContent>
-        {/* 导流脊:你 ● ── 出口 ◉(连上 live 绿锁定) ── Internet。签名,数据见下方 IP 详情 */}
+        {/* 导流脊:你 ● ── 出口 ◉(连上 live 绿锁定) ── Internet。签名,数据见下方 IP 详情。
+            端点中性提亮(非染绿)、降级末段转琥珀虚线;绿色专留给流光+出口节点,保视觉主次。 */}
         <div className="mb-5 flex items-center gap-2.5 px-1">
           <span className="shrink-0 text-xs font-medium">{t('home.myDevice')}</span>
-          <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-muted-foreground/50" />
-          <ConduitLink running={running} />
+          <span
+            className={`h-2.5 w-2.5 shrink-0 rounded-full border ${spine.youDotLit ? 'border-foreground/60' : 'border-muted-foreground/50'}`}
+          />
+          <ConduitLink state={spine.leg1} />
           <span
             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${running ? 'border-success shadow-[0_0_8px] shadow-success/40' : 'border-muted-foreground/40'}`}
             title={t('home.proxyExit')}
@@ -196,9 +227,14 @@ export function NetworkInfoCard() {
               className={`h-1.5 w-1.5 rounded-full ${running ? 'bg-success motion-safe:animate-pulse' : 'bg-muted-foreground/40'}`}
             />
           </span>
-          <ConduitLink running={running} />
-          <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 text-xs text-muted-foreground">Internet</span>
+          <ConduitLink state={spine.leg2} />
+          <Globe className={`h-4 w-4 shrink-0 ${internetColor}`} />
+          <span
+            className={`shrink-0 text-xs ${internetColor}`}
+            title={degraded ? t('home.ipStale', '部分出口 IP 获取失败，显示为上次结果') : undefined}
+          >
+            Internet
+          </span>
         </div>
 
         {/* IP 详情:本地出口 / 代理出口（含国旗 + IP + 地区，保留全部信息） */}
