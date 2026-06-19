@@ -307,6 +307,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         const isPrivacyMode = await api.config.getPrivacyMode();
         set({ config, isPrivacyMode });
+        // 节点增删/导入/订阅更新/编辑最终都回流到 loadConfig（单飞合一）→ 在此统一刷新 Tailscale 登录态，
+        // 使登录态表始终与最新节点集合对齐（含新增的带 authKey 节点不误显「需登录」）。fire-and-forget：
+        // 不阻塞 loadConfig 主流程/单飞窗口，刷新失败仅 console（角标退化为缺省 false=保守显需登录，不破功能）。
+        void get().refreshTailscaleLoginStates();
       } catch (error) {
         console.error('[Store] Exception loading config:', error);
         toast.error(i18n.t('common.configLoadFail'));
@@ -396,10 +400,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteServer: async (serverId) => {
     try {
       await api.server.delete(serverId);
-      // Reload config to get updated server list
+      // Reload config to get updated server list（loadConfig 内已统一刷新 Tailscale 登录态，覆盖增删/导入，
+      // 故此处不再单独调 refreshTailscaleLoginStates，避免双刷）。
       await get().loadConfig();
-      // 节点增删后登录态表可能含已删节点或缺新节点 → 刷新对齐。
-      await get().refreshTailscaleLoginStates();
     } catch (error) {
       console.error('[Store] Exception deleting server:', error);
       throw error; // 调用点 catch + toast

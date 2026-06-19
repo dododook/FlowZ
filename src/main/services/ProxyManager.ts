@@ -4760,8 +4760,11 @@ exit 0
     this.tailscaleAuthPolling.add(serverId);
     void pollTailscaleLoginSuccess({
       check: () => tailscaleStateExists(serverId),
-      // 进程已停（singboxProcess 置空 / cleanup）→ 取消轮询，避免后台空转到 2min。
-      isCancelled: () => this.singboxProcess === null,
+      // 进程已停 → 取消轮询，避免后台空转到 2min。判据用 getStatus().running（同 UI/健康检查的
+      // activePid 存活口径）：覆盖全部启动路径——helper 零提权 / osascript / UAC 后台进程经 singboxPid，
+      // 直接 spawn（system 代理 / Linux TUN）经 pid。⚠️ 不能用 `singboxProcess === null`：helper 路径
+      // 经 socket 起核、从不 spawn 子进程，singboxProcess 恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
+      isCancelled: () => !this.getStatus().running,
     })
       .then((result) => {
         if (result === 'success') {
