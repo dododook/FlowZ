@@ -129,6 +129,9 @@ export interface WireGuardSettings {
   persistentKeepalive?: number; // 保活间隔（秒）
   reserved?: number[]; // 3 字节 reserved（Cloudflare WARP 等需要）
   mtu?: number; // 缺省 1408
+  // Phase 2：反向 mesh（system=真内核 WG 接口，提供「被组网访问/作 subnet router」反向可达）；默认 false=userspace
+  // gVisor 栈。true 时 peer.allowed_ips 恒 specific-only（去 0/0，结论A：内核接口永不当全局出口），需 helper/提权。
+  reverseMesh?: boolean;
 }
 
 // Tailscale（sing-box endpoint，账号制 mesh，无 server address/port——连控制面）。Phase 1 userspace。

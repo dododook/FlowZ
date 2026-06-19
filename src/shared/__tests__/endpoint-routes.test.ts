@@ -2,6 +2,8 @@ import {
   endpointForcedRouteCidrs,
   TAILNET_CGNAT,
   meshAllowsInternet,
+  meshUsesSystemInterface,
+  meshNodeCarriesFullTunnel,
   wireguardPeerAllowedIps,
   isMeshNodeUnroutable,
   meshSelectedExitFallsBackToDirect,
@@ -9,7 +11,7 @@ import {
 } from '../endpoint-routes';
 import type { ServerConfig, UserConfig } from '../types';
 
-const wg = (allowedIPs?: string[], allowInternet?: boolean): ServerConfig =>
+const wg = (allowedIPs?: string[], allowInternet?: boolean, reverseMesh?: boolean): ServerConfig =>
   ({
     id: 'w',
     name: 'w',
@@ -22,15 +24,20 @@ const wg = (allowedIPs?: string[], allowInternet?: boolean): ServerConfig =>
       localAddress: ['10.0.0.2/32'],
       allowedIPs,
       ...(allowInternet === undefined ? {} : { allowInternet }),
+      ...(reverseMesh === undefined ? {} : { reverseMesh }),
     },
   }) as any;
 
-const ts = (routes?: string[], allowInternet?: boolean): ServerConfig =>
+const ts = (routes?: string[], allowInternet?: boolean, reverseMesh?: boolean): ServerConfig =>
   ({
     id: 't',
     name: 't',
     protocol: 'tailscale',
-    tailscaleSettings: { routes, ...(allowInternet === undefined ? {} : { allowInternet }) },
+    tailscaleSettings: {
+      routes,
+      ...(allowInternet === undefined ? {} : { allowInternet }),
+      ...(reverseMesh === undefined ? {} : { reverseMesh }),
+    },
   }) as any;
 
 describe('endpointForcedRouteCidrs', () => {
@@ -189,5 +196,77 @@ describe('meshShadowedCidrs（同网段首声明者占有）', () => {
     const b = wgNode('b', ['10.8.0.0/24']);
     expect(meshShadowedCidrs([a, b]).get('b')).toEqual(['10.8.0.0/24']);
     expect(meshShadowedCidrs([b, a]).get('a')).toEqual(['10.8.0.0/24']);
+  });
+});
+
+describe('Phase 2: system 内核接口（reverseMesh）', () => {
+  describe('meshUsesSystemInterface', () => {
+    it('WG reverseMesh=true → true', () =>
+      expect(meshUsesSystemInterface(wg([], true, true))).toBe(true));
+    it('WG 缺字段 → false（缺省 userspace）', () =>
+      expect(meshUsesSystemInterface(wg())).toBe(false));
+    it('WG reverseMesh=false → false', () =>
+      expect(meshUsesSystemInterface(wg([], true, false))).toBe(false));
+    it('TS reverseMesh=true → true', () =>
+      expect(meshUsesSystemInterface(ts([], true, true))).toBe(true));
+    it('TS 缺字段 → false', () => expect(meshUsesSystemInterface(ts())).toBe(false));
+    it('非组网协议 → false', () =>
+      expect(meshUsesSystemInterface({ protocol: 'vless' } as any)).toBe(false));
+  });
+
+  describe('meshNodeCarriesFullTunnel（= 允许外网 且非 system）', () => {
+    it('on + 非 system → true', () => expect(meshNodeCarriesFullTunnel(wg([], true))).toBe(true));
+    it('on + system → false（结论A：system 恒 specific-only，不承载 0/0）', () =>
+      expect(meshNodeCarriesFullTunnel(wg([], true, true))).toBe(false));
+    it('off + 非 system → false', () =>
+      expect(meshNodeCarriesFullTunnel(wg([], false))).toBe(false));
+    it('off + system → false', () =>
+      expect(meshNodeCarriesFullTunnel(wg([], false, true))).toBe(false));
+    it('TS on + system → false', () =>
+      expect(meshNodeCarriesFullTunnel(ts([], true, true))).toBe(false));
+  });
+
+  describe('wireguardPeerAllowedIps（system → specific-only，恒去 0/0）', () => {
+    it('system + 具体段（即便 on）→ 仅具体段，不注入 0/0', () => {
+      expect(wireguardPeerAllowedIps(wg(['10.8.0.0/24'], true, true))).toEqual(['10.8.0.0/24']);
+    });
+    it('system + 具体段 + off → 仅具体段', () => {
+      expect(wireguardPeerAllowedIps(wg(['10.8.0.0/24'], false, true))).toEqual(['10.8.0.0/24']);
+    });
+    it('system + 含 catch-all 的列表 → 剥离 0/0 仅留具体段', () => {
+      expect(wireguardPeerAllowedIps(wg(['0.0.0.0/0', '::/0', '10.8.0.0/24'], true, true))).toEqual(
+        ['10.8.0.0/24']
+      );
+    });
+    it('system + 无具体段 → null（同 off+空，空 allowed_ips=FATAL 不可发射）', () => {
+      expect(wireguardPeerAllowedIps(wg([], true, true))).toBeNull();
+    });
+  });
+
+  describe('isMeshNodeUnroutable（system + 无具体段）', () => {
+    it('WG system + 无具体段 → true（不可发射）', () => {
+      expect(isMeshNodeUnroutable(wg([], true, true))).toBe(true);
+    });
+    it('WG system + 有具体段 → false', () => {
+      expect(isMeshNodeUnroutable(wg(['10.8.0.0/24'], true, true))).toBe(false);
+    });
+  });
+
+  describe('meshSelectedExitFallsBackToDirect（system 节点选中为主 → 兜底，即便 allowInternet=on）', () => {
+    const cfg = (server: ServerConfig, proxyMode: string): UserConfig =>
+      ({ proxyMode, servers: [server], selectedServerId: server.id }) as any;
+    it('smart + 选中 system WG(on+具体段) → true（system 不承载 0/0，海外须回退避黑洞）', () => {
+      expect(meshSelectedExitFallsBackToDirect(cfg(wg(['10.8.0.0/24'], true, true), 'smart'))).toBe(
+        true
+      );
+    });
+    it('global + 选中 system TS(on) → true', () => {
+      expect(
+        meshSelectedExitFallsBackToDirect(cfg(ts(['192.168.9.0/24'], true, true), 'global'))
+      ).toBe(true);
+    });
+    it('smart + 选中 非 system on WG → false（仍承载 0/0，不回退）', () => {
+      expect(meshSelectedExitFallsBackToDirect(cfg(wg([], true), 'smart'))).toBe(false);
+    });
   });
 });

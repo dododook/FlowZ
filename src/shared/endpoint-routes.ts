@@ -62,6 +62,29 @@ export function meshAllowsInternet(server: ServerConfig): boolean {
 }
 
 /**
+ * Phase 2：组网节点是否启用 system 内核接口（reverseMesh=反向可达/被访问，WG `system:true` /
+ * Tailscale `system_interface:true`）。缺省 false=userspace gVisor 栈（Phase 1）。**纯用户意图**：
+ * 「reverseMesh ⟹ helper 提权已就位」由上层校验/连接闸门 + ProxyManager emit 门控强制（见 server-completeness
+ * 与 buildOutbounds 的 allowSystemInterface），故本函数在 config 构建期可等同 effective system 态。
+ */
+export function meshUsesSystemInterface(server: ServerConfig): boolean {
+  const p = server.protocol?.toLowerCase();
+  if (p === 'wireguard') return server.wireguardSettings?.reverseMesh === true;
+  if (p === 'tailscale') return server.tailscaleSettings?.reverseMesh === true;
+  return false;
+}
+
+/**
+ * 该组网节点是否承载「全隧道默认出口」(0/0)。= 允许外网 **且非** system 内核接口。
+ * 结论A：system:true 恒 specific-only（内核接口若装 0/0 默认路由 → 跨平台环路/冲突，#3756/#3858），
+ * 故 system 节点即便 allowInternet=on 也不承载 0/0、永不当全局出口。单一真值：Layer A 注入 0/0、
+ * D4/D7 选中兜底、Tailscale exit_node 门控、UI「可作出口」判定共用，避免「allowsInternet 但其实不出网」漂移。
+ */
+export function meshNodeCarriesFullTunnel(server: ServerConfig): boolean {
+  return meshAllowsInternet(server) && !meshUsesSystemInterface(server);
+}
+
+/**
  * WireGuard peer.allowed_ips（Layer A，栈内 cryptokey routing，**永不碰系统 main 表**）：
  *   - allowInternet=on  → dedup(specific ∪ {0.0.0.0/0, ::/0})（两族全给，不按地址族裁剪，v6 取舍交全局 enableIPv6）
  *   - allowInternet=off → specific（仅承载列表网段）；**specific 为空 → 返回 null**（空 allowed_ips 会让 sing-box
@@ -70,6 +93,12 @@ export function meshAllowsInternet(server: ServerConfig): boolean {
  */
 export function wireguardPeerAllowedIps(server: ServerConfig): string[] | null {
   const specific = endpointForcedRouteCidrs(server);
+  // Phase 2 system:true（内核接口）：L1=L2=specific-only，恒去 0/0（结论A），不论 allowInternet。
+  // sing-box 把 allowed_ips 并集同时当 cryptokey 加密集 + OS 路由集（F4 不可拆）→ 含 0/0 会装默认路由致环路。
+  // specific 为空 → null（同 off+空，空 allowed_ips=FATAL，调用方据 null 跳过发射）。
+  if (meshUsesSystemInterface(server)) {
+    return specific.length > 0 ? specific : null;
+  }
   if (meshAllowsInternet(server)) {
     return Array.from(new Set([...specific, ...FULL_TUNNEL_CIDRS]));
   }
@@ -89,7 +118,8 @@ export function isMeshNodeUnroutable(server: ServerConfig): boolean {
 }
 
 /**
- * D4/D7：选中「关闭外网的组网节点」(WG/Tailscale, allowInternet=off) 为**主节点**时，「→代理」的用户出口
+ * D4/D7（+Phase2）：选中「不承载全隧道的组网节点」(WG/Tailscale，allowInternet=off **或** system:true 内核接口
+ * 恒 specific-only，见 meshNodeCarriesFullTunnel) 为**主节点**时，「→代理」的用户出口
  * （global 的 route.final；smart 的 geosite-!cn / google 关键词 / final）应整体兜底回 'direct'，而非
  * proxy-selector——proxy-selector.default = 该 off-mesh 节点，非具体段/海外流量进其用户态栈被 cryptokey
  * routing 丢弃（allowed_ips 不含 0/0）→ 黑洞断网。具体段仍由 force-route（排在这些规则之前）经组网节点；
@@ -103,7 +133,9 @@ export function isMeshNodeUnroutable(server: ServerConfig): boolean {
 export function meshSelectedExitFallsBackToDirect(config: UserConfig): boolean {
   if ((config.proxyMode || 'smart').toLowerCase() === 'direct') return false;
   const selected = config.servers?.find((s) => s.id === config.selectedServerId);
-  return !!selected && isEndpointProtocol(selected.protocol) && !meshAllowsInternet(selected);
+  return (
+    !!selected && isEndpointProtocol(selected.protocol) && !meshNodeCarriesFullTunnel(selected)
+  );
 }
 
 /**
