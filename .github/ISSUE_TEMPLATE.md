@@ -3,7 +3,6 @@ name: Bug 反馈
 about: 报告一个可复现的问题（连接失败 / DNS / 崩溃 / 更新安装等）
 title: "[Bug] "
 labels: bug
-assignees: ''
 ---
 
 <!--
