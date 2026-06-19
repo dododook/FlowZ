@@ -109,12 +109,12 @@ export function NetworkInfoCard() {
   // 非「外网确定不可达」;proxy 探测失败会保留旧 IP 值,故只能靠 error 判降级,不能靠 proxy 是否为空。
   const degraded = running && !!ipInfo?.error && !loading;
   const spine = deriveSpineVisual(running, degraded);
-  // 端点色档→class。中性提亮(muted→foreground,不染绿,绿留给流光+出口);降级转 warning。
+  // 端点色档→class。健康连通末端低强度 success(读作「已抵达」;高饱和绿仍留给流光+出口节点);降级转 warning;离线 muted。
   const internetColor =
     spine.internet === 'warning'
       ? 'text-warning'
-      : spine.internet === 'foreground'
-        ? 'text-foreground'
+      : spine.internet === 'success'
+        ? 'text-success'
         : 'text-muted-foreground';
 
   const [masked, setMasked] = useState<boolean>(() => localStorage.getItem(MASK_KEY) === '1');

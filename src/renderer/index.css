@@ -54,7 +54,7 @@
     --card-foreground: 210 25% 93%;
     --popover: 216 22% 9%;
     --popover-foreground: 210 25% 93%;
-    --primary: 184 78% 45%;
+    --primary: 184 70% 45%;
     --primary-foreground: 192 80% 6%;
     --secondary: 214 14% 18%;
     --secondary-foreground: 210 25% 93%;
@@ -85,7 +85,7 @@
     --badge-amber: 42.7 96.3% 56.5%;
     --border: 214 14% 18%;
     --input: 214 14% 20%;
-    --ring: 184 78% 45%;
+    --ring: 184 70% 45%;
   }
 }
 

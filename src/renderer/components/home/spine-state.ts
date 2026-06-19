@@ -6,8 +6,8 @@
 /** 脊一段的连通态：idle=灰睡 / flow=绿色活路+流光 / fault=琥珀虚线断点（流光停）。 */
 export type SpineState = 'idle' | 'flow' | 'fault';
 
-/** Internet 端点（Globe+文字）的语义色档：muted=睡 / foreground=醒（中性提亮，非染绿）/ warning=降级。 */
-export type EndpointTone = 'muted' | 'foreground' | 'warning';
+/** Internet 端点（Globe+文字）的语义色档：muted=睡 / success=醒（已抵达且健康，低强度绿）/ warning=降级。 */
+export type EndpointTone = 'muted' | 'success' | 'warning';
 
 export interface SpineVisual {
   /** 「你的设备」端口圆点：连上中性提亮（muted→foreground），睡时灰。 */
@@ -21,8 +21,9 @@ export interface SpineVisual {
 }
 
 /**
- * 三态视觉：离线（整条灰睡）/ 已连健康（绿活路 + 端点中性提亮）/ 降级（你→出口 green、出口→Internet 琥珀断、
- * Internet 端点琥珀）。配色纪律：绿色专留给流光+出口节点（载流量的主体），端点只做中性提亮不染绿，避免「糊成一片绿」。
+ * 三态视觉：离线（整条灰睡）/ 已连健康（绿活路 + Internet 端点低强度 success「已抵达」）/ 降级（你→出口 green、
+ * 出口→Internet 琥珀断、Internet 端点琥珀）。配色纪律：高饱和绿专留给流光+出口节点（载流量的主体），
+ * 末端 success 低一档、不与流光同强度，避免「糊成一片绿」。
  *
  * @param running 代理核心是否在跑（connectionStatus.proxyCore.running）。
  * @param degraded 连上但出口 IP 探测异常（调用方算 running && ipInfo.error && !loading）。未连时无意义——
@@ -40,5 +41,5 @@ export function deriveSpineVisual(running: boolean, degraded: boolean): SpineVis
   if (degraded) {
     return { youDotLit: true, leg1: 'flow', leg2: 'fault', internet: 'warning' };
   }
-  return { youDotLit: true, leg1: 'flow', leg2: 'flow', internet: 'foreground' };
+  return { youDotLit: true, leg1: 'flow', leg2: 'flow', internet: 'success' };
 }

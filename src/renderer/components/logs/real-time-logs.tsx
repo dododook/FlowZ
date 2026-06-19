@@ -161,7 +161,7 @@ export function RealTimeLogs({
       case 'info':
         return 'text-info';
       case 'debug':
-        return 'text-gray-500';
+        return 'text-muted-foreground';
       default:
         return 'text-foreground';
     }

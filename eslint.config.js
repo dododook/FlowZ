@@ -71,6 +71,16 @@ module.exports = [
           message:
             '禁裸 hex 颜色(UI 防偏移):改用 Conduit token——className 走 bg-primary/text-success/fill-primary 等,或 hsl(var(--xxx));色值定义只在 index.css token 块。确需 hex(如 Electron API/非颜色)请就地加 eslint-disable 并注明理由。',
         },
+        {
+          // UI 防偏移(护栏盲区根治):禁裸 Tailwind 灰阶 palette class(gray/zinc/slate/neutral/stone-50..950),
+          // 必须带标准颜色功能前缀(text/bg/border/fill/... -灰阶-档)才命中,避免误伤散文字符串或 scrollbar-* 插件 class。
+          // 灰阶档已有 Conduit 语义 token 等价物(text-muted-foreground / bg-muted / border-border 等),一律改走 token 随双主题。
+          // 彩色档(amber 等警示色)暂不纳入:现存成体系 warning 用法待独立批次按语义 token 迁移,避免本规则大面积误报。
+          selector:
+            'Literal[value=/(^|[\\s:!])(text|bg|border|fill|stroke|ring|ring-offset|from|via|to|divide|outline|decoration|accent|caret|placeholder|shadow)-(gray|zinc|slate|neutral|stone)-(50|100|200|300|400|500|600|700|800|900|950)\\b/]',
+          message:
+            '禁裸 Tailwind 灰阶 class(UI 防偏移):改用 Conduit 语义 token——text-muted-foreground / text-foreground / bg-muted / border-border 等,随深浅双主题。色值真值只在 index.css token 块。确需(如第三方插件 class)请就地加 eslint-disable 并注明理由。',
+        },
       ],
     },
   },

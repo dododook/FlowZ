@@ -12,13 +12,13 @@ import type { TFunction } from 'i18next';
 export type RuleAction = 'proxy' | 'direct' | 'block' | string;
 
 export interface RuleActionStyle {
-  /** 实心圆点颜色 class，如 "bg-primary" */
+  /** 实心圆点颜色 class（拓扑图节点点），如 "bg-primary" */
   dot: string;
-  /** 文字颜色 class，如 "text-primary" */
+  /** 文字颜色 class，如 "text-primary"（也用作淡色调 badge 的字色） */
   text: string;
-  /** badge 背景色 class（实色），如 "bg-primary" */
+  /** badge 淡色调背景 class（半透明），如 "bg-primary/15"——配合 text 同色字，深色模式去眩光，对齐资源缺失/覆盖组网角标 */
   badgeBg: string;
-  /** badge hover 背景色 class，如 "hover:bg-primary/90" */
+  /** badge hover 背景 class，如 "hover:bg-primary/25" */
   badgeBgHover: string;
 }
 
@@ -28,24 +28,24 @@ export function getRuleActionStyle(action: RuleAction): RuleActionStyle {
     return {
       dot: 'bg-success',
       text: 'text-success',
-      badgeBg: 'bg-success',
-      badgeBgHover: 'hover:bg-success/90',
+      badgeBg: 'bg-success/15',
+      badgeBgHover: 'hover:bg-success/25',
     };
   }
   if (a === 'block' || a === 'reject' || a === 'reject-drop' || a === 'drop') {
     return {
       dot: 'bg-destructive',
       text: 'text-destructive',
-      badgeBg: 'bg-destructive',
-      badgeBgHover: 'hover:bg-destructive/90',
+      badgeBg: 'bg-destructive/15',
+      badgeBgHover: 'hover:bg-destructive/25',
     };
   }
   // proxy 及具体节点名
   return {
     dot: 'bg-primary',
     text: 'text-primary',
-    badgeBg: 'bg-primary',
-    badgeBgHover: 'hover:bg-primary/90',
+    badgeBg: 'bg-primary/15',
+    badgeBgHover: 'hover:bg-primary/25',
   };
 }
 

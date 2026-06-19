@@ -19,12 +19,12 @@ describe('deriveSpineVisual — 导流脊三态矩阵', () => {
     });
   });
 
-  it('已连健康：两段 flow，Internet 端点中性提亮（foreground，非染绿）', () => {
+  it('已连健康：两段 flow，Internet 端点 success（已抵达，低强度绿）', () => {
     expect(deriveSpineVisual(true, false)).toEqual({
       youDotLit: true,
       leg1: 'flow',
       leg2: 'flow',
-      internet: 'foreground',
+      internet: 'success',
     });
   });
 

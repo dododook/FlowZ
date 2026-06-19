@@ -83,7 +83,7 @@ function RuleDetailContent({
         <span className="text-xs text-muted-foreground">{t('rules.policyLabel', '策略')}</span>
         <Badge
           variant="default"
-          className={`whitespace-nowrap border-transparent text-white ${getRuleActionStyle(rule.action).badgeBg} ${getRuleActionStyle(rule.action).badgeBgHover}`}
+          className={`whitespace-nowrap border-transparent ${getRuleActionStyle(rule.action).text} ${getRuleActionStyle(rule.action).badgeBg} ${getRuleActionStyle(rule.action).badgeBgHover}`}
         >
           {ruleActionLabel(rule.action, t)}
         </Badge>
@@ -233,7 +233,7 @@ export function SortableRuleRow({
         <div className="flex flex-col items-start gap-1">
           <Badge
             variant="default"
-            className={`whitespace-nowrap border-transparent text-white ${getRuleActionStyle(rule.action).badgeBg} ${getRuleActionStyle(rule.action).badgeBgHover}`}
+            className={`whitespace-nowrap border-transparent ${getRuleActionStyle(rule.action).text} ${getRuleActionStyle(rule.action).badgeBg} ${getRuleActionStyle(rule.action).badgeBgHover}`}
           >
             {ruleActionLabel(rule.action, t)}
           </Badge>

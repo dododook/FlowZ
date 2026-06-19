@@ -30,18 +30,21 @@ describe('ruleActionLabel', () => {
   });
 });
 
-describe('getRuleActionStyle 三值配色单一真值', () => {
-  it('direct → success', () => {
-    expect(getRuleActionStyle('direct').badgeBg).toBe('bg-success');
+describe('getRuleActionStyle 三值配色单一真值（badge 淡色调去眩光）', () => {
+  it('direct → success（淡色底 + 同色字）', () => {
+    expect(getRuleActionStyle('direct').badgeBg).toBe('bg-success/15');
+    expect(getRuleActionStyle('direct').text).toBe('text-success');
+    expect(getRuleActionStyle('direct').dot).toBe('bg-success'); // 拓扑点仍实色
   });
 
-  it('block 及别名 → destructive', () => {
-    expect(getRuleActionStyle('block').badgeBg).toBe('bg-destructive');
-    expect(getRuleActionStyle('reject').badgeBg).toBe('bg-destructive');
+  it('block 及别名 → destructive（淡色底）', () => {
+    expect(getRuleActionStyle('block').badgeBg).toBe('bg-destructive/15');
+    expect(getRuleActionStyle('reject').badgeBg).toBe('bg-destructive/15');
   });
 
-  it('proxy/未知 → primary', () => {
-    expect(getRuleActionStyle('proxy').badgeBg).toBe('bg-primary');
-    expect(getRuleActionStyle('node-x').badgeBg).toBe('bg-primary');
+  it('proxy/未知 → primary（淡色底 + 同色字）', () => {
+    expect(getRuleActionStyle('proxy').badgeBg).toBe('bg-primary/15');
+    expect(getRuleActionStyle('proxy').text).toBe('text-primary');
+    expect(getRuleActionStyle('node-x').badgeBg).toBe('bg-primary/15');
   });
 });
