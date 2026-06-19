@@ -12,11 +12,12 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { FormButtons } from './shared/form-buttons';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
+import { SwitchField } from './shared/switch-field';
+import { MeshOptionsSection } from './shared/mesh-fields';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -114,9 +115,12 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
   // 立即登录按钮（Phase 2）门控：填了 authKey → 走预授权、不需交互登录 → 隐藏按钮。
   const authKeyValue = form.watch('authKey');
 
+  const exitNodeValue = form.watch('exitNode');
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        {/* 基础：仅出网必需项（账号 + 出口节点）。 */}
         <FormSection title={t('servers.basic', 'Basic')}>
           <p className="text-xs text-muted-foreground">
             {t(
@@ -124,7 +128,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
               'Tailscale is account-based — no address/port. Paste an auth key, or start the node to get a login URL.'
             )}
           </p>
-          <FieldGrid cols={1}>
+          <FieldGrid cols={2}>
             <FieldSpan>
               <FormField
                 control={form.control}
@@ -172,37 +176,6 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
             <FieldSpan>
               <FormField
                 control={form.control}
-                name="allowInternet"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
-                      <FormDescription>
-                        {reverseMesh
-                          ? t(
-                              'servers.allowInternetSystemDisabled',
-                              'Disabled in reverse-mesh mode: a kernel-interface node only carries the listed subnets and never acts as the full-tunnel exit. Turn off reverse mesh to use this node as an exit.'
-                            )
-                          : t(
-                              'servers.tsAllowInternetDesc',
-                              'When off, this node never acts as a full-tunnel exit (the exit node below is ignored); it only reaches the tailnet and routed subnets.'
-                            )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={reverseMesh ? false : field.value}
-                        disabled={reverseMesh}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
                 name="exitNode"
                 render={({ field }) => (
                   <FormItem>
@@ -238,126 +211,70 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 )}
               />
             </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="exitNodeAllowLanAccess"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>
-                        {t('servers.tsExitNodeAllowLan', 'Allow LAN access via exit node')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.tsExitNodeAllowLanDesc',
-                          'When using an exit node, still reach the local LAN directly instead of routing it through the exit.'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        disabled={!allowInternet}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="acceptRoutes"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>{t('servers.tsAcceptRoutes', 'Accept Routes')}</FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.tsAcceptRoutesDesc',
-                          'Accept subnet routes advertised by other nodes (reach mesh subnets).'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="routes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.tsRoutes', 'Routed subnets')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="192.168.50.0/24, 10.0.0.0/24" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'servers.tsRoutesDesc',
-                        'Send these subnets through this node; tailnet 100.64.0.0/10 is auto-included.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="alwaysRouteSubnets"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>
-                        {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.alwaysRouteSubnetsTsDesc',
-                          'On: the tailnet and routed subnets above are always reachable through this node. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="reverseMesh"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>
-                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.reverseMeshDesc',
-                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode.'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
           </FieldGrid>
+        </FormSection>
+
+        {/* 出口选项（默认展开）：经出口节点时是否直连本地 LAN。exitNode 非空才出现该开关。
+            reverseMesh 下 exitNode 已失效 → 该开关同步禁用（!allowInternet 同理）。 */}
+        {exitNodeValue?.trim() && (
+          <FormSection
+            title={t('servers.tsExitOptions', 'Exit node options')}
+            collapsible
+            defaultOpen
+          >
+            <SwitchField
+              control={form.control}
+              name="exitNodeAllowLanAccess"
+              label={t('servers.tsExitNodeAllowLan', 'Allow LAN access via exit node')}
+              tooltip={t(
+                'servers.tsExitNodeAllowLanDesc',
+                'When using an exit node, still reach the local LAN directly instead of routing it through the exit.'
+              )}
+              disabled={!allowInternet || reverseMesh}
+            />
+          </FormSection>
+        )}
+
+        {/* 子网路由（组网）：mesh 三开关（共享件）+ 接受/录入路由子网。 */}
+        <FormSection
+          title={t('servers.tsSubnetRouting', 'Subnet routing (mesh)')}
+          collapsible
+          defaultOpen={false}
+        >
+          <MeshOptionsSection
+            control={form.control}
+            protocol="tailscale"
+            reverseMesh={reverseMesh}
+            allowInternet={allowInternet}
+          />
+          <SwitchField
+            control={form.control}
+            name="acceptRoutes"
+            label={t('servers.tsAcceptRoutes', 'Accept Routes')}
+            tooltip={t(
+              'servers.tsAcceptRoutesDesc',
+              'Accept subnet routes advertised by other nodes (reach mesh subnets).'
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="routes"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('servers.tsRoutes', 'Routed subnets')}</FormLabel>
+                <FormControl>
+                  <Input placeholder="192.168.50.0/24, 10.0.0.0/24" {...field} />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'servers.tsRoutesDesc',
+                    'Send these subnets through this node; tailnet 100.64.0.0/10 is auto-included.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </FormSection>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
@@ -416,24 +333,13 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
               />
             </FieldSpan>
             <FieldSpan>
-              <FormField
+              <SwitchField
                 control={form.control}
                 name="ephemeral"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>{t('servers.tsEphemeral', 'Ephemeral')}</FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.tsEphemeralDesc',
-                          'Auto-remove this node from the tailnet when offline.'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
+                label={t('servers.tsEphemeral', 'Ephemeral')}
+                tooltip={t(
+                  'servers.tsEphemeralDesc',
+                  'Auto-remove this node from the tailnet when offline.'
                 )}
               />
             </FieldSpan>

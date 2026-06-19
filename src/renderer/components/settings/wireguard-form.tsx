@@ -15,9 +15,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
+import { MeshOptionsSection } from './shared/mesh-fields';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -195,26 +195,8 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             'WireGuard node: reach a peer LAN, or act as an internet exit. "Allow internet access" controls whether it carries default outbound traffic (off = only routes the subnets below). When several mesh nodes list the same subnet, the first in the list wins; override with a custom rule.'
           )}
         </p>
-        {/* 粘贴 wg-quick .conf 自动填充（可选；手写为主） */}
-        <div className="space-y-2 rounded-md border border-dashed p-3">
-          <FormLabel>
-            {t('servers.wgImportConf', 'Import from wg-quick .conf (optional)')}
-          </FormLabel>
-          <Textarea
-            rows={4}
-            placeholder={
-              '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0, ::/0'
-            }
-            value={confText}
-            onChange={(e) => setConfText(e.target.value)}
-            className="font-mono text-xs"
-          />
-          {confError && <p className="text-sm text-destructive">{confError}</p>}
-          <Button type="button" variant="outline" size="sm" onClick={handleParseConf}>
-            {t('servers.wgParseAndFill', 'Parse & fill')}
-          </Button>
-        </div>
 
+        {/* 基础：仅连接必填（地址/端口/私钥/对端公钥/本地地址）。 */}
         <FormSection title={t('servers.basic', 'Basic')}>
           <FieldGrid cols={2}>
             <AddressField control={form.control} t={t} />
@@ -266,121 +248,71 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 </FormItem>
               )}
             />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="allowInternet"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
-                      <FormDescription>
-                        {reverseMesh
-                          ? t(
-                              'servers.allowInternetSystemDisabled',
-                              'Disabled in reverse-mesh mode: a kernel-interface node only carries the listed subnets and never acts as the full-tunnel exit. Turn off reverse mesh to use this node as an exit.'
-                            )
-                          : t(
-                              'servers.allowInternetDesc',
-                              'When off, this node only routes the subnets listed below (e.g. peer LAN); it will not carry your default outbound traffic.'
-                            )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={reverseMesh ? false : field.value}
-                        disabled={reverseMesh}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="alwaysRouteSubnets"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>
-                        {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.alwaysRouteSubnetsDesc',
-                          'On: the subnets below are always reachable through this node, regardless of which node is active. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="reverseMesh"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pe-3">
-                      <FormLabel>
-                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.reverseMeshDesc',
-                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode.'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="allowedIPs"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t('servers.wgAllowedIPs', 'Routed subnets (Allowed IPs)')}
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t(
-                          'servers.wgAllowedIPsPlaceholder',
-                          '留空=全隧道；或 10.8.0.0/24'
-                        )}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'servers.wgAllowedIPsDesc',
-                        "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on."
-                      )}
-                    </FormDescription>
-                    {(reverseMesh || !allowInternet) && (
-                      <p className="text-sm text-amber-600 dark:text-amber-500">{meshRoutesHint}</p>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
           </FieldGrid>
         </FormSection>
 
+        {/* 组网选项（默认折叠）：mesh 三开关（共享件）+ 路由子网（Allowed IPs）。 */}
+        <FormSection
+          title={t('servers.wgMeshOptions', 'Mesh options')}
+          collapsible
+          defaultOpen={false}
+        >
+          <MeshOptionsSection
+            control={form.control}
+            protocol="wireguard"
+            reverseMesh={reverseMesh}
+            allowInternet={allowInternet}
+          />
+          <FormField
+            control={form.control}
+            name="allowedIPs"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('servers.wgAllowedIPs', 'Routed subnets (Allowed IPs)')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={t(
+                      'servers.wgAllowedIPsPlaceholder',
+                      '留空=全隧道；或 10.8.0.0/24'
+                    )}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'servers.wgAllowedIPsDesc',
+                    "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on."
+                  )}
+                </FormDescription>
+                {(reverseMesh || !allowInternet) && (
+                  <p className="text-sm text-amber-600 dark:text-amber-500">{meshRoutesHint}</p>
+                )}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </FormSection>
+
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          {/* 粘贴 wg-quick .conf 自动填充（可选；手写为主）——.conf 导入归高级。 */}
+          <div className="space-y-2 rounded-md border border-dashed p-3">
+            <FormLabel>
+              {t('servers.wgImportConf', 'Import from wg-quick .conf (optional)')}
+            </FormLabel>
+            <Textarea
+              rows={4}
+              placeholder={
+                '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0, ::/0'
+              }
+              value={confText}
+              onChange={(e) => setConfText(e.target.value)}
+              className="font-mono text-xs"
+            />
+            {confError && <p className="text-sm text-destructive">{confError}</p>}
+            <Button type="button" variant="outline" size="sm" onClick={handleParseConf}>
+              {t('servers.wgParseAndFill', 'Parse & fill')}
+            </Button>
+          </div>
           <FormField
             control={form.control}
             name="preSharedKey"

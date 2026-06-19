@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { FormSection } from './shared/form-layout';
+import { InfoTooltip } from './shared/info-tooltip';
 import { splitTextList } from './shared/parse-list';
 import { api } from '@/ipc/api-client';
 import type { ServerConfig } from '@/bridge/types';
@@ -189,15 +190,15 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
       </FormSection>
 
       <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-        <div className="flex items-center justify-between rounded-md border p-3">
-          <div className="space-y-0.5 pe-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium">{t('servers.customIsEndpoint', 'Endpoint type')}</p>
-            <p className="text-xs text-muted-foreground">
-              {t(
+            <InfoTooltip
+              content={t(
                 'servers.customIsEndpointDesc',
                 'Enable if this type belongs to sing-box endpoints[] (wireguard/tailscale-like) instead of outbounds[].'
               )}
-            </p>
+            />
           </div>
           <Switch checked={isEndpoint} onCheckedChange={setIsEndpoint} />
         </div>
