@@ -118,6 +118,28 @@ export function parseCheckEndpointIndex(stderr: string): number | null {
   return Number.isInteger(idx) && idx >= 0 ? idx : null;
 }
 
+/**
+ * 进程优雅终止升级（SIGTERM → 宽限期 → SIGKILL），注入式纯逻辑（便于单测）：
+ *  1. 立即发 SIGTERM（优雅退出窗口）；
+ *  2. graceMs 后若进程仍存活（未触发 exit 收尾）→ 发 SIGKILL 强杀。
+ * 返回升级 timer 句柄，调用方须在进程 exit/error 收尾时 clearTimeout 它（防 timer 泄漏 + 升级被取消）。
+ * 与主核 stopSingBoxProcess 的 SIGTERM→SIGKILL 模式一致（瞬态核宽限期更短：进程轻量、无 TUN/路由要拆）。
+ *
+ * deps 注入 sendSignal（实际为 proc.kill）+ schedule（实际为 setTimeout），单测可零进程验证两段信号序。
+ */
+export function escalateProcessKill(deps: {
+  sendSignal: (signal: NodeJS.Signals) => void;
+  schedule: (fn: () => void, ms: number) => NodeJS.Timeout;
+  graceMs: number;
+}): NodeJS.Timeout {
+  // SIGTERM 对已退出进程为安全 no-op（ChildProcess.kill 返回 false 不抛）。
+  deps.sendSignal('SIGTERM');
+  return deps.schedule(() => {
+    // 宽限期到点仍未被 finalize 取消 → 进程拒绝 SIGTERM，强杀。SIGKILL 对已退出进程同样安全 no-op。
+    deps.sendSignal('SIGKILL');
+  }, deps.graceMs);
+}
+
 export interface IProxyManager {
   start(config: UserConfig, options?: { interactive?: boolean }): Promise<void>;
   stop(opts?: { quitting?: boolean }): Promise<void>;
@@ -4809,7 +4831,14 @@ exit 0
    */
   private tailscaleLoginCores = new Map<
     string,
-    { proc: ChildProcess; timeoutTimer: NodeJS.Timeout; cancelled: boolean }
+    {
+      proc: ChildProcess;
+      timeoutTimer: NodeJS.Timeout;
+      cancelled: boolean;
+      // SIGTERM 后的 SIGKILL 升级 timer：进程拒绝 SIGTERM 时宽限期到点强杀（防泄漏 + 卡 alreadyRunning）。
+      // finalize（proc exit/error）会 clearTimeout 它，进程优雅退出则升级被取消。
+      killTimer?: NodeJS.Timeout;
+    }
   >();
 
   /**
@@ -4880,7 +4909,12 @@ exit 0
       this.killTailscaleLogin(server.id);
     }, 120000);
 
-    const handle = { proc, timeoutTimer, cancelled: false };
+    const handle: {
+      proc: ChildProcess;
+      timeoutTimer: NodeJS.Timeout;
+      cancelled: boolean;
+      killTimer?: NodeJS.Timeout;
+    } = { proc, timeoutTimer, cancelled: false };
     this.tailscaleLoginCores.set(server.id, handle);
 
     // 幂等收尾：置 cancelled（收敛轮询）+ 清 timer + 删 Map + 删临时 config。error 与 exit 两路径都调它。
@@ -4894,6 +4928,8 @@ exit 0
       finalized = true;
       handle.cancelled = true;
       clearTimeout(timeoutTimer);
+      // 进程已退出（优雅 SIGTERM 或自行崩溃）→ 取消挂起的 SIGKILL 升级，防 timer 泄漏。
+      clearTimeout(handle.killTimer);
       this.tailscaleLoginCores.delete(server.id);
       try {
         require('fs').unlinkSync(cfgPath);
@@ -4992,13 +5028,22 @@ exit 0
     if (!handle) return;
     handle.cancelled = true;
     clearTimeout(handle.timeoutTimer);
+    // 已挂起一次升级（重复调用幂等）→ 不重复发信号/排第二个 timer。
+    if (handle.killTimer) return;
     try {
-      handle.proc.kill();
+      // SIGTERM→3s 宽限→SIGKILL 升级：核拒绝 SIGTERM（卡退出）时强杀，否则 proc 永不 exit → finalize 不触发
+      // → cfg/Map 泄漏 + 该节点恒 alreadyRunning 卡死。进程优雅退出会触发 exit→finalize→clearTimeout(killTimer) 取消升级。
+      handle.killTimer = escalateProcessKill({
+        sendSignal: (sig) => {
+          handle.proc.kill(sig);
+        },
+        schedule: (fn, ms) => setTimeout(fn, ms),
+        graceMs: 3000,
+      });
     } catch {
       /* 已退出：忽略 */
     }
     // Map 项 + 临时 config 由 finalize 删（挂在 proc 'exit'/'error'）；此处不删，避免与 finalize 竞态漏清 cfg。
-    // kill 发 SIGTERM → 进程退出触发 'exit' → finalize 收尾；幂等（finalized 标记防 error/exit 重复执行）。
   }
 
   /** app 退出/窗口关闭：杀掉全部残留瞬态登录核（无孤儿进程）。由 stop/teardownForQuit 调用。 */

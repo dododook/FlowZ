@@ -20,6 +20,7 @@ import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
 import { resolveSpeedTestTarget, type SpeedTestTarget } from '../../shared/speed-test';
 import { isEndpointProtocol } from '../../shared/endpoint-routes';
+import { normalizeDuration } from '../../shared/duration';
 
 /** 基于 UDP/QUIC 的协议，需要走真实代理测速 */
 const UDP_PROTOCOLS = new Set(['hysteria2', 'tuic']);
@@ -459,8 +460,10 @@ export class SpeedTestService {
         if (server.tuicSettings.zeroRttHandshake !== undefined) {
           outbound.zero_rtt_handshake = server.tuicSettings.zeroRttHandshake;
         }
-        if (server.tuicSettings.heartbeat) {
-          outbound.heartbeat = server.tuicSettings.heartbeat;
+        // heartbeat 经 normalizeDuration 收敛：表单录入裸毫秒整数会致测速内核 ParseDuration FATAL；带单位幂等。
+        const heartbeat = normalizeDuration(server.tuicSettings.heartbeat);
+        if (heartbeat) {
+          outbound.heartbeat = heartbeat;
         }
       }
     }
