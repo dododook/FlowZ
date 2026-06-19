@@ -313,6 +313,7 @@
     "domainRuleAddFail": "Failed to add rule",
     "domainAlreadyInRule": "{{domain}} already exists in a rule",
     "plsConfigServer": "Please configure a server first",
+    "meshNoInternetGate": "No internet access: enable \"Allow internet access\" for this node, or add routed subnets",
     "stopProxyFailed": "Failed to stop proxy"
   },
   "settings": {

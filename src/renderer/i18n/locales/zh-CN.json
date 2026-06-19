@@ -313,6 +313,7 @@
     "domainRuleAddFail": "添加规则失败",
     "domainAlreadyInRule": "{{domain}} 已在现有规则中",
     "plsConfigServer": "请先配置服务器",
+    "meshNoInternetGate": "无外网访问权限：请开启该节点的「允许访问外网」或添加路由网段",
     "stopProxyFailed": "停止代理失败"
   },
   "settings": {

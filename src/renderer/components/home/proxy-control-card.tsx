@@ -18,6 +18,7 @@ import type { ProxyMode, ProxyModeType } from '@/bridge/types';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { isServerComplete } from '../../../shared/server-completeness';
+import { isMeshNodeUnroutable } from '../../../shared/endpoint-routes';
 
 /**
  * 首页代理控制卡：两行 OpenClash 风格分段切换（接管方式 / 分流策略）+ 启停按钮。
@@ -51,9 +52,15 @@ export function ProxyControlCard() {
       : connectionStatus?.proxyCore?.running && connectionStatus?.proxy?.enabled;
   const hasError = connectionStatus?.proxyCore?.error;
 
-  const isServerConfigured = isServerComplete(
-    config?.servers?.find((x) => x.id === config?.selectedServerId)
-  );
+  const selectedServer = config?.servers?.find((x) => x.id === config?.selectedServerId);
+  const isServerConfigured = isServerComplete(selectedServer);
+  // 置灰原因区分：组网节点关闭外网且无可路由网段（无外网访问权限）→ 给精确指引，而非泛泛的「请配置服务器」。
+  const meshNoInternet = !!selectedServer && isMeshNodeUnroutable(selectedServer);
+  const startDisabledReason = !isServerConfigured
+    ? meshNoInternet
+      ? t('home.meshNoInternetGate')
+      : t('home.plsConfigServer')
+    : hasError || '';
 
   // ── 接管方式（proxyModeType）────────────────────────────────────────────
   const applyTakeover = async (modeType: ProxyModeType) => {
@@ -171,7 +178,7 @@ export function ProxyControlCard() {
                 ? 'destructive'
                 : 'default'
             }
-            title={!isServerConfigured ? t('home.plsConfigServer') : hasError ? hasError : ''}
+            title={startDisabledReason}
           >
             {proxyPhase !== 'idle' ? (
               <>
