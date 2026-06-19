@@ -9,6 +9,7 @@ import * as path from 'path';
 import type { UserConfig } from '../../shared/types';
 import { parseDnsServerSpec, type ParsedDnsServer } from '../../shared/dns';
 import { ruleConditions } from '../../shared/rules';
+import { effectiveRegionRouting, REGION_LOCAL_GEO } from '../../shared/region-routing';
 import { planCustomRule, customRuleFileBase, usesFakeIp } from './custom-rule-files';
 import { getCustomRulesDir } from '../utils/paths';
 import type { SingBoxDnsConfig, SingBoxDnsServer, SingBoxDnsRule } from './singbox-config-types';
@@ -355,8 +356,16 @@ export function buildDnsConfig(
     } else {
       // 如果实在没开 FakeIP（比如系统代理模式），那就用 geosite 规则让它各自拿正确的 IP 吧（但也容易被墙污染）
       if (proxyMode === 'smart') {
+        // 地区分流（正向）：本地域名走国内直连解析器（dns-domestic），其余 fallthrough dns-remote。
+        // geo tag 复用 region-routing 单一真值（与 route 侧 REGION_LOCAL_GEO 同源），不硬编码：
+        //   cn=['geosite-cn']（逐字节=今日）/ ir=['geosite-category-ir'] / ru=['geosite-category-ru']。
+        // 反向（回国等）暂未做对应的 DNS 翻转——仍按今日的 region-local→dns-domestic + fallthrough dns-remote
+        //   （次优但不致命，待真机验证 reverse 下的 dns-remote↔dns-domestic 取舍后再优化，见 PR 说明）。
+        const region = effectiveRegionRouting(config);
+        const localGeo = REGION_LOCAL_GEO[region.region].geosite;
         dnsRules.push({
-          rule_set: 'geosite-cn',
+          // 单 tag 与历史一致序列化为标量字符串（保 cn 逐字节）；多 tag 走数组。
+          rule_set: localGeo.length === 1 ? localGeo[0] : localGeo,
           server: 'dns-domestic',
         } as SingBoxDnsRule);
 

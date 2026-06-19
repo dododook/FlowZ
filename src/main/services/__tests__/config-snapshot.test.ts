@@ -401,6 +401,21 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     ).toMatchSnapshot();
   });
 
+  // FakeIP 关 + 地区分流正向：DNS 国内/海外 resolver 划分须按 region（M1）——
+  // 本地 geo（ir=geosite-category-ir）→ dns-domestic、其余 fallthrough dns-remote。锁住 dns.rules 里的
+  // rule_set + server 选择（cn 正向已由「FakeIP 关闭」基线覆盖、逐字节不变；此处单测 ir 防回退到硬编码 geosite-cn）。
+  it('FakeIP 关 + 地区分流 ir 正向 → 锁 DNS resolver 划分（geosite-category-ir→dns-domestic）', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          dnsConfig: { enableFakeIp: false },
+          regionRouting: { enabled: true, region: 'ir', reverse: false },
+        } as unknown as Partial<UserConfig>)
+      )
+    ).toMatchSnapshot();
+  });
+
   it('coreVersion 1.12（<1.13 sniff 分支）+ vless', () => {
     expect(snap(cfg({ servers: [server({})] }), '1.12.8')).toMatchSnapshot();
   });
