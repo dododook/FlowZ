@@ -1,0 +1,117 @@
+name: Bug 反馈 / Bug report
+description: 报告一个可复现的问题（连接失败、DNS、崩溃、更新安装等）
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请先注意两点，否则会显著拖慢定位：
+        - **一个 issue 只描述一个问题**。遇到新症状请**另开 issue**，不要追加到本贴——否则各自的修复无法独立追踪闭环。
+        - **搭建 / 使用求助**（怎么搭节点、订阅怎么填、用法咨询等）请走 [Discussions](https://github.com/dododook/FlowZ/discussions)，不要发到这里。
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索过现有 issue，确认这不是重复问题
+          required: true
+        - label: 本 issue 只描述一个问题
+          required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型
+      options:
+        - 连接失败 / 无法上网
+        - DNS 解析
+        - 崩溃 / 启动失败
+        - 更新 / 安装 / 提权助手
+        - 界面 (UI)
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: FlowZ 版本
+      description: 在 设置 / 关于 里查看，填确切版本号；请勿写「最新」「旧版本」
+      placeholder: 例 4.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 + 架构
+      options:
+        - Windows 11 x64
+        - Windows 10 x64
+        - macOS (Apple Silicon / arm64)
+        - macOS (Intel / x64)
+        - 其他（在复现步骤里注明）
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 代理模式
+      options:
+        - 系统代理
+        - TUN
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: rawlog
+    attributes:
+      label: 原始日志（最关键，决定能否定位）
+      description: |
+        错误提示末尾方括号 `[...]` 里是 sing-box 内核的原始日志，这段最能定位问题。
+        打开 设置 → 日志（或实时日志），复制报错前后几行贴在这里。
+        例：`ERROR ... [... connection: open connection to www.youtube.com:443 using outbound/vless: lookup example.com: SERVFAIL]`
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 一步步写清楚怎么触发的
+      placeholder: |
+        1. 导入节点 …
+        2. 切换到 … 模式
+        3. 访问 … 时出现 …
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期行为 / 实际行为
+      placeholder: |
+        预期：节点能正常连接并上网
+        实际：提示 DNS 解析失败，无法建连
+    validations:
+      required: true
+  - type: input
+    id: protocol
+    attributes:
+      label: 节点协议类型（选填）
+      placeholder: 例 vless / trojan / hysteria2 / shadowsocks
+  - type: dropdown
+    id: address_form
+    attributes:
+      label: 服务器地址填的是（选填）
+      options:
+        - 优选 IP（地址栏是 IP，真实域名在 SNI/Host）
+        - 优选域名（地址栏是 CDN 域名）
+        - 直连 IP
+        - 直连域名
+        - 不清楚
+  - type: textarea
+    id: cross_check
+    attributes:
+      label: 旁证（选填，但往往是定位关键）
+      placeholder: |
+        - 在其他客户端（v2rayN / clash 等）是否正常？
+        - 是所有节点都这样，还是只有某类节点（如 Argo / CDN 优选）？
+        - 是否已启用订阅？

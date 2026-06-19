@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 搭建 / 使用求助（不是 Bug）
+    url: https://github.com/dododook/FlowZ/discussions
+    about: 如何搭节点、订阅怎么填、用法咨询等请在 Discussions 提问，不要开 issue。
