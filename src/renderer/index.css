@@ -347,11 +347,17 @@
   }
 
   .dark .main-content-card {
-    background-color: hsl(0 0% 7.5%);
-    border-left-color: hsl(var(--border));
-    border-top-color: hsl(var(--border));
-    border-bottom-color: hsl(var(--border));
-    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.2);
+    /* Conduit 蓝石墨族（hue 214，与 --card 214 22% 11% / --background 216 22% 7% 同族）：原 hsl(0 0% 7.5%) 是
+       纯中性灰，与蓝石墨的侧栏/外壳/卡片不同色相，在「导航↔内容」接缝处产生跳色（深色比浅色更明显）。统一到
+       蓝石墨后接缝过渡自然；亮度 8% 落在 外壳 6% → 内容 8% → 卡片 11% 的层次梯度中（卡片仍浮起）。 */
+    background-color: hsl(214 22% 8%);
+    /* 接缝柔化：原 --border(214 14% 18%) 在 6–8% 暗底上是偏亮的 1px 硬线，与左侧「卡片浮起」投影语义打架 → 过渡生硬。
+       改用贴近底色的暗边(13%) + 略加重柔投影：接缝由柔和投影主导、亮线退为若隐若现的轮廓，且仍弱于内部卡片
+       的 --border(18%)，形成「外框退、内卡浮」的层次。仅深色；浅色接缝(94→97% 同色相)本就自然，不动。 */
+    border-left-color: hsl(214 16% 13%);
+    border-top-color: hsl(214 16% 13%);
+    border-bottom-color: hsl(214 16% 13%);
+    box-shadow: -6px 0 22px rgba(0, 0, 0, 0.28);
   }
 
   /* Outer shell – background must match the sidebar so that the
