@@ -1369,7 +1369,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.coreVersionLine = await this.spawnCoreVersionFirstLine();
       return this.coreVersionLine;
     } catch (error) {
-      this.logToManager('warn', `获取核心版本行失败: ${(error as any).message}`);
+      // 仅影响 classifyCoreBuild（fork 判定）的最佳努力细节；主版本检测（getCoreVersion）有独立错误日志。
+      // 命令偶发失败常自恢复（下次 start force 重取），降 debug 避免误导（曾在真机日志刷 warn 但版本已正常检测）。
+      this.logToManager('debug', `获取核心版本行失败: ${(error as any).message}`);
       this.coreVersionLine = null;
       return '';
     }
