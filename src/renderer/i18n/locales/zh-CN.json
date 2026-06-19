@@ -301,6 +301,8 @@
     "activeConnections": "活动连接",
     "ipNotConnected": "未连接",
     "ipFetchFailed": "获取失败",
+    "ipNoInternet": "暂无法访问外网",
+    "ipProxyUnavailable": "代理出口暂不可用",
     "refreshIp": "刷新",
     "maskIp": "隐藏 IP",
     "ipStale": "部分出口 IP 获取失败，显示为上次结果",

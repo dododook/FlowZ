@@ -13,7 +13,13 @@ import { isIP } from 'net';
 import type { IpInfo, IpInfoSnapshot } from '../../shared/types';
 
 const TTL_MS = 60_000;
-const REQ_TIMEOUT_MS = 5000;
+const REQ_TIMEOUT_MS = 5000; // 单个探测请求超时上限（httpText）——重试不会无限阻塞
+// 出口 IP 启动初期隧道/DNS 未就绪 → 首测易失败。重试至 MAX_PROBE_ATTEMPTS 上限、每次间隔 RETRY_DELAY_MS，
+// 期间保持 loading（界面显「获取中」）；全部失败才报错（界面友好提示，不闪「获取失败」）。
+const MAX_PROBE_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1000;
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface ProbeEndpoint {
   host: string;
@@ -80,11 +86,19 @@ export class IpInfoService {
    * @param isRunning sing-box 是否在运行
    * @param onUpdate 快照更新时回调（广播给渲染端）
    */
+  // 探针重试上限 / 间隔（默认取模块常量；可经构造选项注入，供单测设 maxAttempts=1/delay=0 还原单次行为）。
+  private readonly maxAttempts: number;
+  private readonly retryDelayMs: number;
+
   constructor(
     private readonly getProbePorts: () => { direct: number; proxy: number } | null,
     private readonly isRunning: () => boolean,
-    private readonly onUpdate: (snap: IpInfoSnapshot) => void
-  ) {}
+    private readonly onUpdate: (snap: IpInfoSnapshot) => void,
+    options?: { maxAttempts?: number; retryDelayMs?: number }
+  ) {
+    this.maxAttempts = options?.maxAttempts ?? MAX_PROBE_ATTEMPTS;
+    this.retryDelayMs = options?.retryDelayMs ?? RETRY_DELAY_MS;
+  }
 
   getSnapshot(): IpInfoSnapshot {
     return { ...this.snapshot };
@@ -126,6 +140,17 @@ export class IpInfoService {
     return this.getSnapshot();
   }
 
+  /** 探测重试：成功即返回；失败按 RETRY_DELAY_MS 间隔重试至 MAX_PROBE_ATTEMPTS 上限；全失败返 null。
+   *  期间不改 loading（调用方保持 loading=true → 界面持续「获取中」），避免启动初期隧道未就绪时闪失败。 */
+  private async withRetry<T>(fn: () => Promise<T | null>): Promise<T | null> {
+    for (let i = 0; i < this.maxAttempts; i++) {
+      const r = await fn();
+      if (r) return r;
+      if (i < this.maxAttempts - 1) await delay(this.retryDelayMs);
+    }
+    return null;
+  }
+
   private async doRefreshProxy(): Promise<void> {
     const ports = this.getProbePorts();
     if (!this.isRunning() || !ports) {
@@ -135,7 +160,7 @@ export class IpInfoService {
     }
     this.snapshot = { ...this.snapshot, loading: true };
     this.onUpdate(this.getSnapshot());
-    const p = await this.queryViaProxy(ports.proxy);
+    const p = await this.withRetry(() => this.queryViaProxy(ports.proxy));
     this.snapshot = {
       ...this.snapshot,
       proxy: p ?? this.snapshot.proxy, // 失败保留旧值
@@ -158,9 +183,10 @@ export class IpInfoService {
     let failed = false;
 
     if (running && ports) {
+      // 启动初期隧道/DNS 未就绪 → withRetry 重试（期间 loading 仍 true，界面「获取中」），不闪失败。
       const [d, p] = await Promise.all([
-        this.queryDirectChain((ep) => this.viaProbe(ports.direct, ep)),
-        this.queryViaProxy(ports.proxy),
+        this.withRetry(() => this.queryDirectChain((ep) => this.viaProbe(ports.direct, ep))),
+        this.withRetry(() => this.queryViaProxy(ports.proxy)),
       ]);
       if (d) direct = d;
       else failed = true;
@@ -172,7 +198,7 @@ export class IpInfoService {
       failed = true;
     } else {
       // 核心未运行：direct 走主进程裸 fetch（无 TUN，必直连）；proxy 不可测
-      const d = await this.queryDirect();
+      const d = await this.withRetry(() => this.queryDirect());
       if (d) direct = d;
       else failed = true;
       proxy = null;

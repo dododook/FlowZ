@@ -145,7 +145,8 @@ export function NetworkInfoCard() {
 
   const directInfo = ipInfo?.direct ?? null;
   const proxyInfo = running ? (ipInfo?.proxy ?? null) : null;
-  const proxyEmpty = running ? t('home.ipFetchFailed') : t('home.ipNotConnected');
+  // 最终态（重试耗尽仍无值）友好提示，不再用刺眼的「获取失败」：运行中→代理出口暂不可用；未运行→未连接。
+  const proxyEmpty = running ? t('home.ipProxyUnavailable') : t('home.ipNotConnected');
 
   return (
     <Card>
@@ -207,7 +208,7 @@ export function NetworkInfoCard() {
             <p className="text-xs text-muted-foreground">{t('home.localExit')}</p>
             <div className="flex min-w-0 items-start gap-1.5">
               <Flag cc={masked ? undefined : directInfo?.countryCode} />
-              {renderIpValue(directInfo, t('home.ipFetchFailed'))}
+              {renderIpValue(directInfo, t('home.ipNoInternet'))}
             </div>
             <p className="truncate text-[11px] text-muted-foreground/70">
               {renderIpSub(directInfo, t('home.directLabel'))}
