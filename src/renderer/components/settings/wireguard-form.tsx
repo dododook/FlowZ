@@ -38,6 +38,7 @@ const createWireGuardSchema = (t: any) =>
       .min(1, t('servers.wgPeerPublicKeyRequired', 'Peer public key is required')),
     preSharedKey: z.string().optional(),
     allowInternet: z.boolean(),
+    reverseMesh: z.boolean(),
     allowedIPs: z.string().optional(),
     persistentKeepalive: z.number().min(0).max(65535),
     mtu: z.number().min(0).max(9000).optional(),
@@ -75,6 +76,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       peerPublicKey: '',
       preSharedKey: '',
       allowInternet: true, // 新建默认开（全隧道）
+      reverseMesh: false, // Phase 2：反向 mesh（system 内核接口），默认关=userspace
       // 仅录入「具体路由段」（对端内网/子网）；全网段 0/0,::/0 由 allowInternet 开关接管，不在此预填。
       allowedIPs: '',
       persistentKeepalive: 25, // 默认 25s：避免 NAT 空闲断连（WireGuard 无连接 UDP）
@@ -94,6 +96,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         peerPublicKey: wg?.peerPublicKey || '',
         preSharedKey: wg?.preSharedKey || '',
         allowInternet: wg?.allowInternet !== false, // 缺省 true（向后兼容）
+        reverseMesh: wg?.reverseMesh === true, // 缺省 false
         // 全网段由开关接管，列表仅显示具体段（剥离存量 allowedIPs 里的 catch-all）。
         allowedIPs: stripCatchAll(wg?.allowedIPs).join(', '),
         persistentKeepalive: wg?.persistentKeepalive ?? 25,
@@ -125,6 +128,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       preSharedKey: parsed.settings.preSharedKey || '',
       // 忠实 wg-quick 语义：AllowedIPs 含 0/0,::/0=全隧道→开关开；缺则默认全隧道。列表仅留具体段。
       allowInternet: parsed.settings.allowedIPs ? hasCatchAll(parsed.settings.allowedIPs) : true,
+      reverseMesh: false, // wg-quick .conf 无 system 概念，导入恒 userspace
       allowedIPs: stripCatchAll(parsed.settings.allowedIPs).join(', '),
       persistentKeepalive: parsed.settings.persistentKeepalive ?? 25,
       mtu: parsed.settings.mtu ?? 1408,
@@ -143,6 +147,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         peerPublicKey: values.peerPublicKey.trim(),
         preSharedKey: values.preSharedKey?.trim() || undefined,
         allowInternet: values.allowInternet,
+        reverseMesh: values.reverseMesh,
         // 仅保存具体路由段；全网段 0/0,::/0 由 allowInternet=on 在生成期注入 peer.allowed_ips。
         allowedIPs: stripCatchAll(splitTextList(values.allowedIPs)),
         persistentKeepalive: values.persistentKeepalive,
@@ -154,6 +159,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
   };
 
   const allowInternet = form.watch('allowInternet');
+  const reverseMesh = form.watch('reverseMesh');
   const hasSpecificRoutes = stripCatchAll(splitTextList(form.watch('allowedIPs'))).length > 0;
 
   return (
@@ -246,9 +252,42 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                     <div className="space-y-0.5 pr-3">
                       <FormLabel>{t('servers.allowInternet', 'Allow internet access')}</FormLabel>
                       <FormDescription>
+                        {reverseMesh
+                          ? t(
+                              'servers.allowInternetSystemDisabled',
+                              'Disabled in reverse-mesh mode: a kernel-interface node only carries the listed subnets and never acts as the full-tunnel exit. Turn off reverse mesh to use this node as an exit.'
+                            )
+                          : t(
+                              'servers.allowInternetDesc',
+                              'When off, this node only routes the subnets listed below (e.g. peer LAN); it will not carry your default outbound traffic.'
+                            )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={reverseMesh ? false : field.value}
+                        disabled={reverseMesh}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="reverseMesh"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>
+                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
+                      </FormLabel>
+                      <FormDescription>
                         {t(
-                          'servers.allowInternetDesc',
-                          'When off, this node only routes the subnets listed below (e.g. peer LAN); it will not carry your default outbound traffic.'
+                          'servers.reverseMeshDesc',
+                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode; this node then only carries the listed subnets (never the full tunnel).'
                         )}
                       </FormDescription>
                     </div>
@@ -283,17 +322,22 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                         'Subnets (CIDR) to route through this node, comma/newline-separated. Empty = full tunnel (all traffic). For peer LAN only, list specific CIDRs like 10.8.0.0/24.'
                       )}
                     </FormDescription>
-                    {!allowInternet && (
+                    {(reverseMesh || !allowInternet) && (
                       <p className="text-sm text-amber-600 dark:text-amber-500">
-                        {hasSpecificRoutes
+                        {!hasSpecificRoutes
                           ? t(
-                              'servers.allowInternetOffHint',
-                              'Internet access off: this node only routes the subnets listed above.'
-                            )
-                          : t(
                               'servers.allowInternetOffNoRoutes',
-                              '⚠ This node currently carries no traffic (internet off and no subnets listed). Add a subnet or turn internet access back on.'
-                            )}
+                              '⚠ This node currently carries no traffic (no subnets listed). Add a subnet, or turn internet access on (non-system mode).'
+                            )
+                          : reverseMesh
+                            ? t(
+                                'servers.reverseMeshRoutesHint',
+                                'Reverse-mesh (system) mode: routes only the subnets above and is reachable from peers; never carries the full tunnel.'
+                              )
+                            : t(
+                                'servers.allowInternetOffHint',
+                                'Internet access off: this node only routes the subnets listed above.'
+                              )}
                       </p>
                     )}
                     <FormMessage />
