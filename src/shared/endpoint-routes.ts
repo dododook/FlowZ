@@ -89,12 +89,19 @@ export function isMeshNodeUnroutable(server: ServerConfig): boolean {
 }
 
 /**
- * D4：global 模式选中「关闭外网的组网节点」时 route.final 应兜底回 'direct'（而非 proxy-selector）。
- * 否则非具体段流量会被送进该节点的用户态 WG 栈、因 allowed_ips 不含 0/0 被 cryptokey routing 丢弃 → 黑洞断网。
- * 具体段仍由 force-route（排在 final 之前）经组网节点；用户其余流量直连保上网。仅 global 命中（smart/direct 不适用）。
+ * D4/D7：选中「关闭外网的组网节点」(WG/Tailscale, allowInternet=off) 为**主节点**时，「→代理」的用户出口
+ * （global 的 route.final；smart 的 geosite-!cn / google 关键词 / final）应整体兜底回 'direct'，而非
+ * proxy-selector——proxy-selector.default = 该 off-mesh 节点，非具体段/海外流量进其用户态栈被 cryptokey
+ * routing 丢弃（allowed_ips 不含 0/0）→ 黑洞断网。具体段仍由 force-route（排在这些规则之前）经组网节点；
+ * 用户其余流量直连保上网。**global 与 smart 同此兜底**（D7 修复：原仅 global 留下 smart 海外黑洞）；direct 模式
+ * 本就 final=direct、无「→代理」规则，不适用。
+ *
+ * 残留（已知较窄，非本兜底覆盖）：用户显式创建的「应用分流·代理·无固定目标」规则仍 default=proxy-selector→
+ * off-mesh 节点；该 app 的流量仍会被丢弃。属用户对 off-mesh 主节点显式指定代理的自相矛盾配置，由角标/警告提示，
+ * 不在本运行期兜底内（彻底消除需「禁止 off-mesh 作主节点」更大改动，列为后续）。
  */
-export function meshGlobalFinalFallsBackToDirect(config: UserConfig): boolean {
-  if ((config.proxyMode || 'smart').toLowerCase() !== 'global') return false;
+export function meshSelectedExitFallsBackToDirect(config: UserConfig): boolean {
+  if ((config.proxyMode || 'smart').toLowerCase() === 'direct') return false;
   const selected = config.servers?.find((s) => s.id === config.selectedServerId);
   return !!selected && isEndpointProtocol(selected.protocol) && !meshAllowsInternet(selected);
 }
@@ -105,4 +112,25 @@ export function meshGlobalFinalFallsBackToDirect(config: UserConfig): boolean {
  */
 export function meshForcedRouteCidrs(servers: ServerConfig[]): string[] {
   return Array.from(new Set(servers.flatMap((s) => endpointForcedRouteCidrs(s))));
+}
+
+/**
+ * 跨组网节点同网段「被覆盖（shadowed）」检测：按 `servers` 顺序「首声明者占有」（与 route-builder
+ * `claimedCidrs` 同一不变量——一条 ip_cidr 只能指向一个 outbound，首条命中即生效）。返回 serverId →
+ * 该节点中被更早节点抢占、因而**不会**实际生效的具体段列表（仅含有冲突的节点）。供列表「网段被覆盖」角标
+ * 提醒用：用户据此去重/调序/用自定义规则覆盖。route-builder 仅对 emitted 端点应用此规则并 warn；本函数用
+ * 全量 servers 给 UI 概览（更早暴露潜在重叠）。
+ */
+export function meshShadowedCidrs(servers: ServerConfig[]): Map<string, string[]> {
+  const claimed = new Set<string>();
+  const result = new Map<string, string[]>();
+  for (const s of servers) {
+    const shadowed: string[] = [];
+    for (const c of endpointForcedRouteCidrs(s)) {
+      if (claimed.has(c)) shadowed.push(c);
+      else claimed.add(c);
+    }
+    if (shadowed.length > 0) result.set(s.id, shadowed);
+  }
+  return result;
 }

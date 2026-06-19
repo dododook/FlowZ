@@ -193,6 +193,82 @@ describe('优先级重排 + mesh 重叠提醒', () => {
   });
 });
 
+describe('D7：选中 off-mesh 主节点 → 外网出口回退 direct（global+smart）', () => {
+  const offWg = (allowedIPs: string[], allowInternet: boolean) => ({
+    id: 'wg1',
+    name: 'WG',
+    protocol: 'wireguard',
+    address: 'wg.example.com',
+    port: 51820,
+    wireguardSettings: {
+      privateKey: 'a',
+      peerPublicKey: 'b',
+      localAddress: ['10.0.0.2/32'],
+      allowedIPs,
+      allowInternet,
+    },
+  });
+  const cfg = (
+    proxyMode: 'smart' | 'global',
+    allowInternet: boolean,
+    blockQuic = false
+  ): UserConfig =>
+    ({
+      proxyMode,
+      servers: [offWg(['10.8.0.0/24'], allowInternet)],
+      selectedServerId: 'wg1',
+      blockQuic,
+    }) as unknown as UserConfig;
+  const idMap = new Map([['wg1', 'proxy-wg1']]);
+  // 用 domain_keyword(google) + final 断言「→代理」出口：geosite-!cn 是 rule_set，本测试环境无 .srs →
+  // 该 rule_set 规则会被悬空引用剪枝移除（与现有 smart 测试同），故不依赖它；google 关键词规则恒在。
+  const googleRule = (route: any) =>
+    (route.rules || []).find(
+      (r: any) =>
+        Array.isArray(r.domain_keyword) &&
+        r.domain_keyword.includes('google') &&
+        r.action === 'route'
+    );
+
+  it('smart + off WG 主节点 → final/google 均 direct（消除海外黑洞）', () => {
+    const route = buildRouteConfig(cfg('smart', false), idMap, routeDeps());
+    expect(route.final).toBe('direct');
+    expect(googleRule(route)?.outbound).toBe('direct');
+  });
+
+  it('global + off WG 主节点 → final direct（D4 原有，保持）', () => {
+    expect(buildRouteConfig(cfg('global', false), idMap, routeDeps()).final).toBe('direct');
+  });
+
+  it('对照：smart + on WG 主节点 → final/google = proxy-selector（不回退）', () => {
+    const route = buildRouteConfig(cfg('smart', true), idMap, routeDeps());
+    expect(route.final).toBe('proxy-selector');
+    expect(googleRule(route)?.outbound).toBe('proxy-selector');
+  });
+
+  it('smart + off WG + blockQuic → google/foreign 走 direct 且其前不配对 UDP443 reject', () => {
+    const route = buildRouteConfig(cfg('smart', false, true), idMap, routeDeps());
+    const rules = (route.rules || []) as any[];
+    const gIdx = rules.findIndex(
+      (r) =>
+        Array.isArray(r.domain_keyword) &&
+        r.domain_keyword.includes('google') &&
+        r.action === 'route'
+    );
+    expect(gIdx).toBeGreaterThanOrEqual(0);
+    expect(rules[gIdx].outbound).toBe('direct');
+    const prev = rules[gIdx - 1];
+    const prevIsGoogleUdpReject =
+      !!prev &&
+      prev.action === 'reject' &&
+      Array.isArray(prev.port) &&
+      prev.port.includes(443) &&
+      Array.isArray(prev.domain_keyword) &&
+      prev.domain_keyword.includes('google');
+    expect(prevIsGoogleUdpReject).toBe(false);
+  });
+});
+
 describe('configGenerationNorm：global 下用户路由变更不翻转 norm（免无谓重启）', () => {
   const svc = makeSvc();
   const addRule = (cfg: UserConfig): UserConfig =>

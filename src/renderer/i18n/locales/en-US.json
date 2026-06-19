@@ -315,6 +315,7 @@
     "domainAlreadyInRule": "{{domain}} already exists in a rule",
     "plsConfigServer": "Please configure a server first",
     "meshNoInternetGate": "No internet access: enable \"Allow internet access\" for this node, or add routed subnets",
+    "meshExitDirectHint": "Selected mesh node has internet access off: outbound traffic goes direct; only its subnets route through it.",
     "stopProxyFailed": "Failed to stop proxy"
   },
   "settings": {
@@ -825,6 +826,7 @@
     "saveFailed": "Failed to save",
     "echConfig": "ECH Config (optional)",
     "echConfigDesc": "Leave empty to auto-load from DNS (HTTPS record); paste ECHConfigList (PEM) to set explicitly",
+    "wgIntro": "WireGuard node: reach a peer LAN, or act as an internet exit. \"Allow internet access\" controls whether it carries default outbound traffic (off = only routes the subnets below). When several mesh nodes list the same subnet, the first in the list wins; override with a custom rule.",
     "wgImportConf": "Import from wg-quick .conf (optional)",
     "wgParseAndFill": "Parse & fill",
     "wgConfParseFailed": "Could not parse the .conf — please fill the fields manually",
@@ -862,6 +864,8 @@
     "tsAllowInternetDesc": "When off, this node never acts as a full-tunnel exit (the exit node below is ignored); it only reaches the tailnet and routed subnets.",
     "tsAllowInternetOffHint": "Internet access off: exit node ignored; this node only reaches the tailnet / routed subnets.",
     "noInternetBadge": "LAN only",
+    "meshShadowedBadge": "Overlapped",
+    "meshShadowedTip": "These subnets are already claimed by an earlier mesh node and won't route via this one: {{cidrs}}. Dedupe / reorder nodes / override with a custom rule.",
     "wgAllowedIPs": "Routed subnets (Allowed IPs)",
     "wgAllowedIPsDesc": "Subnets (CIDR) to route through this node, comma/newline-separated. Empty = full tunnel (all traffic). For peer LAN only, list specific CIDRs like 10.8.0.0/24.",
     "wgAllowedIPsPlaceholder": "Empty = full tunnel; or 10.8.0.0/24",

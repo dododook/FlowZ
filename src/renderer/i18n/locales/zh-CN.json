@@ -315,6 +315,7 @@
     "domainAlreadyInRule": "{{domain}} 已在现有规则中",
     "plsConfigServer": "请先配置服务器",
     "meshNoInternetGate": "无外网访问权限：请开启该节点的「允许访问外网」或添加路由网段",
+    "meshExitDirectHint": "所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。",
     "stopProxyFailed": "停止代理失败"
   },
   "settings": {
@@ -825,6 +826,7 @@
     "saveFailed": "保存失败",
     "echConfig": "ECH 配置（可选）",
     "echConfigDesc": "留空则自动从 DNS(HTTPS 记录) 获取；粘贴 ECHConfigList(PEM) 可显式指定",
+    "wgIntro": "WireGuard 组网节点：可访问对端内网、或作为外网出口。「允许访问外网」控制是否承载默认出网流量（关 = 仅路由下方网段）；多个组网节点同网段时按列表顺序首个生效，可用自定义规则覆盖。",
     "wgImportConf": "从 wg-quick .conf 导入（可选）",
     "wgParseAndFill": "解析并填充",
     "wgConfParseFailed": "无法解析该 .conf，请手动填写字段",
@@ -862,6 +864,8 @@
     "tsAllowInternetDesc": "关闭后此节点不作全隧道出口（忽略下方出口节点），仅访问 tailnet 与已路由的子网。",
     "tsAllowInternetOffHint": "已关闭外网访问：忽略出口节点，此节点仅访问 tailnet / 子网路由。",
     "noInternetBadge": "仅内网",
+    "meshShadowedBadge": "网段被覆盖",
+    "meshShadowedTip": "以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。",
     "wgAllowedIPs": "路由网段 (AllowedIPs)",
     "wgAllowedIPsDesc": "填写需经此节点路由的网段（CIDR），多个用逗号或换行分隔。留空 = 全部流量经此节点（全隧道）。仅访问对端内网则填具体段，如 10.8.0.0/24。",
     "wgAllowedIPsPlaceholder": "留空=全隧道；或 10.8.0.0/24",
