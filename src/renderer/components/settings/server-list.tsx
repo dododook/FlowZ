@@ -57,7 +57,7 @@ import { getSortedProtocolOptions } from './shared/protocol-options';
 import {
   isAccountBasedProtocol,
   isEndpointProtocol,
-  meshAllowsInternet,
+  meshNodeCarriesFullTunnel,
   meshShadowedCidrs,
 } from '../../../shared/endpoint-routes';
 
@@ -121,9 +121,10 @@ const isWarpNode = (s: ServerConfigWithId): boolean =>
 const tailscaleNeedsLogin = (s: ServerConfigWithId): boolean =>
   s.protocol?.toLowerCase() === 'tailscale' && !s.tailscaleSettings?.authKey?.trim();
 
-/** 组网节点（WG/Tailscale）已关闭「允许访问外网」→ 列表角标提示「仅内网」，避免误以为它能作全局出口。 */
+/** 组网节点（WG/Tailscale）不承载全隧道（关外网 或 Phase2 system 内核接口）→ 列表角标提示「仅内网」，
+ *  避免误以为它能作全局出口。system 节点恒 specific-only，故用 meshNodeCarriesFullTunnel 单一真值判定。 */
 const meshInternetOff = (s: ServerConfigWithId): boolean =>
-  isEndpointProtocol(s.protocol) && !meshAllowsInternet(s);
+  isEndpointProtocol(s.protocol) && !meshNodeCarriesFullTunnel(s);
 
 interface ServerListProps {
   servers: ServerConfigWithId[];

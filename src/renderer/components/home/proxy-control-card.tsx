@@ -21,7 +21,7 @@ import { isServerComplete } from '../../../shared/server-completeness';
 import {
   isMeshNodeUnroutable,
   isEndpointProtocol,
-  meshAllowsInternet,
+  meshNodeCarriesFullTunnel,
 } from '../../../shared/endpoint-routes';
 
 /**
@@ -65,11 +65,12 @@ export function ProxyControlCard() {
       ? t('home.meshNoInternetGate')
       : t('home.plsConfigServer')
     : hasError || '';
-  // D7：选中「关外网+有具体段」的组网节点为主节点（可连接，非置灰）→ 外网回退直连、仅其网段经此节点。非阻断提示。
+  // D7（+Phase2）：选中「不承载全隧道」的组网节点为主节点（可连接，非置灰）→ 外网回退直连、仅其网段经此节点。
+  // 不承载全隧道 = 关外网 或 system 内核接口（meshNodeCarriesFullTunnel），与 meshSelectedExitFallsBackToDirect 对齐。非阻断提示。
   const meshExitDirect =
     !!selectedServer &&
     isEndpointProtocol(selectedServer.protocol) &&
-    !meshAllowsInternet(selectedServer) &&
+    !meshNodeCarriesFullTunnel(selectedServer) &&
     !meshNoInternet &&
     (config?.proxyMode || 'smart').toLowerCase() !== 'direct';
 
