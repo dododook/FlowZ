@@ -22,6 +22,11 @@ import {
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
+import {
+  effectiveRegionRouting,
+  REGION_LOCAL_GEO,
+  REGION_FOREIGN_GEO,
+} from '../../shared/region-routing';
 import { ruleIpCidrs } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
 import { getRuleResourcesPath } from '../utils/paths';
@@ -89,6 +94,8 @@ export function buildRouteConfig(
 ): SingBoxRouteConfig {
   const rules: SingBoxRouteRule[] = [];
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
+  // 地区分流（智能分流的 geo 基线层）：undefined=默认中国大陆正向(=今日行为)，仅 smart 模式生效。
+  const region = effectiveRegionRouting(config);
 
   // 组网 force-route 的「engaged」判定集（与块 0c shouldForceRouteSubnets 同口径，单一真值）：仅 enabled+action==='proxy'
   // 的自定义规则/应用分流 targetServerId 计入。下方重叠 warn 与块 0c 发射端共用，杜绝对「仅出网且未 engaged」节点虚报。
@@ -257,7 +264,13 @@ export function buildRouteConfig(
     default_domain_resolver: 'dns-bootstrap',
     auto_detect_interface: true,
     // 如果模式是全局代理 (global/proxy)，则最终出口是所选节点（经 proxy-selector）；direct 模式或 D4/D7 兜底→direct。
-    final: proxyMode === 'direct' ? 'direct' : userExitTag,
+    // 地区分流反向（仅 smart + enabled + reverse，如「回国」）：海外应直连 → final 兜底翻为 direct。
+    final:
+      proxyMode === 'direct'
+        ? 'direct'
+        : proxyMode === 'smart' && region.enabled && region.reverse
+          ? 'direct'
+          : userExitTag,
   };
 
   // 【DNS 引导与辅助直连】：
@@ -643,51 +656,45 @@ export function buildRouteConfig(
     });
   }
 
-  // 智能分流规则（仅在智能分流模式下启用）
-  if (proxyMode === 'smart') {
+  // 智能分流的「地区分流」geo 基线层（仅 smart + region.enabled）：enabled=false → 跳整块，
+  // 只剩自定义规则 + final（≈近全局，规则仍生效）。region 决定用哪套 geo，reverse 决定方向。
+  if (proxyMode === 'smart' && region.enabled) {
     // 已移除 ::/0 block，因为 block 是静默丢包，会导致 Chrome 等浏览器在发起 TCP SYN 包时陷入漫长的 21 秒重传等待（Happy Eyeballs 假死），
     // 从而让用户以为“所有的海外网站全都打不开了”。我们必须依靠浏览器的原生 fallback，或者直接让 Mac 本机关闭 IPv6 分配。
+    const localGeo = REGION_LOCAL_GEO[region.region];
+    const foreignGeo = REGION_FOREIGN_GEO[region.region];
+    // 正向：本地直连·海外代理；反向（如回国）：本地代理·海外直连。
+    const localOut = region.reverse ? userExitTag : 'direct';
+    const foreignOut = region.reverse ? 'direct' : userExitTag;
+    // 「→代理」的那一侧才在其前配对「代理向 UDP reject」（exitFallback 回退 direct 时不配对，否则误拒直连 UDP/QUIC）：
+    // 正向=海外侧走代理，反向=本地侧走代理。被 reject 的 UDP 在路由到代理前即拒（不能中继的节点拦全部 UDP，能中继+blockQuic 仅拦 QUIC）。
+    const foreignToProxy = !region.reverse;
+    const localToProxy = region.reverse;
 
-    // 针对 Google 核心服务（搜索/YouTube/Gmail 等）的关键词兜底规则（仅在未专门设置应用分流时作为备份）
-    // 注意：这些规则在 AppRules 之后，所以不会覆盖用户手动指定的节点
+    // 海外/Google 一类（正向→代理、反向→直连）。Google 关键词兜底对所有地区一致（海外服务）。
+    // IR/RU 无成熟 !ir/!ru 海外分类 → foreignGeo 为空，海外靠 final 兜底（正向 final=代理、反向 final=直连）。
     const googleKeywords = ['google', 'gmail', 'youtube', 'gstatic', 'googleapis', 'googlevideo'];
+    const pushForeign = (matcher: Record<string, unknown>): void => {
+      if (foreignToProxy && !exitFallback) {
+        const r = proxyUdpRejectFor(matcher);
+        if (r) rules.push(r);
+      }
+      // D7：off-mesh 主节点时 userExitTag 已回退 direct，避免海外黑洞。
+      rules.push({ ...matcher, action: 'route', outbound: foreignOut } as SingBoxRouteRule);
+    };
+    pushForeign({ domain_keyword: googleKeywords });
+    for (const tag of foreignGeo.geosite) pushForeign({ rule_set: tag });
 
-    // 代理向 UDP（smart）：在每条"→代理"规则之前配对一条 reject，使该走代理的 UDP 在被路由到代理
-    // 前就 reject——不能中继的节点拦全部 UDP，能中继+blockQuic 仅拦 QUIC(UDP443)。下方 CN 直连规则
-    // 不配对，故 CN/直连 UDP 不受影响（兜底见 generateRouteConfig 末尾）。
-    // exitFallback 时这两条走 direct（非代理），不能在其前配对「代理向 UDP reject」（否则误拒直连 UDP/QUIC）。
-    const googleUdpReject = exitFallback
-      ? null
-      : proxyUdpRejectFor({ domain_keyword: googleKeywords });
-    if (googleUdpReject) rules.push(googleUdpReject);
-    rules.push({
-      domain_keyword: googleKeywords,
-      action: 'route',
-      outbound: userExitTag, // D7：off-mesh 主节点时回退 direct，避免海外黑洞
-    });
-
-    // 国外域名走代理
-    const foreignUdpReject = exitFallback
-      ? null
-      : proxyUdpRejectFor({ rule_set: 'geosite-geolocation-!cn' });
-    if (foreignUdpReject) rules.push(foreignUdpReject);
-    rules.push({
-      rule_set: 'geosite-geolocation-!cn',
-      action: 'route',
-      outbound: userExitTag, // D7：off-mesh 主节点时回退 direct，避免海外黑洞
-    });
-    // 中国域名直连
-    rules.push({
-      rule_set: 'geosite-cn',
-      action: 'route',
-      outbound: 'direct',
-    });
-    // 中国 IP 直连
-    rules.push({
-      rule_set: 'geoip-cn',
-      action: 'route',
-      outbound: 'direct',
-    });
+    // 本地（正向→直连、反向→代理；reverse=回国时国内内容走代理回国节点）。
+    const pushLocal = (matcher: Record<string, unknown>): void => {
+      if (localToProxy && !exitFallback) {
+        const r = proxyUdpRejectFor(matcher);
+        if (r) rules.push(r);
+      }
+      rules.push({ ...matcher, action: 'route', outbound: localOut } as SingBoxRouteRule);
+    };
+    for (const tag of localGeo.geosite) pushLocal({ rule_set: tag });
+    for (const tag of localGeo.geoip) pushLocal({ rule_set: tag });
   }
 
   // 添加 rule_set（除非是直连模式）
@@ -698,7 +705,17 @@ export function buildRouteConfig(
     }
     // 路径取自与 copyRuleSetsToUserData 同一真值表，杜绝目录/文件名漂移
     const runtimeDir = getRuntimeRulesDir();
+    // 地区分流：未激活地区的 geo 不注入 rule_set（CN 默认/关闭时不加载 geoip-ru 等未被引用的集，配置零变；
+    // .srs 仍随包 seed，切到该地区即可用）。只收窄 ir/ru 这类地区独占 geo，不动 cn/!cn/app geo。
+    const inactiveRegionGeoTags = new Set<string>();
+    for (const rid of ['ir', 'ru'] as const) {
+      if (!region.enabled || region.region !== rid) {
+        const g = REGION_LOCAL_GEO[rid];
+        for (const t of [...g.geosite, ...g.geoip]) inactiveRegionGeoTags.add(t);
+      }
+    }
     for (const rs of getLocalGeoRuleSets()) {
+      if (inactiveRegionGeoTags.has(rs.tag)) continue;
       const filePath = path.join(runtimeDir, rs.fileName);
       // 缺失/损坏即跳过：不引用不存在的本地文件（否则 sing-box `initialize rule-set` FATAL）。
       // fail-closed：缺失不再远程兜底——引用该 tag 的路由规则由 generateRouteConfig 末尾「悬空引用剪枝」剪掉，
