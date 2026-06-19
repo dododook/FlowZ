@@ -176,30 +176,6 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
             <FieldSpan>
               <FormField
                 control={form.control}
-                name="reverseMesh"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <div className="space-y-0.5 pr-3">
-                      <FormLabel>
-                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
-                      </FormLabel>
-                      <FormDescription>
-                        {t(
-                          'servers.reverseMeshDesc',
-                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode; this node then only carries the listed subnets (never the full tunnel).'
-                        )}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
                 name="exitNode"
                 render={({ field }) => (
                   <FormItem>
@@ -320,6 +296,30 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                         {t(
                           'servers.alwaysRouteSubnetsTsDesc',
                           'On: the tailnet and routed subnets above are always reachable through this node. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="reverseMesh"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-md border p-3">
+                    <div className="space-y-0.5 pr-3">
+                      <FormLabel>
+                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'servers.reverseMeshDesc',
+                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode.'
                         )}
                       </FormDescription>
                     </div>

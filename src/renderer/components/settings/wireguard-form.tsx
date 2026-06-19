@@ -298,17 +298,17 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             <FieldSpan>
               <FormField
                 control={form.control}
-                name="reverseMesh"
+                name="alwaysRouteSubnets"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
                     <div className="space-y-0.5 pr-3">
                       <FormLabel>
-                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
+                        {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
                       </FormLabel>
                       <FormDescription>
                         {t(
-                          'servers.reverseMeshDesc',
-                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode; this node then only carries the listed subnets (never the full tunnel).'
+                          'servers.alwaysRouteSubnetsDesc',
+                          'On: the subnets below are always reachable through this node, regardless of which node is active. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
                         )}
                       </FormDescription>
                     </div>
@@ -322,17 +322,17 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             <FieldSpan>
               <FormField
                 control={form.control}
-                name="alwaysRouteSubnets"
+                name="reverseMesh"
                 render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-md border p-3">
                     <div className="space-y-0.5 pr-3">
                       <FormLabel>
-                        {t('servers.alwaysRouteSubnets', 'Always route its subnets (mesh)')}
+                        {t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
                       </FormLabel>
                       <FormDescription>
                         {t(
-                          'servers.alwaysRouteSubnetsDesc',
-                          'On: the subnets below are always reachable through this node, regardless of which node is active. Off (egress-only): routed only when this node is the active exit or a rule/app explicitly targets it.'
+                          'servers.reverseMeshDesc',
+                          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode.'
                         )}
                       </FormDescription>
                     </div>
@@ -364,7 +364,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                     <FormDescription>
                       {t(
                         'servers.wgAllowedIPsDesc',
-                        'Subnets (CIDR) to route through this node, comma/newline-separated. Empty = full tunnel (all traffic). For peer LAN only, list specific CIDRs like 10.8.0.0/24.'
+                        "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on."
                       )}
                     </FormDescription>
                     {(reverseMesh || !allowInternet) && (
