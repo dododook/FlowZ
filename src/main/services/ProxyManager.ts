@@ -4590,11 +4590,38 @@ exit 0
     return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
-  /** 内核高频「每连接」route/连接 INFO 行（found process path / inbound·outbound connection）→ 降 debug，避免刷屏。 */
-  private isNoisyConnectionLog(message: string): boolean {
-    return /router: found process path|inbound connection (from|to)|outbound connection to/i.test(
-      message
-    );
+  /**
+   * 内核日志噪音降级：把「预期内的高频/瞬态」内核行降到 debug，保持常规日志干净（debug 仍可见）。严格白名单，
+   * 避免误伤真错误：
+   *  - 每连接 route/连接 INFO：found process path / failed to search process（容器/WSL 转发连接匹配不到进程，预期）
+   *    / inbound·outbound connection；
+   *  - naive 每节点启动 INFO：NaiveProxy started（大订阅刷数十行）；
+   *  - 预期 ERROR：UDP is not supported by outbound（naive 等 TCP-only 出站收到 UDP/QUIC = 设计内丢弃，非故障）、
+   *    probe-* 入站 use of closed network connection（出口 IP 探针连接瞬态关闭）。
+   */
+  private singboxLogLevel(
+    level: 'debug' | 'info' | 'warn' | 'error' | 'fatal',
+    message: string
+  ): 'debug' | 'info' | 'warn' | 'error' | 'fatal' {
+    // 预期噪音（含 ERROR）→ debug：naive 的 UDP-not-supported、出口IP探针连接瞬态关闭。
+    if (
+      /router: UDP is not supported by outbound/i.test(message) ||
+      /inbound\/http\[probe-(direct|proxy)-in\][\s\S]*use of closed network connection/i.test(
+        message
+      )
+    ) {
+      return 'debug';
+    }
+    // 仅 INFO → debug 的高频每连接/每节点行。
+    if (
+      level === 'info' &&
+      /router: found process path|router: failed to search process|inbound connection (from|to)|outbound connection to|NaiveProxy started/i.test(
+        message
+      )
+    ) {
+      return 'debug';
+    }
+    return level;
   }
 
   /**
@@ -4627,13 +4654,12 @@ exit 0
 
       // 空消息不记录（如私有 IP 超时）
       if (friendlyMessage) {
-        // 内核每连接的高频 route/连接 INFO（found process path / inbound·outbound connection）降到 debug：
-        // 它们是逐连接流量日志、非操作性事件，info 下刷屏；降级后常规日志干净，debug 仍可见。
-        const level =
-          logInfo.level === 'info' && this.isNoisyConnectionLog(logInfo.message)
-            ? 'debug'
-            : logInfo.level;
-        this.logToManager(level, friendlyMessage, 'sing-box');
+        // 内核预期内的高频/瞬态噪音降到 debug（见 singboxLogLevel）：常规日志干净、debug 仍可见。
+        this.logToManager(
+          this.singboxLogLevel(logInfo.level, logInfo.message),
+          friendlyMessage,
+          'sing-box'
+        );
       }
     } else {
       // 无法解析的日志，尝试对原始行也进行标签转换
