@@ -4857,25 +4857,37 @@ exit 0
       windowsHide: true,
     });
 
-    const cleanupCfg = (): void => {
+    // ~2min 不点 URL → 超时杀核（沿用 Phase 1 轮询上限语义）。
+    const timeoutTimer = setTimeout(() => {
+      this.logToManager(
+        'info',
+        `Tailscale 节点「${server.name}」登录超时，已停止登录进程`,
+        'sing-box'
+      );
+      this.killTailscaleLogin(server.id);
+    }, 120000);
+
+    const handle = { proc, timeoutTimer, cancelled: false };
+    this.tailscaleLoginCores.set(server.id, handle);
+
+    // 幂等收尾：置 cancelled（收敛轮询）+ 清 timer + 删 Map + 删临时 config。error 与 exit 两路径都调它。
+    //  - spawn 失败（ENOENT/EACCES…）只 emit 'error' 不 emit 'exit'：收尾只挂 exit 会致 cfg 文件 + Map 项双泄漏
+    //    （Map 残留 → 该节点再点登录恒返回 alreadyRunning 卡死）。故 error 路径也须 finalize。
+    //  - 瞬态核**自行崩溃/退出**（非经 killTailscaleLogin，如核拒绝 config / panic）时置 handle.cancelled=true 是关键：
+    //    否则 runLoginPollLifecycle 的 isCancelled(=()=>handle.cancelled) 永为 false → poll 空转到 2min 才超时。
+    let finalized = false;
+    const finalize = (): void => {
+      if (finalized) return;
+      finalized = true;
+      handle.cancelled = true;
+      clearTimeout(timeoutTimer);
+      this.tailscaleLoginCores.delete(server.id);
       try {
         require('fs').unlinkSync(cfgPath);
       } catch {
         /* 已删/无权限：忽略 */
       }
     };
-
-    // ~2min 不点 URL → 超时杀核（沿用 Phase 1 轮询上限语义）。
-    const timeoutTimer = setTimeout(
-      () => {
-        this.logToManager('info', `Tailscale 节点「${server.name}」登录超时，已停止登录进程`, 'sing-box');
-        this.killTailscaleLogin(server.id);
-      },
-      120000
-    );
-
-    const handle = { proc, timeoutTimer, cancelled: false };
-    this.tailscaleLoginCores.set(server.id, handle);
 
     // 逐行读 stdout/stderr 抓登录 URL（瞬态核自身 stdout 直接打印 Waiting for authentication 行，PoC 实测）。
     let urlOpened = false;
@@ -4892,17 +4904,19 @@ exit 0
     proc.stdout?.on('data', onData);
     proc.stderr?.on('data', onData);
 
+    // spawn 失败：只 emit 'error'（无后续 'exit'）→ 直接 finalize 兜底，否则 cfg + Map 泄漏。
     proc.on('error', (e) => {
       this.logToManager('error', `Tailscale 登录进程启动失败: ${e.message}`, 'sing-box');
-      this.killTailscaleLogin(server.id);
+      finalize();
     });
-    proc.on('exit', () => {
-      cleanupCfg();
-      clearTimeout(timeoutTimer);
-      this.tailscaleLoginCores.delete(server.id);
-    });
+    // 进程退出（正常被杀 / 自行崩溃 / 核拒绝 config）：finalize 置 cancelled 收敛轮询并清 cfg/Map。
+    proc.on('exit', finalize);
 
-    this.logToManager('info', `Tailscale 节点「${server.name}」开始登录（已启动登录进程）`, 'sing-box');
+    this.logToManager(
+      'info',
+      `Tailscale 节点「${server.name}」开始登录（已启动登录进程）`,
+      'sing-box'
+    );
 
     // 轮询 state 目录成功（log-level 无关）→ 成功后发 AUTH_OK，无论成功/超时/取消都收尾杀核。取消判据 =
     // 该瞬态核已被杀（handle.cancelled）：不能用主核 getStatus().running（主核可能根本没运行，列表直接点登录场景）。
@@ -4982,7 +4996,8 @@ exit 0
     } catch {
       /* 已退出：忽略 */
     }
-    // Map 项由 proc 'exit' 处理器删除（清临时 config）；此处不删，避免 exit 前后竞态漏清 cfg。
+    // Map 项 + 临时 config 由 finalize 删（挂在 proc 'exit'/'error'）；此处不删，避免与 finalize 竞态漏清 cfg。
+    // kill 发 SIGTERM → 进程退出触发 'exit' → finalize 收尾；幂等（finalized 标记防 error/exit 重复执行）。
   }
 
   /** app 退出/窗口关闭：杀掉全部残留瞬态登录核（无孤儿进程）。由 stop/teardownForQuit 调用。 */

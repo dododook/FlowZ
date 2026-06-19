@@ -18,6 +18,7 @@ import {
   buildTailscaleLoginConfig,
   tailscaleEndpointInRunningCore,
   runLoginPollLifecycle,
+  makeLoginPoll,
 } from '../tailscale-login-core';
 import type { ServerConfig, UserConfig } from '../../../shared/types';
 
@@ -209,5 +210,24 @@ describe('runLoginPollLifecycle（瞬态登录生命周期：成功/超时/取�
     ).rejects.toThrow('boom');
     expect(onSuccess).not.toHaveBeenCalled();
     expect(kill).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('makeLoginPoll（isCancelled 透传：瞬态核自死即收敛，不空转到超时）', () => {
+  // 进程自行崩溃/退出时 ProxyManager 的 finalize 置 handle.cancelled=true → 此 isCancelled 翻 true →
+  // makeLoginPoll 产出的 poll 立即返回 cancelled（不等满 2min 超时）。回归防护：守住 HIGH-2 修复。
+  it('isCancelled 一开始即 true（进程已死）→ cancelled，stateExists 不被调用（零等待收敛）', async () => {
+    const stateExists = jest.fn(() => false);
+    const poll = makeLoginPoll(stateExists, () => true);
+    await expect(poll()).resolves.toBe('cancelled');
+    expect(stateExists).not.toHaveBeenCalled();
+  });
+
+  it('登录成功（stateExists 先 true）→ success（cancelled 优先级低于已落盘的 state）', async () => {
+    const poll = makeLoginPoll(
+      () => true,
+      () => false
+    );
+    await expect(poll()).resolves.toBe('success');
   });
 });
