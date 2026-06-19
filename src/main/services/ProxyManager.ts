@@ -1774,8 +1774,10 @@ done
       log: (level, message) => this.logToManager(level, message),
       // #57 resolve-ahead：透传预解析表（startInternal 前置填充）。空 Map → buildProxyOutbound 回退原域名（现状）。
       resolvedHosts: this.lastResolvedHosts,
-      // Phase 2：reverseMesh(system 内核接口)仅 TUN 模式可行（系统代理不提权，maybePromptHelperGate 也仅 TUN
-      // 引导 helper）。非 TUN → buildOutbounds 跳过 reverseMesh 节点不发射，避免内核接口创建失败致启动 FATAL。
+      // Phase 2：reverseMesh(system 内核接口)需提权,仅 TUN 模式可行（系统代理路径不提权）。非 TUN →
+      // buildOutbounds 跳过 reverseMesh 节点不发射,避免内核接口创建失败致启动 FATAL。此判据取「会以提权跑」
+      // 的下界(TUN);helper 实际就绪由连接闸门保证,maybePromptHelperGate 仅 macOS/Win 引导(Linux 另径),
+      // 各平台 system 接口可创建性真机另验(设计 §11.6/11.7)。
       systemInterfaceAvailable: config.proxyModeType === 'tun',
     });
     this.pendingEndpoints = outboundsResult.pendingEndpoints;

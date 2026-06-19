@@ -161,6 +161,22 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
   const allowInternet = form.watch('allowInternet');
   const reverseMesh = form.watch('reverseMesh');
   const hasSpecificRoutes = stripCatchAll(splitTextList(form.watch('allowedIPs'))).length > 0;
+  // 「不承载全隧道」时的网段提示文案（仅在 reverseMesh || !allowInternet 时渲染）：无具体段=警告无流量；
+  // system=反向 mesh 说明；否则=关外网说明。选择移出 JSX 保渲染体扁平。
+  const meshRoutesHint = !hasSpecificRoutes
+    ? t(
+        'servers.allowInternetOffNoRoutes',
+        '⚠ This node currently carries no traffic (no subnets listed). Add a subnet, or turn internet access on (non-system mode).'
+      )
+    : reverseMesh
+      ? t(
+          'servers.reverseMeshRoutesHint',
+          'Reverse-mesh (system) mode: routes only the subnets above and is reachable from peers; never carries the full tunnel.'
+        )
+      : t(
+          'servers.allowInternetOffHint',
+          'Internet access off: this node only routes the subnets listed above.'
+        );
 
   return (
     <Form {...form}>
@@ -323,22 +339,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                       )}
                     </FormDescription>
                     {(reverseMesh || !allowInternet) && (
-                      <p className="text-sm text-amber-600 dark:text-amber-500">
-                        {!hasSpecificRoutes
-                          ? t(
-                              'servers.allowInternetOffNoRoutes',
-                              '⚠ This node currently carries no traffic (no subnets listed). Add a subnet, or turn internet access on (non-system mode).'
-                            )
-                          : reverseMesh
-                            ? t(
-                                'servers.reverseMeshRoutesHint',
-                                'Reverse-mesh (system) mode: routes only the subnets above and is reachable from peers; never carries the full tunnel.'
-                              )
-                            : t(
-                                'servers.allowInternetOffHint',
-                                'Internet access off: this node only routes the subnets listed above.'
-                              )}
-                      </p>
+                      <p className="text-sm text-amber-600 dark:text-amber-500">{meshRoutesHint}</p>
                     )}
                     <FormMessage />
                   </FormItem>

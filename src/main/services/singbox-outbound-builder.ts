@@ -25,6 +25,11 @@ import {
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 
+/** 组网节点「不承载全隧道」的原因短语，供诊断 warn 复用（Phase2 system 内核接口 vs 关外网）。 */
+function meshNonFullTunnelReason(server: ServerConfig): string {
+  return meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
+}
+
 /** 节点是否可用：naive 需要 libcronet 核心库，缺库时不可用（会被跳过、分流/选中回退到 selector）。 */
 export function isNodeUsable(server: ServerConfig): boolean {
   if (server.protocol.toLowerCase() === 'naive' && !resourceManager.hasCronetLib()) {
@@ -697,7 +702,7 @@ export function buildOutbounds(
           // 不承载全隧道但有具体段（关外网 或 Phase2 system 内核接口）：节点可用、仅承载列表网段（不当默认
           // 出网）。warn 进诊断报告，便于排查「选它却不出网」。
           if (!meshNodeCarriesFullTunnel(server)) {
-            const why = meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
+            const why = meshNonFullTunnelReason(server);
             deps.log(
               'warn',
               `组网节点「${server.name}」${why}：仅路由其指定网段，不承载默认出网流量`
@@ -726,7 +731,7 @@ export function buildOutbounds(
           // 节点不承载全隧道（关外网 或 Phase2 system 内核接口）但填了 exitNode：exit_node 已被
           // buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
           if (!meshNodeCarriesFullTunnel(server) && ts?.exitNode?.trim()) {
-            const why = meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
+            const why = meshNonFullTunnelReason(server);
             deps.log(
               'warn',
               `组网节点「${server.name}」${why}：已忽略 exit_node，仅访问 tailnet / 子网路由`
