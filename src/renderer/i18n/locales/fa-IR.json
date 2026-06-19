@@ -956,7 +956,16 @@
       "idleTimeoutDesc": "یک نشست را پس از ماندن در حالت بی‌کاری به این مدت ببند، مثلاً 30s. خالی از پیش‌فرض هسته استفاده می‌کند.",
       "minIdleSession": "حداقل نشست‌های بی‌کار",
       "minIdleSessionDesc": "حداقل تعداد نشست‌های بی‌کاری که باز نگه داشته شوند. پیش‌فرض 0."
-    }
+    },
+    "tsLoginAction": "ورود",
+    "tsLoginAlready": "گره Tailscale «{{name}}» قبلاً وارد شده است",
+    "tsLoginFailed": "شروع ورود برای «{{name}}» ناموفق بود",
+    "tsLoginInProgress": "ورود برای «{{name}}» هم‌اکنون در حال انجام است",
+    "tsLoginNow": "اکنون وارد شوید",
+    "tsLoginNowDesc": "اکنون مرورگر را برای تکمیل ورود Tailscale باز کنید (بدون نیاز به کلید احراز هویت).",
+    "tsLoginOk": "گره Tailscale «{{name}}» وارد شد",
+    "tsLoginOpening": "در حال ورود به «{{name}}»",
+    "tsLoginOpeningDesc": "در حال باز کردن مرورگر برای تکمیل ورود. آنجا مجوز دهید، سپس بازگردید."
   },
   "rules": {
     "ruleColumn": "قانون",
