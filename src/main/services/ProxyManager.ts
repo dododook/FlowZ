@@ -165,6 +165,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // clash_api 专属 HTTP 客户端（端口默认 9090，可经 config.controlPort 改；T15：原 clashApiAgent 字段 + clashApiRequest/clashAuthHeaders/
   // destroyClashApiAgent 收口进 ClashApiClient，与 StatsService 共用单一 agent）。经 setClashApiClient 注入。
   private clashApiClient: ClashApiClient | null = null;
+  // P2a：启用代理 / 切接管模式（两者均经 startInternal）后延迟一次「连接 flush」的延时器。stop()/再次 start 时清。
+  private connectionFlushTimer: ReturnType<typeof setTimeout> | null = null;
   // 平台提权服务（T16：原提权脚本生成 / 文件权限 / 提权复制等纯函数迁出，经 setPrivilegeService 注入；
   // delegate 落地后调用点零改动）。macOS 委托 helperManager 分支由子 commit 后续处理，本字段先占位。
   private privilegeService: PlatformPrivilegeService | null = null;
@@ -660,6 +662,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 的 default。故启动后用 clash_api 把 selector 校正回 config.selectedServerId，让 FlowZ 配置成为
     // 单一真值、压过缓存。best-effort（不阻塞启动成功）。
     void this.reassertSelectorSelection(config);
+
+    // P2a：启用代理 / 切接管模式后延迟一次连接 flush（见 scheduleConnectionFlush）——RST 泄漏成真实 IP 的旧连接
+    // 逼其重连重解析（经 FakeIP 走代理），不重启内核；node 热切换不经 startInternal、由 interrupt 开关另管。
+    this.scheduleConnectionFlush(config);
   }
 
   /**
@@ -733,6 +739,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (this.restartDebounceTimer) {
       clearTimeout(this.restartDebounceTimer);
       this.restartDebounceTimer = null;
+    }
+    // 取消未决的连接 flush（停止/重启优先；flush 只对仍在跑的本世代核有意义）
+    if (this.connectionFlushTimer) {
+      clearTimeout(this.connectionFlushTimer);
+      this.connectionFlushTimer = null;
     }
     // 用户意图优先：取消可能在退避窗口内待发的自动重启（崩溃后进程已死、refs 均 null 会触发下面的早退，
     // 但 attemptAutoRestart 仍在退避中——退避期 isRestarting=true，故这里能拦下，M3）。
@@ -860,6 +871,38 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         void this.ensureSystemProxyCleared();
       });
     }, ProxyManager.RESTART_DEBOUNCE_MS);
+  }
+
+  /** 启用/切接管模式后延迟一次连接 flush 的延时（ms）：给 app 早于 TUN 建立的旧连接经 TUN 重新进入 sing-box 连接表的窗口。 */
+  private static readonly CONNECTION_FLUSH_DELAY_MS = 1500;
+
+  /**
+   * 启用代理 / 切接管模式后（两者均经 startInternal；node 热切换走 clash_api PUT 不经此路径）延迟一次
+   * clash_api `DELETE /connections`，RST 掉 sing-box 跟踪的连接——重点是 app 早于 TUN 建立、泄漏成真实 IP
+   * 的旧连接：它们的后续包经 TUN 重新进表后被 RST → app 重连 → DNS 重新经 FakeIP 反查 → 走代理。
+   * **不重启内核**（与「切节点」的 interrupt_exist_connections 开关正交）。仅 TUN：systemProxy 的旧连接多在
+   * sing-box 表外、flush 够不着，且会误伤已代理连接。
+   * 取舍：closeAll 无差别 RST，也会重置启用后用户新建的正确连接（app 自动重连、短暂抖动）——属「启用即断开
+   * 现有连接」的固有代价，取单次短窗口最小化误伤。延迟/有效性属 runtime 语义，真机抓包定论后再定最终形态。
+   */
+  private scheduleConnectionFlush(config: UserConfig): void {
+    if (config.proxyModeType !== 'tun') return;
+    if (this.connectionFlushTimer) clearTimeout(this.connectionFlushTimer);
+    const gen = this.lifecycleGeneration; // 世代 token：窗口内被 stop/重启接管则放弃，避免打到已换的核
+    this.connectionFlushTimer = setTimeout(() => {
+      this.connectionFlushTimer = null;
+      if (gen !== this.lifecycleGeneration) return; // 已被新的 start/stop 接管
+      if (!this.singboxProcess && !this.singboxPid) return; // 核已停
+      void this.clashApiClient
+        ?.request('/connections', 'DELETE')
+        .then((r) =>
+          this.logToManager(
+            'info',
+            `启用后连接 flush：clash_api DELETE /connections → ${r.ok ? 'ok' : `失败(${r.status})`}`
+          )
+        )
+        .catch(() => {});
+    }, ProxyManager.CONNECTION_FLUSH_DELAY_MS);
   }
 
   /**
