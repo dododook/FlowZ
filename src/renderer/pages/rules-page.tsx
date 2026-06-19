@@ -11,6 +11,7 @@ import { Plus, ListOrdered, Check, X, Search } from 'lucide-react';
 import { RuleDialog } from '@/components/rules/rule-dialog';
 import { DeleteRuleDialog } from '@/components/rules/delete-rule-dialog';
 import { SortableRuleRow } from '@/components/rules/sortable-rule-row';
+import { RegionRoutingCard } from '@/components/rules/region-routing-card';
 import type { Rule } from '@/bridge/types';
 import { ruleConditions, ruleIpCidrs } from '../../shared/rules';
 import {
@@ -268,6 +269,8 @@ export function RulesPage() {
           {t('rules.addRule')}
         </Button>
       </div>
+
+      <RegionRoutingCard />
 
       <Card>
         <CardHeader>
