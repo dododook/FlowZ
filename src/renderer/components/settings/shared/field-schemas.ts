@@ -93,3 +93,48 @@ export function buildMultiplexSettings(
       }
     : undefined;
 }
+
+/**
+ * 传输层（ws / httpupgrade / http(H2) / grpc）字段的共享 path/Host/serviceName 读写。
+ * 三表单（vless/vmess/trojan）此前各自重复构造 wsSettings/httpSettings/grpcSettings 与读取默认值。
+ * 渲染层组件在 transport-fields.tsx（WsPathField/WsHostField/GrpcServiceNameField）。
+ */
+interface TransportValues {
+  wsPath?: string;
+  wsHost?: string;
+  grpcServiceName?: string;
+}
+
+/** 从既有 serverConfig 读取传输字段默认值（ws/http 共用 wsPath/wsHost 输入框；undefined=新建分支）。 */
+export function readTransportDefaults(serverConfig?: ServerConfig) {
+  return {
+    wsPath: serverConfig?.wsSettings?.path || serverConfig?.httpSettings?.path || '',
+    wsHost:
+      serverConfig?.wsSettings?.headers?.['Host'] || serverConfig?.httpSettings?.host?.[0] || '',
+    grpcServiceName: serverConfig?.grpcSettings?.serviceName || '',
+  };
+}
+
+/**
+ * 按规范化后的 network（小写真值：tcp/ws/grpc/http/httpupgrade）构造对应传输 settings；
+ * 其余置 null（与各表单既有 wsSettings 三元同构）。ws 与 httpupgrade 共用 wsSettings。
+ */
+export function buildTransportSettings(network: string, values: TransportValues) {
+  return {
+    wsSettings:
+      network === 'ws' || network === 'httpupgrade'
+        ? {
+            path: values.wsPath || '/',
+            headers: values.wsHost ? { Host: values.wsHost } : undefined,
+          }
+        : null,
+    httpSettings:
+      network === 'http'
+        ? {
+            path: values.wsPath || '/',
+            host: values.wsHost ? [values.wsHost] : undefined,
+          }
+        : null,
+    grpcSettings: network === 'grpc' ? { serviceName: values.grpcServiceName?.trim() || '' } : null,
+  };
+}

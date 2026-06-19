@@ -257,16 +257,21 @@ describe('IpInfoService 传输层', () => {
     );
   }
 
-  /** 构造一个 service：默认 running + 探针端口可用；onUpdate 收集快照。 */
+  /** 构造一个 service：默认 running + 探针端口可用；onUpdate 收集快照。
+   *  默认 maxAttempts=1/delay=0 → 还原「单次探测」行为，传输层用例的固定 responder 队列不受重试影响；
+   *  需测重试的用例显式传 maxAttempts>1。 */
   function makeService(opts?: {
     ports?: { direct: number; proxy: number } | null;
     running?: boolean;
+    maxAttempts?: number;
+    retryDelayMs?: number;
   }) {
     const snapshots: IpInfoSnapshot[] = [];
     const svc = new IpInfoService(
       () => (opts?.ports === undefined ? { direct: 18080, proxy: 18081 } : opts.ports),
       () => opts?.running ?? true,
-      (s) => snapshots.push(s)
+      (s) => snapshots.push(s),
+      { maxAttempts: opts?.maxAttempts ?? 1, retryDelayMs: opts?.retryDelayMs ?? 0 }
     );
     return { svc, snapshots };
   }
@@ -447,5 +452,32 @@ describe('IpInfoService 传输层', () => {
     expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' });
     expect(calls.length).toBe(1); // 首跳成功即短路
     expect(hostOf(calls[0].options)).toBe('cloudflare.com');
+  });
+
+  it('重试：代理首轮全失败、次轮成功 → 取到 IP 不报错，且过程出现「获取中」(loading)', async () => {
+    // maxAttempts=2：第 1 轮 PROXY_CHAIN 3 端点全 503 失败 → 间隔后第 2 轮首跳 trace 成功。
+    const { svc, snapshots } = makeService({ maxAttempts: 2, retryDelayMs: 0 });
+    responders = [respondStatus(503), respondStatus(503), respondStatus(503), respondOk(TRACE_OK)];
+    const snap = await svc.refreshProxy();
+    expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // 重试后取到
+    expect(snap.error).toBeUndefined(); // 不报错（不闪「获取失败」）
+    expect(snapshots.some((s) => s.loading === true)).toBe(true); // 重试期间显「获取中」
+  });
+
+  it('重试耗尽仍失败 → proxy 保持空 + error（由界面显友好提示，非「获取失败」字样）', async () => {
+    const { svc } = makeService({ maxAttempts: 2, retryDelayMs: 0 });
+    // 两轮各 3 端点全失败（6 个 503）
+    responders = Array.from({ length: 6 }, () => respondStatus(503));
+    const snap = await svc.refreshProxy();
+    expect(snap.proxy).toBeNull();
+    expect(snap.error).toBe('fetch_failed');
+  });
+
+  it('markProxyConnecting：立即置 loading=true 并广播（消除启动瞬间闪「代理出口暂不可用」）', () => {
+    const { svc, snapshots } = makeService();
+    expect(svc.getSnapshot().loading).not.toBe(true);
+    svc.markProxyConnecting();
+    expect(svc.getSnapshot().loading).toBe(true); // 同步置「获取中」
+    expect(snapshots[snapshots.length - 1].loading).toBe(true); // 已广播给渲染端
   });
 });

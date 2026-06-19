@@ -43,6 +43,9 @@ export async function getVersionInfo(): Promise<
     singBoxVersion: string;
     copyright: string;
     repositoryUrl: string;
+    platform: string;
+    arch: string;
+    osVersion: string;
   }>
 > {
   try {

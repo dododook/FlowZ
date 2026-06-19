@@ -22,7 +22,7 @@ import { FormButtons } from './shared/form-buttons';
 import { EchField, MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
-import { WsPathField, WsHostField } from './shared/transport-fields';
+import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
@@ -33,6 +33,8 @@ import {
   readEchDefault,
   readMultiplexDefaults,
   buildMultiplexSettings,
+  readTransportDefaults,
+  buildTransportSettings,
 } from './shared/field-schemas';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -50,7 +52,7 @@ const createVlessSchema = (t: any) =>
       ),
     encryption: z.string().optional(),
     flow: z.string().optional(),
-    network: z.enum(['Tcp', 'Ws', 'H2', 'HttpUpgrade']),
+    network: z.enum(['Tcp', 'Ws', 'Grpc', 'Http', 'HttpUpgrade']),
     security: z.enum(['None', 'Tls', 'Reality']),
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
@@ -59,6 +61,7 @@ const createVlessSchema = (t: any) =>
     realityShortId: z.string().optional(),
     wsPath: z.string().optional(),
     wsHost: z.string().optional(),
+    grpcServiceName: z.string().optional(),
     ...echSchemaShape,
     ...multiplexSchemaShape,
   });
@@ -74,11 +77,14 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
   const { t } = useTranslation();
   const vlessFormSchema = createVlessSchema(t);
 
-  const normalizeNetwork = (n: string | undefined): 'Tcp' | 'Ws' | 'H2' | 'HttpUpgrade' => {
+  const normalizeNetwork = (
+    n: string | undefined
+  ): 'Tcp' | 'Ws' | 'Grpc' | 'Http' | 'HttpUpgrade' => {
     const lower = (n || 'tcp').toLowerCase();
     if (lower === 'ws' || lower === 'websocket') return 'Ws';
     if (lower === 'httpupgrade') return 'HttpUpgrade';
-    if (lower === 'h2' || lower === 'http2') return 'H2';
+    if (lower === 'grpc') return 'Grpc';
+    if (lower === 'h2' || lower === 'http' || lower === 'http2') return 'Http';
     return 'Tcp';
   };
 
@@ -104,8 +110,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'chrome',
         realityPublicKey: serverConfig.realitySettings?.publicKey || '',
         realityShortId: serverConfig.realitySettings?.shortId || '',
-        wsPath: serverConfig.wsSettings?.path || '',
-        wsHost: serverConfig.wsSettings?.headers?.['Host'] || '',
+        ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
       };
@@ -123,8 +128,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
       tlsFingerprint: 'chrome',
       realityPublicKey: '',
       realityShortId: '',
-      wsPath: '',
-      wsHost: '',
+      ...readTransportDefaults(),
       ...echDefaults,
       ...multiplexDefaults,
     };
@@ -136,7 +140,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
   });
 
   const handleSubmit = async (values: VlessFormValues) => {
-    const network = values.network.toLowerCase() as 'tcp' | 'ws' | 'h2' | 'httpupgrade';
+    const network = values.network.toLowerCase();
     const security = values.security.toLowerCase() as 'none' | 'tls' | 'reality';
 
     const serverConfig = {
@@ -165,13 +169,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               shortId: values.realityShortId?.trim() || undefined,
             }
           : null,
-      wsSettings:
-        network === 'ws' || network === 'httpupgrade'
-          ? {
-              path: values.wsPath || '/',
-              headers: values.wsHost ? { Host: values.wsHost } : undefined,
-            }
-          : null,
+      ...buildTransportSettings(network, values),
       multiplexSettings: buildMultiplexSettings(values, { skipVisionFlow: true }),
     };
 
@@ -180,8 +178,10 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
 
   const isTlsEnabled = form.watch('security') === 'Tls';
   const isRealityEnabled = form.watch('security') === 'Reality';
-  const isWebSocketEnabled =
-    form.watch('network') === 'Ws' || form.watch('network') === 'HttpUpgrade';
+  const watchedNetwork = form.watch('network');
+  const showPathHostFields =
+    watchedNetwork === 'Ws' || watchedNetwork === 'HttpUpgrade' || watchedNetwork === 'Http';
+  const isGrpcEnabled = watchedNetwork === 'Grpc';
 
   return (
     <Form {...form}>
@@ -242,8 +242,9 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
                     <SelectContent>
                       <SelectItem value="Tcp">TCP</SelectItem>
                       <SelectItem value="Ws">WebSocket</SelectItem>
+                      <SelectItem value="Grpc">gRPC</SelectItem>
                       <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
-                      <SelectItem value="H2">HTTP/2</SelectItem>
+                      <SelectItem value="Http">HTTP/2</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription>{t('servers.transportDesc')}</FormDescription>
@@ -338,10 +339,16 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
             </FieldGrid>
           )}
 
-          {isWebSocketEnabled && (
+          {showPathHostFields && (
             <FieldGrid cols={2}>
               <WsPathField control={form.control} t={t} />
               <WsHostField control={form.control} t={t} />
+            </FieldGrid>
+          )}
+
+          {isGrpcEnabled && (
+            <FieldGrid cols={2}>
+              <GrpcServiceNameField control={form.control} t={t} />
             </FieldGrid>
           )}
 

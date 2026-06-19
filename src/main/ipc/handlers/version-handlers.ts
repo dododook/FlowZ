@@ -4,6 +4,7 @@
  */
 
 import { IpcMainInvokeEvent, app, shell } from 'electron';
+import { release } from 'node:os';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import { registerIpcHandler } from '../ipc-handler';
 // 内核版本以 core-manifest.json 为权威（构建时随内核打包的真相），非 package.json.singboxVersion（旧值易漂移）。
@@ -20,6 +21,9 @@ interface VersionInfo {
   singBoxVersion: string;
   copyright: string;
   repositoryUrl: string;
+  platform: string;
+  arch: string;
+  osVersion: string;
 }
 
 import { CoreUpdateService } from '../../services/CoreUpdateService';
@@ -51,6 +55,9 @@ export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): 
         singBoxVersion: currentSingBoxVersion,
         copyright: `© ${new Date().getFullYear()} FlowZ. All rights reserved.`,
         repositoryUrl: 'https://github.com/dododook/FlowZ',
+        platform: process.platform,
+        arch: process.arch,
+        osVersion: release(),
       };
     }
   );

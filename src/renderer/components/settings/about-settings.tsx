@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { ExternalLink, Loader2, Download } from 'lucide-react';
+import { ExternalLink, Loader2, Download, Bug } from 'lucide-react';
 import {
   getVersionInfo,
   checkForUpdates,
@@ -16,6 +16,7 @@ import type { UpdateProgress } from '@/ipc/api-client';
 import { useTranslation } from 'react-i18next';
 import { AppUpdateBanner } from './app-update-banner';
 import { useAppStore } from '@/store/app-store';
+import { buildBugReportUrl } from '@/lib/issue-report';
 
 interface VersionInfo {
   appVersion: string;
@@ -24,12 +25,17 @@ interface VersionInfo {
   singBoxVersion: string;
   copyright: string;
   repositoryUrl: string;
+  platform: string;
+  arch: string;
+  osVersion: string;
 }
 
 export function AboutSettings() {
   // F28：App 更新可用信息放 store（本组件随设置子节切换会卸载，本地 state 无法持久承载入口）
   const availableAppUpdate = useAppStore((s) => s.availableAppUpdate);
   const setAvailableAppUpdate = useAppStore((s) => s.setAvailableAppUpdate);
+  // 「报告问题」按钮自动带上当前代理模式（系统代理/TUN），是 #57 类问题的关键定位信息
+  const proxyModeType = useAppStore((s) => s.config?.proxyModeType);
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -174,6 +180,22 @@ export function AboutSettings() {
     await openExternal(url);
   };
 
+  // 打开 GitHub 新建 issue 页，正文已自动带上版本/系统/架构/内核/代理模式，报告者只需补问题描述与日志。
+  const handleReportIssue = async () => {
+    const url = buildBugReportUrl(
+      versionInfo?.repositoryUrl || 'https://github.com/dododook/FlowZ',
+      {
+        appVersion: versionInfo?.appVersion,
+        platform: versionInfo?.platform,
+        arch: versionInfo?.arch,
+        osVersion: versionInfo?.osVersion,
+        singBoxVersion: versionInfo?.singBoxVersion,
+        proxyModeType,
+      }
+    );
+    await openExternal(url);
+  };
+
   if (loading) {
     return (
       <Card>
@@ -243,6 +265,13 @@ export function AboutSettings() {
                 {t('settings.about.openSource')} & {t('settings.about.community', '社区')}
               </h4>
               <div className="flex flex-col sm:flex-row gap-3">
+                <Button variant="outline" onClick={handleReportIssue} className="w-full sm:w-auto">
+                  <Bug className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-left">
+                    {t('settings.about.reportIssue', '报告问题')}
+                  </span>
+                  <ExternalLink className="ml-2 h-3.5 w-3.5 opacity-50 shrink-0" />
+                </Button>
                 <Button variant="outline" onClick={handleOpenGitHub} className="w-full sm:w-auto">
                   <svg
                     className="mr-2 h-4 w-4 shrink-0"

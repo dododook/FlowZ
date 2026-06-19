@@ -228,3 +228,35 @@ describe('并发池', () => {
     expect(peak).toBeLessThanOrEqual(3);
   });
 });
+
+describe('debug 日志回调', () => {
+  it('逐域名 debug：DoH 命中带上游 / 系统兜底带「系统 DNS」 / 失败带「回退域名」', async () => {
+    const logs: string[] = [];
+    const log = (lvl: 'debug' | 'info' | 'warn', msg: string) => logs.push(`${lvl}|${msg}`);
+    const doh = jest.fn(async (_u: string, d: string) => (d === 'a.com' ? ['1.1.1.1'] : []));
+    const systemResolve4 = jest.fn(async (d: string) => (d === 'b.com' ? ['2.2.2.2'] : []));
+    await resolveNodeDomains(['a.com', 'b.com', 'c.com'], {
+      doh,
+      systemResolve4,
+      upstreams: ['https://u1/dns-query'],
+      cache: new Map(),
+      log,
+    });
+    expect(logs.some((l) => l.includes('a.com → 1.1.1.1') && l.includes('u1'))).toBe(true);
+    expect(logs.some((l) => l.includes('b.com → 2.2.2.2') && l.includes('系统 DNS'))).toBe(true);
+    expect(logs.some((l) => l.includes('回退域名') && l.includes('c.com'))).toBe(true);
+    expect(logs.every((l) => l.startsWith('debug|'))).toBe(true);
+  });
+
+  it('缓存命中也打 debug（标「缓存」）', async () => {
+    const logs: string[] = [];
+    const log = (lvl: 'debug' | 'info' | 'warn', msg: string) => logs.push(`${lvl}|${msg}`);
+    const cache = new Map();
+    const doh = jest.fn(async () => ['3.3.3.3']);
+    const common = { doh, upstreams: ['https://u1/dns-query'], cache };
+    await resolveNodeDomains(['x.com'], common); // 首解 → 写缓存
+    await resolveNodeDomains(['x.com'], { ...common, log }); // 命中缓存
+    expect(logs.some((l) => l.includes('x.com → 3.3.3.3') && l.includes('缓存'))).toBe(true);
+    expect(doh).toHaveBeenCalledTimes(1); // 第二次未再 DoH
+  });
+});

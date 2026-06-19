@@ -58,10 +58,17 @@ export class UpdateService {
     this.mainWindow = window;
   }
 
+  /** 网络切换/断连瞬态错误（TUN 起来、断网重连，启动期常见）：不报刺眼 error，延迟重试一次再定论。 */
+  private isTransientNetworkError(msg: string): boolean {
+    return /ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_NETWORK_IO_SUSPENDED|ERR_NAME_NOT_RESOLVED|ECONNRESET|ETIMEDOUT|socket hang up/i.test(
+      msg
+    );
+  }
+
   /**
-   * 检查更新
+   * 检查更新（retried：内部一次性重试标记，瞬态网络错误延迟后自重试用）
    */
-  async checkForUpdate(includePrerelease = false): Promise<UpdateCheckResult> {
+  async checkForUpdate(includePrerelease = false, retried = false): Promise<UpdateCheckResult> {
     try {
       this.logManager.addLog('info', '开始检查更新...', 'UpdateService');
       this.updateProgress({ status: 'checking', percentage: 0, message: '正在检查更新...' });
@@ -134,9 +141,25 @@ export class UpdateService {
       return { hasUpdate: true, updateInfo };
     } catch (error: any) {
       const errorMessage = error?.message || '检查更新失败';
-      this.logManager.addLog('error', `检查更新失败: ${errorMessage}`, 'UpdateService');
+      const transient = this.isTransientNetworkError(errorMessage);
+      // 网络切换/瞬态（TUN 起来、断网重连，启动期常见）：不报刺眼 error；首次延迟 5s 自重试一次（等网络稳定）。
+      if (transient && !retried) {
+        this.logManager.addLog(
+          'info',
+          `网络切换中，5s 后重试检查更新: ${errorMessage}`,
+          'UpdateService'
+        );
+        await new Promise((r) => setTimeout(r, 5000));
+        return this.checkForUpdate(includePrerelease, true);
+      }
+      // 重试后仍失败的瞬态 → warn + 静默（no-update），不弹 error UI；其它 → error。
+      this.logManager.addLog(
+        transient ? 'warn' : 'error',
+        `检查更新失败: ${errorMessage}`,
+        'UpdateService'
+      );
       this.updateProgress({
-        status: 'error',
+        status: transient ? 'no-update' : 'error',
         percentage: 0,
         message: '检查更新失败',
         error: errorMessage,
