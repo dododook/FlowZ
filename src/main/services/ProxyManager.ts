@@ -485,6 +485,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           // 解析档位（nodeDomainResolver）决定预解析上游：auto=AliDNS+DNSPod DoH / dnspod=DNSPod / system=纯系统 DNS。
           this.lastResolvedHosts = await resolveNodeDomains([...nodeDomains], {
             upstreams: upstreamsForResolverMode(config.dnsConfig?.nodeDomainResolver),
+            // debug 级逐域名解析路径（域名→IP/上游/失败回退/缓存命中），logLevel=debug 时可见，供 #57 真机排查。
+            log: (level, message) => this.logToManager(level, message),
           });
           this.logToManager(
             'info',
