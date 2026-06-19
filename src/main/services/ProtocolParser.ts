@@ -19,6 +19,7 @@ import type {
   AnyTlsSettings,
   LogLevel,
 } from '../../shared/types';
+import { normalizeDuration } from '../../shared/duration';
 import type { LogManager } from './LogManager';
 
 export interface IProtocolParser {
@@ -428,6 +429,10 @@ export class ProtocolParser implements IProtocolParser {
     if (heartbeat) {
       config.tuicSettings!.heartbeat = heartbeat;
     }
+    const zrtt = params.get('zero_rtt_handshake');
+    if (zrtt) {
+      config.tuicSettings!.zeroRttHandshake = zrtt === '1' || zrtt === 'true';
+    }
 
     return config;
   }
@@ -455,8 +460,8 @@ export class ProtocolParser implements IProtocolParser {
 
     // AnyTLS 会话参数
     const anyTlsSettings: AnyTlsSettings = {};
-    const idleCheckInterval = params.get('idle_session_check_interval');
-    const idleTimeout = params.get('idle_session_timeout');
+    const idleCheckInterval = normalizeDuration(params.get('idle_session_check_interval'));
+    const idleTimeout = normalizeDuration(params.get('idle_session_timeout'));
     const minIdle = params.get('min_idle_session');
     if (idleCheckInterval) anyTlsSettings.idleSessionCheckInterval = idleCheckInterval;
     if (idleTimeout) anyTlsSettings.idleSessionTimeout = idleTimeout;
@@ -1200,6 +1205,9 @@ export class ProtocolParser implements IProtocolParser {
       }
       if (config.tuicSettings.heartbeat) {
         params.set('heartbeat', config.tuicSettings.heartbeat);
+      }
+      if (config.tuicSettings.zeroRttHandshake) {
+        params.set('zero_rtt_handshake', '1');
       }
     }
 

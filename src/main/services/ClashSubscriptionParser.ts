@@ -13,6 +13,7 @@
 import { randomUUID } from 'crypto';
 import { load as yamlLoad } from 'js-yaml';
 import type { ServerConfig, Protocol } from '../../shared/types';
+import { normalizeDuration } from '../../shared/duration';
 
 // ── 探测正则 / 校验 ──────────────────────────────────────────────────────────
 /** 内联 proxies: 或 proxy-providers: 任一命中即「确为 Clash 意图」。 */
@@ -70,25 +71,6 @@ function bool(v: unknown): boolean | undefined {
   if (typeof v === 'boolean') return v;
   if (v === 'true' || v === 1 || v === '1') return true;
   if (v === 'false' || v === 0 || v === '0') return false;
-  return undefined;
-}
-
-/**
- * 时长字段规整成 sing-box 接受的 Go duration（`time.ParseDuration`）。
- * mihomo 常把 heartbeat-interval 写成毫秒整数（如 10000），裸传给 sing-box 会报 "missing unit"
- * 启动失败。规则：纯数字（含数字字符串）→ 视为毫秒补 `ms`；已带单位字符串透传。
- */
-export function normalizeDuration(v: unknown): string | undefined {
-  if (v === undefined || v === null) return undefined;
-  if (typeof v === 'number') {
-    return Number.isFinite(v) ? `${v}ms` : undefined;
-  }
-  if (typeof v === 'string') {
-    const t = v.trim();
-    if (t === '') return undefined;
-    // 纯数字（可含小数）→ 毫秒补单位；否则视为已带单位（10s/500ms/1m 等）透传。
-    return /^[0-9]+(\.[0-9]+)?$/.test(t) ? `${t}ms` : t;
-  }
   return undefined;
 }
 
@@ -497,6 +479,17 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       const password = str(p['password']);
       if (!password) return { kind: 'fail', reason: `anytls 节点 "${name}" 缺 password` };
       config.password = password;
+      // anytls 会话保活三件套：与 parseAnyTls/AnyTlsForm 收敛面对齐（mihomo 连字符 key，兼容下划线）
+      const at: NonNullable<ServerConfig['anyTlsSettings']> = {};
+      const idleCheck = normalizeDuration(
+        p['idle-session-check-interval'] ?? p['idle_session_check_interval']
+      );
+      if (idleCheck) at.idleSessionCheckInterval = idleCheck;
+      const idleTimeout = normalizeDuration(p['idle-session-timeout'] ?? p['idle_session_timeout']);
+      if (idleTimeout) at.idleSessionTimeout = idleTimeout;
+      const minIdle = num(p['min-idle-session'] ?? p['min_idle_session']);
+      if (minIdle !== undefined) at.minIdleSession = minIdle;
+      if (Object.keys(at).length > 0) config.anyTlsSettings = at;
       applyTransportAndTls(config, p, true); // anytls 默认 TLS
     } else if (protocol === 'socks') {
       // socks5：可选用户名/密码；指纹凭据取 username。
@@ -536,6 +529,8 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
         const a = hka.map((x) => str(x)).filter((x): x is string => !!x);
         if (a.length > 0) ssh.hostKeyAlgorithms = a;
       }
+      const cv = str(p['client-version']);
+      if (cv) ssh.clientVersion = cv;
       config.network = 'tcp';
       config.security = 'none';
       if (Object.keys(ssh).length > 0) config.sshSettings = ssh;

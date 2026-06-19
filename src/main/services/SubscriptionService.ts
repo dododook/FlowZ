@@ -10,9 +10,9 @@ import {
   tryLoadClashDoc,
   parseClashProxies,
   resolveProxyProviders,
-  normalizeDuration,
   type ClashDoc,
 } from './ClashSubscriptionParser';
+import { normalizeDuration } from '../../shared/duration';
 
 /** 默认订阅 UA：纯中性 `FlowZ/<版本>`（去除 clash.meta/mihomo 标识，陈先生 2026-06-12 决策）。 */
 export function defaultSubscriptionUserAgent(): string {

@@ -225,6 +225,19 @@ describe('AnyTLS', () => {
     expect(c.security).toBe('tls');
   });
 
+  // 收敛面对齐：URL 导入路径的 idle duration 与 Clash 路径同款经 normalizeDuration
+  // 规整裸毫秒（防外部手写 anytls:// 带无单位 idle → sing-box "missing unit"）。
+  it('idle duration 裸毫秒补 ms（与 Clash 路径一致）', () => {
+    const c = parser.parseUrl(
+      'anytls://pw@f.example.com:443?security=tls&idle_session_check_interval=30000&idle_session_timeout=5000&min_idle_session=3#n'
+    );
+    expect(c.anyTlsSettings).toEqual({
+      idleSessionCheckInterval: '30000ms',
+      idleSessionTimeout: '5000ms',
+      minIdleSession: 3,
+    });
+  });
+
   it('往返不动点', () =>
     void expectRoundTripStable(
       'anytls://atlspass@f.example.com:443?security=tls&sni=at.example.com&fp=chrome&idle_session_timeout=30s&idle_session_check_interval=5s&min_idle_session=2#anytls-1'
@@ -259,6 +272,30 @@ describe('TUIC', () => {
     void expectRoundTripStable(
       'tuic://uuid-tuic:tuicpass@g.example.com:443?congestion_control=bbr&udp_relay_mode=native&alpn=h3&sni=tu.example.com&allow_insecure=1#tuic-1'
     ));
+
+  // zero_rtt_handshake parse↔generate 往返守恒：加字段漏扫 generate 端会在此断言失守。
+  it('zero_rtt_handshake=1 解析为 true', () => {
+    const c = parser.parseUrl(
+      'tuic://uuid-tuic:tuicpass@g.example.com:443?congestion_control=bbr&zero_rtt_handshake=1&sni=tu.example.com#zrtt'
+    );
+    expect(c.tuicSettings?.zeroRttHandshake).toBe(true);
+    // generate 端必须回写，否则往返丢字段
+    expect(parser.generateUrl(c)).toContain('zero_rtt_handshake=1');
+  });
+
+  it('往返不动点（zeroRttHandshake=true）', () =>
+    void expectRoundTripStable(
+      'tuic://uuid-tuic:tuicpass@g.example.com:443?congestion_control=bbr&udp_relay_mode=native&zero_rtt_handshake=1&alpn=h3&sni=tu.example.com#zrtt-on'
+    ));
+
+  it('往返不动点（zeroRttHandshake 缺省，不被臆造）', () => {
+    const url =
+      'tuic://uuid-tuic:tuicpass@g.example.com:443?congestion_control=bbr&sni=tu.example.com#zrtt-off';
+    const c = parser.parseUrl(url);
+    expect(c.tuicSettings?.zeroRttHandshake).toBeUndefined();
+    expect(parser.generateUrl(c)).not.toContain('zero_rtt_handshake');
+    void expectRoundTripStable(url);
+  });
 });
 
 describe('Naive', () => {

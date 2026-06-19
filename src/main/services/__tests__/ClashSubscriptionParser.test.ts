@@ -12,13 +12,13 @@ import {
   compileProviderFilter,
   applyProviderFilters,
   applyOverride,
-  normalizeDuration,
   MAX_FILTER_PATTERN_LEN,
   MAX_FILTER_NAME_LEN,
   type ProviderDeps,
   type ClashParseResult,
 } from '../ClashSubscriptionParser';
 import { ProtocolParser } from '../ProtocolParser';
+import { normalizeDuration } from '../../../shared/duration';
 import type { ServerConfig } from '../../../shared/types';
 
 const SUB_ID = 'sub-test';
@@ -346,6 +346,59 @@ describe('parseClashProxies — 协议映射', () => {
     const ssh = byName(servers, 'ssh');
     expect(ssh.sshSettings?.password).toBe('sshpw');
     expect(ssh.sshSettings?.user).toBe('root');
+  });
+
+  // 收敛面回填：anytls idle 三件套 + ssh client-version 此前 mapNode 不读 → 订阅导入丢字段。
+  it('anytls 读 idle 三件套（连字符 key + 毫秒整数规整 ms）', () => {
+    const { servers } = parseClashProxies(
+      [
+        {
+          name: 'anytls',
+          type: 'anytls',
+          server: '9.9.9.9',
+          port: 443,
+          password: 'ap',
+          sni: 'a.com',
+          'idle-session-check-interval': 30000,
+          'idle-session-timeout': '60s',
+          'min-idle-session': 5,
+        },
+      ],
+      SUB_ID,
+      NOW
+    );
+    const at = byName(servers, 'anytls').anyTlsSettings;
+    expect(at?.idleSessionCheckInterval).toBe('30000ms'); // 裸毫秒整数补单位
+    expect(at?.idleSessionTimeout).toBe('60s'); // 已带单位透传
+    expect(at?.minIdleSession).toBe(5);
+  });
+
+  it('anytls 无 idle 字段 → anyTlsSettings 不被臆造', () => {
+    const { servers } = parseClashProxies(
+      [{ name: 'anytls', type: 'anytls', server: '9.9.9.9', port: 443, password: 'ap' }],
+      SUB_ID,
+      NOW
+    );
+    expect(byName(servers, 'anytls').anyTlsSettings).toBeUndefined();
+  });
+
+  it('ssh 读 client-version（有值才写，守卫式）', () => {
+    const { servers } = parseClashProxies(
+      [
+        {
+          name: 'ssh',
+          type: 'ssh',
+          server: '10.0.0.3',
+          port: 22,
+          username: 'root',
+          password: 'sshpw',
+          'client-version': 'SSH-2.0-OpenSSH_9.0',
+        },
+      ],
+      SUB_ID,
+      NOW
+    );
+    expect(byName(servers, 'ssh').sshSettings?.clientVersion).toBe('SSH-2.0-OpenSSH_9.0');
   });
 
   it('不支持类型聚合告警（ssr/wireguard），不整批失败', () => {
