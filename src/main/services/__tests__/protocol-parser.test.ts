@@ -240,16 +240,12 @@ describe('AnyTLS', () => {
 
   // #86-122 NIT②：min_idle_session 口径对齐 Clash num()/生成侧 !==undefined。
   it('min_idle_session=0 保留（合法值，非 truthy 丢弃）', () => {
-    const c = parser.parseUrl(
-      'anytls://pw@f.example.com:443?security=tls&min_idle_session=0#n'
-    );
+    const c = parser.parseUrl('anytls://pw@f.example.com:443?security=tls&min_idle_session=0#n');
     expect(c.anyTlsSettings?.minIdleSession).toBe(0);
   });
 
   it('min_idle_session 非数字 → 丢弃（不写 NaN，对齐 Clash num() 防 NaN 漂移）', () => {
-    const c = parser.parseUrl(
-      'anytls://pw@f.example.com:443?security=tls&min_idle_session=abc#n'
-    );
+    const c = parser.parseUrl('anytls://pw@f.example.com:443?security=tls&min_idle_session=abc#n');
     expect(c.anyTlsSettings?.minIdleSession).toBeUndefined();
   });
 
