@@ -122,6 +122,49 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     expect(snap(cfg({ servers: [server({})] }))).toMatchSnapshot();
   });
 
+  // 地区分流（4.1.0）：非默认场景锁路由规则——本地/海外/final 按 region+reverse 翻转、未激活地区 geo 收窄注入。
+  // 默认（CN 正向）由上方基线覆盖（应逐字节=今日）。
+  it('地区分流 ir 正向（本地直连·海外代理；仅 ir geo 注入 rule_set）', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          regionRouting: { enabled: true, region: 'ir', reverse: false },
+        })
+      )
+    ).toMatchSnapshot();
+  });
+  it('地区分流 ru 正向', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          regionRouting: { enabled: true, region: 'ru', reverse: false },
+        })
+      )
+    ).toMatchSnapshot();
+  });
+  it('地区分流 cn 反向（回国：本地代理·海外直连·final=direct）', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          regionRouting: { enabled: true, region: 'cn', reverse: true },
+        })
+      )
+    ).toMatchSnapshot();
+  });
+  it('地区分流 关闭（无 geo 基线，仅自定义规则 + final 兜底）', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          regionRouting: { enabled: false, region: 'cn', reverse: false },
+        })
+      )
+    ).toMatchSnapshot();
+  });
+
   it('TUN + trojan（平台敏感，分别锁 linux/darwin/win32）', () => {
     const c = cfg({
       proxyModeType: 'tun',
