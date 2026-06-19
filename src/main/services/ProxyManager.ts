@@ -3345,7 +3345,7 @@ exit 0
         return `无法连接到代理服务器，请检查服务器地址和端口 [${errorOutput}]`;
       }
 
-      if (lowerOutput.includes('certificate') || lowerOutput.includes('tls')) {
+      if (lowerOutput.includes('certificate') || lowerOutput.includes('x509')) {
         return `TLS 证书验证失败，请检查服务器 TLS 配置 [${errorOutput}]`;
       }
 
@@ -4977,14 +4977,9 @@ exit 0
       return `DNS 解析失败：无法解析服务器域名，请检查 DNS 设置 [${message}]`;
     }
 
-    if (
-      (lowerMessage.includes('certificate') ||
-        lowerMessage.includes('tls') ||
-        lowerMessage.includes('ssl')) &&
-      !lowerMessage.includes('anytls') &&
-      !lowerMessage.includes('shadowtls')
-    ) {
-      // 保留原始错误信息，帮助用户诊断具体的证书问题
+    if (lowerMessage.includes('certificate') || lowerMessage.includes('x509')) {
+      // 仅在真实证书错误时标注（要求 certificate/x509 关键字）：translateErrorMessage 对每条 sing-box 日志行都调用，
+      // 原先裸 tls/ssl 匹配会把正常的 `router: sniffed protocol: tls, domain: X` 调试行误标为「证书错误」（满屏误报）。
       return `TLS 证书错误：服务器证书验证失败 [${message}]`;
     }
 
@@ -5031,13 +5026,7 @@ exit 0
       return ProxyErrorCode.CONNECTION_TIMEOUT;
     if (lowerMessage.includes('dns') && lowerMessage.includes('fail'))
       return ProxyErrorCode.DNS_RESOLVE_FAILED;
-    if (
-      (lowerMessage.includes('certificate') ||
-        lowerMessage.includes('tls') ||
-        lowerMessage.includes('ssl')) &&
-      !lowerMessage.includes('anytls') &&
-      !lowerMessage.includes('shadowtls')
-    )
+    if (lowerMessage.includes('certificate') || lowerMessage.includes('x509'))
       return ProxyErrorCode.TLS_CERT_ERROR;
     if (lowerMessage.includes('authentication failed') || lowerMessage.includes('auth fail'))
       return ProxyErrorCode.AUTH_FAILED;

@@ -38,3 +38,11 @@ export const DEFAULT_FAKEIP_FILTER_DOMAINS = [
   ...FAKEIP_FILTER_CAPTIVE_DOMAINS,
   ...FAKEIP_FILTER_NTP_SUFFIXES,
 ];
+
+/**
+ * FakeIP 假 IP 段（单一真值）：dns-builder 分配给 fakeip server；旁路/force-route 护栏据此排除，防假 IP 被当私网直连。
+ * - v4 `198.18.0.0/15`：RFC 2544 基准段，刻意在私网空间之外（不与任何 LAN 旁路 v4 段相交）。
+ * - v6 `fc00::/18`：落在 ULA 保留半区 fc00::/8 内，与实际使用的 fd00::/8 不相交——故 LAN 旁路用 fd00::/8 不会吃掉假 v6。
+ */
+export const FAKEIP_INET4_RANGE = '198.18.0.0/15';
+export const FAKEIP_INET6_RANGE = 'fc00::/18';

@@ -25,6 +25,8 @@ import {
   FAKEIP_FILTER_CAPTIVE_DOMAINS,
   FAKEIP_FILTER_NTP_SUFFIXES,
   FAKEIP_FILTER_NTP_STUN_KEYWORDS,
+  FAKEIP_INET4_RANGE,
+  FAKEIP_INET6_RANGE,
 } from '../../shared/fakeip-filter';
 
 /** 日志回调：注入 ProxyManager.logToManager（source 默认 'ProxyManager'）。 */
@@ -142,11 +144,12 @@ export function buildDnsConfig(
       // FakeIP 服务器：返回虚假 IP，由 sniff 识别真实域名
       tag: 'fakeip',
       type: 'fakeip',
-      inet4_range: '198.18.0.0/15',
+      inet4_range: FAKEIP_INET4_RANGE,
       // §B：关 IPv6(enableIPv6=false)时不给 FakeIP 分配 v6 段 → fakeip 对 AAAA 无段可分配即返空（真机实测，见
       // docs/design E-1：无需改规则 query_type）；配合下方 strategy=ipv4_only → 客户端拿不到任何 v6，杜绝
       // "双栈站 + 节点无 v6"时浏览器试 v6 失败致 ERR_CONNECTION_CLOSED。
-      ...(config.enableIPv6 ? { inet6_range: 'fc00::/18' } : {}),
+      // 注：v6 段 fc00::/18 在 ULA 保留半区，与 LAN 旁路 fd00::/8 不相交（system-proxy-bypass），故假 v6 不会被当私网吃成直连。
+      ...(config.enableIPv6 ? { inet6_range: FAKEIP_INET6_RANGE } : {}),
     });
   }
 
