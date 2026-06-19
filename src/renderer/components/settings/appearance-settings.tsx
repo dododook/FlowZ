@@ -37,7 +37,7 @@ export function AppearanceSettings() {
     i18n.changeLanguage(value);
     localStorage.setItem('app-language', value);
     api.config.setLanguage(value).catch(console.error);
-    toast.success(t('settings.appearance.languageUpdated'));
+    toast.success(t('settings.appearance.languageUpdated', { lng: value }));
   };
 
   return (
