@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
 import { isAccountBasedProtocol } from '../../../shared/endpoint-routes';
 import type { InvalidNodeInfo } from '../../../shared/types';
+import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { ServerActions } from './server-actions';
 import {
   getCountryCode,
@@ -122,9 +123,23 @@ export function ServerRow({
           {tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
             <Badge
               variant="outline"
-              className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+              role="button"
+              tabIndex={0}
+              title={t('servers.tsLoginAction', 'Log in')}
+              onClick={(e) => {
+                e.stopPropagation();
+                void runTailscaleLogin(server);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void runTailscaleLogin(server);
+                }
+              }}
+              className="text-[10px] h-4 px-1 flex-shrink-0 cursor-pointer bg-badge-amber/15 text-badge-amber border-badge-amber/30 hover:bg-badge-amber/25"
             >
-              {t('servers.tsNeedsLogin', 'Login needed')}
+              {t('servers.tsLoginAction', 'Log in')}
             </Badge>
           )}
           {meshInternetOff(server) && (

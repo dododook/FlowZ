@@ -7,6 +7,7 @@ import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type {
   UserConfig,
+  ServerConfig,
   ProxyStatus,
   TrafficStats,
   ConnectionsSnapshot,
@@ -141,6 +142,26 @@ export function registerProxyHandlers(
     IPC_CHANNELS.PROXY_RESTART,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
       await proxyManager.restart(config);
+    }
+  );
+
+  // Phase 2 按需登录：拉起瞬态登录核（无 TUN/clash_api/监听端口，零提权）抓登录 URL → 自动开浏览器 +
+  // 系统通知 + 推渲染端可关闭 toast → 轮询 state 成功后杀核。双写防护：endpoint 已在主核则不起。
+  // 入参传整个 server（渲染端从 store 持有，含 id/tailscaleSettings）→ 主进程无需再 loadConfig。
+  registerIpcHandler<
+    { server: ServerConfig },
+    { started: boolean; reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning' }
+  >(IPC_CHANNELS.TAILSCALE_LOGIN, async (_event: IpcMainInvokeEvent, args) => {
+    if (!args?.server) throw new Error('server required');
+    return proxyManager.startTailscaleLogin(args.server);
+  });
+
+  // 取消某节点在飞的瞬态登录核（用户手动取消）。无在飞核为 no-op。
+  registerIpcHandler<{ serverId: string }, void>(
+    IPC_CHANNELS.TAILSCALE_LOGIN_CANCEL,
+    async (_event: IpcMainInvokeEvent, args) => {
+      if (!args?.serverId) throw new Error('serverId required');
+      proxyManager.cancelTailscaleLogin(args.serverId);
     }
   );
 }

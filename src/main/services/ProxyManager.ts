@@ -59,6 +59,12 @@ import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { tailscaleStateExists, pollTailscaleLoginSuccess } from './tailscale-state';
 import {
+  buildTailscaleLoginConfig,
+  tailscaleEndpointInRunningCore,
+  runLoginPollLifecycle,
+  makeLoginPoll,
+} from './tailscale-login-core';
+import {
   getUserDataPath,
   getSingBoxConfigPath,
   getSingBoxLogPath,
@@ -734,6 +740,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * 停止代理
    */
   async stop(opts?: { quitting?: boolean }): Promise<void> {
+    // Phase 2：停止/退出语境一并杀掉残留的瞬态登录核（无孤儿进程）。放早退之前——列表直接点登录时
+    // 主核未运行，下方 `!singboxProcess && !singboxPid` 会早退，故在此先收瞬态核。
+    this.killAllTailscaleLoginCores();
     // 生命周期世代 +1：标记一次停止接管（退避中的 attemptAutoRestart 比对到变化即让位，M-2′/L-1′）。
     this.lifecycleGeneration++;
     // 取消未决的去抖重启（停止/退出优先于 trailing 重启，避免停了又被自动拉起）
@@ -4778,6 +4787,209 @@ exit 0
       .finally(() => {
         this.tailscaleAuthPolling.delete(serverId);
       });
+  }
+
+  // ==== Phase 2：按需瞬态登录核 ====
+  /**
+   * 在飞的瞬态登录核（serverId → 句柄）。每节点同时最多一个（去重）；app 退出/window 关闭须全清杀，
+   * 无孤儿进程。瞬态核无 TUN/无 clash_api/无监听端口，与主核并存无冲突（PoC 实测）。
+   */
+  private tailscaleLoginCores = new Map<
+    string,
+    { proc: ChildProcess; timeoutTimer: NodeJS.Timeout; cancelled: boolean }
+  >();
+
+  /**
+   * 按需登录：拉起登录专用 sing-box（无 inbound/clash_api/TUN，零提权，log.level:info）→ 读其 stdout
+   * 逐行抓登录 URL → ① shell.openExternal 自动开浏览器 ② 系统通知（点击再开一次）③ 推 AUTH_URL 给渲染端
+   * （可关闭 toast 记录）→ 轮询 state 目录成功 → 杀瞬态核 + 推 AUTH_OK。超时（~2min）/取消同样杀核。
+   *
+   * 双写防护：若该节点 endpoint 已在运行中的主核里（选中 OR 就绪），不起瞬态核——两个进程写同一
+   * state_directory 会冲突；此时节点要么已登录、要么主核已在出 URL（Phase 1）。
+   *
+   * @returns started=true 已起核（或已在飞）；started=false 时 reason 说明（alreadyLoggedIn / inMainCore）。
+   */
+  async startTailscaleLogin(
+    server: ServerConfig
+  ): Promise<{ started: boolean; reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning' }> {
+    if (!server || server.protocol?.toLowerCase() !== 'tailscale') {
+      throw new Error('startTailscaleLogin: 非 Tailscale 节点');
+    }
+    // 已登录（authKey 或 state 已落盘）→ 无需登录。
+    if (server.tailscaleSettings?.authKey?.trim() || tailscaleStateExists(server.id)) {
+      return { started: false, reason: 'alreadyLoggedIn' };
+    }
+    // 双写防护：endpoint 已在运行主核里 → 不起瞬态核（避免双写 state_directory 冲突）。
+    if (
+      tailscaleEndpointInRunningCore(
+        server.id,
+        this.getStatus().running,
+        this.currentConfig,
+        tailscaleStateExists(server.id)
+      )
+    ) {
+      return { started: false, reason: 'inMainCore' };
+    }
+    // 每节点单飞：已有在飞瞬态核则复用（不重复 spawn / 不重复开浏览器）。
+    if (this.tailscaleLoginCores.has(server.id)) {
+      return { started: false, reason: 'alreadyRunning' };
+    }
+
+    if (!require('fs').existsSync(this.singboxPath)) {
+      throw new Error(`找不到 sing-box 可执行文件: ${this.singboxPath}`);
+    }
+
+    const loginConfig = buildTailscaleLoginConfig(server);
+    const cfgPath = path.join(
+      getUserDataPath(),
+      `ts-login-${require('crypto').randomBytes(6).toString('hex')}.json`
+    );
+    require('fs').writeFileSync(cfgPath, JSON.stringify(loginConfig));
+
+    // 直接以 app 用户 spawn 非提权进程（绝不走 helper/TUN/提权）。用户态 tailscale endpoint 零提权可起。
+    const spawnEnv = { ...process.env };
+    if (!coreVersionAtLeast(this.coreVersion, 1, 13)) {
+      spawnEnv['ENABLE_DEPRECATED_DESTINATION_OVERRIDE_FIELDS'] = 'true';
+    }
+    const proc = spawn(this.singboxPath, ['run', '-c', cfgPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: spawnEnv,
+      windowsHide: true,
+    });
+
+    const cleanupCfg = (): void => {
+      try {
+        require('fs').unlinkSync(cfgPath);
+      } catch {
+        /* 已删/无权限：忽略 */
+      }
+    };
+
+    // ~2min 不点 URL → 超时杀核（沿用 Phase 1 轮询上限语义）。
+    const timeoutTimer = setTimeout(
+      () => {
+        this.logToManager('info', `Tailscale 节点「${server.name}」登录超时，已停止登录进程`, 'sing-box');
+        this.killTailscaleLogin(server.id);
+      },
+      120000
+    );
+
+    const handle = { proc, timeoutTimer, cancelled: false };
+    this.tailscaleLoginCores.set(server.id, handle);
+
+    // 逐行读 stdout/stderr 抓登录 URL（瞬态核自身 stdout 直接打印 Waiting for authentication 行，PoC 实测）。
+    let urlOpened = false;
+    const onData = (data: Buffer): void => {
+      const text = this.removeAnsiCodes(data.toString());
+      for (const line of text.split('\n')) {
+        if (!line.trim()) continue;
+        const hit = parseTailscaleAuthLine(line);
+        if (!hit || urlOpened) continue;
+        urlOpened = true;
+        this.handleTailscaleLoginUrl(server, hit.url);
+      }
+    };
+    proc.stdout?.on('data', onData);
+    proc.stderr?.on('data', onData);
+
+    proc.on('error', (e) => {
+      this.logToManager('error', `Tailscale 登录进程启动失败: ${e.message}`, 'sing-box');
+      this.killTailscaleLogin(server.id);
+    });
+    proc.on('exit', () => {
+      cleanupCfg();
+      clearTimeout(timeoutTimer);
+      this.tailscaleLoginCores.delete(server.id);
+    });
+
+    this.logToManager('info', `Tailscale 节点「${server.name}」开始登录（已启动登录进程）`, 'sing-box');
+
+    // 轮询 state 目录成功（log-level 无关）→ 成功后发 AUTH_OK，无论成功/超时/取消都收尾杀核。取消判据 =
+    // 该瞬态核已被杀（handle.cancelled）：不能用主核 getStatus().running（主核可能根本没运行，列表直接点登录场景）。
+    // 生命周期编排（poll/onSuccess/kill）抽到 tailscale-login-core.runLoginPollLifecycle（注入式、单测覆盖三路径）。
+    void runLoginPollLifecycle({
+      poll: makeLoginPoll(
+        () => tailscaleStateExists(server.id),
+        () => handle.cancelled
+      ),
+      onSuccess: () => {
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, {
+          serverId: server.id,
+          nodeName: server.name,
+        });
+        this.logToManager('info', `Tailscale 节点「${server.name}」登录成功`, 'sing-box');
+      },
+      kill: () => this.killTailscaleLogin(server.id),
+    });
+
+    return { started: true };
+  }
+
+  /** 抓到瞬态登录核的 URL：自动开浏览器 + 系统通知（点击再开）+ 推渲染端可关闭 toast（Phase 1 提示条复用）。 */
+  private handleTailscaleLoginUrl(server: ServerConfig, url: string): void {
+    // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
+    let safeUrl: string | null = null;
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'https:' || u.protocol === 'http:') safeUrl = u.href;
+    } catch {
+      safeUrl = null;
+    }
+    if (!safeUrl) {
+      this.logToManager('warn', `Tailscale 登录 URL 非法已忽略: ${url}`, 'sing-box');
+      return;
+    }
+    // ① 自动开浏览器
+    void shell.openExternal(safeUrl).catch(() => {});
+    // ② 系统通知（无窗口依赖，托盘态/窗口关闭也送达）；点击再开一次浏览器。
+    try {
+      if (Notification.isSupported()) {
+        const n = new Notification({
+          title: `Tailscale: ${server.name}`,
+          body: '在浏览器中完成登录授权以加入网络',
+        });
+        n.on('click', () => void shell.openExternal(safeUrl!).catch(() => {}));
+        n.show();
+      }
+    } catch {
+      /* 通知失败不阻断登录流程 */
+    }
+    // ③ 推渲染端（提示条记录用，降级为可关闭普通 toast，非 Infinity——浏览器已自动打开）。
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
+      nodeName: server.name,
+      url: safeUrl,
+      transient: true,
+    });
+    this.logToManager('info', `Tailscale 节点「${server.name}」已打开浏览器登录页`, 'sing-box');
+  }
+
+  /** 取消某节点在飞的瞬态登录核（用户手动取消，IPC 入口）。无在飞核为 no-op。 */
+  cancelTailscaleLogin(serverId: string): void {
+    if (this.tailscaleLoginCores.has(serverId)) {
+      this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
+    }
+    this.killTailscaleLogin(serverId);
+  }
+
+  /** 杀某节点瞬态登录核（成功/超时/取消/出错统一收口）：置 cancelled 中止轮询 + kill 进程 + 清 timer/Map。幂等。 */
+  private killTailscaleLogin(serverId: string): void {
+    const handle = this.tailscaleLoginCores.get(serverId);
+    if (!handle) return;
+    handle.cancelled = true;
+    clearTimeout(handle.timeoutTimer);
+    try {
+      handle.proc.kill();
+    } catch {
+      /* 已退出：忽略 */
+    }
+    // Map 项由 proc 'exit' 处理器删除（清临时 config）；此处不删，避免 exit 前后竞态漏清 cfg。
+  }
+
+  /** app 退出/窗口关闭：杀掉全部残留瞬态登录核（无孤儿进程）。由 stop/teardownForQuit 调用。 */
+  private killAllTailscaleLoginCores(): void {
+    for (const serverId of Array.from(this.tailscaleLoginCores.keys())) {
+      this.killTailscaleLogin(serverId);
+    }
   }
 
   /**

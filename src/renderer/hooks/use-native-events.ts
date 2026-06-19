@@ -37,7 +37,7 @@ interface NativeEventData {
   proxyModeSwitchFailed: { success: boolean; error: string };
   autoNodeSwitched: { reason: string; newServerName: string; latency: number };
   invalidNodes: InvalidNodeInfo[];
-  tailscaleAuth: { nodeName: string; url: string };
+  tailscaleAuth: { nodeName: string; url: string; transient?: boolean };
   tailscaleAuthOk: { serverId: string; nodeName: string };
   systemProxyResidual: { proxy: string };
 }
@@ -189,9 +189,11 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
 const tsAuthToastId = (nodeName: string): string => `ts-auth-${nodeName}`;
 
 function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
-  // Tailscale 无 auth_key 节点：核给出交互登录 URL → 持久 toast + 「打开登录页」action（openExternal）。
-  // duration:Infinity——登录需用户去浏览器操作，不能自动消失。固定 id：登录成功后由 handleTailscaleAuthOk dismiss。
+  // Tailscale 无 auth_key 节点：核给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
   // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
+  // transient（Phase 2 按需登录核）：主进程已自动开浏览器 + 发系统通知 → 降级为可关闭普通 toast（短时长、
+  //   文案「正在打开浏览器完成登录」），固定 id 仍便于登录成功后 dismiss。
+  // 非 transient（Phase 1 主核路径）：duration:Infinity——登录需用户去浏览器操作、未自动开，不能自动消失。
   let safeUrl: string | null = null;
   try {
     const u = new URL(data.url);
@@ -199,18 +201,28 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   } catch {
     safeUrl = null;
   }
+  const action = safeUrl
+    ? {
+        label: i18n.t('servers.tsOpenLogin'),
+        onClick: () => {
+          void openExternal(safeUrl);
+        },
+      }
+    : undefined;
+  if (data.transient) {
+    toast.info(i18n.t('servers.tsLoginOpening', { name: data.nodeName }), {
+      id: tsAuthToastId(data.nodeName),
+      description: i18n.t('servers.tsLoginOpeningDesc'),
+      duration: 12000,
+      action,
+    });
+    return;
+  }
   toast.info(i18n.t('servers.tsLoginNeeded', { name: data.nodeName }), {
     id: tsAuthToastId(data.nodeName),
     description: i18n.t('servers.tsLoginNeededDesc'),
     duration: Infinity,
-    action: safeUrl
-      ? {
-          label: i18n.t('servers.tsOpenLogin'),
-          onClick: () => {
-            void openExternal(safeUrl);
-          },
-        }
-      : undefined,
+    action,
   });
 }
 

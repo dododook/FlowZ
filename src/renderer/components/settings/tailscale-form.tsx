@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { FormButtons } from './shared/form-buttons';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { splitTextList } from './shared/parse-list';
@@ -109,6 +111,8 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
 
   const allowInternet = form.watch('allowInternet');
   const reverseMesh = form.watch('reverseMesh');
+  // 立即登录按钮（Phase 2）门控：填了 authKey → 走预授权、不需交互登录 → 隐藏按钮。
+  const authKeyValue = form.watch('authKey');
 
   return (
     <Form {...form}>
@@ -142,6 +146,29 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 )}
               />
             </FieldSpan>
+            {/* 立即登录（Phase 2）：仅编辑态（已保存、有 server.id）且未填 authKey（走交互登录）时点亮。
+                点击拉起瞬态登录核（强制 info 级、零提权），主进程自动开浏览器 + 系统通知完成认证。
+                新建态（无 id）无法登录 → 不显示，引导先保存。 */}
+            {serverConfig?.id && !authKeyValue?.trim() && (
+              <FieldSpan>
+                <div className="flex flex-col gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    onClick={() => void runTailscaleLogin(serverConfig)}
+                  >
+                    {t('servers.tsLoginNow', 'Log in now')}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'servers.tsLoginNowDesc',
+                      'Open the browser now to complete Tailscale login (no auth key needed).'
+                    )}
+                  </p>
+                </div>
+              </FieldSpan>
+            )}
             <FieldSpan>
               <FormField
                 control={form.control}
