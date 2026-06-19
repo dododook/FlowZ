@@ -1,6 +1,6 @@
 {
   "name": "flowz",
-  "version": "4.0.4",
+  "version": "4.1.0",
   "description": "FlowZ - 简洁现代的跨平台代理客户端",
   "main": "dist/main/main/index.js",
   "scripts": {
