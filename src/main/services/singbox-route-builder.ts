@@ -492,9 +492,11 @@ export function buildRouteConfig(
   //     **独立于 bypass-LAN 开关、独立于全局选中**。单一真值：节点路由由其 allowedIPs(WG) / routes+tailnet(TS)
   //     决定（endpointForcedRouteCidrs）；指向节点自身 tag（非 selector）→ 该段恒走其 mesh 节点、与全局选中无关。
   //     **现位于用户自定义规则/应用分流之后**：用户可写规则覆盖 mesh 段（选节点更灵活），重叠时由调用方记 warn 提醒。
-  //     仅 userspace（system 由内核接口路由——Phase 2）；仅非 direct。按 config.servers 顺序=隐式优先级；
-  //     被跳过节点的死引用由 fixRouteDeadReferences 兜底改写 selector。
-  if (proxyMode !== 'direct') {
+  //     **D-direct：direct 模式也生成**（直连上网 + 仍可达对端内网段，符合「无论代理模式都能访问已配置内网段」）。
+  //     userspace 与 system 同此 force-route：system:true 的 egress 仍经 route.rules 导到 endpoint tag（其 OS 接口
+  //     路由仅服务 ingress/反向可达，见设计 §11.8）。按 config.servers 顺序=隐式优先级；死引用由 fixRouteDeadReferences
+  //     兜底改写 selector。裸块 `{}` 保 claimedCidrs/emittedEndpointTags 的块作用域。
+  {
     // 仅对【本轮实际发射】的 endpoint 节点强制路由：未就绪/被跳过的 Tailscale 节点不进 pendingEndpoints，
     // 其 tag 若仍 force-route 会被末尾 fixRouteDeadReferences 改写成 selector → 该段误流向全局选中节点。
     // emitted 集合天然只含 endpoint 协议（仅 WG/TS 进 pendingEndpoints），故无需再按协议预判。

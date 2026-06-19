@@ -11,7 +11,8 @@ import { resourceManager } from './ResourceManager';
 import { coreVersionAtLeast } from '../../shared/version';
 import {
   isEndpointProtocol,
-  meshAllowsInternet,
+  meshNodeCarriesFullTunnel,
+  meshUsesSystemInterface,
   wireguardPeerAllowedIps,
   isMeshNodeUnroutable,
 } from '../../shared/endpoint-routes';
@@ -51,18 +52,21 @@ export function buildWireGuardEndpoint(server: ServerConfig, tag: string): SingB
   if (!s || !s.privateKey || !s.peerPublicKey || !s.localAddress?.length) {
     throw new Error('WireGuard 配置缺少 privateKey/peerPublicKey/localAddress');
   }
-  // Layer A：allowInternet=on→specific ∪ {0/0,::/0}；off→specific；off+无具体段→null。
+  // Layer A：allowInternet=on→specific ∪ {0/0,::/0}；off→specific；off/system+无具体段→null。
   // null 表示空 allowed_ips（FATAL），调用方应已用 isMeshNodeUnroutable 预拦不发射；此处兜底抛错（防直调，如测速）。
   const allowedIps = wireguardPeerAllowedIps(server);
   if (allowedIps === null) {
     throw new Error(
-      'WireGuard 节点已关闭外网访问且无可路由网段（空 allowed_ips 会致 sing-box FATAL）'
+      'WireGuard 节点无可路由网段（关外网 或 system 内核接口 且无具体段）：空 allowed_ips 会致 sing-box FATAL'
     );
   }
   return {
     type: 'wireguard',
     tag,
-    system: false,
+    // Phase 2：reverseMesh=true → system:true（真内核 WG 接口，反向可达）；缺省 false=userspace gVisor。
+    // 此时 allowed_ips 已由 wireguardPeerAllowedIps 收为 specific-only（结论A）。system:true 需 helper 提权，
+    // 由连接闸门/校验确保仅 helper 活跃时该节点 reverseMesh 才成立（见 server-completeness）。
+    system: meshUsesSystemInterface(server),
     mtu: s.mtu && s.mtu > 0 ? s.mtu : 1408,
     address: s.localAddress,
     private_key: s.privateKey,
@@ -544,9 +548,10 @@ function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpo
   if (controlUrl) ep.control_url = controlUrl;
   const hostname = ts.hostname?.trim();
   if (hostname) ep.hostname = hostname;
-  // allowInternet=off（关外网）→ 即便填了 exitNode 也不下发（exit_node=全隧道，等价 WG 的 allowed_ips 含 0/0）；
-  // 节点仍承载 tailnet/routes 段（force-route）。on（缺省 true）+ 填了 exitNode 才下发全隧道出口。
-  const exitNode = meshAllowsInternet(server) ? ts.exitNode?.trim() : undefined;
+  // exit_node（全隧道，等价 WG 的 allowed_ips 含 0/0）仅在节点「承载全隧道」时下发：关外网→不下发；
+  // **Phase 2 system:true→也不下发**（结论A：内核接口恒 specific-only、永不当全局出口）。节点仍承载
+  // tailnet/routes 段（force-route）。meshNodeCarriesFullTunnel = 允许外网 且非 system。
+  const exitNode = meshNodeCarriesFullTunnel(server) ? ts.exitNode?.trim() : undefined;
   if (exitNode) {
     ep.exit_node = exitNode;
     if (ts.exitNodeAllowLanAccess) ep.exit_node_allow_lan_access = true;
@@ -555,7 +560,9 @@ function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpo
   if (ts.ephemeral) ep.ephemeral = true;
   const adv = (ts.advertiseRoutes || []).map((c) => c.trim()).filter(Boolean);
   if (adv.length) ep.advertise_routes = adv;
-  // Phase 2：ts.reverseMesh → ep.system_interface=true（+ 选中节点门控 + 强制 helper）。Phase 1 用户态、省略。
+  // Phase 2：reverseMesh=true → system_interface=true（真 TUN，反向可达/作 subnet router）；需 helper 提权，
+  // 由连接闸门/校验确保仅 helper 活跃时成立。缺省省略=tsnet 用户态、零提权。
+  if (meshUsesSystemInterface(server)) ep.system_interface = true;
   return ep;
 }
 
@@ -674,11 +681,13 @@ export function buildOutbounds(
         try {
           pendingEndpoints.push(buildWireGuardEndpoint(server, tag));
           nodeTags.push(tag);
-          // 关外网但有具体段：节点可用、仅承载列表网段（不当默认出网）。warn 进诊断报告，便于排查「选它却不出网」。
-          if (!meshAllowsInternet(server)) {
+          // 不承载全隧道但有具体段（关外网 或 Phase2 system 内核接口）：节点可用、仅承载列表网段（不当默认
+          // 出网）。warn 进诊断报告，便于排查「选它却不出网」。
+          if (!meshNodeCarriesFullTunnel(server)) {
+            const why = meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
             deps.log(
               'warn',
-              `组网节点「${server.name}」已关闭外网访问：仅路由其指定网段，不承载默认出网流量`
+              `组网节点「${server.name}」${why}：仅路由其指定网段，不承载默认出网流量`
             );
           }
         } catch (e: any) {
@@ -701,11 +710,13 @@ export function buildOutbounds(
         try {
           pendingEndpoints.push(buildTailscaleEndpoint(server, tag));
           nodeTags.push(tag);
-          // 关外网但填了 exitNode：exit_node 已被 buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
-          if (!meshAllowsInternet(server) && ts?.exitNode?.trim()) {
+          // 节点不承载全隧道（关外网 或 Phase2 system 内核接口）但填了 exitNode：exit_node 已被
+          // buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
+          if (!meshNodeCarriesFullTunnel(server) && ts?.exitNode?.trim()) {
+            const why = meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
             deps.log(
               'warn',
-              `组网节点「${server.name}」已关闭外网访问：已忽略 exit_node，仅访问 tailnet / 子网路由`
+              `组网节点「${server.name}」${why}：已忽略 exit_node，仅访问 tailnet / 子网路由`
             );
           }
         } catch (e: any) {

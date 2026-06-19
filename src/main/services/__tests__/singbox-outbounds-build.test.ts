@@ -201,6 +201,69 @@ describe('buildOutbounds — endpoint + 门控', () => {
     expect(ep!.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
   });
 
+  it('Phase2 WG reverseMesh=true → endpoint.system=true + allowed_ips 仅具体段', () => {
+    const wgSys = {
+      id: 'w1',
+      name: 'WG-sys',
+      protocol: 'wireguard',
+      address: 'wg.example.com',
+      port: 51820,
+      wireguardSettings: {
+        privateKey: 'pk',
+        peerPublicKey: 'pub',
+        localAddress: ['10.0.0.2/32'],
+        allowedIPs: ['10.8.0.0/24'],
+        reverseMesh: true,
+      },
+    } as unknown as ServerConfig;
+    const r = buildOutbounds(wgSys, cfg([wgSys]), idMap([wgSys]), deps());
+    const ep = r.pendingEndpoints.find((e) => e.tag === 'WG-sys')!;
+    expect(ep.system).toBe(true);
+    expect(ep.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
+  });
+
+  it('Phase2 Tailscale reverseMesh=true → endpoint.system_interface=true + exit_node 丢弃（结论A）', () => {
+    const tsSys = {
+      id: 't1',
+      name: 'TS-sys',
+      protocol: 'tailscale',
+      tailscaleSettings: {
+        authKey: 'tskey-abc',
+        exitNode: 'exit-node-1',
+        routes: ['192.168.9.0/24'],
+        reverseMesh: true,
+      },
+    } as unknown as ServerConfig;
+    const r = buildOutbounds(
+      tsSys,
+      cfg([tsSys], { selectedServerId: 't1' }),
+      idMap([tsSys]),
+      deps()
+    );
+    const ep = r.pendingEndpoints.find((e) => e.tag === 'TS-sys')!;
+    expect(ep.type).toBe('tailscale');
+    expect(ep.system_interface).toBe(true);
+    expect(ep.exit_node).toBeUndefined();
+  });
+
+  it('Phase2 Tailscale 非 system(缺省) + on + exitNode → 下发 exit_node、无 system_interface', () => {
+    const tsNorm = {
+      id: 't1',
+      name: 'TS',
+      protocol: 'tailscale',
+      tailscaleSettings: { authKey: 'tskey-abc', exitNode: 'exit-node-1' },
+    } as unknown as ServerConfig;
+    const r = buildOutbounds(
+      tsNorm,
+      cfg([tsNorm], { selectedServerId: 't1' }),
+      idMap([tsNorm]),
+      deps()
+    );
+    const ep = r.pendingEndpoints.find((e) => e.tag === 'TS')!;
+    expect(ep.system_interface).toBeUndefined();
+    expect(ep.exit_node).toBe('exit-node-1');
+  });
+
   it('gateInvalidNodes 命中 → 跳过该节点出站', () => {
     const servers = [vless('s1', '香港'), vless('s2', '日本')];
     const gate = new Map<string, InvalidNodeInfo>([

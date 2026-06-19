@@ -108,6 +108,39 @@ describe('buildWireGuardEndpoint', () => {
       )
     ).toThrow(/WireGuard/);
   });
+
+  it('Phase2 reverseMesh=true → system:true + allowed_ips 仅具体段（结论A：即便 allowInternet 缺省 on 也不注入 0/0）', () => {
+    const ep = buildWireGuardEndpoint(
+      wgServer({
+        wireguardSettings: {
+          privateKey: 'pk',
+          peerPublicKey: 'pub',
+          localAddress: ['10.0.0.3/32'],
+          allowedIPs: ['10.8.0.0/24'],
+          reverseMesh: true,
+        },
+      } as unknown as Partial<ServerConfig>),
+      'WGS'
+    );
+    expect(ep.system).toBe(true);
+    expect(ep.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
+  });
+
+  it('Phase2 reverseMesh=true + 无具体段 → 抛错（system specific-only 为空=FATAL）', () => {
+    expect(() =>
+      buildWireGuardEndpoint(
+        wgServer({
+          wireguardSettings: {
+            privateKey: 'pk',
+            peerPublicKey: 'pub',
+            localAddress: ['10.0.0.3/32'],
+            reverseMesh: true,
+          },
+        } as unknown as Partial<ServerConfig>),
+        'WGS2'
+      )
+    ).toThrow(/allowed/i);
+  });
 });
 
 describe('isNodeUsable', () => {
