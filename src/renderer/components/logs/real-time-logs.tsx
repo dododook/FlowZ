@@ -30,13 +30,11 @@ export function RealTimeLogs({
   const { t, i18n } = useTranslation();
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isAutoScroll, setIsAutoScroll] = useState(true); // 默认自动滚动：打开日志页即跟随最新（上滚脱离、回底吸附逻辑不变）
-  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  // 吸附底部（默认开）：进页即定位到底并跟随最新；用户上滚脱离底部即停跟随，滚回底部即恢复。
+  const [isAutoScroll, setIsAutoScroll] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  // 防自指：effect ④ 程序化滚到底会触发 scroll 事件，若被 handleScroll 当成"用户滚动"会反推 isAutoScroll
-  // → 形成反馈环（高日志量下开关失灵、关不掉一直滚）。置位后忽略该次（及本帧内）滚动事件，只有真·用户滚动才更新状态。
-  const suppressScrollHandlerRef = useRef(false);
+  // 进页「定位到底」只做一次（等首批历史日志渲染 + radix viewport 布局就绪）。
+  const didInitScrollRef = useRef(false);
   const nextIdRef = useRef(0);
   const maxBufferRef = useRef(maxBuffer);
   const connectionStatus = useAppStore((state) => state.connectionStatus);
@@ -104,59 +102,42 @@ export function RealTimeLogs({
     return element.scrollTop + element.clientHeight >= element.scrollHeight - threshold;
   }, []);
 
-  // 监听滚动事件
+  // 滚到底部（程序化）。
+  const scrollToBottom = useCallback(() => {
+    const el = getScrollElement();
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [getScrollElement]);
+
+  // 监听用户滚动：直接据「是否贴底」更新吸附状态。程序化滚到底 → 贴底=true → setState 幂等、无反馈环；
+  // 用户上滚脱离 → false → 停止跟随；滚回底部 → true → 恢复。较原 suppress+debounce 更稳：高日志量下不再
+  // 误吞用户滚动、关不掉一直滚（修「上滚到顶仍自动滚」）。
   useEffect(() => {
-    const scrollElement = getScrollElement();
-    if (!scrollElement) return;
-
-    const handleScroll = () => {
-      // 防自指：本次 scroll 由 effect ④ 程序化滚到底触发 → 消费并忽略，不更新 isAutoScroll/isUserScrolling（断反馈环）。
-      if (suppressScrollHandlerRef.current) {
-        suppressScrollHandlerRef.current = false;
-        return;
-      }
-      // 标记用户正在滚动
-      setIsUserScrolling(true);
-
-      // 清除之前的超时
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-
-      // 设置超时，滚动停止后更新状态
-      userScrollTimeoutRef.current = setTimeout(() => {
-        setIsUserScrolling(false);
-        // 检查是否滚动到底部
-        const atBottom = checkIsAtBottom(scrollElement);
-        setIsAutoScroll(atBottom);
-      }, 150);
-    };
-
-    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      scrollElement.removeEventListener('scroll', handleScroll);
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-    };
+    const el = getScrollElement();
+    if (!el) return;
+    const onScroll = () => setIsAutoScroll(checkIsAtBottom(el));
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
   }, [getScrollElement, checkIsAtBottom]);
 
-  // 只有在自动滚动模式且用户没有主动滚动时才自动滚动到底部
+  // 新日志到达：吸附底部时跟随滚到底；脱离底部则保持不动。
   useEffect(() => {
-    if (!isAutoScroll || isUserScrolling) return;
-    const scrollElement = getScrollElement();
-    if (!scrollElement) return;
-    // 置位防自指标志 → 这次程序化滚动产生的 scroll 事件被 handleScroll 消费忽略，不反推 isAutoScroll（断反馈环）。
-    suppressScrollHandlerRef.current = true;
-    scrollElement.scrollTop = scrollElement.scrollHeight;
-    // 兜底：若已在底部、scrollTop 无位移 → 不触发 scroll 事件 → 下一帧清标志，避免误吞下次真·用户滚动。
-    // 与本组件惯例一致：捕获 rafId 并在 cleanup 取消（高日志量下避免堆积未触发的帧回调）。
-    const rafId = requestAnimationFrame(() => {
-      suppressScrollHandlerRef.current = false;
+    if (isAutoScroll) scrollToBottom();
+  }, [logs, isAutoScroll, scrollToBottom]);
+
+  // 进页定位到底（修「点进实时日志默认不在底部」）：等首批日志渲染 + radix viewport 布局完成（双 rAF）后滚一次。
+  // 条件渲染（App.tsx currentView==='logs' && …）下每次进页都重挂载 → 每次重新定位到底。
+  useEffect(() => {
+    if (didInitScrollRef.current || logs.length === 0) return;
+    didInitScrollRef.current = true;
+    let r2 = 0;
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(scrollToBottom);
     });
-    return () => cancelAnimationFrame(rafId);
-  }, [logs, isAutoScroll, isUserScrolling, getScrollElement]);
+    return () => {
+      cancelAnimationFrame(r1);
+      cancelAnimationFrame(r2);
+    };
+  }, [logs, scrollToBottom]);
 
   const handleClearLogs = async () => {
     try {
@@ -261,10 +242,7 @@ export function RealTimeLogs({
               size="sm"
               onClick={() => {
                 setIsAutoScroll(true);
-                const scrollElement = getScrollElement();
-                if (scrollElement) {
-                  scrollElement.scrollTop = scrollElement.scrollHeight;
-                }
+                scrollToBottom();
               }}
               className="text-xs h-7"
             >

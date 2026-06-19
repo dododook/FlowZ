@@ -65,6 +65,8 @@ export interface NodeResolveOptions {
   upstreams?: readonly string[];
   /** 域名级并发上限（默认 16）。整批仍受 totalBudgetMs 硬约束，池只平滑并发、不改预算上限。 */
   maxConcurrency?: number;
+  /** 日志回调：debug 级逐域名打解析路径（域名→IP/经哪个上游/失败回退/缓存命中），供 #57 真机排查。 */
+  log?: (level: 'debug' | 'info' | 'warn', message: string) => void;
 }
 
 /** 模块级 TTL 缓存单例：跨 start/restart 持久，重启廉价（仅重解析过期项）。 */
@@ -140,7 +142,7 @@ async function attemptDoh(
   doh: NonNullable<NodeResolveOptions['doh']>,
   perTimeoutMs: number,
   budgetSignal: AbortSignal
-): Promise<string> {
+): Promise<{ ip: string; upstream: string }> {
   const ctrl = new AbortController();
   const onBudget = () => ctrl.abort();
   budgetSignal.addEventListener('abort', onBudget, { once: true });
@@ -148,8 +150,8 @@ async function attemptDoh(
   try {
     const ips = await doh(upstream, domain, ctrl.signal);
     const ip = ips.find((x) => isIpv4(x));
-    if (!ip) throw new Error('no A record'); // reject → Promise.any 转向其它上游
-    return ip;
+    if (!ip) throw new Error('no A record'); // reject → firstResolved 转向其它上游
+    return { ip, upstream }; // 带上游，供调用方 debug 日志标注解析来源
   } finally {
     clearTimeout(timer);
     budgetSignal.removeEventListener('abort', onBudget);
@@ -161,7 +163,7 @@ async function raceDoh(
   domain: string,
   opts: NodeResolveOptions,
   budgetSignal: AbortSignal
-): Promise<string | null> {
+): Promise<{ ip: string; upstream: string } | null> {
   const upstreams = opts.upstreams ?? DOH_UPSTREAMS;
   const doh = opts.doh ?? defaultDoh;
   const perTimeoutMs = opts.perUpstreamTimeoutMs ?? DEFAULT_PER_UPSTREAM_TIMEOUT_MS;
@@ -174,19 +176,26 @@ async function raceDoh(
   }
 }
 
+/** 单域名解析结果：IP + 来源（DoH 上游 URL 或「系统 DNS」），供调用方 debug 日志标注。 */
+interface ResolveHit {
+  ip: string;
+  via: string;
+}
+
 /** 单域名：Tier1 DoH race → 失败兜 Tier2 系统 DNS（不抢跑）→ 全失败 null。 */
 async function resolveOne(
   domain: string,
   opts: NodeResolveOptions,
   budgetSignal: AbortSignal
-): Promise<string | null> {
+): Promise<ResolveHit | null> {
   const fromDoh = await raceDoh(domain, opts, budgetSignal);
-  if (fromDoh) return fromDoh;
+  if (fromDoh) return { ip: fromDoh.ip, via: fromDoh.upstream };
   if (budgetSignal.aborted) return null; // 预算耗尽：不再发起系统解析
   const systemResolve4 = opts.systemResolve4 ?? defaultSystemResolve4;
   try {
     const ips = await abortable(systemResolve4(domain), budgetSignal);
-    return ips.find((x) => isIpv4(x)) ?? null;
+    const ip = ips.find((x) => isIpv4(x));
+    return ip ? { ip, via: '系统 DNS' } : null;
   } catch {
     return null;
   }
@@ -218,6 +227,7 @@ export async function resolveNodeDomains(
     const cached = cache.get(d);
     if (cached && cached.expireAt > tNow) {
       results.set(d, cached.ip);
+      opts.log?.('debug', `节点域名预解析 ${d} → ${cached.ip}（缓存）`);
     } else {
       if (cached) cache.delete(d); // 顺手淘汰过期项，防模块级缓存随会话无界增长
       toResolve.push(d);
@@ -228,10 +238,13 @@ export async function resolveNodeDomains(
   const budgetCtrl = new AbortController();
   const budgetTimer = setTimeout(() => budgetCtrl.abort(), totalBudgetMs);
   const resolveInto = async (d: string) => {
-    const ip = await resolveOne(d, opts, budgetCtrl.signal);
-    if (ip) {
-      results.set(d, ip);
-      cache.set(d, { ip, expireAt: now() + ttlMs });
+    const hit = await resolveOne(d, opts, budgetCtrl.signal);
+    if (hit) {
+      results.set(d, hit.ip);
+      cache.set(d, { ip: hit.ip, expireAt: now() + ttlMs });
+      opts.log?.('debug', `节点域名预解析 ${d} → ${hit.ip}（${hit.via}）`);
+    } else {
+      opts.log?.('debug', `节点域名预解析失败，回退域名：${d}`);
     }
   };
   try {

@@ -27,7 +27,7 @@ import {
   AllowInsecureField,
   AlpnField,
 } from './shared/tls-fields';
-import { WsPathField, WsHostField } from './shared/transport-fields';
+import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { FormButtons } from './shared/form-buttons';
 import {
@@ -38,6 +38,8 @@ import {
   readEchDefault,
   readMultiplexDefaults,
   buildMultiplexSettings,
+  readTransportDefaults,
+  buildTransportSettings,
 } from './shared/field-schemas';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -47,7 +49,7 @@ const createTrojanSchema = (t: any) =>
     address: z.string().min(1, t('servers.addressRequired')),
     port: z.number().min(1).max(65535),
     password: z.string().min(1, t('servers.passwordRequired')),
-    network: z.enum(['tcp', 'ws', 'h2', 'httpupgrade']),
+    network: z.enum(['tcp', 'ws', 'grpc', 'http', 'httpupgrade']),
     security: z.enum(['none', 'tls']),
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
@@ -55,6 +57,7 @@ const createTrojanSchema = (t: any) =>
     alpn: z.string().optional(),
     wsPath: z.string().optional(),
     wsHost: z.string().optional(),
+    grpcServiceName: z.string().optional(),
     ...echSchemaShape,
     ...multiplexSchemaShape,
   });
@@ -82,8 +85,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
       tlsAllowInsecure: false,
       tlsFingerprint: 'none',
       alpn: '',
-      wsPath: '',
-      wsHost: '',
+      ...readTransportDefaults(),
       ...echDefaults,
       ...multiplexDefaults,
     },
@@ -92,11 +94,14 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   useEffect(() => {
     if (serverConfig && serverConfig.protocol?.toLowerCase() === 'trojan') {
       // 标准化 network 和 security 值（转为全小写以匹配 schema）
-      const normalizeNetwork = (n: string | undefined): 'tcp' | 'ws' | 'h2' | 'httpupgrade' => {
+      const normalizeNetwork = (
+        n: string | undefined
+      ): 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade' => {
         const lower = (n || 'tcp').toLowerCase();
         if (lower === 'ws' || lower === 'websocket') return 'ws';
         if (lower === 'httpupgrade') return 'httpupgrade';
-        if (lower === 'h2' || lower === 'http2') return 'h2';
+        if (lower === 'grpc') return 'grpc';
+        if (lower === 'h2' || lower === 'http' || lower === 'http2') return 'http';
         return 'tcp';
       };
       const normalizeSecurity = (s: string | undefined): 'none' | 'tls' => {
@@ -114,8 +119,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'none',
         alpn: serverConfig.tlsSettings?.alpn?.join(',') || '',
-        wsPath: serverConfig.wsSettings?.path || '',
-        wsHost: serverConfig.wsSettings?.headers?.['Host'] || '',
+        ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
       };
@@ -124,12 +128,13 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   }, [serverConfig, form]);
 
   const handleSubmit = async (values: TrojanFormValues) => {
+    const network = values.network;
     const config = {
       protocol: 'trojan',
       address: values.address,
       port: values.port,
       password: values.password,
-      network: values.network,
+      network,
       security: values.security,
       tlsSettings:
         values.security === 'tls'
@@ -142,13 +147,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
               echConfig: values.echConfig?.trim() || undefined,
             }
           : null,
-      wsSettings:
-        values.network === 'ws' || values.network === 'httpupgrade'
-          ? {
-              path: values.wsPath || '/',
-              headers: values.wsHost ? { Host: values.wsHost } : undefined,
-            }
-          : null,
+      ...buildTransportSettings(network, values),
       multiplexSettings: buildMultiplexSettings(values),
     };
 
@@ -156,8 +155,10 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   };
 
   const isTlsEnabled = form.watch('security') === 'tls';
-  const isWebSocketEnabled =
-    form.watch('network') === 'ws' || form.watch('network') === 'httpupgrade';
+  const watchedNetwork = form.watch('network');
+  const showPathHostFields =
+    watchedNetwork === 'ws' || watchedNetwork === 'httpupgrade' || watchedNetwork === 'http';
+  const isGrpcEnabled = watchedNetwork === 'grpc';
 
   return (
     <Form {...form}>
@@ -201,8 +202,9 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
                     <SelectContent>
                       <SelectItem value="tcp">TCP</SelectItem>
                       <SelectItem value="ws">WebSocket</SelectItem>
+                      <SelectItem value="grpc">gRPC</SelectItem>
                       <SelectItem value="httpupgrade">HTTPUpgrade</SelectItem>
-                      <SelectItem value="h2">HTTP/2</SelectItem>
+                      <SelectItem value="http">HTTP/2</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription>{t('servers.transportDesc')}</FormDescription>
@@ -250,10 +252,16 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
             </FieldGrid>
           )}
 
-          {isWebSocketEnabled && (
+          {showPathHostFields && (
             <FieldGrid cols={2}>
               <WsPathField control={form.control} t={t} />
               <WsHostField control={form.control} t={t} />
+            </FieldGrid>
+          )}
+
+          {isGrpcEnabled && (
+            <FieldGrid cols={2}>
+              <GrpcServiceNameField control={form.control} t={t} />
             </FieldGrid>
           )}
 

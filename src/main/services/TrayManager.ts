@@ -231,7 +231,8 @@ export class TrayManager implements ITrayManager {
 
       this.updateTrayTooltip();
 
-      this.logManager.addLog('info', `Tray icon updated to state: ${state}`, 'TrayManager');
+      // 托盘图标状态刷新较频繁（状态轮询/重启/切节点都会触发），降到 debug 避免刷屏 info 日志。
+      this.logManager.addLog('debug', `Tray icon updated to state: ${state}`, 'TrayManager');
     } catch (error) {
       this.logManager.addLog(
         'error',

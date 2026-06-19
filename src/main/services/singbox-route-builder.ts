@@ -15,7 +15,7 @@ import { BOOTSTRAP_DIRECT_DNS_IPS } from '../../shared/dns';
 import {
   endpointForcedRouteCidrs,
   meshForcedRouteCidrs,
-  meshGlobalFinalFallsBackToDirect,
+  meshSelectedExitFallsBackToDirect,
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny } from '../../shared/ip';
 import { ruleIpCidrs } from '../../shared/rules';
@@ -110,6 +110,18 @@ export function buildRouteConfig(
   // 主代理出站统一走 selector(proxy-selector)：clash_api 热切换即改 selector 指向、路由无需重生成。
   // 具体 targetServerId 的 app/custom 分流在各自逻辑里直指节点 tag，不经此变量。
   const selectedServerTag = 'proxy-selector';
+
+  // D4/D7：主节点是「关外网组网节点」时，「→代理」的用户出口（smart 的 geosite-!cn/google + 两模式的 final）
+  // 整体回退 direct（proxy-selector.default=该 off-mesh 节点，海外/非具体段流量进其用户态栈被丢弃→黑洞）。
+  // 具体段仍由 force-route 经组网（排在这些规则之前）。global+smart 同此兜底；probe/rule-sel 仍用 selector。
+  const exitFallback = meshSelectedExitFallsBackToDirect(config);
+  const userExitTag = exitFallback ? 'direct' : selectedServerTag;
+  if (exitFallback) {
+    deps.log(
+      'warn',
+      '选中的组网节点已关闭外网访问：外网流量已回退直连（具体网段仍经组网节点），如需经此节点全隧道请开启该节点「允许访问外网」'
+    );
+  }
 
   // blockQuic（节点无关）：开启时对"将走代理"的 QUIC(UDP443) 执行 reject，逼浏览器回退 TCP。
   // 「禁 QUIC」即禁 QUIC，与选中节点的协议/中继能力无关，对所有节点一视同仁。两点实测保证安全：
@@ -224,23 +236,14 @@ export function buildRouteConfig(
     outbound: 'direct',
   });
 
-  // D4：global 模式选中「关闭外网的组网节点」(WG/Tailscale, allowInternet=off) → final 兜底 'direct'。否则非具体段
-  // 流量进该节点用户态栈被 cryptokey routing 丢弃 → 黑洞断网；兜底直连后用户仍能上网，具体段仍由 force-route 经组网。
-  const meshFinalFallback = meshGlobalFinalFallsBackToDirect(config);
-  if (meshFinalFallback) {
-    deps.log(
-      'warn',
-      '全局模式选中的组网节点已关闭外网访问：默认出口已回退直连（具体网段仍经组网节点），如需全隧道请开启该节点「允许访问外网」'
-    );
-  }
   const routeConfig: SingBoxRouteConfig = {
     rules,
     // 核心修复：default_domain_resolver 使用 IP-based DoH 引导解析器 (dns-bootstrap)，
     // 既避免解析 doh.pub 域名时的死循环，又免疫 UDP 53 限速/劫持（dns-bootstrap 同为 IP-based）。
     default_domain_resolver: 'dns-bootstrap',
     auto_detect_interface: true,
-    // 如果模式是全局代理 (global/proxy)，则最终出口是所选节点（经 proxy-selector）；direct 模式或 D4 兜底→direct。
-    final: proxyMode === 'direct' || meshFinalFallback ? 'direct' : selectedServerTag,
+    // 如果模式是全局代理 (global/proxy)，则最终出口是所选节点（经 proxy-selector）；direct 模式或 D4/D7 兜底→direct。
+    final: proxyMode === 'direct' ? 'direct' : userExitTag,
   };
 
   // 【DNS 引导与辅助直连】：
@@ -617,21 +620,26 @@ export function buildRouteConfig(
     // 代理向 UDP（smart）：在每条"→代理"规则之前配对一条 reject，使该走代理的 UDP 在被路由到代理
     // 前就 reject——不能中继的节点拦全部 UDP，能中继+blockQuic 仅拦 QUIC(UDP443)。下方 CN 直连规则
     // 不配对，故 CN/直连 UDP 不受影响（兜底见 generateRouteConfig 末尾）。
-    const googleUdpReject = proxyUdpRejectFor({ domain_keyword: googleKeywords });
+    // exitFallback 时这两条走 direct（非代理），不能在其前配对「代理向 UDP reject」（否则误拒直连 UDP/QUIC）。
+    const googleUdpReject = exitFallback
+      ? null
+      : proxyUdpRejectFor({ domain_keyword: googleKeywords });
     if (googleUdpReject) rules.push(googleUdpReject);
     rules.push({
       domain_keyword: googleKeywords,
       action: 'route',
-      outbound: selectedServerTag,
+      outbound: userExitTag, // D7：off-mesh 主节点时回退 direct，避免海外黑洞
     });
 
     // 国外域名走代理
-    const foreignUdpReject = proxyUdpRejectFor({ rule_set: 'geosite-geolocation-!cn' });
+    const foreignUdpReject = exitFallback
+      ? null
+      : proxyUdpRejectFor({ rule_set: 'geosite-geolocation-!cn' });
     if (foreignUdpReject) rules.push(foreignUdpReject);
     rules.push({
       rule_set: 'geosite-geolocation-!cn',
       action: 'route',
-      outbound: selectedServerTag,
+      outbound: userExitTag, // D7：off-mesh 主节点时回退 direct，避免海外黑洞
     });
     // 中国域名直连
     rules.push({
@@ -709,6 +717,8 @@ export function buildRouteConfig(
   // 【代理向 QUIC 兜底】：放在所有直连/分流规则之后，拦截"会落到 final(代理)"的剩余 QUIC(udp443)。
   // global 模式拦全部代理向 QUIC；smart 模式拦未被上方 →代理 配对 reject 命中的（CN 已直连豁免）。
   // 只拦 QUIC——非 QUIC 的代理向 UDP 若节点不能中继，由 sing-box 出站层自动拒绝（见上方 blockProxyQuic）。
+  // D7 注：exitFallback 时 final/外网规则已回退 direct，此兜底仍 RST 漏网 QUIC → 浏览器 TCP 回退后走 direct，
+  // 即「强制 TCP」语义、不黑洞（blockProxyQuic 仅看 blockQuic/mode/节点数，与 exitFallback 正交，行为正确）。
   if (blockProxyQuic) {
     rules.push(udp443RejectRule());
   }

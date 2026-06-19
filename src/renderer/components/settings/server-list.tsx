@@ -58,6 +58,7 @@ import {
   isAccountBasedProtocol,
   isEndpointProtocol,
   meshAllowsInternet,
+  meshShadowedCidrs,
 } from '../../../shared/endpoint-routes';
 
 type ServerConfigWithId = ServerConfig;
@@ -161,6 +162,9 @@ export function ServerList({
   } | null>(null);
   const [testingServerIds, setTestingServerIds] = useState<Set<string>>(new Set());
   const { t, i18n } = useTranslation();
+
+  // 组网同网段「被覆盖」检测（首声明者占有，与 route-builder 同一不变量）：列表角标提醒用，零布局破坏。
+  const shadowedCidrs = useMemo(() => meshShadowedCidrs(servers), [servers]);
 
   // 记住用户的视图偏好
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -890,6 +894,19 @@ export function ServerList({
                         {t('servers.noInternetBadge', 'LAN only')}
                       </Badge>
                     )}
+                    {shadowedCidrs.has(server.id) && (
+                      <Badge
+                        variant="outline"
+                        title={t(
+                          'servers.meshShadowedTip',
+                          '以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。',
+                          { cidrs: shadowedCidrs.get(server.id)!.join(', ') }
+                        )}
+                        className="text-xs h-4 px-1 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+                      >
+                        {t('servers.meshShadowedBadge', '网段被覆盖')}
+                      </Badge>
+                    )}
                     {selectedServerId === server.id && (
                       <Badge variant="outline" className="text-xs h-4 px-1">
                         {t('servers.current')}
@@ -1026,6 +1043,19 @@ export function ServerList({
                         className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
                       >
                         {t('servers.noInternetBadge', 'LAN only')}
+                      </Badge>
+                    )}
+                    {shadowedCidrs.has(server.id) && (
+                      <Badge
+                        variant="outline"
+                        title={t(
+                          'servers.meshShadowedTip',
+                          '以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。',
+                          { cidrs: shadowedCidrs.get(server.id)!.join(', ') }
+                        )}
+                        className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
+                      >
+                        {t('servers.meshShadowedBadge', '网段被覆盖')}
                       </Badge>
                     )}
                     {server.shadowTlsSettings && (

@@ -22,7 +22,7 @@ import { FormButtons } from './shared/form-buttons';
 import { EchField, MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
-import { WsPathField, WsHostField } from './shared/transport-fields';
+import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
   echSchemaShape,
@@ -32,6 +32,8 @@ import {
   readEchDefault,
   readMultiplexDefaults,
   buildMultiplexSettings,
+  readTransportDefaults,
+  buildTransportSettings,
 } from './shared/field-schemas';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -49,13 +51,14 @@ const createVmessSchema = (t: any) =>
       ),
     alterId: z.number().default(0),
     vmessSecurity: z.string().default('auto'),
-    network: z.enum(['Tcp', 'Ws', 'H2', 'HttpUpgrade']),
+    network: z.enum(['Tcp', 'Ws', 'Grpc', 'Http', 'HttpUpgrade']),
     security: z.enum(['None', 'Tls']),
     tlsServerName: z.string().optional().or(z.literal('')),
     tlsAllowInsecure: z.boolean(),
     tlsFingerprint: z.string().optional().or(z.literal('')),
     wsPath: z.string().optional().or(z.literal('')),
     wsHost: z.string().optional().or(z.literal('')),
+    grpcServiceName: z.string().optional().or(z.literal('')),
     ...echSchemaShape,
     ...multiplexSchemaShape,
   });
@@ -71,11 +74,14 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
   const { t } = useTranslation();
   const vmessFormSchema = createVmessSchema(t);
 
-  const normalizeNetwork = (n: string | undefined): 'Tcp' | 'Ws' | 'H2' | 'HttpUpgrade' => {
+  const normalizeNetwork = (
+    n: string | undefined
+  ): 'Tcp' | 'Ws' | 'Grpc' | 'Http' | 'HttpUpgrade' => {
     const lower = (n || 'tcp').toLowerCase();
     if (lower === 'ws' || lower === 'websocket') return 'Ws';
     if (lower === 'httpupgrade') return 'HttpUpgrade';
-    if (lower === 'h2' || lower === 'http2') return 'H2';
+    if (lower === 'grpc') return 'Grpc';
+    if (lower === 'h2' || lower === 'http' || lower === 'http2') return 'Http';
     return 'Tcp';
   };
 
@@ -98,8 +104,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'chrome',
-        wsPath: serverConfig.wsSettings?.path || '',
-        wsHost: serverConfig.wsSettings?.headers?.['Host'] || '',
+        ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
       };
@@ -115,8 +120,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
       tlsServerName: '',
       tlsAllowInsecure: false,
       tlsFingerprint: 'chrome',
-      wsPath: '',
-      wsHost: '',
+      ...readTransportDefaults(),
       ...echDefaults,
       ...multiplexDefaults,
     };
@@ -128,7 +132,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
   });
 
   const handleSubmit = async (values: VmessFormValues) => {
-    const network = values.network.toLowerCase() as 'tcp' | 'ws' | 'h2' | 'httpupgrade';
+    const network = values.network.toLowerCase();
     const security = values.security.toLowerCase() as 'none' | 'tls';
 
     const serverConfig = {
@@ -150,13 +154,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
               echConfig: values.echConfig?.trim() || undefined,
             }
           : null,
-      wsSettings:
-        network === 'ws' || network === 'httpupgrade'
-          ? {
-              path: values.wsPath || '/',
-              headers: values.wsHost ? { Host: values.wsHost } : undefined,
-            }
-          : null,
+      ...buildTransportSettings(network, values),
       multiplexSettings: buildMultiplexSettings(values),
     };
 
@@ -164,8 +162,10 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
   };
 
   const isTlsEnabled = form.watch('security') === 'Tls';
-  const isWebSocketEnabled =
-    form.watch('network') === 'Ws' || form.watch('network') === 'HttpUpgrade';
+  const watchedNetwork = form.watch('network');
+  const showPathHostFields =
+    watchedNetwork === 'Ws' || watchedNetwork === 'HttpUpgrade' || watchedNetwork === 'Http';
+  const isGrpcEnabled = watchedNetwork === 'Grpc';
 
   return (
     <Form {...form}>
@@ -260,8 +260,9 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
                     <SelectContent>
                       <SelectItem value="Tcp">TCP</SelectItem>
                       <SelectItem value="Ws">WebSocket</SelectItem>
+                      <SelectItem value="Grpc">gRPC</SelectItem>
                       <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
-                      <SelectItem value="H2">HTTP/2</SelectItem>
+                      <SelectItem value="Http">HTTP/2</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription>{t('servers.transportDesc')}</FormDescription>
@@ -306,10 +307,16 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
             </FieldGrid>
           )}
 
-          {isWebSocketEnabled && (
+          {showPathHostFields && (
             <FieldGrid cols={2}>
               <WsPathField control={form.control} t={t} />
               <WsHostField control={form.control} t={t} />
+            </FieldGrid>
+          )}
+
+          {isGrpcEnabled && (
+            <FieldGrid cols={2}>
+              <GrpcServiceNameField control={form.control} t={t} />
             </FieldGrid>
           )}
 

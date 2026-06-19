@@ -18,7 +18,11 @@ import type { ProxyMode, ProxyModeType } from '@/bridge/types';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { isServerComplete } from '../../../shared/server-completeness';
-import { isMeshNodeUnroutable } from '../../../shared/endpoint-routes';
+import {
+  isMeshNodeUnroutable,
+  isEndpointProtocol,
+  meshAllowsInternet,
+} from '../../../shared/endpoint-routes';
 
 /**
  * 首页代理控制卡：两行 OpenClash 风格分段切换（接管方式 / 分流策略）+ 启停按钮。
@@ -61,6 +65,13 @@ export function ProxyControlCard() {
       ? t('home.meshNoInternetGate')
       : t('home.plsConfigServer')
     : hasError || '';
+  // D7：选中「关外网+有具体段」的组网节点为主节点（可连接，非置灰）→ 外网回退直连、仅其网段经此节点。非阻断提示。
+  const meshExitDirect =
+    !!selectedServer &&
+    isEndpointProtocol(selectedServer.protocol) &&
+    !meshAllowsInternet(selectedServer) &&
+    !meshNoInternet &&
+    (config?.proxyMode || 'smart').toLowerCase() !== 'direct';
 
   // ── 接管方式（proxyModeType）────────────────────────────────────────────
   const applyTakeover = async (modeType: ProxyModeType) => {
@@ -197,6 +208,14 @@ export function ProxyControlCard() {
               </>
             )}
           </Button>
+          {meshExitDirect && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+              {t(
+                'home.meshExitDirectHint',
+                '所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。'
+              )}
+            </p>
+          )}
         </div>
       </CardContent>
 
