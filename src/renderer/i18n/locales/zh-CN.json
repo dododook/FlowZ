@@ -592,6 +592,7 @@
       "version": "版本",
       "openSource": "开源项目",
       "community": "社区",
+      "reportIssue": "报告问题",
       "tgChannel": "FLOWZ频道",
       "builtWith": "基于 sing-box 构建的跨平台客户端代理应用",
       "loadVersionFail": "无法加载版本信息",

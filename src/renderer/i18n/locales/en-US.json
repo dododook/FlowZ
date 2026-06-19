@@ -592,6 +592,7 @@
       "version": "Version",
       "openSource": "Open Source",
       "community": "Community",
+      "reportIssue": "Report an issue",
       "tgChannel": "FLOWZ Channel",
       "builtWith": "A cross-platform proxy client built on sing-box",
       "loadVersionFail": "Failed to load version info",

@@ -525,6 +525,9 @@ export interface VersionInfo {
   singBoxVersion: string;
   copyright: string;
   repositoryUrl: string;
+  platform: string;
+  arch: string;
+  osVersion: string;
 }
 
 /**
