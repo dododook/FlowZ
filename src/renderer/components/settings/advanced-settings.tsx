@@ -2,9 +2,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { BackupRestoreSection } from './backup-restore-section';
 import { CoreVersionBanner } from './core-version-banner';
 import { CoreManagementCard } from './core-management-card';
+import { SingboxDashboardSection } from './singbox-dashboard-section';
 
 /**
- * 设置「高级」节：数据备份 + 系统运维（内核管理：版本/更新/回滚/重置出厂/完全卸载）。
+ * 设置「高级」节：数据备份 + sing-box 官方面板（opt-in 逃生舱）+ 系统运维（内核管理：版本/更新/回滚/重置出厂/完全卸载）。
  * 内核管理从「关于」迁入（C9/M3：破坏性运维不藏在只读关于页）；日志/诊断在「日志」页；clash API/终端在「网络」节。
  */
 export function AdvancedSettings() {
@@ -14,6 +15,13 @@ export function AdvancedSettings() {
       <Card>
         <CardContent className="pt-6">
           <BackupRestoreSection />
+        </CardContent>
+      </Card>
+
+      {/* sing-box 官方面板（opt-in）：高级用户/调试逃生舱，开关 + 打开按钮 */}
+      <Card>
+        <CardContent className="divide-y divide-border/60 pt-2">
+          <SingboxDashboardSection />
         </CardContent>
       </Card>
 
