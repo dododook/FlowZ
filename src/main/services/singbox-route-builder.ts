@@ -41,6 +41,7 @@ import type {
 import {
   isIpv4Host,
   isIpv6Host,
+  hostToExcludeCidr,
   DOMESTIC_BANK_AND_STOCK_DOMAINS,
   effectiveCustomRules,
   effectiveAppRules,
@@ -215,9 +216,7 @@ export function buildRouteConfig(
       // 与 SystemDnsManager 的受控 DNS IP 选择守卫共用（受控 IP 绝不能落此列表，否则逃逸 hijack）。
       ...BOOTSTRAP_DIRECT_DNS_IPS.map((ip) => `${ip}/32`),
       // 用户自定义的国内 DNS（IP 型）也须在 hijack-dns 之前直连放行，否则其 53 端口查询会被劫持成 FakeIP
-      ...(customDomesticDns
-        ? [`${customDomesticDns.ip}/${isIpv6Host(customDomesticDns.ip) ? 128 : 32}`]
-        : []),
+      ...(customDomesticDns ? [hostToExcludeCidr(customDomesticDns.ip)] : []),
       // 方案B：DNS 接管的内网 LAN 解析器（dns-lan 指向它）必须在 hijack-dns 之前直连放行，否则其 :53 查询会被
       // hijack-dns 抢走 → 内网域名解析成环。私网 IPv4 /32（getLanResolverForDns 已保证私网，亦经下方私网直连可达）。
       ...(deps.lanResolverForDns ? [`${deps.lanResolverForDns}/32`] : []),
@@ -309,8 +308,7 @@ export function buildRouteConfig(
         (h): h is string => !!h && h.length > 0
       );
       for (const host of hosts) {
-        if (isIpv4Host(host)) ipSet.add(`${host}/32`);
-        else if (isIpv6Host(host)) ipSet.add(`${host}/128`);
+        if (isIpv4Host(host) || isIpv6Host(host)) ipSet.add(hostToExcludeCidr(host));
         else domainSet.add(host);
       }
     }

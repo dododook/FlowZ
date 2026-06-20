@@ -324,3 +324,41 @@ describe('buildRouteConfig — ICMP 路由（跟随 final 出口）', () => {
     expect(forceIdx).toBeLessThan(icmpIdx);
   });
 });
+
+// 节点 IP-literal 直连排除规则（防回流死循环）：address 为 IP 字面量的节点拼成 ip_cidr direct 放行。
+describe('buildRouteConfig — 节点 IP 直连排除（CIDR 形状）', () => {
+  // 汇集所有「action=route、outbound=direct、非 network 规则」的 ip_cidr（节点排除与 bootstrap-DNS 等多条直连规则均含 ip_cidr）。
+  const directCidrs = (rc: any): string[] =>
+    (rc.rules || [])
+      .filter(
+        (r: any) =>
+          r.outbound === 'direct' &&
+          r.action === 'route' &&
+          Array.isArray(r.ip_cidr) &&
+          !Array.isArray(r.network)
+      )
+      .flatMap((r: any) => r.ip_cidr as string[]);
+  const ipNode = (id: string, address: string): ServerConfig =>
+    ({ id, name: id, protocol: 'vless', address, port: 443 }) as unknown as ServerConfig;
+
+  it('IPv4 字面量节点 → ip_cidr 含 <addr>/32', () => {
+    const n = ipNode('s1', '1.2.3.4');
+    const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([]));
+    expect(directCidrs(rc)).toContain('1.2.3.4/32');
+  });
+
+  it('裸 IPv6 字面量节点 → ip_cidr 含 <addr>/128', () => {
+    const n = ipNode('s1', '2001:db8::1');
+    const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([]));
+    expect(directCidrs(rc)).toContain('2001:db8::1/128');
+  });
+
+  // R3-2：带方括号 address（Clash YAML 导入 / 表单输入未脱括号）须脱括号，否则 '[::1]/128' 是非法 CIDR。
+  it('带方括号 IPv6 节点 → 脱方括号后 <addr>/128（不拼出 [::1]/128 非法 CIDR）', () => {
+    const n = ipNode('s1', '[::1]');
+    const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([]));
+    const cidrs = directCidrs(rc);
+    expect(cidrs).toContain('::1/128');
+    expect(cidrs).not.toContain('[::1]/128');
+  });
+});

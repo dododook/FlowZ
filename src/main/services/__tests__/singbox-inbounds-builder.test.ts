@@ -93,6 +93,29 @@ describe('buildInbounds — TUN', () => {
     const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
     expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('1.2.3.4/32');
   });
+
+  it('选中节点为裸 IPv6 字面量 → 排除 <addr>/128', () => {
+    const c = cfg({
+      proxyModeType: 'tun',
+      servers: [{ id: 's1', address: '2001:db8::1', protocol: 'vless', port: 443 }],
+      selectedServerId: 's1',
+    } as unknown as Partial<UserConfig>);
+    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
+    expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('2001:db8::1/128');
+  });
+
+  // R3-2：address 经 Clash YAML 导入 / 表单输入可能保留方括号；脱括号后才是合法 CIDR（'[::1]/128' 非法）。
+  it('选中节点为带方括号 IPv6 → 脱方括号后 <addr>/128（不拼出 [::1]/128 非法 CIDR）', () => {
+    const c = cfg({
+      proxyModeType: 'tun',
+      servers: [{ id: 's1', address: '[::1]', protocol: 'vless', port: 443 }],
+      selectedServerId: 's1',
+    } as unknown as Partial<UserConfig>);
+    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
+    const excl = byTag(ibs, 'tun-in').route_exclude_address as string[];
+    expect(excl).toContain('::1/128');
+    expect(excl).not.toContain('[::1]/128');
+  });
 });
 
 // P6 LAN 网关：TUN include/exclude_mac_address（sing-box 1.14）。门控：仅 Linux + auto_route，且有合法 MAC，

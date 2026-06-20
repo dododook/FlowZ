@@ -12,6 +12,7 @@ import type { SingBoxInbound } from './singbox-config-types';
 import {
   isIpv4Host,
   isIpv6Host,
+  hostToExcludeCidr,
   effectiveAppRules,
   getCustomDomesticDnsEndpoint,
 } from './singbox-config-helpers';
@@ -117,7 +118,7 @@ export function buildInbounds(
       // 用户自定义的国内 DNS（IP 型）一并排除，防 WFP 进程匹配失效时回流死循环
       const customDns = getCustomDomesticDnsEndpoint(config);
       if (customDns) {
-        excludeAddr.push(`${customDns.ip}/${isIpv6Host(customDns.ip) ? 128 : 32}`);
+        excludeAddr.push(hostToExcludeCidr(customDns.ip));
       }
     }
 
@@ -133,14 +134,11 @@ export function buildInbounds(
       if (!serverId) continue;
       const server = config.servers.find((s) => s.id === serverId);
       if (server?.address) {
-        if (isIpv4Host(server.address)) {
-          excludeAddr.push(`${server.address}/32`);
-        } else if (isIpv6Host(server.address)) {
-          excludeAddr.push(`${server.address}/128`);
+        if (isIpv4Host(server.address) || isIpv6Host(server.address)) {
+          excludeAddr.push(hostToExcludeCidr(server.address));
         } else if (resolvedIps && resolvedIps[serverId]) {
-          // 使用预解析的 IP
-          const addr = resolvedIps[serverId];
-          excludeAddr.push(isIpv6Host(addr) ? `${addr}/128` : `${addr}/32`);
+          // 使用预解析的 IP（域名节点）
+          excludeAddr.push(hostToExcludeCidr(resolvedIps[serverId]));
         }
       }
     }

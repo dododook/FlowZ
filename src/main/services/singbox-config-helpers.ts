@@ -93,6 +93,20 @@ export const isIpv4Host = (host: string): boolean => isIpv4(host);
  */
 export const isIpv6Host = (host: string): boolean => isIpv6Literal(host);
 
+/** 去 IPv6 字面量方括号（'[::1]' → '::1'）；裸地址/域名/IPv4 原样返回。 */
+export const stripHostBrackets = (host: string): string =>
+  host.replace(/^\[/, '').replace(/\]$/, '');
+
+/**
+ * IP 字面量 host → 单 IP 排除 CIDR（IPv6 → /128，IPv4/其它 → /32）。route + inbounds 排除节点 IP 共用单一真值。
+ * 先脱方括号：节点 address 经 Clash YAML 导入 / 表单输入可能保留 '[::1]' 方括号（ProtocolParser 会脱、这两条路径不脱），
+ * 直接拼 '[::1]/128' 是非法 CIDR，故脱括号后再拼（与 isIpv6Host 去括号判定同口径）。
+ */
+export const hostToExcludeCidr = (host: string): string => {
+  const bare = stripHostBrackets(host);
+  return `${bare}/${isIpv6Host(bare) ? 128 : 32}`;
+};
+
 /**
  * #57 节点域名解析器档位 → 实际使用的 DNS server tag。
  * 同时供节点 outbound 的 domain_resolver（ctx='dial'）与节点域名 DNS rule1（ctx='rule'）取值，
