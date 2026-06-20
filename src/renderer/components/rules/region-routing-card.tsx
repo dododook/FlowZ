@@ -85,8 +85,8 @@ export function RegionRoutingCard() {
           {!isSmart && (
             <p className="text-xs text-amber-600 dark:text-amber-400">
               {t(
-                'rules.regionRoutingInactive',
-                'Not active in the current mode; only Smart mode applies.'
+                'rules.smartOnlyHint',
+                'Not active in the current mode — only Smart mode applies.'
               )}
             </p>
           )}
