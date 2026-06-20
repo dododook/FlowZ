@@ -240,6 +240,16 @@ export function buildDnsConfig(
     // 关 FakeIP：补 reverse_mapping，让无 SNI/ECH 的连接也能用 DNS 反查域名做路由匹配（不改节点收 IP 事实，见设计 T3）。
     // 开 FakeIP 时不加（FakeIP 本身已提供域名↔假 IP 的双向映射）。
     ...(enableFakeIp ? {} : { reverse_mapping: true }),
+    // P2b 乐观 DNS 缓存（1.14 顶层 dns.optimistic）：仅开关 true 时下发，关时省略保持配置字节不变（snapshot 零回归）。
+    // 过期先返旧值后台刷新降尾延迟（schema 实证：dns.optimistic 接受 boolean）。
+    ...(userDnsConfig.optimisticCache === true ? { optimistic: true } : {}),
+    // P2c DNS 查询超时（1.14 顶层 dns.timeout，Go duration 字符串）：仅有效正毫秒时下发 "<n>ms"，未设/非法省略用核默认。
+    // sanitize（ConfigManager.validateConfig）已保证落盘值为 1..60000 的有限正整数；此处再防御性校验避免 emit "0ms"/NaN。
+    ...(typeof userDnsConfig.dnsTimeoutMs === 'number' &&
+    Number.isFinite(userDnsConfig.dnsTimeoutMs) &&
+    userDnsConfig.dnsTimeoutMs > 0
+      ? { timeout: `${Math.round(userDnsConfig.dnsTimeoutMs)}ms` }
+      : {}),
   };
   const dnsRules: SingBoxDnsRule[] = [];
 
