@@ -1,7 +1,7 @@
 /**
  * sing-box Inbound 配置生成 —— 从 ProxyManager.generateInbounds 抽出（SingBoxConfigBuilder 抽取 Phase 2 step 8）。
  *
- * 纯函数：只读 config/resolvedIps + 注入实例态（coreVersion / probeDirectPort / probeProxyPort 值）。
+ * 纯函数：只读 config/resolvedIps + 注入实例态（probeDirectPort / probeProxyPort 值）。
  * 装配 mixed inbound（HTTP+SOCKS 同口）+ 出口探针 inbound（probe-direct/proxy-in）+ TUN inbound（平台相关
  * 排除段/MTU/stack/IPv6/macOS http_proxy platform）。config 字节等价由 config-snapshot 网验证。
  */

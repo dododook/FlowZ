@@ -1,8 +1,8 @@
 /**
  * sing-box 路由配置生成 —— 从 ProxyManager.generateRouteConfig 抽出（SingBoxConfigBuilder 抽取 Phase 2 step 7）。
  *
- * route 子系统集成 hub：纯函数，只读 config/idToTagMap + 注入实例态依赖（coreVersion / probe 端口 /
- * lanResolverForDns / pendingEndpoints 值 + log·onDegraded 回调）。装配 sniff/探针/DNS 直连·劫持/节点排除/
+ * route 子系统集成 hub：纯函数，只读 config/idToTagMap + 注入实例态依赖（probe 端口 / lanResolverForDns /
+ * pendingEndpoints 值 + log·onDegraded 回调）。装配 sniff/探针/DNS 直连·劫持/节点排除/
  * 网银 U盾/endpoint 强制路由/私网直连/自定义规则(buildCustomRules)/应用分流/QUIC 阻断/geo rule_set/悬空剪枝。
  * config 字节等价由 config-snapshot 网验证（systemProxy/tun/global/customRules/appRules/WG/probe/blockQuic/
  * bypassLAN/win32 等矩阵）；启停/TUN 热切换真机另验。
