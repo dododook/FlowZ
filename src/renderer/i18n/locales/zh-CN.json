@@ -53,7 +53,8 @@
     "loading": "加载中...",
     "saveFailed": "保存失败",
     "configLoadFail": "配置加载失败",
-    "restoreDefault": "恢复默认"
+    "restoreDefault": "恢复默认",
+    "moreInfo": "更多信息"
   },
   "sidebar": {
     "home": "首页",

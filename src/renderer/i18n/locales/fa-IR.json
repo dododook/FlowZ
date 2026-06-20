@@ -53,7 +53,8 @@
     "loading": "در حال بارگذاری...",
     "saveFailed": "ذخیره ناموفق بود",
     "configLoadFail": "بارگذاری پیکربندی ناموفق بود",
-    "restoreDefault": "بازگردانی به پیش‌فرض"
+    "restoreDefault": "بازگردانی به پیش‌فرض",
+    "moreInfo": "اطلاعات بیشتر"
   },
   "sidebar": {
     "home": "خانه",

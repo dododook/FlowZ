@@ -53,7 +53,8 @@
     "loading": "Loading...",
     "saveFailed": "Save failed",
     "configLoadFail": "Failed to load config",
-    "restoreDefault": "Restore defaults"
+    "restoreDefault": "Restore defaults",
+    "moreInfo": "More info"
   },
   "sidebar": {
     "home": "Home",

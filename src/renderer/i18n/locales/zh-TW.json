@@ -53,7 +53,8 @@
     "loading": "載入中...",
     "saveFailed": "儲存失敗",
     "configLoadFail": "設定載入失敗",
-    "restoreDefault": "恢復預設"
+    "restoreDefault": "恢復預設",
+    "moreInfo": "更多資訊"
   },
   "sidebar": {
     "home": "首頁",
