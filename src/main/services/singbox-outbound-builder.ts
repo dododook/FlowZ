@@ -16,7 +16,7 @@ import {
 } from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
-import { tailscaleStateDir, tailscaleStateExists } from './tailscale-state';
+import { tailscaleStateDir } from './tailscale-state';
 import {
   effectiveCustomRules,
   effectiveAppRules,
@@ -719,11 +719,13 @@ export function buildOutbounds(
         }
         continue;
       }
-      // Tailscale：endpoint（账号制 mesh）。就绪门控——非选中且未就绪（无 authKey、无持久 state）不发射，
-      // 避免拖慢启动 + 多个未登录节点登录 URL 刷屏；选中节点即便未就绪也发射（触发交互登录 URL 流）。
+      // Tailscale：endpoint（账号制 mesh）。就绪门控——非选中且无 authKey 不发射，避免拖慢启动 +
+      // 多个未登录节点登录 URL 刷屏；选中节点即便未就绪也发射（触发交互登录 URL 流）。
+      // 1.14：剥离 stateExists（state 目录存在性误判未认证为已登录，是 #132 根因）；持久会话节点的「就绪」
+      // 不再据磁盘 state 推断，登录态统一由 api STATUS 流驱动（force-route 反应式留真机，本轮不做 always-emit）。
       if (server.protocol.toLowerCase() === 'tailscale') {
         const ts = server.tailscaleSettings;
-        const ready = !!ts?.authKey?.trim() || tailscaleStateExists(server.id);
+        const ready = !!ts?.authKey?.trim();
         if (server.id !== selectedServer?.id && !ready) {
           deps.log('info', `Tailscale 节点「${server.name}」未就绪(需登录)且非选中，已跳过`);
           continue;

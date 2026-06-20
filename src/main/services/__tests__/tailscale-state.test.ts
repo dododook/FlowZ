@@ -1,9 +1,10 @@
 /**
- * tailscale-state 单测：登录态真值（state 目录）+ 登录成功轮询纯逻辑。
+ * tailscale-state 单测：state 目录路径 + 存在性判定（1.14 起仅供 buildTailscaleEndpoint 的 state_directory
+ * 与 tailscaleEndpointInRunningCore 双写防护用；登录态本身已迁移到 api STATUS 流）。
  *
- * - tailscaleStateExists：抽自 singbox-outbound-builder 内部函数，行为须逐字保留
- *   （目录不存在/空 → false，有文件 → true，读失败 → false）。用真实 tmp 目录 + 真实 readdirSync。
- * - pollTailscaleLoginSuccess：check/sleep/isCancelled 全注入 → 不依赖文件系统/墙钟，确定可复现。
+ * - tailscaleStateExists：行为须逐字保留（目录不存在/空 → false，有文件 → true，读失败 → false）。
+ *   用真实 tmp 目录 + 真实 readdirSync。
+ * 登录成功轮询（pollTailscaleLoginSuccess）已剥离（stateExists 误判未认证为已登录是 #132 根因），相应测试一并移除。
  */
 import * as fs from 'fs';
 import * as os from 'os';
@@ -15,11 +16,7 @@ jest.mock('../../utils/paths', () => ({
   getUserDataPath: () => tmpRoot,
 }));
 
-import {
-  tailscaleStateDir,
-  tailscaleStateExists,
-  pollTailscaleLoginSuccess,
-} from '../tailscale-state';
+import { tailscaleStateDir, tailscaleStateExists } from '../tailscale-state';
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-ts-state-'));
@@ -54,74 +51,5 @@ describe('tailscaleStateExists', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'tailscaled.state'), 'session');
     expect(tailscaleStateExists('logged-in')).toBe(true);
-  });
-});
-
-describe('pollTailscaleLoginSuccess', () => {
-  const noSleep = () => Promise.resolve();
-
-  it('首次 check 即 true → success（零等待）', async () => {
-    const check = jest.fn(() => true);
-    const sleep = jest.fn(noSleep);
-    const result = await pollTailscaleLoginSuccess({ check, sleep });
-    expect(result).toBe('success');
-    expect(check).toHaveBeenCalledTimes(1);
-    expect(sleep).not.toHaveBeenCalled();
-  });
-
-  it('第 3 次 check 才 true → success', async () => {
-    let n = 0;
-    const check = jest.fn(() => {
-      n++;
-      return n >= 3;
-    });
-    const result = await pollTailscaleLoginSuccess({ check, sleep: noSleep, intervalMs: 10 });
-    expect(result).toBe('success');
-    expect(check).toHaveBeenCalledTimes(3);
-  });
-
-  it('始终 false 到上限 → timeout（按 interval/timeout 算 check 次数）', async () => {
-    const check = jest.fn(() => false);
-    // intervalMs=10, timeoutMs=30 → waited 走 0,10,20,30；check 在 0/10/20/30 各一次，30 时 waited>=timeout 返 timeout。
-    const result = await pollTailscaleLoginSuccess({
-      check,
-      sleep: noSleep,
-      intervalMs: 10,
-      timeoutMs: 30,
-    });
-    expect(result).toBe('timeout');
-    expect(check).toHaveBeenCalledTimes(4);
-  });
-
-  it('支持 async check（Promise<boolean>）', async () => {
-    let n = 0;
-    const check = jest.fn(async () => ++n >= 2);
-    const result = await pollTailscaleLoginSuccess({ check, sleep: noSleep, intervalMs: 5 });
-    expect(result).toBe('success');
-    expect(check).toHaveBeenCalledTimes(2);
-  });
-
-  it('isCancelled → cancelled（中止轮询，不再 check）', async () => {
-    const check = jest.fn(() => false);
-    const result = await pollTailscaleLoginSuccess({
-      check,
-      sleep: noSleep,
-      isCancelled: () => true,
-    });
-    expect(result).toBe('cancelled');
-    expect(check).not.toHaveBeenCalled();
-  });
-
-  it('轮到第 2 次时被取消 → cancelled', async () => {
-    let polls = 0;
-    const check = jest.fn(() => false);
-    const result = await pollTailscaleLoginSuccess({
-      check,
-      sleep: noSleep,
-      intervalMs: 5,
-      isCancelled: () => polls++ >= 1, // 第一次进入 false，第二次 true
-    });
-    expect(result).toBe('cancelled');
-    expect(check).toHaveBeenCalledTimes(1);
   });
 });

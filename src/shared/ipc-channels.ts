@@ -34,7 +34,6 @@ export const IPC_CHANNELS = {
   SERVER_GET_ALL: 'server:getAll',
   SERVER_SPEED_TEST: 'server:speedTest',
   WARP_REGISTER: 'warp:register', // Cloudflare WARP 设备注册 → 生成 WireGuard 草稿
-  TAILSCALE_GET_LOGIN_STATES: 'tailscale:getLoginStates', // 每个 Tailscale 节点真实登录态（hasAuthKey || state 目录存在）
   TAILSCALE_LOGIN: 'tailscale:login', // 按需瞬态登录核：拉起登录专用 sing-box 取交互登录 URL（Phase 2）
   TAILSCALE_LOGIN_CANCEL: 'tailscale:loginCancel', // 取消某节点在飞的瞬态登录核（用户手动取消）
   TAILSCALE_LOGOUT: 'tailscale:logout', // 退出登录：清该节点 state 目录（持久会话）；保留节点配置/authKey
@@ -141,9 +140,8 @@ export const IPC_CHANNELS = {
   EVENT_SPEED_TEST_RESULT: 'event:speedTestResult', // 测速单个节点完成（流式增量显示，payload={serverId,latency}）
   EVENT_SPEED_TEST_RESULT_LIST: 'speedTestResult', // 测速全部完成的结果列表（托盘→渲染端汇总 toast，payload=数组）——与逐节点 EVENT_SPEED_TEST_RESULT 为不同通道，勿合并
   EVENT_SPEED_TEST_PROGRESS: 'event:speedTestProgress', // 测速进度（已测/成功/总数）
-  EVENT_TAILSCALE_AUTH_URL: 'event:tailscaleAuthUrl', // Tailscale 节点需交互登录：核日志抓出的登录 URL
-  EVENT_TAILSCALE_AUTH_OK: 'event:tailscaleAuthOk', // Tailscale 节点交互登录成功（轮询 state 目录检出，log-level 无关）
-  EVENT_TAILSCALE_STATUS: 'event:tailscaleStatus', // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（backendState/authURL/IP/过期）
+  EVENT_TAILSCALE_AUTH_URL: 'event:tailscaleAuthUrl', // Tailscale 节点需交互登录：核日志抓出的登录 URL（瞬态核路径）
+  EVENT_TAILSCALE_STATUS: 'event:tailscaleStatus', // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（backendState/loggedIn/authURL/IP/过期）
   EVENT_SYSTEM_PROXY_RESIDUAL: 'event:systemProxyResidual', // TUN 启动后检测到无 marker 的系统代理残留（非 FlowZ 设的）→ 一次性提示
 
   // 应用语言同步（渲染进程 -> 主进程）

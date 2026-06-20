@@ -39,7 +39,16 @@ interface NativeEventData {
   autoNodeSwitched: { reason: string; newServerName: string; latency: number };
   invalidNodes: InvalidNodeInfo[];
   tailscaleAuth: { nodeName: string; url: string; transient?: boolean; serverId?: string };
-  tailscaleAuthOk: { serverId: string; nodeName: string };
+  // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（取代 1.13 的 state 目录/stdout 启发式）：
+  // loggedIn=Running||Starting；authURL=NeedsLogin 时的交互登录 URL；tailscaleIPs=内网 IP；expired=key 过期。
+  tailscaleStatus: {
+    serverId: string;
+    backendState: string;
+    loggedIn: boolean;
+    authURL?: string;
+    tailscaleIPs: string[];
+    expired: boolean;
+  };
   systemProxyResidual: { proxy: string };
   speedTestResult: { serverId: string; latency: number };
 }
@@ -82,8 +91,8 @@ export function useNativeEvent<K extends keyof NativeEventData>(
       case 'tailscaleAuth':
         unsubscribe = api.proxy.onTailscaleAuth(callback as any);
         break;
-      case 'tailscaleAuthOk':
-        unsubscribe = api.proxy.onTailscaleAuthOk(callback as any);
+      case 'tailscaleStatus':
+        unsubscribe = api.proxy.onTailscaleStatus(callback as any);
         break;
       case 'systemProxyResidual':
         unsubscribe = api.proxy.onSystemProxyResidual(callback as any);
@@ -198,9 +207,9 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
 const tsAuthToastId = (key: string): string => `ts-auth-${key}`;
 
 function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
-  // 核重新要 auth（运行时）= 该节点登录态失效/过期（如 key 过期）→ 即时置 loggedIn=false，
-  // 「需登录」三态随之亮、登录按钮回归（AUTH_OK 对称置 true）。serverId 已由主进程 payload 带。
-  if (data.serverId) useAppStore.getState().setTailscaleLoginState(data.serverId, false);
+  // 瞬态登录核（非主核 endpoint）给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
+  // 过期/失效启发式已剥离：登录态（含过期 → loggedIn=false）一律由 api STATUS（tailscaleStatus）驱动，
+  // 此处不再据 AUTH_URL 反推 loggedIn=false（那是 stateExists 时代的误判根因）。
   // Tailscale 无 auth_key 节点：核给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
   // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
   // transient（Phase 2 按需登录核）：主进程已自动开浏览器 + 发系统通知 → 降级为可关闭普通 toast（短时长、
@@ -233,14 +242,41 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   });
 }
 
-function handleTailscaleAuthOk(data: NativeEventData['tailscaleAuthOk']) {
-  // 交互登录成功（主进程轮询 state 目录检出，log-level 无关）：dismiss 那条 Infinity 登录 toast、
-  // 即时点亮该节点登录态（角标随之消失），并整体刷新与磁盘真值对齐。修 P5「toast 不消、状态不更新」。
-  toast.dismiss(tsAuthToastId(data.serverId ?? data.nodeName));
-  toast.success(i18n.t('servers.tsLoginOk', { name: data.nodeName }), { duration: 4000 });
+function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
+  // sing-box 1.14 管理 API 真实态（取代 1.13 stateExists/stdout 启发式）：登录态 + 过期 + 内网 IP 全吃此流。
+  // loggedIn（Running||Starting）即时驱动「需登录」角标；backendState/authURL/IP/expired 进 statusMap 供卡片展示。
   const store = useAppStore.getState();
-  store.setTailscaleLoginState(data.serverId, true);
-  void store.refreshTailscaleLoginStates();
+  store.setTailscaleLoginState(data.serverId, data.loggedIn);
+  store.setTailscaleStatus(data.serverId, {
+    backendState: data.backendState,
+    authURL: data.authURL,
+    tailscaleIPs: data.tailscaleIPs,
+    expired: data.expired,
+  });
+  // NeedsLogin 且核给出 authURL → 登录 toast（仿 handleTailscaleAuth 非 transient 路径：safeHttpUrl 限定
+  // openExternal + 固定 id 便于后续状态翻 Running 时 dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
+  if (data.backendState === 'NeedsLogin' && data.authURL) {
+    const safeUrl = safeHttpUrl(data.authURL);
+    const action = safeUrl
+      ? {
+          label: i18n.t('servers.tsOpenLogin'),
+          onClick: () => {
+            void openExternal(safeUrl);
+          },
+        }
+      : undefined;
+    const server = useAppStore.getState().config?.servers.find((s) => s.id === data.serverId);
+    const name = server?.name ?? data.serverId;
+    toast.info(i18n.t('servers.tsLoginNeeded', { name }), {
+      id: tsAuthToastId(data.serverId),
+      description: i18n.t('servers.tsLoginNeededDesc'),
+      duration: Infinity,
+      action,
+    });
+  } else {
+    // 已认证/离开 NeedsLogin → dismiss 该节点那条登录 toast（固定 id）。
+    toast.dismiss(tsAuthToastId(data.serverId));
+  }
 }
 
 // 一次性：本渲染会话只提示一次残留系统代理，避免每次连 TUN（含切节点重启）反复唠叨（用户「忽略」即不再提示）。
@@ -287,7 +323,7 @@ export function useNativeEventListeners() {
   useNativeEvent('autoNodeSwitched', handleAutoNodeSwitched);
   useNativeEvent('invalidNodes', handleInvalidNodes);
   useNativeEvent('tailscaleAuth', handleTailscaleAuth);
-  useNativeEvent('tailscaleAuthOk', handleTailscaleAuthOk);
+  useNativeEvent('tailscaleStatus', handleTailscaleStatus);
   useNativeEvent('systemProxyResidual', handleSystemProxyResidual);
   useNativeEvent('speedTestResult', handleSpeedTestResult);
 }

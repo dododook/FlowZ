@@ -10,11 +10,7 @@
  */
 
 import type { ServerConfig, UserConfig } from '../../shared/types';
-import {
-  tailscaleStateDir,
-  pollTailscaleLoginSuccess,
-  type PollLoginResult,
-} from './tailscale-state';
+import { tailscaleStateDir } from './tailscale-state';
 
 /** 登录专用 config 的最小形状（无 inbound / 无 clash_api / 无 route，仅 tailscale endpoint + direct）。 */
 export interface TailscaleLoginConfig {
@@ -86,38 +82,4 @@ export function tailscaleEndpointInRunningCore(
   const selected = runningConfig.selectedServerId === serverId;
   const ready = hasAuthKey || stateExists;
   return selected || ready;
-}
-
-/** runLoginPollLifecycle 的注入依赖（全可替换 → 单测不碰真实进程/文件系统/定时器）。 */
-export interface LoginLifecycleHooks {
-  /** 轮询登录成功（默认 pollTailscaleLoginSuccess）；注入可控成功/超时/取消。 */
-  poll: () => Promise<PollLoginResult>;
-  /** 登录成功 → 发 AUTH_OK 事件（serverId/nodeName 已闭包绑定）。 */
-  onSuccess: () => void;
-  /** 收尾杀瞬态核（成功/超时/取消都调一次，幂等）。 */
-  kill: () => void;
-}
-
-/**
- * 瞬态登录核的轮询生命周期编排（纯逻辑、可注入）：轮询 → 成功则发 AUTH_OK，无论成功/超时/取消都收尾杀核。
- * 与 ProxyManager 的进程持有解耦，便于单测「成功杀进程 / 超时杀进程 / 取消杀进程」三路径。
- * poll 自身已失败安全（check try/catch），此处 catch 兜底防 unhandled rejection 后仍杀核。
- */
-export async function runLoginPollLifecycle(hooks: LoginLifecycleHooks): Promise<PollLoginResult> {
-  let result: PollLoginResult = 'cancelled';
-  try {
-    result = await hooks.poll();
-    if (result === 'success') hooks.onSuccess();
-  } finally {
-    hooks.kill();
-  }
-  return result;
-}
-
-/** 默认 poll：对某 serverId 轮询其 state 目录直到登录成功/超时/取消（瞬态核被杀=取消）。 */
-export function makeLoginPoll(
-  stateExists: () => boolean,
-  isCancelled: () => boolean
-): () => Promise<PollLoginResult> {
-  return () => pollTailscaleLoginSuccess({ check: stateExists, isCancelled });
 }

@@ -14,12 +14,7 @@ jest.mock('../../utils/paths', () => ({
   getUserDataPath: () => FAKE_USER_DATA,
 }));
 
-import {
-  buildTailscaleLoginConfig,
-  tailscaleEndpointInRunningCore,
-  runLoginPollLifecycle,
-  makeLoginPoll,
-} from '../tailscale-login-core';
+import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from '../tailscale-login-core';
 import type { ServerConfig, UserConfig } from '../../../shared/types';
 
 function tsServer(over: Partial<ServerConfig> = {}): ServerConfig {
@@ -156,108 +151,7 @@ describe('tailscaleEndpointInRunningCore（双写防护判定）', () => {
   });
 });
 
-describe('runLoginPollLifecycle（瞬态登录生命周期：成功/超时/取消都杀核）', () => {
-  it('success → 发 onSuccess + 杀核', async () => {
-    const onSuccess = jest.fn();
-    const kill = jest.fn();
-    const result = await runLoginPollLifecycle({
-      poll: async () => 'success',
-      onSuccess,
-      kill,
-    });
-    expect(result).toBe('success');
-    expect(onSuccess).toHaveBeenCalledTimes(1);
-    expect(kill).toHaveBeenCalledTimes(1);
-  });
-
-  it('timeout → 不发 onSuccess，仍杀核', async () => {
-    const onSuccess = jest.fn();
-    const kill = jest.fn();
-    const result = await runLoginPollLifecycle({
-      poll: async () => 'timeout',
-      onSuccess,
-      kill,
-    });
-    expect(result).toBe('timeout');
-    expect(onSuccess).not.toHaveBeenCalled();
-    expect(kill).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancelled → 不发 onSuccess，仍杀核', async () => {
-    const onSuccess = jest.fn();
-    const kill = jest.fn();
-    const result = await runLoginPollLifecycle({
-      poll: async () => 'cancelled',
-      onSuccess,
-      kill,
-    });
-    expect(result).toBe('cancelled');
-    expect(onSuccess).not.toHaveBeenCalled();
-    expect(kill).toHaveBeenCalledTimes(1);
-  });
-
-  it('poll 抛错也兜底杀核（防 unhandled rejection 后残留进程）', async () => {
-    const onSuccess = jest.fn();
-    const kill = jest.fn();
-    await expect(
-      runLoginPollLifecycle({
-        poll: async () => {
-          throw new Error('boom');
-        },
-        onSuccess,
-        kill,
-      })
-    ).rejects.toThrow('boom');
-    expect(onSuccess).not.toHaveBeenCalled();
-    expect(kill).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('makeLoginPoll（isCancelled 透传：瞬态核自死即收敛，不空转到超时）', () => {
-  // 进程自行崩溃/退出时 ProxyManager 的 finalize 置 handle.cancelled=true → 此 isCancelled 翻 true →
-  // makeLoginPoll 产出的 poll 立即返回 cancelled（不等满 2min 超时）。回归防护：守住 HIGH-2 修复。
-  it('isCancelled 一开始即 true（进程已死）→ cancelled，stateExists 不被调用（零等待收敛）', async () => {
-    const stateExists = jest.fn(() => false);
-    const poll = makeLoginPoll(stateExists, () => true);
-    await expect(poll()).resolves.toBe('cancelled');
-    expect(stateExists).not.toHaveBeenCalled();
-  });
-
-  it('登录成功（stateExists 先 true）→ success（cancelled 优先级低于已落盘的 state）', async () => {
-    const poll = makeLoginPoll(
-      () => true,
-      () => false
-    );
-    await expect(poll()).resolves.toBe('success');
-  });
-});
-
-// #8：Phase1 watchTailscaleLogin 的取消判定收紧——isCancelled 用 tailscaleEndpointInRunningCore（含 stateExists）
-//   作「该节点是否还在运行主核里」的单一真值，避免节点切走后空转到 2min + 对已切走节点误发 AUTH_OK，
-//   同时不破坏成功路径（登录成功瞬间 state 落盘 → ready=true → 不取消 → check 命中 success）。
-describe('#8 watchTailscaleLogin 取消判定（isCancelled = !running || !endpointInRunningCore）', () => {
-  const tsCfg = (selectedId: string | null): UserConfig =>
-    ({
-      selectedServerId: selectedId,
-      servers: [{ id: 's1', name: 'box', protocol: 'tailscale', tailscaleSettings: {} }],
-    }) as any;
-  // watchTailscaleLogin 内 isCancelled 的等价纯逻辑（running + currentConfig + stateExists 注入）。
-  const isCancelled = (running: boolean, cfg: UserConfig | null, stateExists: boolean): boolean =>
-    !running || !tailscaleEndpointInRunningCore('s1', running, cfg, stateExists);
-
-  it('进程已停 → 取消（与原行为一致）', () => {
-    expect(isCancelled(false, tsCfg('s1'), false)).toBe(true);
-  });
-  it('节点仍选中、未就绪 → 不取消（主核带其 endpoint、正等登录）', () => {
-    expect(isCancelled(true, tsCfg('s1'), false)).toBe(false);
-  });
-  it('节点已切走、未就绪 → 取消（不空转 / 不对已切走节点误发 AUTH_OK）', () => {
-    expect(isCancelled(true, tsCfg('s2'), false)).toBe(true);
-  });
-  it('节点已从配置删除 → 取消', () => {
-    expect(isCancelled(true, { selectedServerId: 's2', servers: [] } as any, false)).toBe(true);
-  });
-  it('成功路径守护：节点切走但 state 已落盘（已登录）→ 不取消（ready=true，让 check 命中发 AUTH_OK）', () => {
-    expect(isCancelled(true, tsCfg('s2'), true)).toBe(false);
-  });
-});
+// 瞬态登录核的「成功轮询生命周期」(runLoginPollLifecycle/makeLoginPoll/pollTailscaleLoginSuccess) 及
+// Phase1 主核 watchTailscaleLogin 已剥离（stateExists 误判未认证为已登录是 #132 根因）：登录成功改由 1.14
+// api STATUS 流（backendState→Running）反映，相应纯逻辑测试一并移除。双写防护 tailscaleEndpointInRunningCore
+// 保留（startTailscaleLogin/tailscaleLogout 仍用），其覆盖见上方 describe。

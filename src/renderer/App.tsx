@@ -37,8 +37,8 @@ function App() {
   useEffect(() => {
     loadConfig();
     refreshConnectionStatus();
-    // Tailscale 真实登录态由 loadConfig 内 fire-and-forget 的 refreshTailscaleLoginStates 统一刷新
-    //（app-store.loadConfig）→ 此处无需再单独触发一次。
+    // Tailscale 真实登录态由 sing-box 1.14 api STATUS 流（EVENT_TAILSCALE_STATUS，随主核起停推送）驱动，
+    // 此处无需主动拉取。
 
     // Sync initial language to main process for tray menu
     api.config.setLanguage(i18n.language).catch(console.error);

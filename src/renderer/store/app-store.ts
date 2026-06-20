@@ -15,7 +15,6 @@ import type { UpdateInfo } from '../../shared/types/update';
 import { api } from '../ipc';
 import { toast } from 'sonner';
 import i18n from '../i18n';
-import { mergeTailscaleLoginStates } from './tailscale-login-merge';
 
 // 兼容旧的类型定义
 type ProxyMode = UserConfig['proxyMode'];
@@ -33,14 +32,6 @@ export interface AvailableCoreUpdate {
 
 // loadConfig 单飞：防 configChanged 风暴 / 启动期重复拉取（替代原 isLoading 重入守卫）
 let loadConfigInflight: Promise<void> | null = null;
-
-// Tailscale 登录态防覆盖（P5 竞态）：refreshTailscaleLoginStates 整表覆盖 与 setTailscaleLoginState 乐观单点点亮
-// 并发时，一次更早发起、快照仍是登录前 false 的 refresh 后到 → 把刚点亮的 true 覆盖回 false（角标闪/回退）。
-// 用单调代际：每次乐观点亮 true 递增 gen 并登记 serverId→gen；refresh 发起时捕获 gen，响应回来时若某 serverId
-// 在「refresh 发起之后」又被乐观点亮（登记 gen > 捕获 gen）且磁盘快照给的是 falsy → 保留该条乐观 true（丢弃过期覆盖）。
-// 磁盘真值仍权威：登出（磁盘 false 且无更新乐观点亮）正常生效；仅保护「在途 refresh 期间新点亮的 true」。
-let tailscaleOptimisticGen = 0;
-const tailscaleOptimisticTrueAt = new Map<string, number>();
 
 interface ConnectionStatus {
   proxyCore: {
@@ -87,10 +78,17 @@ interface AppState {
   // 仅会话内存，由 EVENT_PROXY_INVALID_NODES 事件覆盖（空数组=清空）。
   invalidNodes: Record<string, InvalidNodeInfo>;
 
-  // Tailscale 节点真实登录态（serverId → loggedIn = hasAuthKey || state 目录存在）。Phase 1：
-  // 「需登录」角标由此真实态驱动（替代静态 !authKey），故交互登录成功后角标会自动消失。
-  // 仅 Tailscale 节点入表；挂载 / 节点增删 / 登录成功事件时由 refreshTailscaleLoginStates 刷新。
+  // Tailscale 节点真实登录态（serverId → loggedIn）。1.14：由 api STATUS 流（backendState=Running||Starting）
+  // 驱动，「需登录」角标据此点亮/熄灭（替代 1.13 的 state 目录存在性启发式，根除未认证误判已登录）。
+  // 仅 Tailscale 节点入表；EVENT_TAILSCALE_STATUS 到达时由 setTailscaleLoginState 更新。
   tailscaleLoginStates: Record<string, boolean>;
+
+  // Tailscale 节点 1.14 管理 API 详细态（serverId → 真实态）：backendState/authURL/内网 IP/过期。
+  // 登录态点亮走 tailscaleLoginStates（单一布尔）；本表承载卡片展示用的细节（内网 IP、过期提示等）。
+  tailscaleStatusMap: Record<
+    string,
+    { backendState: string; authURL?: string; tailscaleIPs: string[]; expired: boolean }
+  >;
 
   // Privacy Protection Mode
   isPrivacyMode: boolean;
@@ -127,9 +125,12 @@ interface AppState {
   // Status Actions
   refreshConnectionStatus: () => Promise<void>;
   refreshStatistics: () => Promise<void>;
-  // Tailscale 登录态：整体刷新（挂载/节点增删后）+ 单条覆盖（登录成功事件即时更新，免一次 IPC 往返）。
-  refreshTailscaleLoginStates: () => Promise<void>;
+  // Tailscale 登录态（单条覆盖）+ 详细态（backendState/IP/过期），均由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleLoginState: (serverId: string, loggedIn: boolean) => void;
+  setTailscaleStatus: (
+    serverId: string,
+    status: { backendState: string; authURL?: string; tailscaleIPs: string[]; expired: boolean }
+  ) => void;
 
   // Server Management Actions
   deleteServer: (serverId: string) => Promise<void>;
@@ -161,6 +162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   latencyMap: {},
   invalidNodes: {},
   tailscaleLoginStates: {},
+  tailscaleStatusMap: {},
   isPrivacyMode: false,
   helperStatus: null,
   availableAppUpdate: null,
@@ -316,10 +318,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         const isPrivacyMode = await api.config.getPrivacyMode();
         set({ config, isPrivacyMode });
-        // 节点增删/导入/订阅更新/编辑最终都回流到 loadConfig（单飞合一）→ 在此统一刷新 Tailscale 登录态，
-        // 使登录态表始终与最新节点集合对齐（含新增的带 authKey 节点不误显「需登录」）。fire-and-forget：
-        // 不阻塞 loadConfig 主流程/单飞窗口，刷新失败仅 console（角标退化为缺省 false=保守显需登录，不破功能）。
-        void get().refreshTailscaleLoginStates();
+        // Tailscale 登录态不在此拉取：1.14 由 api STATUS 流（EVENT_TAILSCALE_STATUS，随主核起停持续推送）
+        // 实时驱动 tailscaleLoginStates，无需 loadConfig 时整表 IPC 刷新（已剥离 refreshTailscaleLoginStates）。
       } catch (error) {
         console.error('[Store] Exception loading config:', error);
         toast.error(i18n.t('common.configLoadFail'));
@@ -391,44 +391,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // 整体刷新 Tailscale 登录态（主进程按 hasAuthKey || state 目录存在 判定，整表覆盖）。
-  // 防覆盖：捕获发起时代际；响应回来时，对「在途期间又被乐观点亮 true」的 serverId（登记 gen > 捕获 gen）
-  // 且磁盘快照给 falsy 者，保留乐观 true（丢弃这次过期整表覆盖），避免刚点亮的角标被旧快照打回。
-  refreshTailscaleLoginStates: async () => {
-    const genAtStart = tailscaleOptimisticGen;
-    try {
-      const states = await api.server.getTailscaleLoginStates();
-      set((s) => ({
-        tailscaleLoginStates: mergeTailscaleLoginStates(
-          states,
-          s.tailscaleLoginStates,
-          tailscaleOptimisticTrueAt,
-          genAtStart
-        ),
-      }));
-    } catch (error) {
-      console.error('Failed to refresh tailscale login states:', error);
-    }
+  // 单条覆盖：EVENT_TAILSCALE_STATUS 即时点亮/熄灭该节点登录态（loggedIn=Running||Starting）。
+  // 1.14 api STATUS 是单一真值（无整表刷新 / 无乐观代际防覆盖：无并发整表覆盖竞态，纯单点写）。
+  setTailscaleLoginState: (serverId, loggedIn) => {
+    set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } }));
   },
 
-  // 单条覆盖（登录成功事件即时点亮，无需等整表 IPC；下次整体刷新会与磁盘真值对齐）。
-  // 点亮 true 时递增代际并登记，供 refresh 防覆盖识别「在途期间的新乐观点亮」。
-  setTailscaleLoginState: (serverId, loggedIn) => {
-    if (loggedIn) {
-      tailscaleOptimisticTrueAt.set(serverId, ++tailscaleOptimisticGen);
-    } else {
-      // 显式登出/置 false：撤销乐观保护（不再保留旧 true），让磁盘真值正常生效。
-      tailscaleOptimisticTrueAt.delete(serverId);
-    }
-    set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } }));
+  // Tailscale 1.14 详细态（backendState/authURL/内网 IP/过期）单条覆盖，供卡片展示。
+  setTailscaleStatus: (serverId, status) => {
+    set((s) => ({ tailscaleStatusMap: { ...s.tailscaleStatusMap, [serverId]: status } }));
   },
 
   // Server Management Actions
   deleteServer: async (serverId) => {
     try {
       await api.server.delete(serverId);
-      // Reload config to get updated server list（loadConfig 内已统一刷新 Tailscale 登录态，覆盖增删/导入，
-      // 故此处不再单独调 refreshTailscaleLoginStates，避免双刷）。
+      // Reload config to get updated server list（Tailscale 登录态由 api STATUS 流实时驱动，无需在此刷新）。
       await get().loadConfig();
     } catch (error) {
       console.error('[Store] Exception deleting server:', error);

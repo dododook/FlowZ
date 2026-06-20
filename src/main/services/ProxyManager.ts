@@ -63,12 +63,7 @@ import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
 import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
-import {
-  buildTailscaleLoginConfig,
-  tailscaleEndpointInRunningCore,
-  runLoginPollLifecycle,
-  makeLoginPoll,
-} from './tailscale-login-core';
+import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from './tailscale-login-core';
 import { TailscaleApiClient, type TailscaleEndpointStatus } from './tailscale-api-client';
 import {
   getUserDataPath,
@@ -4801,8 +4796,6 @@ exit 0
 
   /** 已推送过的 Tailscale 登录 URL（核会重复打印同一行，按 url 去重防刷屏）。urls 为一次性 token、量小，不清理。 */
   private tailscaleAuthSeen = new Set<string>();
-  /** 正在轮询登录成功的节点 serverId 集合（每节点最多一个在飞轮询，防同一节点重复 URL 各起一轮）。 */
-  private tailscaleAuthPolling = new Set<string>();
 
   /**
    * 抓 Tailscale 交互登录 URL（无 auth_key 时核日志出 `endpoint/tailscale[<tag>]: Waiting for authentication: <url>`）
@@ -4826,59 +4819,8 @@ exit 0
       serverId: server?.id,
     });
     this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
-    // 登录成功检测（log-level 无关）：会话文件出现即判成功 → 推 EVENT_TAILSCALE_AUTH_OK
-    //   （渲染端 dismiss Infinity toast + 刷新角标，dismiss 用同一 serverId-优先 id）。
-    if (server) this.watchTailscaleLogin(server.id, nodeName);
-  }
-
-  /** 交互登录成功统一发射：推 EVENT_TAILSCALE_AUTH_OK + 记 info 日志（Phase1 主核检测 / Phase2 瞬态核两路共用）。 */
-  private emitTailscaleAuthOk(serverId: string, nodeName: string): void {
-    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, { serverId, nodeName });
-    this.logToManager('info', `Tailscale 节点「${nodeName}」登录成功`, 'sing-box');
-  }
-
-  /**
-   * 轮询某 Tailscale 节点的 state 目录直到登录成功 / 超时 / 进程已停（取消）。每节点单飞。
-   * 成功 → 发 EVENT_TAILSCALE_AUTH_OK + 记 info 日志；超时/取消静默收尾（toast 仍在，用户可重试）。
-   * 轮询纯逻辑在 tailscale-state.pollTailscaleLoginSuccess（check/sleep 可注入、单测覆盖）。
-   * 生命周期编排复用 runLoginPollLifecycle（与 Phase2 瞬态核同路径）；Phase1 是主核日志检测、无瞬态核可杀，
-   * 故 kill 为 no-op（不动主核生命周期）。tailscaleAuthPolling 单飞去重收尾不变。
-   */
-  private watchTailscaleLogin(serverId: string, nodeName: string): void {
-    if (this.tailscaleAuthPolling.has(serverId)) return; // 同节点已在轮询
-    this.tailscaleAuthPolling.add(serverId);
-    void runLoginPollLifecycle({
-      poll: makeLoginPoll(
-        () => tailscaleStateExists(serverId),
-        // 取消轮询（避免后台空转到 2min + 对已切走的节点误发 AUTH_OK）：进程已停 **或** 该节点已不在运行主核里。
-        //   ① 进程存活判据用 getStatus().running（同 UI/健康检查的 activePid 口径）：覆盖全部启动路径——helper
-        //     零提权 / osascript / UAC 后台进程经 singboxPid，直接 spawn（system 代理 / Linux TUN）经 pid。
-        //     ⚠️ 不能只用 `singboxProcess === null`：helper 路径经 socket 起核、从不 spawn 子进程，singboxProcess
-        //     恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
-        //   ② tailscaleEndpointInRunningCore（单一真值，与双写防护同款）：节点已切走且未就绪、或已从运行配置删除
-        //     → 主核不再带其 endpoint，继续轮询既空转又可能对已切走节点误发 AUTH_OK。**不破坏成功路径**：登录成功
-        //     瞬间 state 落盘 → stateExists=true → ready=true → 仍判「在主核里」不取消 → check 命中发 AUTH_OK
-        //     （pollTailscaleLoginSuccess 同轮先 isCancelled 后 check，state 已落盘则 isCancelled 不会误杀）。
-        () =>
-          !this.getStatus().running ||
-          !tailscaleEndpointInRunningCore(
-            serverId,
-            this.getStatus().running,
-            this.currentConfig,
-            tailscaleStateExists(serverId)
-          )
-      ),
-      onSuccess: () => this.emitTailscaleAuthOk(serverId, nodeName),
-      kill: () => {
-        /* Phase1：主核日志检测，无瞬态核可杀（不动主核生命周期） */
-      },
-    })
-      .catch(() => {
-        /* 轮询本身失败安全（check 已 try/catch），此处兜底防 unhandled rejection */
-      })
-      .finally(() => {
-        this.tailscaleAuthPolling.delete(serverId);
-      });
+    // 登录成功不再靠 state 目录轮询（stateExists 误判未认证为已登录是 #132 根因，已剥离）：主核 endpoint
+    // 的登录成功由 api STATUS 流（backendState→Running）反映，驱动渲染端登录态点亮 + dismiss 登录 toast。
   }
 
   // ==== Phase 2：按需瞬态登录核 ====
@@ -5024,18 +4966,9 @@ exit 0
       'sing-box'
     );
 
-    // 轮询 state 目录成功（log-level 无关）→ 成功后发 AUTH_OK，无论成功/超时/取消都收尾杀核。取消判据 =
-    // 该瞬态核已被杀（handle.cancelled）：不能用主核 getStatus().running（主核可能根本没运行，列表直接点登录场景）。
-    // 生命周期编排（poll/onSuccess/kill）抽到 tailscale-login-core.runLoginPollLifecycle（注入式、单测覆盖三路径）。
-    void runLoginPollLifecycle({
-      poll: makeLoginPoll(
-        () => tailscaleStateExists(server.id),
-        () => handle.cancelled
-      ),
-      onSuccess: () => this.emitTailscaleAuthOk(server.id, server.name),
-      kill: () => this.killTailscaleLogin(server.id),
-    });
-
+    // 登录成功检测已剥离（stateExists 轮询误判未认证为已登录是 #132 根因）：瞬态核只负责拉起浏览器拿 URL，
+    // 登录成功由 api STATUS 流（节点在主核跑→Running）反映、驱动渲染端登录态。瞬态核的收尾仍由 timeoutTimer
+    // (120s) + proc 'exit'/'error'→finalize + 退出时 killAllTailscaleLoginCores 兜底（真机阶段定瞬态核去留）。
     return { started: true };
   }
 
@@ -5104,10 +5037,11 @@ exit 0
   }
 
   /**
-   * 退出登录：清该节点 Tailscale state 目录（持久会话），下次需重新交互登录。保留节点配置/authKey。
+   * 退出登录：节点在运行主核里 → 调 1.14 管理 API TailscaleLogout(endpointTag) 让内核即时下线该 endpoint；
+   * 并清该节点 state 目录（瞬态核写的持久会话兜底，下次需重新交互登录）。保留节点配置/authKey。
    * 先取消该节点在飞的瞬态登录核（若有），避免它在清目录后又写回 state。
-   * 若该 endpoint 正在运行中的主核里（state 是其内存会话的落盘），清目录不立即断开内存会话 →
-   * 回传 runningNeedsRestart 供 UI 提示重启代理才彻底生效（真机验证 caveat）。
+   * 若该 endpoint 正在运行中的主核里，回传 runningNeedsRestart 供 UI 提示（api logout 已尽力即时下线，
+   * 但 force-route 反应式未做、彻底生效仍可能需重启 → 行为不变，真机验证 caveat）。
    */
   async tailscaleLogout(serverId: string): Promise<{ runningNeedsRestart: boolean }> {
     this.cancelTailscaleLogin(serverId);
@@ -5117,10 +5051,24 @@ exit 0
       this.currentConfig,
       tailscaleStateExists(serverId)
     );
+    // 节点在运行主核里 → 经 api 让内核原生登出该 endpoint（endpointTag=server.name）。api 不可达/未起则吞错，
+    // 仍走下方清 state 目录兜底（瞬态核登录写的会话）。
+    if (inRunningCore && this.tailscaleApiClient) {
+      const server = this.currentConfig?.servers.find((s) => s.id === serverId);
+      if (server) {
+        await this.tailscaleApiClient.logout(server.name).catch((e) => {
+          this.logToManager(
+            'warn',
+            `Tailscale api 登出失败（已回退清 state 目录）: ${e?.message ?? e}`,
+            'sing-box'
+          );
+        });
+      }
+    }
     await require('fs')
       .promises.rm(tailscaleStateDir(serverId), { recursive: true, force: true })
       .catch(() => {});
-    this.logToManager('info', `Tailscale 节点已退出登录（已清 state 目录）`, 'sing-box');
+    this.logToManager('info', `Tailscale 节点已退出登录`, 'sing-box');
     return { runningNeedsRestart: inRunningCore };
   }
 

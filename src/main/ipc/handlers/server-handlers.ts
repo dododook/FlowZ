@@ -12,7 +12,7 @@ import { ProtocolParser } from '../../services/ProtocolParser';
 import { ConfigManager } from '../../services/ConfigManager';
 import { WarpService, type WarpWireGuardDraft } from '../../services/WarpService';
 import { getWarpDeregisterQueue } from '../../services/WarpDeregisterQueue';
-import { tailscaleStateDir, tailscaleStateExists } from '../../services/tailscale-state';
+import { tailscaleStateDir } from '../../services/tailscale-state';
 import type { LogManager } from '../../services/LogManager';
 
 /**
@@ -149,22 +149,6 @@ export function registerServerHandlers(
     async (_event: IpcMainInvokeEvent) => {
       const config = await configManager.loadConfig();
       return config.servers;
-    }
-  );
-
-  // Tailscale 节点真实登录态（Phase 1）：serverId → loggedIn = hasAuthKey || state 目录存在。
-  // 单一真值与 buildOutbounds 就绪门控、ProxyManager 登录成功轮询共用（tailscale-state 模块），
-  // 与日志等级 / 是否选中为出口完全解耦。仅返回 Tailscale 节点；渲染端据此驱动「需登录」角标。
-  registerIpcHandler<void, Record<string, boolean>>(
-    IPC_CHANNELS.TAILSCALE_GET_LOGIN_STATES,
-    async (_event: IpcMainInvokeEvent) => {
-      const config = await configManager.loadConfig();
-      const states: Record<string, boolean> = {};
-      for (const s of config.servers) {
-        if (s.protocol?.toLowerCase() !== 'tailscale') continue;
-        states[s.id] = !!s.tailscaleSettings?.authKey?.trim() || tailscaleStateExists(s.id);
-      }
-      return states;
     }
   );
 

@@ -7,7 +7,7 @@
  *  - alreadyLoggedIn：节点已登录 → 提示无需登录。
  *  - inMainCore：endpoint 已在运行主核里（双写防护）→ 提示已在登录/已就绪。
  *  - alreadyRunning：已有在飞登录 → 提示登录进行中。
- * 登录成功的角标/状态刷新由 EVENT_TAILSCALE_AUTH_OK（use-native-events）统一处理，此处不重复。
+ * 登录成功的角标/状态刷新由 EVENT_TAILSCALE_STATUS（api STATUS 流，use-native-events）统一处理，此处不重复。
  */
 import { toast } from 'sonner';
 import i18n from '../i18n';
