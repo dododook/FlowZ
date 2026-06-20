@@ -19,6 +19,7 @@ jest.mock('../../utils/paths', () => ({
 
 import { buildDnsConfig } from '../singbox-dns-builder';
 import type { UserConfig, ServerConfig } from '../../../shared/types';
+import { withPlatform } from './platform-test-utils';
 
 const tsNode = (over: Partial<ServerConfig> = {}): ServerConfig =>
   ({
@@ -172,5 +173,56 @@ describe('buildDnsConfig — P2c DNS 查询超时(timeout)', () => {
     const dns = build(dnsP2Config({ optimisticCache: true, dnsTimeoutMs: 3000 }));
     expect(dns.optimistic).toBe(true);
     expect(dns.timeout).toBe('3000ms');
+  });
+});
+
+// P6 LAN 网关：local DNS server 邻居解析后缀（sing-box 1.14 neighbor_domain）。门控：仅 Linux/macOS，
+// 每条归一化为以 '.' 开头（内核硬限界），附到 dns-local server。
+describe('buildDnsConfig — P6 邻居短名解析(neighbor_domain)', () => {
+  const neighborCfg = (neighborDomains?: string[]): UserConfig =>
+    ({
+      servers: [],
+      selectedServerId: null,
+      proxyMode: 'global',
+      proxyModeType: 'tun',
+      enableIPv6: false,
+      dnsConfig: { enableFakeIp: false },
+      tunConfig: {
+        mtu: 1350,
+        stack: 'system',
+        autoRoute: true,
+        strictRoute: true,
+        neighborDomains,
+      },
+    }) as unknown as UserConfig;
+
+  it('Linux：配置后缀 → dns-local.neighbor_domain（裸后缀补前导点、去重）', () => {
+    const dns = withPlatform('linux', () => build(neighborCfg(['lan', '.home', 'lan'])));
+    const local = dns.servers.find((s) => s.tag === 'dns-local');
+    expect(local!.neighbor_domain).toEqual(['.lan', '.home']);
+  });
+
+  it('macOS：同样支持', () => {
+    const dns = withPlatform('darwin', () => build(neighborCfg(['nas.local'])));
+    const local = dns.servers.find((s) => s.tag === 'dns-local');
+    expect(local!.neighbor_domain).toEqual(['.nas.local']);
+  });
+
+  it('win32：不发射（内核不支持邻居解析）', () => {
+    const dns = withPlatform('win32', () => build(neighborCfg(['lan'])));
+    const local = dns.servers.find((s) => s.tag === 'dns-local');
+    expect(local!.neighbor_domain).toBeUndefined();
+  });
+
+  it('未配 neighborDomains → dns-local 无 neighbor_domain（零变化）', () => {
+    const dns = withPlatform('linux', () => build(neighborCfg(undefined)));
+    const local = dns.servers.find((s) => s.tag === 'dns-local');
+    expect(local!.neighbor_domain).toBeUndefined();
+  });
+
+  it('空串/空白条目被过滤 → 全空则不发射', () => {
+    const dns = withPlatform('linux', () => build(neighborCfg(['', '  '])));
+    const local = dns.servers.find((s) => s.tag === 'dns-local');
+    expect(local!.neighbor_domain).toBeUndefined();
   });
 });

@@ -618,7 +618,20 @@
       "mainSessionViaProxyDescFull": "開啟後，應用程式/核心更新檢查與規則資源下載在代理執行時經代理（更新來源多在 GitHub）；關閉則直連/走系統代理。註：TUN 模式下因系統層捕獲，關閉不能完全直連。",
       "disableLogFileDescFull": "完全停用 sing-box 記錄（隱私 / 省盤）。應用程式內即時記錄與基於記錄的診斷將不可用，處理程序當機偵測仍有效。儲存後自動重新啟動代理生效（代理執行中時）。",
       "fakeIpFilterDescFull": "這些網域走真實 DNS、不用假 IP（校時、連線探測、鎖屏登入用假 IP 會失敗）。建議開啟。",
-      "allowLanGatewayTipFull": "作為閘道使用（別的裝置把本機設為閘道+DNS）時務必開 TUN：會自動開 IP 轉發並在 53 連接埠提供 DNS。"
+      "allowLanGatewayTipFull": "作為閘道使用（別的裝置把本機設為閘道+DNS）時務必開 TUN：會自動開 IP 轉發並在 53 連接埠提供 DNS。",
+      "lanGateway": "區域網閘道",
+      "neighborDomains": "區域網短名解析",
+      "neighborDomainsDesc": "對這些後綴下的單標籤短名走區域網鄰居解析（主機名→IP）。",
+      "neighborDomainsDescFull": "本機作區域網閘道時，對設定後綴下無點的短名（如 nas.lan）查詢 DHCP 鄰居資訊解析出區域網裝置 IP，免去手填 hosts。每條後綴自動補前導點，僅 Linux/macOS 生效。",
+      "neighborDomainsPlaceholder": ".lan\n.home",
+      "neighborDomainsHint": "每行一個後綴（自動補前導點）；對該後綴下無點的短名（如 nas.lan）走區域網裝置解析。",
+      "macFilter": "依 MAC 過濾裝置",
+      "macFilterDesc": "限定/排除哪些區域網裝置的流量進入 TUN（依 MAC）。",
+      "macFilterDescFull": "本機作區域網閘道時，依裝置 MAC 限定「僅允許」或「排除」其流量進入 TUN 隧道。僅 Linux 支援，需開啟 auto_route（會自動啟用 auto_redirect）。需在路由器把本機設為閘道。",
+      "macFilterOff": "關閉",
+      "macFilterInclude": "僅允許",
+      "macFilterExclude": "排除",
+      "macFilterHint": "每行一個 MAC（00:11:22:33:44:55）；需 auto_route 開啟，僅 Linux 生效。"
     },
     "about": {
       "title": "關於",
@@ -1084,7 +1097,9 @@
       "processPath": "每行一個處理程序完整路徑",
       "geosite": "每行一個標籤（如 youtube），或從下方常用標籤選擇",
       "geoip": "每行一個標籤（如 cn），或從下方常用標籤選擇",
-      "ruleSet": ""
+      "ruleSet": "",
+      "sourceMac": "每行一個 MAC（00:11:22:33:44:55 / 00-11-22-33-44-55 / 0011.2233.4455）",
+      "sourceHostname": "每行一個裝置主機名（來自 DHCP 租約）"
     },
     "pickProcess": "從處理程序選擇",
     "invalidValue": "符合值格式不正確",
@@ -1098,7 +1113,8 @@
       "domain": "網域",
       "network": "IP / 連接埠",
       "process": "處理程序",
-      "ruleset": "規則集"
+      "ruleset": "規則集",
+      "device": "區域網裝置"
     },
     "types": {
       "domain": {
@@ -1165,6 +1181,16 @@
         "name": "規則集",
         "desc": "已下載的本地規則資源",
         "placeholder": ""
+      },
+      "sourceMac": {
+        "name": "來源裝置 MAC",
+        "desc": "依來源裝置 MAC 分流（區域網閘道情境，僅 Linux/macOS）",
+        "placeholder": "00:11:22:33:44:55"
+      },
+      "sourceHostname": {
+        "name": "來源裝置主機名",
+        "desc": "依來源裝置主機名分流（DHCP 租約名，僅 Linux/macOS）",
+        "placeholder": "my-laptop"
       }
     },
     "processPicker": {
@@ -1272,7 +1298,7 @@
     "policy": "策略",
     "proxy": "代理",
     "direct": "直連",
-    "instruction1": "· 規則分四組（網域 / IP·連接埠 / 處理程序 / 規則集）共 13 種類型；一條規則可組合多個條件（預設符合任一即命中，可切「全部符合」），符合值每行一條",
+    "instruction1": "· 規則分五組（網域 / IP·連接埠 / 區域網裝置 / 處理程序 / 規則集）共 15 種類型；一條規則可組合多個條件（預設符合任一即命中，可切「全部符合」），符合值每行一條",
     "instruction2": "· 「網域後綴」符合該網域及其全部子網域（推薦）；「網域」僅精確符合，不含子網域",
     "instruction3": "· 處理程序規則僅對本機發起的連線生效，Windows 處理程序名含 .exe；「處理程序名 + 直連」即可讓指定應用程式略過代理",
     "instruction4": "· 規則按清單順序自上而下符合，先命中先生效；自訂規則優先於應用程式分流與智慧分流；自訂規則與應用程式分流僅「智慧分流」模式生效（全域模式一律走選中節點、直連模式全部直連）",

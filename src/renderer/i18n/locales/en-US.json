@@ -618,7 +618,20 @@
       "mainSessionViaProxyDescFull": "When on, app/core update checks and rule-resource downloads go through the proxy while it runs (update sources are mostly on GitHub); when off, they go direct / via system proxy. Note: under TUN mode, OS-level capture means off cannot fully bypass the proxy.",
       "disableLogFileDescFull": "Fully disables sing-box logging (privacy / disk). In-app real-time logs and log-based diagnostics become unavailable; crash detection still works. Applies automatically by restarting the proxy after save (when running).",
       "fakeIpFilterDescFull": "These domains use real DNS instead of a fake IP (clock sync, connectivity checks and lock-screen login break with fake IPs). Recommended on.",
-      "allowLanGatewayTipFull": "Using this machine as a gateway (other devices set it as Gateway + DNS) requires TUN mode: it auto-enables IP forwarding and serves DNS on port 53."
+      "allowLanGatewayTipFull": "Using this machine as a gateway (other devices set it as Gateway + DNS) requires TUN mode: it auto-enables IP forwarding and serves DNS on port 53.",
+      "lanGateway": "LAN Gateway",
+      "neighborDomains": "LAN short-name resolution",
+      "neighborDomainsDesc": "Resolve single-label short names under these suffixes via LAN neighbor resolution (hostname → IP).",
+      "neighborDomainsDescFull": "When this machine acts as a LAN gateway, dot-less short names under the configured suffixes (e.g. nas.lan) are resolved to LAN device IPs via DHCP neighbor info, no manual hosts needed. Each suffix is auto-prefixed with a dot; Linux/macOS only.",
+      "neighborDomainsPlaceholder": ".lan\n.home",
+      "neighborDomainsHint": "One suffix per line (leading dot added automatically); dot-less short names under it (e.g. nas.lan) resolve via LAN devices.",
+      "macFilter": "Filter devices by MAC",
+      "macFilterDesc": "Limit or exclude which LAN devices' traffic enters the TUN (by MAC).",
+      "macFilterDescFull": "When this machine acts as a LAN gateway, limit (“only allow”) or exclude device traffic from the TUN tunnel by MAC. Linux only; requires auto_route (auto_redirect is enabled automatically). Set this machine as the gateway on your router.",
+      "macFilterOff": "Off",
+      "macFilterInclude": "Only allow",
+      "macFilterExclude": "Exclude",
+      "macFilterHint": "One MAC per line (00:11:22:33:44:55); requires auto_route, Linux only."
     },
     "about": {
       "title": "About",
@@ -1084,7 +1097,9 @@
       "processPath": "One full process path per line",
       "geosite": "One tag per line (e.g. youtube), or pick from common tags below",
       "geoip": "One tag per line (e.g. cn), or pick from common tags below",
-      "ruleSet": ""
+      "ruleSet": "",
+      "sourceMac": "One MAC per line (00:11:22:33:44:55 / 00-11-22-33-44-55 / 0011.2233.4455)",
+      "sourceHostname": "One device hostname per line (from DHCP leases)"
     },
     "pickProcess": "Pick process",
     "invalidValue": "Invalid match value format",
@@ -1098,7 +1113,8 @@
       "domain": "Domain",
       "network": "IP / Port",
       "process": "Process",
-      "ruleset": "Rule Set"
+      "ruleset": "Rule Set",
+      "device": "LAN Device"
     },
     "types": {
       "domain": {
@@ -1165,6 +1181,16 @@
         "name": "Rule Set",
         "desc": "A downloaded local rule resource",
         "placeholder": ""
+      },
+      "sourceMac": {
+        "name": "Source MAC",
+        "desc": "Route by source device MAC (LAN gateway scenario; Linux/macOS only)",
+        "placeholder": "00:11:22:33:44:55"
+      },
+      "sourceHostname": {
+        "name": "Source Hostname",
+        "desc": "Route by source device hostname (DHCP lease name; Linux/macOS only)",
+        "placeholder": "my-laptop"
       }
     },
     "processPicker": {
@@ -1272,7 +1298,7 @@
     "policy": "Policy",
     "proxy": "Proxy",
     "direct": "Direct",
-    "instruction1": "· Rules span four groups (Domain / IP·Port / Process / Rule Set) with 13 types; a rule can combine multiple conditions (match any by default, or switch to match all), one match value per line",
+    "instruction1": "· Rules span five groups (Domain / IP·Port / LAN Device / Process / Rule Set) with 15 types; a rule can combine multiple conditions (match any by default, or switch to match all), one match value per line",
     "instruction2": "· \"Domain Suffix\" matches the domain and all subdomains (recommended); \"Domain\" matches exactly, no subdomains",
     "instruction3": "· Process rules apply only to locally-originated connections (Windows names include .exe); \"Process Name + Direct\" lets an app bypass the proxy",
     "instruction4": "· Rules match top-to-bottom, first match wins; custom rules take precedence over app policy and smart routing; custom rules and app policy apply only in Smart mode (Global routes all traffic through the selected node, Direct connects directly)",

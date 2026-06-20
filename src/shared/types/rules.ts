@@ -24,6 +24,7 @@ export interface LegacyDomainRule {
  * 自定义规则类型（对应 sing-box route rule 常用全集，去冗余）。
  * 域名类：domain/domainSuffix/domainKeyword/domainRegex；
  * IP/端口类：ipCidr(目的)/sourceIpCidr(源)/port(目的)/sourcePort(源)；
+ * 源设备类（sing-box 1.14 LAN 设备识别）：sourceMac(源 MAC)/sourceHostname(源主机名)；
  * 进程类：processName/processPath；规则集类：geosite/geoip/ruleSet。
  */
 export type RuleType =
@@ -35,6 +36,9 @@ export type RuleType =
   | 'sourceIpCidr'
   | 'port'
   | 'sourcePort'
+  // sing-box 1.14 源设备识别（按 MAC / DHCP 主机名分流；仅 Linux/macOS，见 shared/neighbor.ts）。
+  | 'sourceMac'
+  | 'sourceHostname'
   | 'processName'
   | 'processPath'
   | 'geosite'

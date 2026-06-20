@@ -130,6 +130,12 @@ export function NetworkSettings() {
     saveConfig(updated).catch(() => toast.error(t('common.saveFailed')));
   };
 
+  // P6 局域网网关：更新 tunConfig 子字段（MAC 过滤 / 邻居解析后缀），保留其余 TUN 设置。
+  const updateTun = (patch: Partial<NonNullable<typeof config.tunConfig>>) =>
+    saveConfig({ ...config, tunConfig: { ...config.tunConfig, ...patch } }).catch(() =>
+      toast.error(t('common.saveFailed'))
+    );
+
   // FakeIP 开关切换：TUN 模式下 ON→OFF 先弹一次性风险确认（节点将收真实 IP，部分机场可能拒连，客户端无法缓解）；
   // 其它情况（开启、或非 TUN 关闭）直接落盘。
   const handleFakeIpToggle = (checked: boolean) => {
@@ -462,6 +468,80 @@ export function NetworkSettings() {
               />
             )}
           </div>
+
+          {/* P6 局域网网关（sing-box 1.14 LAN 设备识别）：邻居短名解析（Linux/macOS）+ TUN MAC 过滤（仅 Linux）。
+              仅 TUN 模式 + 受支持平台显示——非 TUN/非支持平台时这些字段构建期不发射，UI 隐藏避免误导。 */}
+          {config.proxyModeType?.toLowerCase() === 'tun' && (isLinux || isMac) && (
+            <SettingsCollapsible label={t('settings.advanced.lanGateway', '局域网网关')}>
+              <div className="space-y-3 py-1">
+                {/* 邻居短名解析后缀（Linux/macOS）：对这些后缀的单标签短名走局域网邻居解析 */}
+                <div>
+                  <SettingsRow
+                    label={t('settings.advanced.neighborDomains', '局域网短名解析')}
+                    description={t('settings.advanced.neighborDomainsDesc')}
+                    tooltip={t('settings.advanced.neighborDomainsDescFull')}
+                  />
+                  <ExceptionList
+                    value={config.tunConfig?.neighborDomains}
+                    defaults={[]}
+                    onChange={(v) => updateTun({ neighborDomains: v })}
+                    placeholder={t('settings.advanced.neighborDomainsPlaceholder', '.lan\n.home')}
+                    hint={t(
+                      'settings.advanced.neighborDomainsHint',
+                      '每行一个后缀（自动补前导点）；对该后缀下无点的短名（如 nas.lan）走局域网设备解析。'
+                    )}
+                  />
+                </div>
+
+                {/* TUN MAC 过滤（仅 Linux + auto_route + auto_redirect）：按 MAC 限/排设备进 TUN */}
+                {isLinux && (
+                  <div>
+                    <SettingsRow
+                      label={t('settings.advanced.macFilter', '按 MAC 过滤设备')}
+                      description={t('settings.advanced.macFilterDesc')}
+                      tooltip={t('settings.advanced.macFilterDescFull')}
+                    >
+                      <Select
+                        value={config.tunConfig?.macFilterMode ?? 'off'}
+                        onValueChange={(v) =>
+                          updateTun({
+                            macFilterMode: v === 'off' ? undefined : (v as 'include' | 'exclude'),
+                          })
+                        }
+                      >
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">
+                            {t('settings.advanced.macFilterOff', '关闭')}
+                          </SelectItem>
+                          <SelectItem value="include">
+                            {t('settings.advanced.macFilterInclude', '仅允许')}
+                          </SelectItem>
+                          <SelectItem value="exclude">
+                            {t('settings.advanced.macFilterExclude', '排除')}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </SettingsRow>
+                    {config.tunConfig?.macFilterMode && (
+                      <ExceptionList
+                        value={config.tunConfig?.macFilterList}
+                        defaults={[]}
+                        onChange={(v) => updateTun({ macFilterList: v })}
+                        placeholder={'00:11:22:33:44:55\naa:bb:cc:dd:ee:ff'}
+                        hint={t(
+                          'settings.advanced.macFilterHint',
+                          '每行一个 MAC（00:11:22:33:44:55）；需 auto_route 开启，仅 Linux 生效。'
+                        )}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            </SettingsCollapsible>
+          )}
         </CardContent>
       </Card>
 

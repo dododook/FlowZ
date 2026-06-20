@@ -10,6 +10,7 @@ jest.mock('electron', () => ({
 
 import { buildCustomRules, type CustomRulesDeps } from '../singbox-custom-rules';
 import type { Rule } from '../../../shared/types';
+import { withPlatform } from './platform-test-utils';
 
 function mkDeps(): CustomRulesDeps & { logs: string[]; degraded: boolean } {
   const logs: string[] = [];
@@ -287,5 +288,88 @@ describe('buildCustomRules — route TLS spoof（P3a 抗审查）', () => {
     } finally {
       Object.defineProperty(process, 'arch', { value: orig, configurable: true });
     }
+  });
+});
+
+// P6 LAN 网关：源设备 MAC / 主机名 route 规则（sing-box 1.14 source_mac_address/source_hostname）。
+// 平台门控：仅 Linux/macOS 发射，win32 整条不产 matcher（内核不支持→发射即 FATAL）。
+describe('buildCustomRules — 源设备 MAC / 主机名（P6 LAN 网关）', () => {
+  it('Linux：sourceMac → source_mac_address；脏 MAC 剔除', () => {
+    const deps = mkDeps();
+    const { rules } = withPlatform('linux', () =>
+      buildCustomRules(
+        [
+          rule({
+            id: 'rm',
+            type: 'sourceMac',
+            values: ['00:11:22:33:44:55', 'bad-mac'],
+            action: 'block',
+          }),
+        ],
+        [],
+        undefined,
+        idMap,
+        'proxy-selector',
+        [],
+        false,
+        deps
+      )
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0].source_mac_address).toEqual(['00:11:22:33:44:55']); // bad-mac 剔除
+    expect(rules[0].outbound).toBe('block');
+  });
+
+  it('macOS：sourceHostname → source_hostname（DHCP 名）', () => {
+    const deps = mkDeps();
+    const { rules } = withPlatform('darwin', () =>
+      buildCustomRules(
+        [rule({ id: 'rh', type: 'sourceHostname', values: ['my-laptop'], action: 'direct' })],
+        [],
+        undefined,
+        idMap,
+        'proxy-selector',
+        [],
+        false,
+        deps
+      )
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0].source_hostname).toEqual(['my-laptop']);
+    expect(rules[0].outbound).toBe('direct');
+  });
+
+  it('win32：sourceMac 不支持 → 整条不产规则（内核不支持，fail-closed）', () => {
+    const deps = mkDeps();
+    const { rules } = withPlatform('win32', () =>
+      buildCustomRules(
+        [rule({ id: 'rw', type: 'sourceMac', values: ['00:11:22:33:44:55'], action: 'block' })],
+        [],
+        undefined,
+        idMap,
+        'proxy-selector',
+        [],
+        false,
+        deps
+      )
+    );
+    expect(rules).toHaveLength(0);
+  });
+
+  it('全脏 MAC（Linux）→ 无合法值 → 整条不产规则', () => {
+    const deps = mkDeps();
+    const { rules } = withPlatform('linux', () =>
+      buildCustomRules(
+        [rule({ id: 'rd', type: 'sourceMac', values: ['nope', '001122334455'], action: 'block' })],
+        [],
+        undefined,
+        idMap,
+        'proxy-selector',
+        [],
+        false,
+        deps
+      )
+    );
+    expect(rules).toHaveLength(0);
   });
 });

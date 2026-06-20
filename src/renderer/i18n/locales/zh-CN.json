@@ -618,7 +618,20 @@
       "mainSessionViaProxyDescFull": "开启后，应用/内核更新检查与规则资源下载在代理运行时经代理（更新源多在 GitHub）；关闭则直连/走系统代理。注：TUN 模式下因系统层捕获，关闭不能完全直连。",
       "disableLogFileDescFull": "完全禁用 sing-box 日志（隐私 / 省盘）。应用内实时日志与基于日志的诊断将不可用，进程崩溃检测仍有效。保存后自动重启代理生效（代理运行中时）。",
       "fakeIpFilterDescFull": "这些域名走真实 DNS、不用假 IP（校时、连通性探测、锁屏登录用假 IP 会失败）。建议开启。",
-      "allowLanGatewayTipFull": "作为网关使用（别的设备把本机设为网关+DNS）时务必开 TUN：会自动开 IP 转发并在 53 端口提供 DNS。"
+      "allowLanGatewayTipFull": "作为网关使用（别的设备把本机设为网关+DNS）时务必开 TUN：会自动开 IP 转发并在 53 端口提供 DNS。",
+      "lanGateway": "局域网网关",
+      "neighborDomains": "局域网短名解析",
+      "neighborDomainsDesc": "对这些后缀下的单标签短名走局域网邻居解析（主机名→IP）。",
+      "neighborDomainsDescFull": "本机作局域网网关时，对配置后缀下无点的短名（如 nas.lan）查询 DHCP 邻居信息解析出局域网设备 IP，免去手填 hosts。每条后缀自动补前导点，仅 Linux/macOS 生效。",
+      "neighborDomainsPlaceholder": ".lan\n.home",
+      "neighborDomainsHint": "每行一个后缀（自动补前导点）；对该后缀下无点的短名（如 nas.lan）走局域网设备解析。",
+      "macFilter": "按 MAC 过滤设备",
+      "macFilterDesc": "限定/排除哪些局域网设备的流量进入 TUN（按 MAC）。",
+      "macFilterDescFull": "本机作局域网网关时，按设备 MAC 限定「仅允许」或「排除」其流量进入 TUN 隧道。仅 Linux 支持，需开启 auto_route（会自动启用 auto_redirect）。需在路由器把本机设为网关。",
+      "macFilterOff": "关闭",
+      "macFilterInclude": "仅允许",
+      "macFilterExclude": "排除",
+      "macFilterHint": "每行一个 MAC（00:11:22:33:44:55）；需 auto_route 开启，仅 Linux 生效。"
     },
     "about": {
       "title": "关于",
@@ -1084,7 +1097,9 @@
       "processPath": "每行一个进程完整路径",
       "geosite": "每行一个标签（如 youtube），或从下方常用标签选择",
       "geoip": "每行一个标签（如 cn），或从下方常用标签选择",
-      "ruleSet": ""
+      "ruleSet": "",
+      "sourceMac": "每行一个 MAC（00:11:22:33:44:55 / 00-11-22-33-44-55 / 0011.2233.4455）",
+      "sourceHostname": "每行一个设备主机名（来自 DHCP 租约）"
     },
     "pickProcess": "从进程选择",
     "invalidValue": "匹配值格式不正确",
@@ -1098,7 +1113,8 @@
       "domain": "域名",
       "network": "IP / 端口",
       "process": "进程",
-      "ruleset": "规则集"
+      "ruleset": "规则集",
+      "device": "局域网设备"
     },
     "types": {
       "domain": {
@@ -1165,6 +1181,16 @@
         "name": "规则集",
         "desc": "已下载的本地规则资源",
         "placeholder": ""
+      },
+      "sourceMac": {
+        "name": "源设备 MAC",
+        "desc": "按来源设备 MAC 分流（局域网网关场景，仅 Linux/macOS）",
+        "placeholder": "00:11:22:33:44:55"
+      },
+      "sourceHostname": {
+        "name": "源设备主机名",
+        "desc": "按来源设备主机名分流（DHCP 租约名，仅 Linux/macOS）",
+        "placeholder": "my-laptop"
       }
     },
     "processPicker": {
@@ -1272,7 +1298,7 @@
     "policy": "策略",
     "proxy": "代理",
     "direct": "直连",
-    "instruction1": "· 规则分四组（域名 / IP·端口 / 进程 / 规则集）共 13 种类型；一条规则可组合多个条件（默认满足任一即命中，可切「全部满足」），匹配值每行一条",
+    "instruction1": "· 规则分五组（域名 / IP·端口 / 局域网设备 / 进程 / 规则集）共 15 种类型；一条规则可组合多个条件（默认满足任一即命中，可切「全部满足」），匹配值每行一条",
     "instruction2": "· 「域名后缀」匹配该域名及其全部子域名（推荐）；「域名」仅精确匹配，不含子域名",
     "instruction3": "· 进程规则仅对本机发起的连接生效，Windows 进程名含 .exe；「进程名 + 直连」即可让指定应用绕过代理",
     "instruction4": "· 规则按列表顺序自上而下匹配，先命中先生效；自定义规则优先于应用分流与智能分流；自定义规则与应用分流仅「智能分流」模式生效（全局模式一律走选中节点、直连模式全部直连）",

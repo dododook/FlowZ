@@ -26,6 +26,10 @@ export interface SingBoxDnsServer {
   endpoint?: string;
   accept_search_domain?: boolean;
   accept_default_resolvers?: boolean;
+  // neighbor_domain（1.14；P6 LAN 网关，Listable[string]）：local DNS server 对这些后缀的单标签短名走邻居
+  // 解析（主机名→IP）。每条**须以 '.' 开头**（内核 init `entry must start with '.'`）；仅 Linux/macOS 生效。
+  // 实证：resources/linux/sing-box(1.14-alpha.32) check —— 接受数组/单串，'.' 匹配任意单标签名。
+  neighbor_domain?: string[];
   // Legacy / compat fields (not emitted in new format)
   address?: string;
   address_resolver?: string;
@@ -40,6 +44,10 @@ export interface SingBoxDnsRule {
   domain?: string[];
   domain_suffix?: string[];
   domain_keyword?: string[];
+  // source_mac_address / source_hostname（1.14；P6 LAN 网关，Listable[string]）：按源设备 MAC / DHCP 主机名
+  // 分流 DNS。仅 Linux/macOS。sing-box check 实证 alpha.32（须配 default_domain_resolver）。
+  source_mac_address?: string[];
+  source_hostname?: string[];
   // preferred_by（1.14；P4b，Listable[string]）：把「某 DNS server 视为首选名」的域名（search domain /
   // MagicDNS 名）路由给它——替代硬编码 tailnet 后缀。须配 action:"route" + server 指向同一 tailscale server。
   preferred_by?: string[];
@@ -80,10 +88,17 @@ export interface SingBoxInbound {
   address?: string[];
   mtu?: number;
   auto_route?: boolean;
+  // auto_redirect（1.10+）：Linux 用 nftables 改善 TUN 路由/性能。P6 LAN 网关按 MAC 过滤设备进 TUN 时**必发**
+  // （include/exclude_mac_address 内核硬限界=Linux + auto_route + auto_redirect，缺则 init FATAL）。
+  auto_redirect?: boolean;
   strict_route?: boolean;
   stack?: string;
   sniff?: boolean; // sing-box 1.14 已移 inbound 级 sniff；保留字段仅为旧单测断言兼容，生成时不下发
   route_exclude_address?: string[];
+  // include/exclude_mac_address（1.14；P6 LAN 网关，Listable[string]，互斥）：按 MAC 限/排设备进 TUN。
+  // **仅 Linux + auto_route + auto_redirect**；脏 MAC → check/启动 FATAL。构建期门控见 buildInbounds。
+  include_mac_address?: string[];
+  exclude_mac_address?: string[];
   platform?: {
     http_proxy?: {
       enabled: boolean;
@@ -273,6 +288,10 @@ export interface SingBoxRouteRule {
   port_range?: string[];
   source_port?: number | number[];
   source_port_range?: string[];
+  // source_mac_address / source_hostname（1.14；P6 LAN 网关，Listable[string]）：按源设备 MAC / DHCP 主机名
+  // 分流。仅 Linux/macOS（win32 内核不支持→构建期不发射，见 singbox-custom-rules）。sing-box check 实证 alpha.32。
+  source_mac_address?: string[];
+  source_hostname?: string[];
   process_name?: string | string[];
   process_path?: string | string[];
   process_name_not?: string | string[]; // sing-box 1.13+

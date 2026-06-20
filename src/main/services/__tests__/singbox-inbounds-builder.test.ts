@@ -94,3 +94,92 @@ describe('buildInbounds — TUN', () => {
     expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('1.2.3.4/32');
   });
 });
+
+// P6 LAN 网关：TUN include/exclude_mac_address（sing-box 1.14）。门控：仅 Linux + auto_route，且有合法 MAC，
+// 满足时必发 auto_redirect:true（内核硬限界前置）+ include/exclude 之一（互斥）。
+describe('buildInbounds — TUN MAC 过滤（P6 LAN 网关）', () => {
+  const tunMac = (over: Partial<NonNullable<UserConfig['tunConfig']>>): Partial<UserConfig> => ({
+    proxyModeType: 'tun',
+    tunConfig: { mtu: 1350, stack: 'system', autoRoute: true, strictRoute: true, ...over } as any,
+  });
+
+  it('Linux + include + 合法 MAC → auto_redirect:true + include_mac_address（无 exclude）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg(tunMac({ macFilterMode: 'include', macFilterList: ['00:11:22:33:44:55'] })),
+        undefined,
+        deps()
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.auto_redirect).toBe(true);
+    expect(tun.include_mac_address).toEqual(['00:11:22:33:44:55']);
+    expect(tun.exclude_mac_address).toBeUndefined();
+  });
+
+  it('Linux + exclude → exclude_mac_address（无 include），脏 MAC 剔除', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg(tunMac({ macFilterMode: 'exclude', macFilterList: ['aa-bb-cc-dd-ee-ff', 'bad'] })),
+        undefined,
+        deps()
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.exclude_mac_address).toEqual(['aa-bb-cc-dd-ee-ff']); // bad 剔除
+    expect(tun.include_mac_address).toBeUndefined();
+    expect(tun.auto_redirect).toBe(true);
+  });
+
+  it('非 Linux（macOS）→ 不发射 MAC 过滤 / auto_redirect（内核不支持）', () => {
+    const ibs = withPlatform('darwin', () =>
+      buildInbounds(
+        cfg(tunMac({ macFilterMode: 'include', macFilterList: ['00:11:22:33:44:55'] })),
+        undefined,
+        deps()
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.include_mac_address).toBeUndefined();
+    expect(tun.auto_redirect).toBeUndefined();
+  });
+
+  it('Linux + auto_route 关 → 不发射（auto_redirect 依赖 auto_route）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg(
+          tunMac({
+            autoRoute: false,
+            macFilterMode: 'include',
+            macFilterList: ['00:11:22:33:44:55'],
+          })
+        ),
+        undefined,
+        deps()
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.include_mac_address).toBeUndefined();
+    expect(tun.auto_redirect).toBeUndefined();
+  });
+
+  it('Linux + 全脏 MAC → 不发射（无合法值）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg(tunMac({ macFilterMode: 'include', macFilterList: ['nope', '001122334455'] })),
+        undefined,
+        deps()
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.include_mac_address).toBeUndefined();
+    expect(tun.auto_redirect).toBeUndefined();
+  });
+
+  it('未配 macFilterMode → 零变化（不发 auto_redirect）', () => {
+    const ibs = withPlatform('linux', () => buildInbounds(cfg(tunMac({})), undefined, deps()));
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.auto_redirect).toBeUndefined();
+    expect(tun.include_mac_address).toBeUndefined();
+  });
+});

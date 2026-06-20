@@ -251,6 +251,14 @@ export interface TunModeConfig {
   interfaceName?: string;
   inet4Address?: string;
   inet6Address?: string;
+  // ── P6 局域网网关（sing-box 1.14 LAN 设备识别簇，仅 Linux 生效，见 shared/neighbor.ts）──
+  // TUN 按 MAC 过滤进入 TUN 的设备：'include'=仅 macFilterList 内的设备进 TUN / 'exclude'=排除它们。互斥。
+  // 仅 Linux + auto_route + auto_redirect 支持；非法 MAC / 非 Linux 时构建期不发射（防 FATAL）。
+  macFilterMode?: 'include' | 'exclude';
+  macFilterList?: string[]; // EUI-48 MAC，仅在 macFilterMode 设定时消费
+  // local DNS 邻居解析：对这些后缀的单标签短名（如 nas.lan）走局域网邻居解析（主机名→IP）。
+  // 每条须以 '.' 开头（构建期归一化）；仅 Linux/macOS 生效。供「局域网设备短名访问」场景。
+  neighborDomains?: string[];
 }
 
 // DNS 配置
