@@ -289,4 +289,103 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(onUpdate).toHaveBeenCalledTimes(1);
     });
   });
+
+  // E-1：崩溃自动重启换新 api client 后，必须重订阅到新 client（否则 Status 流句柄仍指向死旧 client 冻结）。
+  describe('resubscribe 重订阅到新 client（崩溃重启路径，E-1）', () => {
+    /** 可切换 client 的 service：getApiClient 返回 currentRef.client，模拟 ProxyManager 崩溃重启换 client。 */
+    function setupSwitchable(opts: { withVisible?: boolean; visible?: boolean } = {}) {
+      const onUpdate = jest.fn<void, [TrafficStats]>();
+      const onConnections = jest.fn<void, [ConnectionsSnapshot]>();
+      const ref = { mock: makeMockClient() };
+      const isWindowVisible = opts.withVisible ? jest.fn(() => opts.visible ?? true) : undefined;
+      const service = new StatsService(
+        onUpdate,
+        () => ref.mock.client,
+        onConnections,
+        isWindowVisible
+      );
+      return { service, onUpdate, onConnections, ref, swap: () => (ref.mock = makeMockClient()) };
+    }
+
+    it('换 client 后 resubscribe：旧流退订、Status 重订阅到新 client（started 仍 true 时不被幂等闸门挡）', () => {
+      const { service, ref, swap } = setupSwitchable();
+      service.start();
+      const oldMock = ref.mock;
+      expect(oldMock.calls.subscribeStatus).toBe(1);
+      expect(oldMock.hasStatusCb()).toBe(true);
+
+      // 模拟崩溃重启：ProxyManager 杀旧 client 建新 client（getApiClient 此后返回新 mock）。started 仍 true（未经 stop）。
+      swap();
+      const newMock = ref.mock;
+
+      service.resubscribe();
+      // 旧 client 的 Status 流被退订（句柄 cancel）
+      expect(oldMock.calls.statusStop).toBe(1);
+      // 新 client 被重订阅 Status
+      expect(newMock.calls.subscribeStatus).toBe(1);
+      expect(newMock.hasStatusCb()).toBe(true);
+    });
+
+    it('start() 在 started=true 时幂等不重订阅（对照：证明必须用 resubscribe 而非 start）', () => {
+      const { service, ref, swap } = setupSwitchable();
+      service.start();
+      const oldMock = ref.mock;
+      swap();
+      const newMock = ref.mock;
+
+      service.start(); // 幂等闸门 return：不退旧、不订阅新
+      expect(oldMock.calls.statusStop).toBe(0);
+      expect(newMock.calls.subscribeStatus).toBe(0);
+    });
+
+    it('resubscribe 后新 client 的 Status 帧能广播（流真的活在新 client 上）', () => {
+      const { service, onUpdate, ref, swap } = setupSwitchable({
+        withVisible: true,
+        visible: true,
+      });
+      service.start();
+      swap();
+      const newMock = ref.mock;
+      service.resubscribe();
+      onUpdate.mockClear();
+
+      newMock.pushStatus(STATUS); // 新 client 推帧
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(onUpdate.mock.calls[0][0].activeConnections).toBe(5);
+    });
+
+    it('resubscribe 保 connectionsWatchers 引用计数：watcher>0 时一并重订阅 Connections 到新 client', () => {
+      const { service, ref, swap } = setupSwitchable();
+      service.start();
+      service.addConnectionsWatcher(); // watcher=1，订阅旧 Connections
+      const oldMock = ref.mock;
+      expect(oldMock.calls.subscribeConnections).toBe(1);
+
+      swap();
+      const newMock = ref.mock;
+      service.resubscribe();
+
+      // 计数不变（仍为 1），故 Connections 也重订阅到新 client
+      expect((service as any).connectionsWatchers).toBe(1);
+      expect(oldMock.calls.connStop).toBe(1); // 旧 Connections 退订
+      expect(newMock.calls.subscribeConnections).toBe(1); // 新 Connections 订阅
+    });
+
+    it('resubscribe 在 watcher=0 时不订阅 Connections（仅 Status）', () => {
+      const { service, ref, swap } = setupSwitchable();
+      service.start();
+      swap();
+      const newMock = ref.mock;
+      service.resubscribe();
+      expect(newMock.calls.subscribeStatus).toBe(1);
+      expect(newMock.calls.subscribeConnections).toBe(0);
+    });
+
+    it('resubscribe 作首次启动（started=false）等效 start：订阅 Status', () => {
+      const { service, ref } = setupSwitchable();
+      service.resubscribe(); // 未先 start
+      expect(ref.mock.calls.subscribeStatus).toBe(1);
+      expect((service as any).started).toBe(true);
+    });
+  });
 });

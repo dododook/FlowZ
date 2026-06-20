@@ -145,6 +145,24 @@ export class StatsService {
     if (this.connectionsWatchers > 0) this.subscribeConnectionsStream();
   }
 
+  /**
+   * 重订阅到「当前」api client（E-1）。崩溃自动重启路径（ProxyManager.handleProcessExit 直接 return，不经
+   * emit('stopped') → 不调本服务 stop()）下 `started` 仍为 true → start() 幂等闸门直接 return → 旧 statusStop
+   * 句柄仍指向已死的旧 client → Status 流（首页速率/总量/连接数）永久冻结。本方法无视幂等闸门：先停现有流句柄
+   * （旧句柄 cancel 死 client 的流），再按新 getApiClient() 重订阅 Status（始终）+ Connections（仅 watcher>0 时），
+   * 重建到新 client。connectionsWatchers 引用计数语义不变（仅据其值决定是否重订阅 Connections，不增减计数）。
+   * 同时满足首次启动（started=false）：置位 started 后等效于 start()，故 'started' 监听器统一调用本方法即可。
+   */
+  resubscribe(): void {
+    this.started = true;
+    // 停旧句柄（指向旧 client）。两条 unsubscribe 把 statusStop/connectionsStop 清 null（吞异常 cancel 死 client 的流），
+    // 否则 subscribe* 会被「已订阅」守卫（if (this.statusStop) return）短路、订阅不到新 client。
+    this.unsubscribeStatusStream();
+    this.unsubscribeConnectionsStream();
+    this.subscribeStatusStream();
+    if (this.connectionsWatchers > 0) this.subscribeConnectionsStream();
+  }
+
   stop(): void {
     this.started = false;
     this.unsubscribeStatusStream();

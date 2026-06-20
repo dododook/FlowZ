@@ -1218,7 +1218,11 @@ if (gotTheLock) {
       // 出口 IP：start 瞬间即置「获取中」，消除「running 已 true 但下方延迟 1.5s 刷新尚未开始」窗口内
       // 代理出口闪「代理出口暂不可用」。随后的延迟 refresh(true) 接力真正探测（带重试）。
       ipInfoService?.markProxyConnecting();
-      statsService?.start();
+      // resubscribe（非 start）：崩溃自动重启换了新 api client，但 handleProcessExit 直接 return 不经
+      // emit('stopped') → 未调 statsService.stop() → started 仍 true → start() 幂等闸门会 return 不重订阅 →
+      // Status 流句柄仍指向死 client 冻结（E-1）。resubscribe 无视幂等闸门，强制把 Status（及 watcher>0 的
+      // Connections）流重订阅到当前 api client；首次启动（started=false）下与 start() 等效，统一调用即可。
+      statsService?.resubscribe();
       subscriptionScheduler?.onProxyStarted(); // 代理就绪 → 补跑因 viaProxy 跳过的启动订阅更新
       try {
         await coreUpdateService.recordSuccessfulVersion();
