@@ -186,6 +186,13 @@ describe('Bearer metadata 注入', () => {
     expect(mockState.lastTarget).toBe('[2001:db8::1]:443');
   });
 
+  // R3-1：IPv4-mapped IPv6（'::ffff:1.2.3.4'）含 '.'，isIpv6Literal 误判 false；改按是否含 ':' 判定后须包裹。
+  it('IPv4-mapped IPv6 字面量 → 方括号包裹（[::ffff:1.2.3.4]:port）', async () => {
+    const client = new SingBoxApiClient({ host: '::ffff:1.2.3.4', port: 9090 }, 's');
+    await client.closeAllConnections();
+    expect(mockState.lastTarget).toBe('[::ffff:1.2.3.4]:9090');
+  });
+
   it('IPv4 / 域名 → target 不变（不误包裹）', async () => {
     const v4 = new SingBoxApiClient({ host: '127.0.0.1', port: 9091 }, 's');
     await v4.closeAllConnections();
