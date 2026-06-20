@@ -20,20 +20,25 @@ const mockState: {
   lastTarget: string;
   lastChannelCreds: unknown;
   lastMetadata: FakeMetadata | null;
+  lastUnaryOptions: { deadline?: unknown } | null;
   insecureCreds: { __kind: 'insecure' };
   sslCalls: Array<{ rootCerts: unknown; verifyOptions: unknown }>;
   unaryCalls: Array<{ method: string; req: unknown }>;
   streams: FakeStream[];
   closedClients: number;
+  // B-1：true 时 unary cb 永不触发（模拟核启动中/wedged：TCP accept 但方法不 serve）。
+  hangUnary: boolean;
 } = {
   lastTarget: '',
   lastChannelCreds: null,
   lastMetadata: null,
+  lastUnaryOptions: null,
   insecureCreds: { __kind: 'insecure' },
   sslCalls: [],
   unaryCalls: [],
   streams: [],
   closedClients: 0,
+  hangUnary: false,
 };
 
 class FakeMetadata {
@@ -59,11 +64,25 @@ function makeFakeClientCtor() {
   return jest.fn().mockImplementation((target: string, creds: unknown) => {
     mockState.lastTarget = target;
     mockState.lastChannelCreds = creds;
-    const unary = (method: string) => (req: unknown, md: unknown, cb: (err: unknown) => void) => {
-      mockState.unaryCalls.push({ method, req });
-      mockState.lastMetadata = md as FakeMetadata;
-      cb(null);
-    };
+    // unary 签名 4 参 (req, md, options, cb)——options 携带 gRPC CallOptions（含 deadline，B-1）。
+    const unary =
+      (method: string) =>
+      (req: unknown, md: unknown, options: { deadline?: unknown }, cb: (err: unknown) => void) => {
+        mockState.unaryCalls.push({ method, req });
+        mockState.lastMetadata = md as FakeMetadata;
+        mockState.lastUnaryOptions = options;
+        if (mockState.hangUnary) {
+          // 模拟 gRPC deadline 语义：服务端不响应，但带了 deadline → 到期 gRPC 用 DEADLINE_EXCEEDED 回调（必 settle）。
+          // 无 deadline（旧行为）则永不回调（promise 永挂）。用真定时器在 deadline 时刻触发。
+          const dl = options?.deadline;
+          if (dl instanceof Date) {
+            const ms = Math.max(0, dl.getTime() - Date.now());
+            setTimeout(() => cb({ code: 4, details: 'Deadline exceeded' }), ms);
+          }
+          return; // 无 deadline：不回调（hang）
+        }
+        cb(null);
+      };
     const stream = () => {
       const s = makeFakeStream();
       mockState.streams.push(s);
@@ -121,10 +140,12 @@ beforeEach(() => {
   mockState.lastTarget = '';
   mockState.lastChannelCreds = null;
   mockState.lastMetadata = null;
+  mockState.lastUnaryOptions = null;
   mockState.sslCalls = [];
   mockState.unaryCalls = [];
   mockState.streams = [];
   mockState.closedClients = 0;
+  mockState.hangUnary = false;
 });
 
 describe('Bearer metadata 注入', () => {
@@ -288,5 +309,57 @@ describe('probe 连通探活（Phase 2 连通测试）', () => {
     const stream = mockState.streams[0];
     stream.handlers['error']?.(new Error('16 UNAUTHENTICATED'));
     await expect(p).rejects.toThrow('UNAUTHENTICATED');
+  });
+});
+
+// B-1：unary（CloseConnection/CloseAllConnections/SelectOutbound/logout）必须带 gRPC deadline，
+// 否则核启动中/wedged 时 server 不回调 → promise 永挂 → 连接页 Close 按钮永久 spinner。
+describe('unary deadline 保证 promise 必 settle（B-1）', () => {
+  it('unary 调用携带 deadline（绝对时间 Date，~2s 后）', async () => {
+    const client = new SingBoxApiClient(ENDPOINT, 's');
+    const before = Date.now();
+    await client.closeAllConnections();
+    const dl = mockState.lastUnaryOptions?.deadline;
+    expect(dl instanceof Date).toBe(true);
+    const ms = (dl as Date).getTime() - before;
+    // 对齐旧 ClashApiClient 的 2000ms；留宽容窗口（执行抖动）。
+    expect(ms).toBeGreaterThanOrEqual(1500);
+    expect(ms).toBeLessThanOrEqual(2500);
+  });
+
+  it('server 不响应（核启动中/wedged）：带 deadline → 到期 reject（必 settle，不永挂）', async () => {
+    jest.useFakeTimers();
+    try {
+      mockState.hangUnary = true;
+      const client = new SingBoxApiClient(ENDPOINT, 's');
+      const p = client.closeConnection('conn-x');
+      // promise 挂起一个断言（rejects），推进时间越过 deadline → gRPC DEADLINE_EXCEEDED 回调触发 reject。
+      const assertion = expect(p).rejects.toMatchObject({ code: 4 });
+      await jest.advanceTimersByTimeAsync(2100);
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('logout 同带 deadline，server 不响应时亦 settle（不永挂）', async () => {
+    jest.useFakeTimers();
+    try {
+      mockState.hangUnary = true;
+      const client = new SingBoxApiClient(ENDPOINT, 's');
+      const p = client.logout('node-tag');
+      const assertion = expect(p).rejects.toMatchObject({ code: 4 });
+      await jest.advanceTimersByTimeAsync(2100);
+      await assertion;
+      // logout 也传了 deadline（Date）
+      expect(mockState.lastUnaryOptions?.deadline instanceof Date).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('正常响应路径不受影响（cb(null) → resolve）', async () => {
+    const client = new SingBoxApiClient(ENDPOINT, 's');
+    await expect(client.selectOutbound('g', 'o')).resolves.toBeUndefined();
   });
 });

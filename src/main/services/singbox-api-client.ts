@@ -372,20 +372,24 @@ export class SingBoxApiClient {
     this.client = null;
   }
 
-  /** 原生登出指定 endpoint（不清 state 目录）。一次性 unary call，独立连接。 */
+  /** 原生登出指定 endpoint（不清 state 目录）。一次性 unary call，独立连接。带 deadline 保证必 settle（B-1）。 */
   logout(endpointTag: string): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
         const c = this.newClient();
+        const opts: grpc.CallOptions = {
+          deadline: new Date(Date.now() + SingBoxApiClient.UNARY_DEADLINE_MS),
+        };
         (
           c as unknown as {
             TailscaleLogout: (
               req: { endpointTag: string },
               md: grpc.Metadata,
+              options: grpc.CallOptions,
               cb: (err: grpc.ServiceError | null) => void
             ) => void;
           }
-        ).TailscaleLogout({ endpointTag }, this.authMetadata(), (err) => {
+        ).TailscaleLogout({ endpointTag }, this.authMetadata(), opts, (err) => {
           try {
             c.close();
           } catch {
@@ -400,17 +404,30 @@ export class SingBoxApiClient {
     });
   }
 
-  /** 通用一次性 unary 调用（独立连接，调用后即关）。供 clash 等价方法复用。 */
+  // unary 调用 deadline（ms）：核启动中（TCP accept 但 StartedService 方法尚未 serve）或 wedged 时 gRPC 回调
+  // 永不触发 → promise 永挂 → 连接页 Close/Close-All 按钮永久 spinner（B-1）。对齐被删 ClashApiClient.request 的
+  // timeoutMs=2000，保证每次 unary 必在 ~2s 内 settle（DEADLINE_EXCEEDED → reject 走调用方既有错误处理契约）。
+  private static readonly UNARY_DEADLINE_MS = 2000;
+
+  /** 通用一次性 unary 调用（独立连接，调用后即关）。供 clash 等价方法复用。带绝对 deadline 保证必 settle。 */
   private unary<TReq>(method: string, req: TReq): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
         const c = this.newClient();
+        const opts: grpc.CallOptions = {
+          deadline: new Date(Date.now() + SingBoxApiClient.UNARY_DEADLINE_MS),
+        };
         (
           c as unknown as Record<
             string,
-            (r: TReq, md: grpc.Metadata, cb: (err: grpc.ServiceError | null) => void) => void
+            (
+              r: TReq,
+              md: grpc.Metadata,
+              options: grpc.CallOptions,
+              cb: (err: grpc.ServiceError | null) => void
+            ) => void
           >
-        )[method](req, this.authMetadata(), (err) => {
+        )[method](req, this.authMetadata(), opts, (err) => {
           try {
             c.close();
           } catch {
