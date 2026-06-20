@@ -41,6 +41,18 @@ export function registerHelperHandlers(
     }
   );
 
+  // 打开 sing-box 官方面板：用运行期 tailscaleApiPort（api service 监听口）构造 /dashboard/ URL + 系统浏览器打开。
+  // 渲染端构造不出 startInternal 解析的动态端口，故经此 IPC。代理未运行（端口=0）→ 不打开（dashboard 仅运行中可用），
+  // UI 侧亦在「开关 on 且运行中」才 enable 按钮。复用 shell.openExternal 收口（与 SHELL_OPEN_EXTERNAL 同径）。
+  registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD, async () => {
+    const port = proxyManager.getTailscaleApiPort();
+    if (!proxyManager.getStatus().running || !port) {
+      return { ok: false };
+    }
+    await shell.openExternal(`http://127.0.0.1:${port}/dashboard/`);
+    return { ok: true };
+  });
+
   // 完全卸载 FlowZ：清 helper + 受保护目录（root，弹一次密码框）+ 用户配置 + 应用本体（移废纸篓），然后退出。
   registerIpcHandler<void, { ok: boolean; error?: string }>(
     IPC_CHANNELS.APP_UNINSTALL_ALL,

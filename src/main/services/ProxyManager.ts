@@ -148,6 +148,8 @@ export interface IProxyManager {
   switchMode(config: UserConfig): Promise<void>;
   getStatus(): ProxyStatus;
   isStartedViaHelper(): boolean;
+  // api service（sing-box 1.14 management api）运行期监听端口；「打开官方面板」IPC 据此构造 /dashboard/ URL（0=未启动）。
+  getTailscaleApiPort(): number;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
   getResolvedNodeIps(): string[];
   on(
@@ -1383,6 +1385,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
+   * 当前 api service（sing-box 1.14 management api）监听端口。startInternal 经 resolveTailscaleApiPort 解析的空闲动态端口，
+   * 渲染端构造不出，故「打开官方面板」IPC 用此取运行期端口构造 /dashboard/ URL。未启动时为 0（dashboard 仅运行中可用）。
+   */
+  getTailscaleApiPort(): number {
+    return this.tailscaleApiPort;
+  }
+
+  /**
    * 关闭连接（连接信息页用）：直调 ClashApiClient（专属 agent + Bearer secret 内部封装，渲染端不持 secret）。
    * id 给定 → DELETE /connections/{id}（关单条）；id 省略 → DELETE /connections（关全部 = CloseAllConnections + ResetNetwork）。
    * 不抛异常，按 { ok, status } 语义返回（与 reassert/hotSwitch 同治）。
@@ -2001,6 +2011,11 @@ done
           secret: config.clashApiSecret || undefined,
         },
       ];
+      // sing-box 官方面板（opt-in 逃生舱）：仅开关 on 时注入 dashboard.enabled → 核首次联网拉 sing-box-dashboard
+      // 资源并于本 api service 的 /dashboard/ serve。关闭时不注入 → 核默认不出网拉 dashboard 资源。同一 service，不重复注入。
+      if (config.singboxDashboard) {
+        singboxConfig.services[0].dashboard = { enabled: true };
+      }
     }
 
     // 路由规则若指向「已被跳过/不存在的出站」（如缺 libcronet 被跳过的 naive 节点），sing-box 会以

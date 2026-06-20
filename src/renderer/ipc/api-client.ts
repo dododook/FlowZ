@@ -922,6 +922,13 @@ export const appApi = {
   async uninstallAll(): Promise<{ ok: boolean; error?: string }> {
     return ipcClient.invoke(IPC_CHANNELS.APP_UNINSTALL_ALL);
   },
+  /**
+   * 打开 sing-box 官方面板：main 用运行期 api service 端口构造 /dashboard/ URL + 系统浏览器打开。
+   * 代理未运行 → 返回 { ok: false }（UI 仅在开关 on 且运行中才 enable 按钮）。
+   */
+  async openSingboxDashboard(): Promise<{ ok: boolean }> {
+    return ipcClient.invoke(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD);
+  },
 };
 
 /**

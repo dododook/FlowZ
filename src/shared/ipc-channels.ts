@@ -108,6 +108,9 @@ export const IPC_CHANNELS = {
 
   // Shell 操作
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
+  // 打开 sing-box 官方面板：main 用运行期 tailscaleApiPort（api service 监听口）构造 /dashboard/ URL + shell.openExternal。
+  // 渲染端构造不出 startInternal 解析的动态端口，故必须经此 IPC。
+  OPEN_SINGBOX_DASHBOARD: 'app:openSingboxDashboard',
 
   // 更新事件 (主进程 -> 渲染进程)
   EVENT_UPDATE_PROGRESS: 'update:progress',

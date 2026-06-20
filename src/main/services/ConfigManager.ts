@@ -617,6 +617,12 @@ export class ConfigManager implements IConfigManager {
       this.log('warn', 'appRoutingEnabled must be a boolean; resetting to default (disabled)');
       delete config.appRoutingEnabled;
     }
+    // singboxDashboard：纯开关字段（默认关）。非 boolean 一律删除而非 throw（同 appRoutingEnabled 标准，不回填默认）——
+    // throw 在 loadConfig 路径会触发默认配置覆盖落盘致用户节点/订阅/规则全丢，不值当。
+    if (config.singboxDashboard !== undefined && typeof config.singboxDashboard !== 'boolean') {
+      this.log('warn', 'singboxDashboard must be a boolean; resetting to default (disabled)');
+      delete config.singboxDashboard;
+    }
     // builtinGeoMeta 非法类型 sanitize 而非 throw（读取侧全容错、无爆炸半径，与 appRoutingEnabled 同型）
     if (
       config.builtinGeoMeta !== undefined &&

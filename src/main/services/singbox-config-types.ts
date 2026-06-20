@@ -285,6 +285,9 @@ export interface SingBoxApiService {
   listen: string;
   listen_port: number;
   secret?: string;
+  // sing-box 1.14 官方面板（opt-in）：enabled 时核首次联网拉 sing-box-dashboard 资源、于 listen_port 的 /dashboard/ serve。
+  // 仅 config.singboxDashboard 开时注入 → 关闭时核绝不出网拉资源（默认不出网）。
+  dashboard?: { enabled: boolean };
 }
 
 export interface SingBoxConfig {
