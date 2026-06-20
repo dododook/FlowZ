@@ -17,6 +17,7 @@ import type { SubscriptionConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '@/lib/format';
 import { getVersionInfo } from '@/bridge/api-wrapper';
+import { InfoTooltip } from './shared/info-tooltip';
 
 interface SubscriptionDialogProps {
   open: boolean;
@@ -142,7 +143,10 @@ export function SubscriptionDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="sub-user-agent">{t('sub.userAgent')}</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="sub-user-agent">{t('sub.userAgent')}</Label>
+              <InfoTooltip content={t('sub.userAgentDescFull')} />
+            </div>
             <Input
               id="sub-user-agent"
               placeholder={t('sub.userAgentPlaceholder', { ua: defaultUserAgent })}

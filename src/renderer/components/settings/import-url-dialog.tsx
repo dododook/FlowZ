@@ -218,7 +218,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
           <DialogDescription>
             {t(
               'importUrl.desc',
-              'Supports vless://, vmess://, trojan://, hysteria2://, hy2://, ss://, anytls://, tuic://, http2://, socks5://, s5:// and http(s):// protocol links. Paste multiple links (one per line) for batch import.'
+              'Supports common protocol links; paste multiple lines for batch import.'
             )}
           </DialogDescription>
         </DialogHeader>
@@ -231,7 +231,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
                 id="protocol-url"
                 placeholder={t(
                   'importUrl.urlPlaceholder',
-                  'vless://uuid@server:port?encryption=none&security=tls&type=ws#name\nor trojan://password@server:port?security=tls#name\nor hysteria2://password@server:port?sni=example.com#name\nor ss://base64(method:password)@server:port#name\nor anytls://password@server:port?security=tls&sni=example.com#name\nor tuic://uuid:password@server:port?sni=example.com#name\nor http2://username:password@server:port#name\nor socks5://username:password@server:port#name\nor s5://username:password@server:port#name\nor https://username:password@server:port#name\n\nSupport multiple links, one per line'
+                  'vmess://base64(json)\nor vless://uuid@server:port?security=tls#name\nor ss://base64(method:password)@server:port#name\n\n…paste multiple lines, one link per line'
                 )}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}

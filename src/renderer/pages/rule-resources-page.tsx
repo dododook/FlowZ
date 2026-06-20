@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
+import { InfoTooltip } from '@/components/settings/shared/info-tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -282,7 +283,7 @@ export function RuleResourcesPage() {
         <CardHeader>
           <CardTitle>{t('ruleResources.ghProxy', 'GitHub 加速')}</CardTitle>
           <CardDescription>
-            {t('ruleResources.ghProxyDesc', '可选，默认直连。下载 GitHub 资源较慢时可选择加速域名')}
+            {t('ruleResources.ghProxyDesc', '可选。下载 GitHub 资源慢时可选加速域名')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -319,12 +320,12 @@ export function RuleResourcesPage() {
       {/* 自动更新 */}
       <Card>
         <CardHeader>
-          <CardTitle>{t('ruleResources.autoUpdate', '自动更新')}</CardTitle>
+          <div className="flex items-center gap-1.5">
+            <CardTitle>{t('ruleResources.autoUpdate', '自动更新')}</CardTitle>
+            <InfoTooltip content={t('ruleResources.autoUpdateDescFull')} />
+          </div>
           <CardDescription>
-            {t(
-              'ruleResources.autoUpdateDesc',
-              '按设定间隔自动重新下载已下载的规则资源（sing-box 不会自动更新本地规则集）'
-            )}
+            {t('ruleResources.autoUpdateDesc', '按设定间隔自动重新下载已下载的规则资源')}
           </CardDescription>
         </CardHeader>
         <CardContent>
