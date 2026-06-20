@@ -26,6 +26,7 @@ import {
   FingerprintField,
   AllowInsecureField,
   TlsEngineField,
+  TlsSpoofField,
 } from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
@@ -33,11 +34,15 @@ import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
   echSchemaShape,
   multiplexSchemaShape,
+  tlsSpoofSchemaShape,
   echDefaults,
   multiplexDefaults,
+  tlsSpoofDefaults,
   readEchDefault,
   readMultiplexDefaults,
+  readTlsSpoofDefault,
   buildMultiplexSettings,
+  buildTlsSpoofSettings,
   readTransportDefaults,
   buildTransportSettings,
 } from './shared/field-schemas';
@@ -70,6 +75,7 @@ const createVlessSchema = (t: any) =>
     grpcServiceName: z.string().optional(),
     ...echSchemaShape,
     ...multiplexSchemaShape,
+    ...tlsSpoofSchemaShape,
   });
 
 type VlessFormValues = z.infer<ReturnType<typeof createVlessSchema>>;
@@ -120,6 +126,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
         ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
+        ...readTlsSpoofDefault(serverConfig),
       };
     }
     return {
@@ -139,6 +146,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
       ...readTransportDefaults(),
       ...echDefaults,
       ...multiplexDefaults,
+      ...tlsSpoofDefaults,
     };
   };
 
@@ -172,6 +180,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
                   : undefined,
               ech: values.ech ? true : undefined,
               echConfig: values.echConfig?.trim() || undefined,
+              ...(security === 'tls' ? buildTlsSpoofSettings(values) : {}),
             }
           : null,
       realitySettings:
@@ -343,6 +352,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               <TlsServerNameField control={form.control} t={t} />
               <FingerprintField control={form.control} t={t} />
               <TlsEngineField control={form.control} t={t} />
+              <TlsSpoofField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

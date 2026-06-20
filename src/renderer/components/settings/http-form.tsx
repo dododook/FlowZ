@@ -14,8 +14,19 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FormButtons } from './shared/form-buttons';
 import { AddressField, PortField } from './shared/basic-fields';
-import { TlsServerNameField, AllowInsecureField, TlsEngineField } from './shared/tls-fields';
+import {
+  TlsServerNameField,
+  AllowInsecureField,
+  TlsEngineField,
+  TlsSpoofField,
+} from './shared/tls-fields';
 import { FormSection, FieldGrid } from './shared/form-layout';
+import {
+  tlsSpoofSchemaShape,
+  tlsSpoofDefaults,
+  readTlsSpoofDefault,
+  buildTlsSpoofSettings,
+} from './shared/field-schemas';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -29,6 +40,7 @@ const createHttpSchema = (t: any) =>
     tlsAllowInsecure: z.boolean(),
     tlsServerName: z.string().optional(),
     tlsEngine: z.string().optional(),
+    ...tlsSpoofSchemaShape,
   });
 
 type HttpFormValues = z.infer<ReturnType<typeof createHttpSchema>>;
@@ -54,6 +66,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsEngine: serverConfig.tlsSettings?.engine || 'go',
+        ...readTlsSpoofDefault(serverConfig),
       };
     }
     return {
@@ -65,6 +78,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
       tlsAllowInsecure: false,
       tlsServerName: '',
       tlsEngine: 'go',
+      ...tlsSpoofDefaults,
     };
   };
 
@@ -89,6 +103,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
         serverName: values.tlsServerName?.trim() || undefined,
         allowInsecure: values.tlsAllowInsecure,
         engine: values.tlsEngine && values.tlsEngine !== 'go' ? values.tlsEngine : undefined,
+        ...buildTlsSpoofSettings(values),
       };
     }
 
@@ -166,6 +181,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
               />
               <AllowInsecureField control={form.control} t={t} />
               <TlsEngineField control={form.control} t={t} />
+              <TlsSpoofField control={form.control} t={t} />
             </FieldGrid>
           )}
         </FormSection>

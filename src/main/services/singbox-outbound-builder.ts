@@ -16,11 +16,18 @@ import {
 } from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
+import {
+  isValidTlsSpoofMethod,
+  isTlsSpoofSupportedArch,
+  isTlsSpoofSupportedProtocol,
+} from '../../shared/tls-spoof';
 import { tailscaleStateDir } from './tailscale-state';
 import {
   effectiveCustomRules,
   effectiveAppRules,
   getNodeResolverTag,
+  isIpv4Host,
+  isIpv6Host,
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 
@@ -515,6 +522,31 @@ function applyAntiCensorshipOptions(outbound: SingBoxOutbound, server: ServerCon
         echLines.length > 0 ? { enabled: true, config: echLines } : { enabled: true };
     }
     if (server.tlsSettings?.fragment && !fragmentUnsupported) outbound.tls.fragment = true;
+
+    // TLS spoof（P3a 抗审查，sing-box 1.14）：spoofMethod + spoofSni 成对非空才启用——下发 tls.spoof=spoofSni
+    //（伪造 ClientHello 的「诱饵 SNI」）+ tls.spoof_method。五重门控（任一不满足即不 emit，否则内核 FATAL / 行为无效）：
+    //   1. arch：ARM64 不支持（内核仅 amd64 实现）；
+    //   2. 协议：仅标准 TCP-TLS 栈（排除 hy2/tuic 的 QUIC 内 TLS、naive 的 Cronet 自管 TLS），与 fragment 同集；
+    //   3. 诱饵 SNI 必须是域名：IP 字面量内核拒（`spoof requires TLS ClientHello with SNI`）；
+    //   4. **诱饵 SNI 必须不同于真 server_name**：内核 FATAL `spoof must differ from server_name`（已真核实证）；
+    //   5. 方法合法（wrong-ack/wrong-md5/wrong-timestamp）。
+    // 注：提权（CAP_NET_RAW+NET_ADMIN / root / 管理员）是运行期生效条件，不影响配置合法性 → 此处不门控，
+    //    UI 已提示需提权；缺权时内核启动期报权限错（非配置 FATAL），属用户环境问题。
+    const spoofMethod = server.tlsSettings?.spoofMethod;
+    const spoofSni = server.tlsSettings?.spoofSni?.trim();
+    const realSni = outbound.tls.server_name;
+    const spoofSniIsIpLiteral = !!spoofSni && (isIpv4Host(spoofSni) || isIpv6Host(spoofSni));
+    if (
+      isValidTlsSpoofMethod(spoofMethod) &&
+      isTlsSpoofSupportedArch(process.arch) &&
+      isTlsSpoofSupportedProtocol(protocolLower) &&
+      !!spoofSni &&
+      !spoofSniIsIpLiteral &&
+      spoofSni !== realSni
+    ) {
+      outbound.tls.spoof = spoofSni;
+      outbound.tls.spoof_method = spoofMethod;
+    }
   }
 
   // Multiplex（vless/trojan/vmess/shadowsocks）；vision flow(xtls-rprx-vision) 自带流分帧、与 mux

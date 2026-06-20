@@ -67,6 +67,15 @@ export interface Rule {
   targetServerId?: string;
   /** 规则备注说明 */
   remarks?: string;
+  /**
+   * TLS spoof（P3a 抗审查，sing-box 1.14 route action tls_spoof/tls_spoof_method）：对命中本规则的连接，
+   * 真握手前发伪造 ClientHello 骗 SNI 过滤中间盒。tlsSpoof=伪造的白名单 SNI（域名，非空才生效），
+   * tlsSpoofMethod=方法（wrong-ack/wrong-md5/wrong-timestamp）。两者须成对填写。
+   * **硬限界（同 outbound spoof，见 shared/tls-spoof.ts）**：需提权、ARM64 不支持、SNI 须为域名（非 IP 字面量）。
+   * 构建期按 arch/方法/IP 字面量门控（singbox-custom-rules applyRuleAction）。
+   */
+  tlsSpoof?: string;
+  tlsSpoofMethod?: 'wrong-ack' | 'wrong-md5' | 'wrong-timestamp';
 }
 
 /** 系统进程信息（进程快速选择器用）。 */

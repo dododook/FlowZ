@@ -1028,7 +1028,13 @@
     "tlsEngineGo": "Go (Default)",
     "tlsEngineWindows": "Windows (Schannel)",
     "tlsEngineApple": "Apple (Network.framework)",
-    "tlsEngineDesc": "TLS stack engine. System-native stacks (Schannel / Network.framework) make handshake fingerprints more realistic; available only on the matching platform."
+    "tlsEngineDesc": "TLS stack engine. System-native stacks (Schannel / Network.framework) make handshake fingerprints more realistic; available only on the matching platform.",
+    "tlsSpoof": "TLS Spoof",
+    "tlsSpoofDesc": "Sends a forged ClientHello (with a decoy SNI) before the real handshake to bypass SNI-filtering middleboxes. Requires elevated privileges (CAP_NET_RAW+NET_ADMIN / root / Administrator).",
+    "tlsSpoofDescFull": "Anti-censorship: before the real TLS handshake, send a fake ClientHello using a decoy (whitelisted) SNI to trick SNI-blocking middleboxes into letting the connection through. Limits: needs elevated privileges (Linux CAP_NET_RAW+NET_ADMIN / macOS root / Windows Administrator), not supported on ARM64, the decoy SNI must be a domain (not an IP literal) and must differ from the real server name.",
+    "tlsSpoofArchUnsupported": "TLS spoof is not supported on ARM64 (the core implements it only on amd64).",
+    "tlsSpoofSni": "Spoof SNI",
+    "tlsSpoofSniDesc": "Decoy domain used in the forged ClientHello (e.g. a whitelisted site). Must be a domain (not an IP) and must differ from the real server name; leave empty to disable spoof."
   },
   "rules": {
     "ruleColumn": "Rule",

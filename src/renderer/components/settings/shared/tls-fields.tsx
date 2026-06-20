@@ -6,6 +6,7 @@
  *            tlsAllowInsecure?: boolean，alpn?: string。
  */
 import type { Control } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
@@ -23,6 +24,8 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { TLS_SPOOF_METHODS, isTlsSpoofSupportedArch } from '@shared/tls-spoof';
+import { InfoTooltip } from './info-tooltip';
 
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
@@ -152,6 +155,88 @@ export function TlsEngineField({ control, t }: { control: AnyControl; t: TFn }) 
         </FormItem>
       )}
     />
+  );
+}
+
+/**
+ * TLS spoof 字段组（P3a 抗审查，sing-box 1.14 tls.spoof/spoof_method）。字段名 tlsSpoofMethod + tlsSpoofSni。
+ *
+ * 方法下拉：none（默认=不启用）+ wrong-ack / wrong-md5 / wrong-timestamp（sing-box check 实证的合法方法）。
+ * 选中方法后展开「诱饵 SNI」输入：下发时 tls.spoof=诱饵 SNI（伪造 ClientHello 里的白名单域名）+ tls.spoof_method。
+ *
+ * **硬限界门控（已 sing-box 真核 check 实证，见 @shared/tls-spoof）**：
+ *   · ARM64：内核仅 amd64 实现 → 整项置灰 + tooltip 说明「ARM64 不支持」（不下发）。
+ *   · 需提权（Linux CAP_NET_RAW+NET_ADMIN / mac root / Win 管理员）：运行期生效条件，描述里提示用户。
+ *   · 诱饵 SNI 须为域名（拒 IP 字面量）、且**必须不同于真 server_name**（内核 FATAL `spoof must differ from server_name`）；
+ *     构建期再门控（applyAntiCensorshipOptions），此处仅录入。
+ * 仅对标准 TCP-TLS 协议暴露（Hy2/TUIC 走 QUIC 无 TCP ClientHello、naive 由 Cronet 自管 → 不渲染本组件）。
+ *
+ * 跨 cols={2} 栅格占满整行（方法 + SNI 两输入并排），故外层包 FieldSpan-like 的 col-span-2。
+ */
+export function TlsSpoofField({ control, t }: { control: AnyControl; t: TFn }) {
+  const arch = (typeof window !== 'undefined' && window.electron?.arch) || '';
+  const archSupported = isTlsSpoofSupportedArch(arch);
+  const { watch } = useFormContext();
+  const methodSelected = archSupported && !!watch('tlsSpoofMethod');
+  return (
+    <div className="space-y-3 sm:col-span-2">
+      <FormField
+        control={control}
+        name="tlsSpoofMethod"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel className="flex items-center gap-1.5">
+              {t('servers.tlsSpoof', 'TLS Spoof')}
+              <InfoTooltip content={t('servers.tlsSpoofDescFull')} />
+            </FormLabel>
+            <Select
+              onValueChange={(v) => field.onChange(v === 'none' ? undefined : v)}
+              value={field.value || 'none'}
+              disabled={!archSupported}
+            >
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="none">{t('servers.none', 'None')}</SelectItem>
+                {TLS_SPOOF_METHODS.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              {archSupported
+                ? t('servers.tlsSpoofDesc')
+                : t(
+                    'servers.tlsSpoofArchUnsupported',
+                    'ARM64 不支持 TLS spoof（内核仅 amd64 实现）。'
+                  )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      {methodSelected && (
+        <FormField
+          control={control}
+          name="tlsSpoofSni"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('servers.tlsSpoofSni', 'Spoof SNI')}</FormLabel>
+              <FormControl>
+                <Input placeholder="www.bing.com" {...field} />
+              </FormControl>
+              <FormDescription>{t('servers.tlsSpoofSniDesc')}</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
+    </div>
   );
 }
 
