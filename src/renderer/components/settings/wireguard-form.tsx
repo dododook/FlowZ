@@ -282,7 +282,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 <FormDescription>
                   {t(
                     'servers.wgAllowedIPsDesc',
-                    "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on."
+                    'Subnets (CIDR) to route through this node. Empty = full tunnel.'
                   )}
                 </FormDescription>
                 {(reverseMesh || !allowInternet) && (

@@ -1000,7 +1000,7 @@
     "wgAllowedIPsDescFull": "填写需经此节点路由的网段（CIDR），多个用逗号或换行分隔。仅访问对端内网则填具体段，如 10.8.0.0/24。留空 = 全部流量经此节点（全隧道，需开启「允许访问外网」）。",
     "customIntroFull": "粘贴一份 sing-box outbound JSON（如 snell）。会用当前内核检测兼容性；当前内核不支持的协议需换用支持它的第三方内核。",
     "uuid": "UUID",
-    "realityPublicKey": "Public Key",
+    "realityPublicKey": "公钥",
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "为此代理启用 TLS 加密",
     "bandwidthDesc": "声明链路带宽（Mbps）；留空则用 BBR 拥塞控制自适应。",
