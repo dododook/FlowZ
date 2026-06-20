@@ -416,8 +416,8 @@
       "uninstallWarn": "此操作不可恢复，完成后应用将退出。",
       "uninstallConfirmBtn": "完全卸载",
       "uninstallFail": "卸载失败",
-      "restrictCoreUpdateDescFull": "关闭后「检查更新」可发现跨版本带新版（如 1.14），仍需手动确认安装；自动更新始终只在带内，不受此项影响。",
-      "autoUpdateDescFull": "仅在兼容版本带内自动更新（如 1.13.x→1.13.y）；跨大版本（如 1.13→1.14）需手动确认。运行中只下载暂存，不打断连接。"
+      "restrictCoreUpdateDescFull": "关闭后「检查更新」可发现跨版本带新版，仍需手动确认安装；自动更新始终只在带内，不受此项影响。",
+      "autoUpdateDescFull": "仅在兼容版本带内自动更新；跨大版本需手动确认。运行中只下载暂存，不打断连接。"
     },
     "appearance": {
       "title": "外观",
@@ -958,8 +958,6 @@
     "alpn": "ALPN",
     "alpnDesc": "应用层协议协商，例如 h3",
     "naive": {
-      "versionWarning": "⚠️ Naive 协议需要 sing-box v1.13+ 核心支持。如果您当前使用的是 v1.12 核心，请前往“设置 -> 关于”点击更新核心。",
-      "goUpdate": "去更新核心",
       "useHttp3": "HTTP/3 (QUIC)",
       "useHttp3Desc": "该节点用 QUIC/UDP 拨号（需服务端开启 HTTP/3）。",
       "useHttp3DescFull": "该节点用 QUIC/UDP 拨号（对应服务端 quic:// 监听，需服务端开启 HTTP/3）。其自身的 QUIC 拨号受保护、不被“阻止 QUIC”误杀；浏览器到该节点的 QUIC 仍按“阻止 QUIC”设置处理。"
