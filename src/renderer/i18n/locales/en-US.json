@@ -912,7 +912,6 @@
     "tsAllowInternetDesc": "When off, this node never acts as a full-tunnel exit (the exit node below is ignored); it only reaches the tailnet and routed subnets.",
     "tsAllowInternetOffHint": "Internet access off: exit node ignored; this node only reaches the tailnet / routed subnets.",
     "reverseMesh": "Reverse mesh (be reachable)",
-    "reverseMeshDesc": "Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode.",
     "allowInternetSystemDisabled": "Disabled in reverse-mesh mode: a kernel-interface node only carries the listed subnets and never acts as the full-tunnel exit. Turn off reverse mesh to use this node as an exit.",
     "reverseMeshRoutesHint": "Reverse-mesh (system) mode: routes only the subnets above and is reachable from peers; never carries the full tunnel.",
     "tsReverseMeshHint": "Reverse-mesh (system) mode: exit node ignored; this node only reaches the tailnet / routed subnets and is reachable from peers (subnet router).",
@@ -1008,7 +1007,14 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "Enable TLS encryption for this proxy",
     "bandwidthDesc": "Declared link bandwidth (Mbps); leave empty to use BBR congestion control.",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "tsLoggedIn": "Logged in",
+    "tsLogout": "Log out",
+    "tsReauth": "Re-login · switch account",
+    "tsLogoutRestartHint": "Node is running; restart the proxy to take effect",
+    "tsLoggedInNoKeyHint": "Logged in — no auth key needed",
+    "wgReverseMeshDesc": "Create a real WireGuard kernel interface (the OS holds the tunnel IP) so peers can reach services on this device. Requires the privileged helper and TUN mode.",
+    "tsReverseMeshDesc": "Reverse mesh (be reachable): create a real kernel interface so other tailnet devices can reach services on this device. Requires the privileged helper and TUN mode."
   },
   "rules": {
     "ruleColumn": "Rule",

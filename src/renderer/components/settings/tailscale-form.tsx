@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { toast } from 'sonner';
+import { Check } from 'lucide-react';
 import {
   Form,
   FormControl,
@@ -13,7 +15,10 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { api } from '@/ipc/api-client';
+import { useAppStore } from '@/store/app-store';
 import { runTailscaleLogin } from '../../lib/tailscale-login';
+import { tailscaleLoginUiState } from './server-list-helpers';
 import { FormButtons } from './shared/form-buttons';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { SwitchField } from './shared/switch-field';
@@ -118,6 +123,36 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
 
   const exitNodeValue = form.watch('exitNode');
 
+  // 真实登录态（store 单一真值，与列表「需登录」角标同口径）：驱动登录区三态，替代纯静态 !authKey 门控。
+  const serverId = serverConfig?.id;
+  const loggedIn = useAppStore((s) => (serverId ? !!s.tailscaleLoginStates[serverId] : false));
+  const setTailscaleLoginState = useAppStore((s) => s.setTailscaleLoginState);
+  const loginUi = tailscaleLoginUiState(!!serverId, loggedIn, !!authKeyValue?.trim());
+
+  // 退出登录：清该节点持久会话（state 目录），UI 即时回「需登录」态；运行中节点提示需重启生效。
+  const handleTsLogout = async () => {
+    if (!serverId) return;
+    try {
+      const { runningNeedsRestart } = await api.server.tailscaleLogout(serverId);
+      setTailscaleLoginState(serverId, false);
+      if (runningNeedsRestart) toast.info(t('servers.tsLogoutRestartHint'));
+    } catch {
+      toast.error(t('errors.operationFailed'));
+    }
+  };
+
+  // 重新登录 / 切换账号：先清 state（绕过 startTailscaleLogin 的「state 仍在就拒登」障碍）→ 再走交互登录。
+  const handleTsReauth = async () => {
+    if (!serverConfig?.id) return;
+    try {
+      await api.server.tailscaleLogout(serverConfig.id);
+      setTailscaleLoginState(serverConfig.id, false);
+      await runTailscaleLogin(serverConfig);
+    } catch {
+      toast.error(t('errors.operationFailed'));
+    }
+  };
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
@@ -143,16 +178,45 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                     <FormControl>
                       <Input type="password" placeholder="tskey-auth-..." {...field} />
                     </FormControl>
-                    <FormDescription>{t('servers.tsAuthKeyDesc')}</FormDescription>
+                    <FormDescription>
+                      {loggedIn ? t('servers.tsLoggedInNoKeyHint') : t('servers.tsAuthKeyDesc')}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </FieldSpan>
-            {/* 立即登录（Phase 2）：仅编辑态（已保存、有 server.id）且未填 authKey（走交互登录）时点亮。
-                点击拉起瞬态登录核（强制 info 级、零提权），主进程自动开浏览器 + 系统通知完成认证。
-                新建态（无 id）无法登录 → 不显示，引导先保存。 */}
-            {serverConfig?.id && !authKeyValue?.trim() && (
+            {/* 登录区三态（读真实 loggedIn 替代纯静态 !authKey 门控）：
+                已登录 → 「✓ 已登录」+ 退出登录 + 重新登录；需登录（编辑态未登录未填 key）→ 立即登录；
+                新建态（无 id）→ 引导先保存，不显示。 */}
+            {loginUi === 'loggedIn' ? (
+              <FieldSpan>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1.5 text-sm text-success">
+                    <Check className="h-4 w-4" />
+                    {t('servers.tsLoggedIn', 'Logged in')}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleTsLogout()}
+                    >
+                      {t('servers.tsLogout', 'Log out')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleTsReauth()}
+                    >
+                      {t('servers.tsReauth', 'Re-login · switch account')}
+                    </Button>
+                  </div>
+                </div>
+              </FieldSpan>
+            ) : loginUi === 'needsLogin' && serverConfig ? (
               <FieldSpan>
                 <div className="flex flex-col gap-1.5">
                   <Button
@@ -171,7 +235,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                   </p>
                 </div>
               </FieldSpan>
-            )}
+            ) : null}
             <FieldSpan>
               <FormField
                 control={form.control}

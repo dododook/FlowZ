@@ -164,4 +164,13 @@ export function registerProxyHandlers(
       proxyManager.cancelTailscaleLogin(args.serverId);
     }
   );
+
+  // 退出登录：清该节点 Tailscale state 目录（持久会话）；保留节点配置。回传是否需重启代理生效。
+  registerIpcHandler<{ serverId: string }, { runningNeedsRestart: boolean }>(
+    IPC_CHANNELS.TAILSCALE_LOGOUT,
+    async (_event: IpcMainInvokeEvent, args) => {
+      if (!args?.serverId) throw new Error('serverId required');
+      return proxyManager.tailscaleLogout(args.serverId);
+    }
+  );
 }

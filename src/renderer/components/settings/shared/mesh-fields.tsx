@@ -69,10 +69,17 @@ export function MeshOptionsSection<TFieldValues extends FieldValues>({
         control={control}
         name={'reverseMesh' as FieldPath<TFieldValues>}
         label={t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
-        tooltip={t(
-          'servers.reverseMeshDesc',
-          'Create a real kernel interface so peers can reach this device or use it as a subnet router. Requires the privileged helper and TUN mode.'
-        )}
+        tooltip={
+          isTs
+            ? t(
+                'servers.tsReverseMeshDesc',
+                'Reverse mesh (be reachable): create a real kernel interface so other tailnet devices can reach services on this device. Requires the privileged helper and TUN mode.'
+              )
+            : t(
+                'servers.wgReverseMeshDesc',
+                'Create a real WireGuard kernel interface (the OS holds the tunnel IP) so peers can reach services on this device. Requires the privileged helper and TUN mode.'
+              )
+        }
       />
     </div>
   );

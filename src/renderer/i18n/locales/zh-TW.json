@@ -912,7 +912,6 @@
     "tsAllowInternetDesc": "關閉後此節點不作全隧道出口（忽略下方出口節點），僅存取 tailnet 與已路由的子網。",
     "tsAllowInternetOffHint": "已關閉外網存取：忽略出口節點，此節點僅存取 tailnet / 子網路由。",
     "reverseMesh": "反向 mesh（被組網存取）",
-    "reverseMeshDesc": "建立真實核心介面，使對端能存取本機或將本機作為子網路由器（subnet router）。需提權 helper + TUN 模式。",
     "allowInternetSystemDisabled": "反向 mesh 模式下不可用：核心介面節點僅承載所列網段、絕不作全隧道出口。如需作出口，請關閉反向 mesh。",
     "reverseMeshRoutesHint": "反向 mesh（system）模式：僅路由上方網段並可被對端存取，絕不承載全隧道。",
     "tsReverseMeshHint": "反向 mesh（system）模式：忽略出口節點，此節點僅存取 tailnet / 子網路由，並可被對端存取（子網路由器）。",
@@ -1008,7 +1007,14 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "為此代理啟用 TLS 加密",
     "bandwidthDesc": "宣告鏈路頻寬（Mbps）；留空則用 BBR 壅塞控制自適應。",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "tsLoggedIn": "已登錄",
+    "tsLogout": "退出登錄",
+    "tsReauth": "重新登錄 / 切換帳號",
+    "tsLogoutRestartHint": "該節點運行中，退出後需重啟代理生效",
+    "tsLoggedInNoKeyHint": "已登錄，無需 Auth Key",
+    "wgReverseMeshDesc": "建立真實 WG 內核介面（OS 持有隧道 IP），使對端能反向存取本機服務；需提權 helper + TUN",
+    "tsReverseMeshDesc": "反向 mesh（被存取）：建真實內核介面，使本機可被 tailnet 其它裝置反向存取本機服務；需提權 helper + TUN"
   },
   "rules": {
     "ruleColumn": "規則",
