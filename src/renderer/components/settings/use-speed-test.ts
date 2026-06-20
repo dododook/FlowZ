@@ -32,10 +32,8 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
       return;
     }
     setIsTestingSpeed(true);
-    // 订阅声明在 try 外，确保 catch/finally 路径都能 unsubscribe（防 listener 泄漏：测速失败时曾漏清）。
-    const unsubscribeResult = api.server.onSpeedTestResult(({ serverId, latency }) => {
-      setLatencyMap((prev) => ({ ...prev, [serverId]: latency }));
-    });
+    // per-node 结果监听已上移到 use-native-events 顶层持久 hook（托盘/UI 两入口共用，写全局 latencyMap，跨页不丢）；
+    // 此处仅订阅进度（页面局部进度条）+ 末尾兜底同步。订阅声明在 try 外，确保 catch/finally 都能 unsubscribe。
     const unsubscribeProgress = api.server.onSpeedTestProgress(({ tested, ok, total }) => {
       setSpeedProgress({ tested, ok, total });
     });
@@ -51,7 +49,6 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
         description: error instanceof Error ? error.message : String(error),
       });
     } finally {
-      unsubscribeResult();
       unsubscribeProgress();
       setIsTestingSpeed(false);
       setSpeedProgress(null);

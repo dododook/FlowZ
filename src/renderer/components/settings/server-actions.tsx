@@ -115,43 +115,48 @@ export function ServerActions({
       >
         <Edit className="h-3.5 w-3.5" />
       </Button>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            disabled={!!server.subscriptionId}
-            onClick={(e) => {
-              if (stopPropagation) e.stopPropagation();
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('servers.deleteServerTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('servers.deleteServerDesc', { name: server.name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
-              {t('common.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
+      {/* 订阅节点不可单独删除（随订阅更新/「删除订阅」统一管理）→ 直接隐藏删除按钮，而非置灰：
+          置灰按钮浅/深色对比都低易被误认为可点，且 disabled 的 pointer-events-none 还 hover 不出提示。
+          与「无分享链接隐藏复制按钮」同范式。 */}
+      {!server.subscriptionId && (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              title={t('common.delete')}
+              className="h-7 w-7 p-0"
               onClick={(e) => {
-                e.stopPropagation();
-                onDelete(server.id);
+                if (stopPropagation) e.stopPropagation();
               }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {t('common.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('servers.deleteServerTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('servers.deleteServerDesc', { name: server.name })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={(e) => e.stopPropagation()}>
+                {t('common.cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(server.id);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {t('common.delete')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

@@ -41,6 +41,7 @@ interface NativeEventData {
   tailscaleAuth: { nodeName: string; url: string; transient?: boolean; serverId?: string };
   tailscaleAuthOk: { serverId: string; nodeName: string };
   systemProxyResidual: { proxy: string };
+  speedTestResult: { serverId: string; latency: number };
 }
 
 type NativeEventListener<K extends keyof NativeEventData> = (data: NativeEventData[K]) => void;
@@ -86,6 +87,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'systemProxyResidual':
         unsubscribe = api.proxy.onSystemProxyResidual(callback as any);
+        break;
+      case 'speedTestResult':
+        unsubscribe = api.server.onSpeedTestResult(callback as any);
         break;
       default:
         console.warn(`Unknown event: ${eventName}`);
@@ -260,6 +264,13 @@ function handleSystemProxyResidual(data: NativeEventData['systemProxyResidual'])
   });
 }
 
+function handleSpeedTestResult(data: NativeEventData['speedTestResult']) {
+  // 全局持久监听 per-node 测速结果 → 全局 latencyMap：托盘/UI 两入口测速都经此写入，服务器列表延迟徽标恒同步。
+  // 修：原 per-node 监听写在 use-speed-test 的 handler 作用域内（仅 UI 测速期间临时订阅），托盘测速结果无人接、
+  // 切走服务器页期间的流式结果也丢失。提到此顶层持久 hook 后两入口统一捕获、跨页不丢。
+  useAppStore.getState().setLatencyMap((prev) => ({ ...prev, [data.serverId]: data.latency }));
+}
+
 /**
  * Hook to listen to all native events and update store
  */
@@ -275,4 +286,5 @@ export function useNativeEventListeners() {
   useNativeEvent('tailscaleAuth', handleTailscaleAuth);
   useNativeEvent('tailscaleAuthOk', handleTailscaleAuthOk);
   useNativeEvent('systemProxyResidual', handleSystemProxyResidual);
+  useNativeEvent('speedTestResult', handleSpeedTestResult);
 }
