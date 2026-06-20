@@ -271,7 +271,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
               <FormItem>
                 <FormLabel className="flex items-center gap-1.5">
                   {t('servers.wgAllowedIPs', 'Routed subnets')}
-                  <InfoTooltip content={t('servers.wgAllowedIPsLabelTip', 'AllowedIPs')} />
+                  <InfoTooltip content={t('servers.wgAllowedIPsDescFull')} />
                 </FormLabel>
                 <FormControl>
                   <Input

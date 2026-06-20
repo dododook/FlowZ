@@ -277,6 +277,7 @@ export function NetworkSettings() {
           <SettingsRow
             label={t('settings.advanced.enableFakeIp')}
             description={t('settings.advanced.fakeIpDesc')}
+            tooltip={t('settings.advanced.fakeIpDescFull')}
           >
             <Switch
               checked={config.dnsConfig?.enableFakeIp ?? true}
@@ -305,10 +306,8 @@ export function NetworkSettings() {
             <div>
               <SettingsRow
                 label={t('settings.advanced.fakeIpFilter', 'FakeIP 例外域名')}
-                description={t(
-                  'settings.advanced.fakeIpFilterDesc',
-                  '这些域名走真实 DNS、不用假 IP（校时、连通性探测、锁屏登录用假 IP 会失败）。建议开启。'
-                )}
+                description={t('settings.advanced.fakeIpFilterDesc')}
+                tooltip={t('settings.advanced.fakeIpFilterDescFull')}
               >
                 <Switch
                   checked={config.fakeIpFilter !== false}
@@ -366,10 +365,8 @@ export function NetworkSettings() {
             </SettingsRow>
             <SettingsRow
               label={t('settings.advanced.resolveNodeDomainsAhead', '节点域名解析前置')}
-              description={t(
-                'settings.advanced.resolveNodeDomainsAheadDesc',
-                '连接前用并发多上游 DoH 把节点服务器域名预解析为 IP，避免单点 DNS 被限速/劫持导致整条代理连不上（解析失败自动回退域名）。建议开启。'
-              )}
+              description={t('settings.advanced.resolveNodeDomainsAheadDesc')}
+              tooltip={t('settings.advanced.resolveNodeDomainsAheadDescFull')}
             >
               <Switch
                 checked={config.dnsConfig?.resolveNodeDomainsAhead !== false}
@@ -378,10 +375,8 @@ export function NetworkSettings() {
             </SettingsRow>
             <SettingsRow
               label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
-              description={t(
-                'settings.advanced.takeoverSystemDnsDesc',
-                'TUN 模式下把系统 DNS 临时改为 8.8.8.8，让需代理的域名经隧道正确解析（停止/退出自动还原）。关闭后改用你原本的 DNS，内网域名解析更友好，但部分需代理域名可能解析异常。建议保持开启。'
-              )}
+              description={t('settings.advanced.takeoverSystemDnsDesc')}
+              tooltip={t('settings.advanced.takeoverSystemDnsDescFull')}
             >
               <Switch
                 checked={config.dnsConfig?.takeoverSystemDns !== false}
@@ -398,19 +393,15 @@ export function NetworkSettings() {
           <SettingsRow heading label={t('settings.advanced.localProxyLan', '本地代理 / 局域网')} />
           <SettingsRow
             label={t('settings.advanced.localPort', '本地端口')}
-            description={t(
-              'settings.advanced.localPortDesc',
-              '本地代理端口（同口支持 HTTP 与 SOCKS5）。新装默认 7890；系统代理与终端代理均用此端口。'
-            )}
+            description={t('settings.advanced.localPortDesc')}
+            tooltip={t('settings.advanced.localPortDescFull')}
           >
             {numInput(localPort, setLocalPort, 'w-[120px]', commitLocalPort)}
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.controlPort', '控制端口')}
-            description={t(
-              'settings.advanced.controlPortDesc',
-              '外部控制端口（clash API，供面板/脚本对接）。默认 9090；被其它应用占用导致代理无法启动时，改此端口即可。'
-            )}
+            description={t('settings.advanced.controlPortDesc')}
+            tooltip={t('settings.advanced.controlPortDescFull')}
           >
             {numInput(controlPort, setControlPort, 'w-[120px]', commitControlPort)}
           </SettingsRow>
@@ -418,6 +409,7 @@ export function NetworkSettings() {
             <SettingsRow
               label={t('settings.advanced.allowLan')}
               description={t('settings.advanced.allowLanDesc')}
+              tooltip={t('settings.advanced.allowLanGatewayTipFull')}
             >
               <Switch
                 checked={config.allowLan === true}
@@ -489,6 +481,7 @@ export function NetworkSettings() {
             <SettingsRow
               label={t('settings.advanced.blockQuic')}
               description={t('settings.advanced.blockQuicDesc')}
+              tooltip={t('settings.advanced.blockQuicDescFull')}
             >
               <Switch
                 checked={config.blockQuic === true}
@@ -532,6 +525,7 @@ export function NetworkSettings() {
             <SettingsRow
               label={t('settings.advanced.interruptOnSwitch')}
               description={t('settings.advanced.interruptOnSwitchDesc')}
+              tooltip={t('settings.advanced.interruptOnSwitchDescFull')}
             >
               <Switch
                 checked={config.interruptConnectionsOnSwitch === true}
@@ -617,6 +611,7 @@ export function NetworkSettings() {
               <SettingsRow
                 label={t('settings.advanced.subUpdateViaProxy')}
                 description={t('settings.advanced.subUpdateViaProxyDesc')}
+                tooltip={t('settings.advanced.subUpdateViaProxyDescFull')}
               >
                 <Switch
                   checked={config.subscriptionUpdateViaProxy === true}
@@ -628,10 +623,8 @@ export function NetworkSettings() {
           {/* 更新检查走代理（L2：与订阅更新同属「更新流量是否走代理」，从连接/流量卡归并至此） */}
           <SettingsRow
             label={t('settings.advanced.mainSessionViaProxy', '更新检查走代理')}
-            description={t(
-              'settings.advanced.mainSessionViaProxyDesc',
-              '开启后，应用/内核更新检查与规则资源下载在代理运行时经代理（更新源多在 GitHub）；关闭则直连/走系统代理。注：TUN 模式下因系统层捕获，关闭不能完全直连。'
-            )}
+            description={t('settings.advanced.mainSessionViaProxyDesc')}
+            tooltip={t('settings.advanced.mainSessionViaProxyDescFull')}
           >
             <Switch
               checked={config.mainSessionViaProxy !== false}

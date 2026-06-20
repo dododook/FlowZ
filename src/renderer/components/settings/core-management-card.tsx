@@ -521,6 +521,7 @@ export function CoreManagementCard() {
         <SettingsRow
           label={t('settings.coreManagement.autoUpdate')}
           description={t('settings.coreManagement.autoUpdateDesc')}
+          tooltip={t('settings.coreManagement.autoUpdateDescFull')}
         >
           <Switch
             checked={config?.autoUpdateCore === true && !isForkCore}
@@ -533,6 +534,7 @@ export function CoreManagementCard() {
         <SettingsRow
           label={t('settings.coreManagement.restrictCoreUpdate')}
           description={t('settings.coreManagement.restrictCoreUpdateDesc')}
+          tooltip={t('settings.coreManagement.restrictCoreUpdateDescFull')}
         >
           <Switch
             checked={config?.restrictCoreUpdateToCompatibleMinor !== false}

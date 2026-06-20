@@ -57,7 +57,7 @@ export function EchField({ control, t }: { control: AnyControl; t: TFn }) {
             <div className="space-y-1 leading-none">
               <FormLabel className="flex items-center gap-1.5">
                 {t('servers.ech')}
-                <InfoTooltip content={t('servers.echLabelTip', 'Encrypted ClientHello')} />
+                <InfoTooltip content={t('servers.echDescFull')} />
               </FormLabel>
               <FormDescription>{t('servers.echDesc')}</FormDescription>
             </div>

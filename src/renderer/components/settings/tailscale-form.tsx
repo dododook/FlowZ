@@ -18,6 +18,7 @@ import { FormButtons } from './shared/form-buttons';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { SwitchField } from './shared/switch-field';
 import { MeshOptionsSection } from './shared/mesh-fields';
+import { InfoTooltip } from './shared/info-tooltip';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -135,16 +136,14 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="authKey"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('servers.tsAuthKey', 'Auth Key (optional)')}</FormLabel>
+                    <FormLabel className="flex items-center gap-1.5">
+                      {t('servers.tsAuthKey', 'Auth Key (optional)')}
+                      <InfoTooltip content={t('servers.tsAuthKeyDescFull')} />
+                    </FormLabel>
                     <FormControl>
                       <Input type="password" placeholder="tskey-auth-..." {...field} />
                     </FormControl>
-                    <FormDescription>
-                      {t(
-                        'servers.tsAuthKeyDesc',
-                        'Pre-auth key for non-interactive login. Leave empty to log in via URL on start.'
-                      )}
-                    </FormDescription>
+                    <FormDescription>{t('servers.tsAuthKeyDesc')}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -179,7 +178,10 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 name="exitNode"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('servers.tsExitNode', 'Exit Node (optional)')}</FormLabel>
+                    <FormLabel className="flex items-center gap-1.5">
+                      {t('servers.tsExitNode', 'Exit Node (optional)')}
+                      <InfoTooltip content={t('servers.tsExitNodeDescFull')} />
+                    </FormLabel>
                     <FormControl>
                       <Input
                         placeholder="100.x.y.z / hostname"
@@ -187,12 +189,7 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                         disabled={!allowInternet || reverseMesh}
                       />
                     </FormControl>
-                    <FormDescription>
-                      {t(
-                        'servers.tsExitNodeDesc',
-                        'Route all traffic through this tailnet node (full-tunnel). Empty = only reach tailnet / accepted routes.'
-                      )}
-                    </FormDescription>
+                    <FormDescription>{t('servers.tsExitNodeDesc')}</FormDescription>
                     {(reverseMesh || !allowInternet) && (
                       <p className="text-sm text-amber-600 dark:text-amber-500">
                         {reverseMesh
@@ -261,16 +258,14 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
             name="routes"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('servers.tsRoutes', 'Routed subnets')}</FormLabel>
+                <FormLabel className="flex items-center gap-1.5">
+                  {t('servers.tsRoutes', 'Routed subnets')}
+                  <InfoTooltip content={t('servers.tsRoutesDescFull')} />
+                </FormLabel>
                 <FormControl>
                   <Input placeholder="192.168.50.0/24, 10.0.0.0/24" {...field} />
                 </FormControl>
-                <FormDescription>
-                  {t(
-                    'servers.tsRoutesDesc',
-                    'Send these subnets through this node; tailnet 100.64.0.0/10 is auto-included.'
-                  )}
-                </FormDescription>
+                <FormDescription>{t('servers.tsRoutesDesc')}</FormDescription>
                 <FormMessage />
               </FormItem>
             )}

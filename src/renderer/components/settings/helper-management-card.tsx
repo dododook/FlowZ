@@ -7,6 +7,7 @@ import { openExternal } from '@/bridge/api-wrapper';
 import { toast } from 'sonner';
 import { Loader2, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { InfoTooltip } from './shared/info-tooltip';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../../shared/constants';
 
 /**
@@ -111,6 +112,7 @@ export function HelperManagementCard() {
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4" />
           {t('helper.title')}
+          <InfoTooltip content={t('helper.descFull')} />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

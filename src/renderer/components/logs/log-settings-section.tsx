@@ -57,6 +57,7 @@ export function LogSettingsSection() {
       <SettingsRow
         label={t('settings.advanced.disableLogFile')}
         description={t('settings.advanced.disableLogFileDesc')}
+        tooltip={t('settings.advanced.disableLogFileDescFull')}
       >
         <Switch
           checked={config.disableLogFile === true}

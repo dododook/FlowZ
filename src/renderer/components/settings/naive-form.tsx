@@ -21,6 +21,7 @@ import { AddressField, PortField } from './shared/basic-fields';
 import { FingerprintField } from './shared/tls-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { FormButtons } from './shared/form-buttons';
+import { InfoTooltip } from './shared/info-tooltip';
 import type { ServerConfig } from '@/bridge/types';
 import { api } from '@/ipc';
 
@@ -190,7 +191,10 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
-                      <FormLabel>{t('servers.naive.useHttp3', 'HTTP/3 (QUIC)')}</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        {t('servers.naive.useHttp3', 'HTTP/3 (QUIC)')}
+                        <InfoTooltip content={t('servers.naive.useHttp3DescFull')} />
+                      </FormLabel>
                       <FormDescription>{t('servers.naive.useHttp3Desc')}</FormDescription>
                     </div>
                     <FormControl>
