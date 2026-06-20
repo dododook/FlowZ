@@ -685,6 +685,8 @@
     "speedTestDone": "測速完成",
     "speedTesting": "測速中...",
     "speedTestFail": "測速失敗",
+    "speedTestNotApplicable": "不適用",
+    "noTestableNodes": "無可測節點",
     "shareUrlCopied": "分享連結已複製",
     "shareUrlFail": "產生分享連結失敗",
     "copyShareUrl": "複製分享連結",

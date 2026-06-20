@@ -12,6 +12,7 @@ import {
   shouldForceRouteSubnets,
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
+  isSpeedTestable,
 } from '../endpoint-routes';
 import type { ServerConfig, UserConfig } from '../types';
 
@@ -371,4 +372,27 @@ describe('meshForceRoutedServers（warn/shadow 与块 0c 同 gate 的预过滤�
         (s) => s.id
       )
     ).toEqual(['v']));
+});
+
+describe('isSpeedTestable（不可测节点单一真值：tailscale / 自定义 endpoint / reverseMesh）', () => {
+  it('tailscale → false（账号制，非即起即测临时隧道）', () => {
+    expect(isSpeedTestable(ts())).toBe(false);
+  });
+  it('custom + isEndpoint → false（type 分流 endpoints[] 会错放）', () => {
+    expect(
+      isSpeedTestable({ id: 'c', protocol: 'custom', customSettings: { isEndpoint: true } } as any)
+    ).toBe(false);
+  });
+  it('reverseMesh WireGuard(system 内核接口) → false（需提权，拖垮整批测速）', () => {
+    expect(isSpeedTestable(wg(['10.0.0.0/24'], undefined, true))).toBe(false);
+  });
+  it('reverseMesh Tailscale(system 内核接口) → false', () => {
+    expect(isSpeedTestable(ts(undefined, undefined, true))).toBe(false);
+  });
+  it('普通 WireGuard（非 reverseMesh）→ true（WG 仍可测）', () => {
+    expect(isSpeedTestable(wg(['10.0.0.0/24']))).toBe(true);
+  });
+  it('vless → true（普通代理节点正常测速）', () => {
+    expect(isSpeedTestable({ id: 'v', protocol: 'vless' } as any)).toBe(true);
+  });
 });

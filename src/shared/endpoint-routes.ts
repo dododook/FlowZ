@@ -142,6 +142,18 @@ export function meshUsesSystemInterface(server: ServerConfig): boolean {
 }
 
 /**
+ * 节点是否参与测速。不可测=tailscale / 自定义 endpoint / reverseMesh(system 内核接口)。
+ * 与 ProxyManager.buildSpeedTestOutbound 的 null 分支同口径(单一真值);WireGuard 仍可测。
+ */
+export function isSpeedTestable(server: ServerConfig): boolean {
+  const p = server.protocol?.toLowerCase();
+  if (p === 'tailscale') return false;
+  if (meshUsesSystemInterface(server)) return false;
+  if (p === 'custom' && server.customSettings?.isEndpoint) return false;
+  return true;
+}
+
+/**
  * 该组网节点是否承载「全隧道默认出口」(0/0)。= 允许外网 **且非** system 内核接口。
  * 结论A：system:true 恒 specific-only（内核接口若装 0/0 默认路由 → 跨平台环路/冲突，#3756/#3858），
  * 故 system 节点即便 allowInternet=on 也不承载 0/0、永不当全局出口。单一真值：Layer A 注入 0/0、

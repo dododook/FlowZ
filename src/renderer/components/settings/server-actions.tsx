@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Edit, Trash2, Copy, CopyPlus, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import {
   hasShareLink,
   getLatencyColor,
@@ -44,14 +45,17 @@ export function ServerActions({
   onDelete,
 }: ServerActionsProps) {
   const { t } = useTranslation();
+  // 不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：⚡ 禁用 + 角标显「不适用」，
+  // 与后端 buildSpeedTestOutbound / 统一测速排除同口径（isSpeedTestable 单一真值）。
+  const testable = isSpeedTestable(server);
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
       <Button
         variant="ghost"
         size="sm"
-        title={t('servers.speedTest')}
+        title={testable ? t('servers.speedTest') : t('servers.speedTestNotApplicable')}
         className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
-        disabled={testingServerIds.has(server.id) || isTestingSpeed}
+        disabled={!testable || testingServerIds.has(server.id) || isTestingSpeed}
         onClick={(e) => {
           if (stopPropagation) e.stopPropagation();
           onSingleSpeedTest(server.id, e);
@@ -62,13 +66,17 @@ export function ServerActions({
         />
       </Button>
 
-      {latencyMap[server.id] !== undefined && (
+      {!testable ? (
+        <span className="text-xs font-medium me-1 px-1.5 py-0.5 rounded text-muted-foreground">
+          {t('servers.speedTestNotApplicable')}
+        </span>
+      ) : latencyMap[server.id] !== undefined ? (
         <span
           className={`text-xs font-medium me-1 px-1.5 py-0.5 rounded ${getLatencyColor(latencyMap[server.id])} ${getLatencyBg(latencyMap[server.id])}`}
         >
           {latencyMap[server.id] === -1 ? t('servers.timeout') : `${latencyMap[server.id]} ms`}
         </span>
-      )}
+      ) : null}
       {/* 无分享链接的协议(ProtocolParser.generateUrl 无对应分支)隐藏复制按钮 */}
       {hasShareLink(server.protocol) && (
         <Button

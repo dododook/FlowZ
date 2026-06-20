@@ -685,6 +685,8 @@
     "speedTestDone": "Speed test complete",
     "speedTesting": "Testing...",
     "speedTestFail": "Latency test failed",
+    "speedTestNotApplicable": "N/A",
+    "noTestableNodes": "No testable nodes",
     "shareUrlCopied": "Share link copied",
     "shareUrlFail": "Failed to generate share link",
     "copyShareUrl": "Copy share link",

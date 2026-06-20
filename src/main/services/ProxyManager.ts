@@ -53,7 +53,7 @@ import {
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
 import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
-import { meshUsesSystemInterface } from '../../shared/endpoint-routes';
+import { isSpeedTestable } from '../../shared/endpoint-routes';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
@@ -1983,15 +1983,10 @@ done
   ): SingBoxOutbound | SingBoxEndpoint | null {
     try {
       if (!isNodeUsable(server)) return null;
-      // Tailscale：账号制/带认证状态的入网，非即起即测的临时隧道 → 排除测速。
-      if (server.protocol.toLowerCase() === 'tailscale') return null;
-      // Phase 2：reverseMesh(system 内核接口)需提权——测速进程是非提权 spawn 且整批共用单临时配置/单进程，
-      // 发射 system:true 会因内核接口创建失败拖垮整批测速 → 排除测速(同 Tailscale 理由)。runtime 行为真机另验。
-      if (meshUsesSystemInterface(server)) return null;
-      // 自定义 endpoint 类型：测速临时配置按 isEndpointProtocol(type) 分流 outbounds/endpoints[]，
-      // 自定义 type 不被识别会错放 → 排除测速（自定义 outbound 类型仍走下方 generateProxyOutbound 正常测）。
-      if (server.protocol.toLowerCase() === 'custom' && server.customSettings?.isEndpoint)
-        return null;
+      // 不可测节点（tailscale 账号制 / reverseMesh system 内核接口需提权 / 自定义 endpoint 类型）排除测速：
+      // 与 isSpeedTestable 单一真值同口径——UI ⚡ 禁用、统一测速排除、本后端 null 分支三处共用，杜绝漂移。
+      // （Tailscale=非即起即测临时隧道；system:true 内核接口创建失败会拖垮整批；自定义 endpoint type 分流会错放。）
+      if (!isSpeedTestable(server)) return null;
       // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
       if (server.protocol.toLowerCase() === 'wireguard') {
         return buildWireGuardEndpoint(server, tag);

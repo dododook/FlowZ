@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
+import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import type { ServerConfigWithId } from './server-list-helpers';
 
 export function useSpeedTest(servers: ServerConfigWithId[]) {
@@ -23,6 +24,13 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
   const [testingServerIds, setTestingServerIds] = useState<Set<string>>(new Set());
 
   const handleSpeedTest = async () => {
+    // 排除不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：与 ⚡ 禁用、后端 null 分支同口径
+    // （isSpeedTestable 单一真值）。全为不可测则不空跑（toast 提示）。
+    const serverIdsToTest = servers.filter(isSpeedTestable).map((s) => s.id);
+    if (serverIdsToTest.length === 0) {
+      toast.info(t('servers.noTestableNodes'));
+      return;
+    }
     setIsTestingSpeed(true);
     // 订阅声明在 try 外，确保 catch/finally 路径都能 unsubscribe（防 listener 泄漏：测速失败时曾漏清）。
     const unsubscribeResult = api.server.onSpeedTestResult(({ serverId, latency }) => {
@@ -33,7 +41,6 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
     });
     try {
       toast.info(t('servers.speedTestStart'));
-      const serverIdsToTest = servers.map((s) => s.id);
       const results = await api.server.speedTest(serverIdsToTest);
       // 末尾兜底同步（确保最终结果一致，兜底事件丢失）；函数式合并保留未测节点的历史延迟。
       setLatencyMap((prev) => ({ ...prev, ...results }));
