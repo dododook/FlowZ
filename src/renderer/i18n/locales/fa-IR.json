@@ -256,7 +256,7 @@
     "tunNotEnabled": "حالت TUN فعال نیست",
     "systemProxyConnected": "پروکسی سیستم متصل شد",
     "singboxRunningEnabling": "در حال فعال‌سازی پروکسی سیستم...",
-    "startingSingbox": "در حال شروع پردازهٔ sing-box...",
+    "startingSingbox": "در حال شروع هستهٔ sing-box...",
     "stoppingProxy": "در حال توقف پروکسی...",
     "proxyNotEnabled": "پروکسی فعال نیست",
     "serverSwitched": "سرور تعویض شد",

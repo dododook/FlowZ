@@ -256,7 +256,7 @@
     "tunNotEnabled": "Режим TUN не включён",
     "systemProxyConnected": "Системный прокси подключён",
     "singboxRunningEnabling": "Включение системного прокси...",
-    "startingSingbox": "Запуск процесса sing-box...",
+    "startingSingbox": "Запуск ядра sing-box...",
     "stoppingProxy": "Остановка прокси...",
     "proxyNotEnabled": "Прокси не включён",
     "serverSwitched": "Сервер переключён",

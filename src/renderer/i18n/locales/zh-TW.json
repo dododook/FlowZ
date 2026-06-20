@@ -256,7 +256,7 @@
     "tunNotEnabled": "TUN 模式未啟用",
     "systemProxyConnected": "系統代理已連線",
     "singboxRunningEnabling": "正在啟用系統代理...",
-    "startingSingbox": "正在啟動 sing-box 處理程序...",
+    "startingSingbox": "正在啟動 sing-box 核心...",
     "stoppingProxy": "正在停止代理...",
     "proxyNotEnabled": "代理未啟用",
     "serverSwitched": "伺服器已切換",

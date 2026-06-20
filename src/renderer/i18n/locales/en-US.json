@@ -256,7 +256,7 @@
     "tunNotEnabled": "TUN mode is not enabled",
     "systemProxyConnected": "System proxy connected",
     "singboxRunningEnabling": "Enabling system proxy...",
-    "startingSingbox": "Starting sing-box process...",
+    "startingSingbox": "Starting sing-box core...",
     "stoppingProxy": "Stopping proxy...",
     "proxyNotEnabled": "Proxy is not enabled",
     "serverSwitched": "Server switched",
