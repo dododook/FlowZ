@@ -726,7 +726,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     void this.reassertSelectorSelection(config);
 
     // sing-box 1.14 管理 API：核起后连 api service 订阅 Tailscale 状态（断线重连，随主核生命周期）。
-    if (coreVersionAtLeast(this.coreVersion, 1, 14)) {
+    if (this.hasManagementApi()) {
       this.tailscaleApiClient?.stop();
       this.tailscaleApiClient = new TailscaleApiClient(this.tailscaleApiPort, (eps) =>
         this.handleTailscaleStatus(eps)
@@ -1963,8 +1963,8 @@ done
     }
 
     // sing-box 1.14 管理 API：注入 api service（h2c gRPC，与 clash_api 共存、端口独立）。Tailscale 状态/登出经此。
-    // 仅 1.14 核（1.13 无 services schema，注入即 FATAL）。
-    if (coreVersionAtLeast(this.coreVersion, 1, 14)) {
+    // hasManagementApi 门控（start 路径经 §5 守卫恒 ≥1.14；preflight/snapshot 以 <1.14 fixture 调时不注入，1.13 无 services schema 会 FATAL）。
+    if (this.hasManagementApi()) {
       singboxConfig.services = [
         {
           type: 'api',
@@ -5036,6 +5036,13 @@ exit 0
       this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
     }
     this.killTailscaleLogin(serverId);
+  }
+
+  /** sing-box 管理 API（services[{type:api}] + 状态订阅）是否可用：要求核 ≥1.14。§5 守卫已保证 start 路径恒满足；
+   *  保留判定供 preflight/snapshot 等以 <1.14 fixture 直调 generateSingBoxConfig 的路径（不注入 services）。
+   *  收敛「最低版本」字面量为单一谓词（注入 services + 起 api-client 共用），改最低版本只动此处。 */
+  private hasManagementApi(): boolean {
+    return coreVersionAtLeast(this.coreVersion, 1, 14);
   }
 
   /**

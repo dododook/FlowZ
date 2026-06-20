@@ -206,17 +206,10 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
  */
 const tsAuthToastId = (key: string): string => `ts-auth-${key}`;
 
-function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
-  // 瞬态登录核（非主核 endpoint）给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
-  // 过期/失效启发式已剥离：登录态（含过期 → loggedIn=false）一律由 api STATUS（tailscaleStatus）驱动，
-  // 此处不再据 AUTH_URL 反推 loggedIn=false（那是 stateExists 时代的误判根因）。
-  // Tailscale 无 auth_key 节点：核给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
-  // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
-  // transient（Phase 2 按需登录核）：主进程已自动开浏览器 + 发系统通知 → 降级为可关闭普通 toast（短时长、
-  //   文案「正在打开浏览器完成登录」），固定 id 仍便于登录成功后 dismiss。
-  // 非 transient（Phase 1 主核路径）：duration:Infinity——登录需用户去浏览器操作、未自动开，不能自动消失。
-  const safeUrl = safeHttpUrl(data.url);
-  const action = safeUrl
+/** 「打开登录页」action（safeHttpUrl 限定 http(s) 杜绝 file:///javascript: 等危险 scheme + openExternal）。url 非法/缺失 → undefined。 */
+function tsLoginAction(url: string | undefined) {
+  const safeUrl = url ? safeHttpUrl(url) : undefined;
+  return safeUrl
     ? {
         label: i18n.t('servers.tsOpenLogin'),
         onClick: () => {
@@ -224,55 +217,46 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
         },
       }
     : undefined;
-  const toastId = tsAuthToastId(data.serverId ?? data.nodeName);
-  if (data.transient) {
-    toast.info(i18n.t('servers.tsLoginOpening', { name: data.nodeName }), {
-      id: toastId,
-      description: i18n.t('servers.tsLoginOpeningDesc'),
-      duration: 12000,
-      action,
-    });
-    return;
-  }
-  toast.info(i18n.t('servers.tsLoginNeeded', { name: data.nodeName }), {
-    id: toastId,
+}
+
+/** 一条「需交互登录」Infinity toast（固定 id 便于登录成功后 dismiss/覆盖）。瞬态核 AUTH_URL 与主核 api STATUS
+ *  NeedsLogin 共用此构造，避免文案 / dismiss 规则两处漂移。 */
+function showTsLoginToast(idKey: string, name: string, url: string | undefined): void {
+  toast.info(i18n.t('servers.tsLoginNeeded', { name }), {
+    id: tsAuthToastId(idKey),
     description: i18n.t('servers.tsLoginNeededDesc'),
     duration: Infinity,
-    action,
+    action: tsLoginAction(url),
   });
 }
 
-function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
-  // sing-box 1.14 管理 API 真实态（取代 1.13 stateExists/stdout 启发式）：登录态 + 过期 + 内网 IP 全吃此流。
-  // loggedIn（Running||Starting）即时驱动「需登录」角标；backendState/authURL/IP/expired 进 statusMap 供卡片展示。
-  const store = useAppStore.getState();
-  store.setTailscaleLoginState(data.serverId, data.loggedIn);
-  store.setTailscaleStatus(data.serverId, {
-    backendState: data.backendState,
-    authURL: data.authURL,
-    tailscaleIPs: data.tailscaleIPs,
-    expired: data.expired,
-  });
-  // NeedsLogin 且核给出 authURL → 登录 toast（仿 handleTailscaleAuth 非 transient 路径：safeHttpUrl 限定
-  // openExternal + 固定 id 便于后续状态翻 Running 时 dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
-  if (data.backendState === 'NeedsLogin' && data.authURL) {
-    const safeUrl = safeHttpUrl(data.authURL);
-    const action = safeUrl
-      ? {
-          label: i18n.t('servers.tsOpenLogin'),
-          onClick: () => {
-            void openExternal(safeUrl);
-          },
-        }
-      : undefined;
-    const server = useAppStore.getState().config?.servers.find((s) => s.id === data.serverId);
-    const name = server?.name ?? data.serverId;
-    toast.info(i18n.t('servers.tsLoginNeeded', { name }), {
-      id: tsAuthToastId(data.serverId),
-      description: i18n.t('servers.tsLoginNeededDesc'),
-      duration: Infinity,
-      action,
+function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
+  // 瞬态登录核（非主核 endpoint）给出交互登录 URL → 登录 toast。过期/失效启发式已剥离：登录态（含过期 →
+  // loggedIn=false）一律由 api STATUS（tailscaleStatus）驱动，此处不再据 AUTH_URL 反推 loggedIn=false。
+  const idKey = data.serverId ?? data.nodeName;
+  if (data.transient) {
+    // transient（Phase 2 按需登录核）：主进程已自动开浏览器 + 发系统通知 → 短时长可关闭 toast（非 Infinity）。
+    toast.info(i18n.t('servers.tsLoginOpening', { name: data.nodeName }), {
+      id: tsAuthToastId(idKey),
+      description: i18n.t('servers.tsLoginOpeningDesc'),
+      duration: 12000,
+      action: tsLoginAction(data.url),
     });
+    return;
+  }
+  // 非 transient（Phase 1 主核路径）：duration:Infinity——登录需用户去浏览器操作、未自动开，不能自动消失。
+  showTsLoginToast(idKey, data.nodeName, data.url);
+}
+
+function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
+  // sing-box 1.14 管理 API 真实态（取代 1.13 stateExists/stdout 启发式）：loggedIn（Running||Starting）即时驱动
+  // 「需登录」角标。backendState/authURL 仅本地驱动登录 toast（不入 store）；内网 IP/过期待 P1 卡片展示时再接。
+  useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
+  // NeedsLogin 且核给出 authURL → 登录 toast（与瞬态核 AUTH_URL 共用 showTsLoginToast，固定 id 供翻 Running 时
+  // dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
+  if (data.backendState === 'NeedsLogin' && data.authURL) {
+    const server = useAppStore.getState().config?.servers.find((s) => s.id === data.serverId);
+    showTsLoginToast(data.serverId, server?.name ?? data.serverId, data.authURL);
   } else {
     // 已认证/离开 NeedsLogin → dismiss 该节点那条登录 toast（固定 id）。
     toast.dismiss(tsAuthToastId(data.serverId));

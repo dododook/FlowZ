@@ -83,13 +83,6 @@ interface AppState {
   // 仅 Tailscale 节点入表；EVENT_TAILSCALE_STATUS 到达时由 setTailscaleLoginState 更新。
   tailscaleLoginStates: Record<string, boolean>;
 
-  // Tailscale 节点 1.14 管理 API 详细态（serverId → 真实态）：backendState/authURL/内网 IP/过期。
-  // 登录态点亮走 tailscaleLoginStates（单一布尔）；本表承载卡片展示用的细节（内网 IP、过期提示等）。
-  tailscaleStatusMap: Record<
-    string,
-    { backendState: string; authURL?: string; tailscaleIPs: string[]; expired: boolean }
-  >;
-
   // Privacy Protection Mode
   isPrivacyMode: boolean;
 
@@ -125,12 +118,8 @@ interface AppState {
   // Status Actions
   refreshConnectionStatus: () => Promise<void>;
   refreshStatistics: () => Promise<void>;
-  // Tailscale 登录态（单条覆盖）+ 详细态（backendState/IP/过期），均由 EVENT_TAILSCALE_STATUS 驱动。
+  // Tailscale 登录态单条覆盖（loggedIn=Running||Starting），由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleLoginState: (serverId: string, loggedIn: boolean) => void;
-  setTailscaleStatus: (
-    serverId: string,
-    status: { backendState: string; authURL?: string; tailscaleIPs: string[]; expired: boolean }
-  ) => void;
 
   // Server Management Actions
   deleteServer: (serverId: string) => Promise<void>;
@@ -162,7 +151,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   latencyMap: {},
   invalidNodes: {},
   tailscaleLoginStates: {},
-  tailscaleStatusMap: {},
   isPrivacyMode: false,
   helperStatus: null,
   availableAppUpdate: null,
@@ -395,11 +383,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 1.14 api STATUS 是单一真值（无整表刷新 / 无乐观代际防覆盖：无并发整表覆盖竞态，纯单点写）。
   setTailscaleLoginState: (serverId, loggedIn) => {
     set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } }));
-  },
-
-  // Tailscale 1.14 详细态（backendState/authURL/内网 IP/过期）单条覆盖，供卡片展示。
-  setTailscaleStatus: (serverId, status) => {
-    set((s) => ({ tailscaleStatusMap: { ...s.tailscaleStatusMap, [serverId]: status } }));
   },
 
   // Server Management Actions
