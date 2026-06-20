@@ -86,8 +86,10 @@ export const isIpv4Host = (host: string): boolean => isIpv4(host);
 
 /**
  * 主机字符串是否为 IPv6 字面量（收敛到 shared/dns.isIpv6Literal 单一真值：去方括号 + ≥2 冒号 canonical，
- * 与 /simplify F3 spoof 守卫同口径）。原 `/^[0-9a-fA-F:]+$/ && includes(':')` 仅 1 个冒号即放行，会把
- * 'dead:beef' 等畸形串误判为 IPv6；真 IPv6（≥2 冒号）/ 真域名（无冒号）判定不变，仅收紧 1-冒号畸形串。
+ * 与 /simplify F3 spoof 守卫同口径）。相比原 `/^[0-9a-fA-F:]+$/ && includes(':')` 两处分类变化（均更正确）：
+ *  (1) 收紧——原 1 个冒号即放行，把 'dead:beef' 等畸形串误判为 IPv6，现 ≥2 冒号方为 IPv6（拒畸形串）；
+ *  (2) 纳入——原带方括号（'[::1]'）因含 '[' ']' 不匹配 hex/冒号正则被判 false，现去方括号后正确归类为 IPv6。
+ * 真 IPv6（裸 ≥2 冒号）/ 真域名（无冒号）判定不变。
  */
 export const isIpv6Host = (host: string): boolean => isIpv6Literal(host);
 
