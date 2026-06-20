@@ -568,10 +568,12 @@ describe('B0：兼容版本带去硬编码 + verifiedCeiling', () => {
     return svc;
   }
 
-  it('出厂带地板：current 1.13 + 无 verifiedCeiling → 1.14 跨带被拦', async () => {
-    const r = await rawSvc({ current: '1.13.13', latest: '1.14.0', autoState: {} }).checkUpdate();
+  it('出厂带地板(=bundled 1.14)：current 1.14 + 无 verifiedCeiling → 高于地板的 1.15 跨带被拦', async () => {
+    // WS-D 换核后 bundled=1.14 → 出厂带地板升至 1.14；原「1.13→1.14 被拦」过时（1.14 已是地板内、放行追平）。
+    // 改测高于新地板的 1.15：无 verifiedCeiling 不放行跨带。
+    const r = await rawSvc({ current: '1.14.0', latest: '1.15.0', autoState: {} }).checkUpdate();
     expect(r.hasUpdate).toBe(false);
-    expect(r.latestVersion).toBe('1.14.0');
+    expect(r.latestVersion).toBe('1.15.0');
   });
 
   it('verifiedCeiling=1014（已实证 1.14）→ 1.14 放行', async () => {
