@@ -361,4 +361,22 @@ describe('buildRouteConfig — 节点 IP 直连排除（CIDR 形状）', () => {
     expect(cidrs).toContain('::1/128');
     expect(cidrs).not.toContain('[::1]/128');
   });
+
+  // R4-1：IPv4-mapped IPv6 字面量节点（target() 与 isIpv6Host 同口径当 IPv6）→ /128 排除，不漏排为域名。
+  it('IPv4-mapped IPv6 字面量节点 → ip_cidr 含 <addr>/128（不漏排）', () => {
+    const n = ipNode('s1', '::ffff:1.2.3.4');
+    const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([]));
+    expect(directCidrs(rc)).toContain('::ffff:1.2.3.4/128');
+  });
+
+  // R4-3：lanResolverForDns 经 hostToExcludeCidr 族自适应拼 CIDR（IPv4 → /32），非硬编码 /32。
+  it('lanResolverForDns（IPv4）→ ip_cidr 含 <ip>/32（族自适应 helper）', () => {
+    const n = ipNode('s1', '1.2.3.4');
+    const rc = buildRouteConfig(
+      cfg([n]),
+      idMap([n]),
+      deps([], { lanResolverForDns: '192.168.1.1' })
+    );
+    expect(directCidrs(rc)).toContain('192.168.1.1/32');
+  });
 });

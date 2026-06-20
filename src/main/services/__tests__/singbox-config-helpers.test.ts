@@ -5,6 +5,8 @@
 import {
   isIpv4Host,
   isIpv6Host,
+  stripHostBrackets,
+  hostToExcludeCidr,
   getNodeResolverTag,
   effectiveCustomRules,
   effectiveAppRules,
@@ -35,6 +37,56 @@ describe('isIpv6Host', () => {
     expect(isIpv6Host('1.2.3.4')).toBe(false);
     expect(isIpv6Host('example.com')).toBe(false);
     expect(isIpv6Host('abcd')).toBe(false); // 无冒号
+  });
+  it('R4-1：IPv4-mapped/embedded（末段点分 IPv4）→ true，与 api-client target() 一致', () => {
+    expect(isIpv6Host('::ffff:1.2.3.4')).toBe(true);
+    expect(isIpv6Host('::1.2.3.4')).toBe(true);
+    expect(isIpv6Host('[::ffff:1.2.3.4]')).toBe(true); // 带方括号亦纳入
+    // 末段非严格 IPv4（>255）→ 拒（不误判畸形串为 IPv6）
+    expect(isIpv6Host('::ffff:1.2.3.999')).toBe(false);
+    // 仅 1 个冒号（IP:port 裸输入）→ 仍 false
+    expect(isIpv6Host('8.8.8.8:53')).toBe(false);
+  });
+});
+
+describe('stripHostBrackets — 仅配对方括号脱，畸形原样返回（R4-2）', () => {
+  it('配对方括号 → 脱括号', () => {
+    expect(stripHostBrackets('[::1]')).toBe('::1');
+    expect(stripHostBrackets('[2001:db8::1]')).toBe('2001:db8::1');
+    expect(stripHostBrackets('[]')).toBe('');
+  });
+  it('裸地址 / 域名 / IPv4 → 原样', () => {
+    expect(stripHostBrackets('::1')).toBe('::1');
+    expect(stripHostBrackets('1.2.3.4')).toBe('1.2.3.4');
+    expect(stripHostBrackets('example.com')).toBe('example.com');
+    expect(stripHostBrackets('')).toBe('');
+  });
+  it('单边括号（畸形）→ 原样返回（不截成误判 IP 形态）', () => {
+    expect(stripHostBrackets('[::1')).toBe('[::1');
+    expect(stripHostBrackets('::1]')).toBe('::1]');
+  });
+});
+
+describe('hostToExcludeCidr — 真 IP 才产 CIDR，非 IP/空/畸形 → null（R4-2/R4-4）', () => {
+  it('裸 IPv4 → /32', () => {
+    expect(hostToExcludeCidr('1.2.3.4')).toBe('1.2.3.4/32');
+    expect(hostToExcludeCidr('223.5.5.5')).toBe('223.5.5.5/32');
+  });
+  it('裸 / 带括号 IPv6 → /128（去括号后）', () => {
+    expect(hostToExcludeCidr('::1')).toBe('::1/128');
+    expect(hostToExcludeCidr('2001:db8::1')).toBe('2001:db8::1/128');
+    expect(hostToExcludeCidr('[::1]')).toBe('::1/128'); // 脱括号后再拼，非 '[::1]/128'
+  });
+  it('IPv4-mapped → /128（R4-1 与 isIpv6Host 同口径）', () => {
+    expect(hostToExcludeCidr('::ffff:1.2.3.4')).toBe('::ffff:1.2.3.4/128');
+    expect(hostToExcludeCidr('[::ffff:1.2.3.4]')).toBe('::ffff:1.2.3.4/128');
+  });
+  it('空串 / [] / 单边括号 / 域名 / 非法 IP → null（不产非法 /32）', () => {
+    expect(hostToExcludeCidr('')).toBeNull();
+    expect(hostToExcludeCidr('[]')).toBeNull(); // 脱括号→空串→null（旧实现会拼非法 '/32'）
+    expect(hostToExcludeCidr('[::1')).toBeNull(); // 单边括号畸形非 IP
+    expect(hostToExcludeCidr('example.com')).toBeNull();
+    expect(hostToExcludeCidr('999.1.1.1')).toBeNull(); // 非严格 IPv4
   });
 });
 
