@@ -106,6 +106,55 @@ export function FingerprintField({ control, t }: { control: AnyControl; t: TFn }
   );
 }
 
+/**
+ * TLS 栈引擎下拉（P3c，sing-box 1.14 tls.engine）。统一字段名 tlsEngine。
+ *
+ * - go：跨平台 Go TLS（默认；省略 = 等价 go）。
+ * - windows(Schannel)：仅 Windows 运行时可用——非 Windows 平台启动 FATAL，故仅在 win32 暴露该选项。
+ * - apple(Network.framework)：仅 Apple 运行时可用——非 Apple 平台启动 FATAL，故仅在 darwin 暴露该选项。
+ *
+ * 系统原生栈让 ClientHello/握手指纹更贴近系统浏览器，抗指纹识别更真。仅对 TCP-TLS 协议有意义
+ * （Hy2/TUIC 走 QUIC 自带 TLS1.3，不挂此选项）。
+ */
+export function TlsEngineField({ control, t }: { control: AnyControl; t: TFn }) {
+  const platform = (typeof window !== 'undefined' && window.electron?.platform) || '';
+  const isWin = platform === 'win32';
+  const isMac = platform === 'darwin';
+  return (
+    <FormField
+      control={control}
+      name="tlsEngine"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('servers.tlsEngine', 'TLS 引擎')}</FormLabel>
+          <Select onValueChange={field.onChange} value={field.value || 'go'}>
+            <FormControl>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value="go">{t('servers.tlsEngineGo', 'Go（默认）')}</SelectItem>
+              {isWin && (
+                <SelectItem value="windows">
+                  {t('servers.tlsEngineWindows', 'Windows (Schannel)')}
+                </SelectItem>
+              )}
+              {isMac && (
+                <SelectItem value="apple">
+                  {t('servers.tlsEngineApple', 'Apple (Network.framework)')}
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <FormDescription>{t('servers.tlsEngineDesc')}</FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
 /** allowInsecure 复选框 —— 允许无效证书（不推荐）。 */
 export function AllowInsecureField({ control, t }: { control: AnyControl; t: TFn }) {
   return (

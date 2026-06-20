@@ -974,7 +974,13 @@
       "hostKeyAlgorithms": "主机密钥算法",
       "hostKeyAlgorithmsDesc": "限定可接受的主机密钥算法，逗号或换行分隔；留空用核心默认。",
       "clientVersion": "客户端版本",
-      "clientVersionDesc": "SSH 客户端版本标识字符串；留空用核心默认。"
+      "clientVersionDesc": "SSH 客户端版本标识字符串；留空用核心默认。",
+      "cipher": "加密算法",
+      "cipherDesc": "对称加密算法（逗号/换行分隔）；留空用默认算法集。sing-box 字段：cipher。",
+      "mac": "MAC 算法",
+      "macDesc": "消息认证码算法（逗号/换行分隔）；留空用默认算法集。sing-box 字段：mac。",
+      "kexAlgorithm": "密钥交换算法",
+      "kexAlgorithmDesc": "密钥交换算法（逗号/换行分隔）；留空用默认算法集。sing-box 字段：kex_algorithm。"
     },
     "anytls": {
       "sessionTitle": "会话保活",
@@ -1006,7 +1012,23 @@
     "tsReverseMeshDesc": "反向 mesh（被访问）：建真实内核接口，使本机可被 tailnet 其它设备反向访问本机服务；需提权 helper + TUN",
     "speedTestAll": "全部测速",
     "speedTestGroup": "测速本组",
-    "add": "添加"
+    "add": "添加",
+    "obfsType": "混淆类型",
+    "obfsTypeDesc": "Salamander 或 Gecko（sing-box 1.14）。Gecko 额外做随机包长填充。",
+    "obfsMinPacketSize": "最小包长",
+    "obfsMaxPacketSize": "最大包长",
+    "obfsPacketSizeDesc": "Gecko 混淆的随机填充长度范围；留空用核心默认。",
+    "bbrProfile": "BBR Profile",
+    "bbrProfileDefault": "默认",
+    "bbrProfileStandard": "Standard",
+    "bbrProfileAggressive": "Aggressive",
+    "bbrProfileConservative": "Conservative",
+    "bbrProfileDesc": "BBR 拥塞控制 profile（sing-box 1.14）。默认使用核心默认拥塞控制。",
+    "tlsEngine": "TLS 引擎",
+    "tlsEngineGo": "Go（默认）",
+    "tlsEngineWindows": "Windows (Schannel)",
+    "tlsEngineApple": "Apple (Network.framework)",
+    "tlsEngineDesc": "TLS 栈引擎。系统原生栈（Schannel / Network.framework）让握手指纹更真实；仅在对应平台可用。"
   },
   "rules": {
     "ruleColumn": "规则",

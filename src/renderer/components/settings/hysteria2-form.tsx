@@ -13,6 +13,13 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { FormButtons } from './shared/form-buttons';
 import { EchField } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
@@ -32,7 +39,12 @@ const createHysteria2Schema = (t: any) =>
     downMbps: z.number().optional(),
     // 混淆设置
     obfsEnabled: z.boolean(),
+    obfsType: z.enum(['salamander', 'gecko']),
     obfsPassword: z.string().optional(),
+    obfsMinPacketSize: z.number().optional(),
+    obfsMaxPacketSize: z.number().optional(),
+    // 拥塞控制
+    bbrProfile: z.string().optional(),
     // TLS 设置
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
@@ -63,7 +75,11 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
       upMbps: undefined,
       downMbps: undefined,
       obfsEnabled: false,
+      obfsType: 'salamander',
       obfsPassword: '',
+      obfsMinPacketSize: undefined,
+      obfsMaxPacketSize: undefined,
+      bbrProfile: '',
       tlsServerName: '',
       tlsAllowInsecure: false,
       ...echDefaults,
@@ -81,7 +97,11 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
         upMbps: serverConfig.hysteria2Settings?.upMbps ?? undefined,
         downMbps: serverConfig.hysteria2Settings?.downMbps ?? undefined,
         obfsEnabled: !!serverConfig.hysteria2Settings?.obfs?.type,
+        obfsType: serverConfig.hysteria2Settings?.obfs?.type || 'salamander',
         obfsPassword: serverConfig.hysteria2Settings?.obfs?.password || '',
+        obfsMinPacketSize: serverConfig.hysteria2Settings?.obfs?.minPacketSize ?? undefined,
+        obfsMaxPacketSize: serverConfig.hysteria2Settings?.obfs?.maxPacketSize ?? undefined,
+        bbrProfile: serverConfig.hysteria2Settings?.bbrProfile || '',
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         ...readEchDefault(serverConfig),
@@ -112,9 +132,19 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
         obfs:
           values.obfsEnabled && values.obfsPassword
             ? {
-                type: 'salamander',
+                type: values.obfsType,
                 password: values.obfsPassword,
+                // min/max_packet_size 仅 gecko 有意义；salamander 不下发
+                minPacketSize:
+                  values.obfsType === 'gecko' ? values.obfsMinPacketSize || undefined : undefined,
+                maxPacketSize:
+                  values.obfsType === 'gecko' ? values.obfsMaxPacketSize || undefined : undefined,
               }
+            : undefined,
+        // 'default'/空 = 不下发（用核心默认拥塞控制）；仅 standard/aggressive/conservative 落 bbr_profile
+        bbrProfile:
+          values.bbrProfile && values.bbrProfile !== 'default'
+            ? (values.bbrProfile as any)
             : undefined,
         serverPorts: values.serverPorts?.trim() || undefined,
         hopInterval: values.hopInterval?.trim() || undefined,
@@ -125,6 +155,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
   };
 
   const isObfsEnabled = form.watch('obfsEnabled');
+  const obfsType = form.watch('obfsType');
 
   return (
     <Form {...form}>
@@ -222,7 +253,29 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
               />
             </FieldSpan>
             {isObfsEnabled && (
-              <FieldSpan>
+              <>
+                <FormField
+                  control={form.control}
+                  name="obfsType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('servers.obfsType', '混淆类型')}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="salamander">Salamander</SelectItem>
+                          <SelectItem value="gecko">Gecko</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>{t('servers.obfsTypeDesc')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="obfsPassword"
@@ -241,8 +294,90 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                     </FormItem>
                   )}
                 />
-              </FieldSpan>
+                {obfsType === 'gecko' && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="obfsMinPacketSize"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('servers.obfsMinPacketSize', '最小包长')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder={t('servers.optional')}
+                              {...field}
+                              value={field.value ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val ? parseInt(val) : undefined);
+                              }}
+                            />
+                          </FormControl>
+                          <FormDescription>{t('servers.obfsPacketSizeDesc')}</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="obfsMaxPacketSize"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('servers.obfsMaxPacketSize', '最大包长')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder={t('servers.optional')}
+                              {...field}
+                              value={field.value ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                field.onChange(val ? parseInt(val) : undefined);
+                              }}
+                            />
+                          </FormControl>
+                          <FormDescription>{t('servers.obfsPacketSizeDesc')}</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
+              </>
             )}
+            <FormField
+              control={form.control}
+              name="bbrProfile"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.bbrProfile', 'BBR Profile')}</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || 'default'}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="default">
+                        {t('servers.bbrProfileDefault', '默认')}
+                      </SelectItem>
+                      <SelectItem value="standard">
+                        {t('servers.bbrProfileStandard', 'Standard')}
+                      </SelectItem>
+                      <SelectItem value="aggressive">
+                        {t('servers.bbrProfileAggressive', 'Aggressive')}
+                      </SelectItem>
+                      <SelectItem value="conservative">
+                        {t('servers.bbrProfileConservative', 'Conservative')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>{t('servers.bbrProfileDesc')}</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <TlsServerNameField control={form.control} t={t} />
             <FieldSpan>
               <AllowInsecureField control={form.control} t={t} />

@@ -21,7 +21,12 @@ import {
 import { FormButtons } from './shared/form-buttons';
 import { EchField, MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
-import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
+import {
+  TlsServerNameField,
+  FingerprintField,
+  AllowInsecureField,
+  TlsEngineField,
+} from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import {
@@ -56,6 +61,7 @@ const createVmessSchema = (t: any) =>
     tlsServerName: z.string().optional().or(z.literal('')),
     tlsAllowInsecure: z.boolean(),
     tlsFingerprint: z.string().optional().or(z.literal('')),
+    tlsEngine: z.string().optional(),
     wsPath: z.string().optional().or(z.literal('')),
     wsHost: z.string().optional().or(z.literal('')),
     grpcServiceName: z.string().optional().or(z.literal('')),
@@ -104,6 +110,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'chrome',
+        tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
@@ -120,6 +127,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
       tlsServerName: '',
       tlsAllowInsecure: false,
       tlsFingerprint: 'chrome',
+      tlsEngine: 'go',
       ...readTransportDefaults(),
       ...echDefaults,
       ...multiplexDefaults,
@@ -150,6 +158,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
               serverName: values.tlsServerName?.trim() || null,
               allowInsecure: values.tlsAllowInsecure,
               fingerprint: values.tlsFingerprint || 'chrome',
+              engine: values.tlsEngine && values.tlsEngine !== 'go' ? values.tlsEngine : undefined,
               ech: values.ech ? true : undefined,
               echConfig: values.echConfig?.trim() || undefined,
             }
@@ -298,6 +307,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
             <FieldGrid cols={2}>
               <TlsServerNameField control={form.control} t={t} />
               <FingerprintField control={form.control} t={t} />
+              <TlsEngineField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

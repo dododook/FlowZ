@@ -974,7 +974,13 @@
       "hostKeyAlgorithms": "主機金鑰演算法",
       "hostKeyAlgorithmsDesc": "限定可接受的主機金鑰演算法，逗號或換行分隔；留空用核心預設。",
       "clientVersion": "用戶端版本",
-      "clientVersionDesc": "SSH 用戶端版本標識字串；留空用核心預設。"
+      "clientVersionDesc": "SSH 用戶端版本標識字串；留空用核心預設。",
+      "cipher": "加密演算法",
+      "cipherDesc": "對稱加密演算法（逗號/換行分隔）；留空用預設演算法集。sing-box 欄位：cipher。",
+      "mac": "MAC 演算法",
+      "macDesc": "訊息驗證碼演算法（逗號/換行分隔）；留空用預設演算法集。sing-box 欄位：mac。",
+      "kexAlgorithm": "金鑰交換演算法",
+      "kexAlgorithmDesc": "金鑰交換演算法（逗號/換行分隔）；留空用預設演算法集。sing-box 欄位：kex_algorithm。"
     },
     "anytls": {
       "sessionTitle": "工作階段保活",
@@ -1006,7 +1012,23 @@
     "tsReverseMeshDesc": "反向 mesh（被存取）：建真實內核介面，使本機可被 tailnet 其它裝置反向存取本機服務；需提權 helper + TUN",
     "speedTestAll": "全部測速",
     "speedTestGroup": "測速本組",
-    "add": "新增"
+    "add": "新增",
+    "obfsType": "混淆類型",
+    "obfsTypeDesc": "Salamander 或 Gecko（sing-box 1.14）。Gecko 額外做隨機封包長度填充。",
+    "obfsMinPacketSize": "最小封包長度",
+    "obfsMaxPacketSize": "最大封包長度",
+    "obfsPacketSizeDesc": "Gecko 混淆的隨機填充長度範圍；留空用核心預設。",
+    "bbrProfile": "BBR Profile",
+    "bbrProfileDefault": "預設",
+    "bbrProfileStandard": "Standard",
+    "bbrProfileAggressive": "Aggressive",
+    "bbrProfileConservative": "Conservative",
+    "bbrProfileDesc": "BBR 壅塞控制 profile（sing-box 1.14）。預設使用核心預設壅塞控制。",
+    "tlsEngine": "TLS 引擎",
+    "tlsEngineGo": "Go（預設）",
+    "tlsEngineWindows": "Windows (Schannel)",
+    "tlsEngineApple": "Apple (Network.framework)",
+    "tlsEngineDesc": "TLS 堆疊引擎。系統原生堆疊（Schannel / Network.framework）讓握手指紋更真實；僅在對應平台可用。"
   },
   "rules": {
     "ruleColumn": "規則",

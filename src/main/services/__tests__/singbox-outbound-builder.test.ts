@@ -364,6 +364,163 @@ describe('buildProxyOutbound — 可选协议设置下发（B 组编辑项）', 
     expect(ob.client_version).toBe('SSH-2.0-OpenSSH_9.0');
   });
 
+  // P3d：SSH cipher/mac/kex_algorithm。字段名以 sing-box check 实证为准（cipher/mac/kex_algorithm，
+  // 非 ciphers/macs/key_exchange——后两者 sing-box decode FATAL "unknown field"）。
+  it('ssh：cipher/mac/kexAlgorithm → cipher/mac/kex_algorithm（sing-box 实证字段名）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'ssh',
+        port: 22,
+        sshSettings: {
+          user: 'root',
+          cipher: ['aes128-gcm@openssh.com', 'chacha20-poly1305@openssh.com'],
+          mac: ['hmac-sha2-256'],
+          kexAlgorithm: ['curve25519-sha256'],
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.cipher).toEqual(['aes128-gcm@openssh.com', 'chacha20-poly1305@openssh.com']);
+    expect(ob.mac).toEqual(['hmac-sha2-256']);
+    expect(ob.kex_algorithm).toEqual(['curve25519-sha256']);
+  });
+
+  it('ssh：cipher/mac/kexAlgorithm 空数组不下发（向后兼容）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'ssh',
+        port: 22,
+        sshSettings: { user: 'root', cipher: [], mac: [], kexAlgorithm: [] },
+      }),
+      tags
+    ) as any;
+    expect(ob.cipher).toBeUndefined();
+    expect(ob.mac).toBeUndefined();
+    expect(ob.kex_algorithm).toBeUndefined();
+  });
+
+  // P3b：Hysteria2 obfs（salamander/gecko）+ min/max_packet_size（仅 gecko）+ bbr_profile。
+  it('hysteria2：salamander obfs → obfs.type=salamander，不下发 min/max_packet_size', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'hysteria2',
+        password: 'pw',
+        security: 'tls',
+        hysteria2Settings: {
+          obfs: { type: 'salamander', password: 'o', minPacketSize: 100, maxPacketSize: 1200 },
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.obfs.type).toBe('salamander');
+    expect(ob.obfs.password).toBe('o');
+    // salamander 忽略包长字段：即便表单残留也不下发（避免无效字段）
+    expect(ob.obfs.min_packet_size).toBeUndefined();
+    expect(ob.obfs.max_packet_size).toBeUndefined();
+  });
+
+  it('hysteria2：gecko obfs → obfs.type=gecko + min/max_packet_size 下发', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'hysteria2',
+        password: 'pw',
+        security: 'tls',
+        hysteria2Settings: {
+          obfs: { type: 'gecko', password: 'o', minPacketSize: 100, maxPacketSize: 1200 },
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.obfs.type).toBe('gecko');
+    expect(ob.obfs.min_packet_size).toBe(100);
+    expect(ob.obfs.max_packet_size).toBe(1200);
+  });
+
+  it('hysteria2：obfs 缺 password → 不下发整个 obfs（sing-box: missing obfs password）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'hysteria2',
+        password: 'pw',
+        security: 'tls',
+        hysteria2Settings: { obfs: { type: 'gecko' } },
+      }),
+      tags
+    ) as any;
+    expect(ob.obfs).toBeUndefined();
+  });
+
+  it('hysteria2：bbrProfile → bbr_profile（standard/aggressive/conservative）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'hysteria2',
+        password: 'pw',
+        security: 'tls',
+        hysteria2Settings: { bbrProfile: 'aggressive' },
+      }),
+      tags
+    ) as any;
+    expect(ob.bbr_profile).toBe('aggressive');
+  });
+
+  it('hysteria2：未设 obfs/bbrProfile → 均不下发（向后兼容）', () => {
+    const ob = buildProxyOutbound(
+      node({ protocol: 'hysteria2', password: 'pw', security: 'tls', hysteria2Settings: {} }),
+      tags
+    ) as any;
+    expect(ob.obfs).toBeUndefined();
+    expect(ob.bbr_profile).toBeUndefined();
+  });
+
+  // P3c：TLS engine。仅对 TCP-TLS 协议下发；'go'/空省略；Hy2/TUIC（QUIC）即便设了也不下发。
+  it('tls engine：trojan engine=windows → tls.engine=windows', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: { serverName: 'a.com', engine: 'windows' },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.engine).toBe('windows');
+  });
+
+  it('tls engine：engine=go 或未设 → 省略（用核心默认 Go TLS）', () => {
+    const goOb = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: { serverName: 'a.com', engine: 'go' },
+      }),
+      tags
+    ) as any;
+    expect(goOb.tls.engine).toBeUndefined();
+    const noneOb = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: { serverName: 'a.com' },
+      }),
+      tags
+    ) as any;
+    expect(noneOb.tls.engine).toBeUndefined();
+  });
+
+  it('tls engine：hysteria2(QUIC) 即便设 engine 也不下发（QUIC 自带 TLS1.3）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'hysteria2',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: { serverName: 'a.com', engine: 'apple' },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls?.engine).toBeUndefined();
+  });
+
   it('未设置这些可选项 → 不下发（向后兼容）', () => {
     const tuic = buildProxyOutbound(
       node({ protocol: 'tuic', uuid: 'u', password: 'p', tuicSettings: {} }),

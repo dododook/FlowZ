@@ -26,6 +26,7 @@ import {
   FingerprintField,
   AllowInsecureField,
   AlpnField,
+  TlsEngineField,
 } from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
@@ -54,6 +55,7 @@ const createTrojanSchema = (t: any) =>
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
     tlsFingerprint: z.string().optional(),
+    tlsEngine: z.string().optional(),
     alpn: z.string().optional(),
     wsPath: z.string().optional(),
     wsHost: z.string().optional(),
@@ -84,6 +86,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
       tlsServerName: '',
       tlsAllowInsecure: false,
       tlsFingerprint: 'none',
+      tlsEngine: 'go',
       alpn: '',
       ...readTransportDefaults(),
       ...echDefaults,
@@ -118,6 +121,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'none',
+        tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         alpn: serverConfig.tlsSettings?.alpn?.join(',') || '',
         ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
@@ -142,6 +146,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
               serverName: values.tlsServerName || null,
               allowInsecure: values.tlsAllowInsecure,
               fingerprint: values.tlsFingerprint || 'none',
+              engine: values.tlsEngine && values.tlsEngine !== 'go' ? values.tlsEngine : undefined,
               alpn: values.alpn ? values.alpn.split(',').map((s) => s.trim()) : undefined,
               ech: values.ech ? true : undefined,
               echConfig: values.echConfig?.trim() || undefined,
@@ -243,6 +248,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
               <TlsServerNameField control={form.control} t={t} />
               <AlpnField control={form.control} t={t} placeholder="http/1.1" />
               <FingerprintField control={form.control} t={t} />
+              <TlsEngineField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

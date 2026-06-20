@@ -21,7 +21,12 @@ import {
 import { FormButtons } from './shared/form-buttons';
 import { EchField, MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
-import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
+import {
+  TlsServerNameField,
+  FingerprintField,
+  AllowInsecureField,
+  TlsEngineField,
+} from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
@@ -57,6 +62,7 @@ const createVlessSchema = (t: any) =>
     tlsServerName: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
     tlsFingerprint: z.string().optional(),
+    tlsEngine: z.string().optional(),
     realityPublicKey: z.string().optional(),
     realityShortId: z.string().optional(),
     wsPath: z.string().optional(),
@@ -108,6 +114,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'chrome',
+        tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         realityPublicKey: serverConfig.realitySettings?.publicKey || '',
         realityShortId: serverConfig.realitySettings?.shortId || '',
         ...readTransportDefaults(serverConfig),
@@ -126,6 +133,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
       tlsServerName: '',
       tlsAllowInsecure: false,
       tlsFingerprint: 'chrome',
+      tlsEngine: 'go',
       realityPublicKey: '',
       realityShortId: '',
       ...readTransportDefaults(),
@@ -158,6 +166,10 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
               serverName: values.tlsServerName?.trim() || null,
               allowInsecure: security === 'tls' ? values.tlsAllowInsecure : false,
               fingerprint: values.tlsFingerprint || 'chrome',
+              engine:
+                security === 'tls' && values.tlsEngine && values.tlsEngine !== 'go'
+                  ? values.tlsEngine
+                  : undefined,
               ech: values.ech ? true : undefined,
               echConfig: values.echConfig?.trim() || undefined,
             }
@@ -330,6 +342,7 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
             <FieldGrid cols={2}>
               <TlsServerNameField control={form.control} t={t} />
               <FingerprintField control={form.control} t={t} />
+              <TlsEngineField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

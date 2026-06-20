@@ -180,12 +180,27 @@ export function buildProxyOutbound(
       outbound.down_mbps = server.hysteria2Settings.downMbps;
     }
 
-    // 混淆配置
-    if (server.hysteria2Settings?.obfs?.type && server.hysteria2Settings?.obfs?.password) {
+    // 混淆配置（salamander / gecko）。gecko 额外支持随机填充包长 min/max_packet_size（仅 gecko 有意义，
+    // salamander 忽略 → 仅 gecko 时下发，避免无效字段）。两类型均需 password（sing-box check：缺则 "missing obfs password"）。
+    const obfs = server.hysteria2Settings?.obfs;
+    if (obfs?.type && obfs?.password) {
       outbound.obfs = {
-        type: server.hysteria2Settings.obfs.type,
-        password: server.hysteria2Settings.obfs.password,
+        type: obfs.type,
+        password: obfs.password,
       };
+      if (obfs.type === 'gecko') {
+        if (typeof obfs.minPacketSize === 'number' && obfs.minPacketSize > 0) {
+          outbound.obfs.min_packet_size = obfs.minPacketSize;
+        }
+        if (typeof obfs.maxPacketSize === 'number' && obfs.maxPacketSize > 0) {
+          outbound.obfs.max_packet_size = obfs.maxPacketSize;
+        }
+      }
+    }
+
+    // BBR 拥塞控制 profile（standard / aggressive / conservative）。空 = 核心默认拥塞控制。
+    if (server.hysteria2Settings?.bbrProfile) {
+      outbound.bbr_profile = server.hysteria2Settings.bbrProfile;
     }
 
     // 网络类型 (tcp/udp)
@@ -313,6 +328,10 @@ export function buildProxyOutbound(
     if (ssh.hostKeyAlgorithms && ssh.hostKeyAlgorithms.length > 0)
       outbound.host_key_algorithms = ssh.hostKeyAlgorithms;
     if (ssh.clientVersion) outbound.client_version = ssh.clientVersion;
+    // 算法协商可选项（P3d）：sing-box 字段名 cipher / mac / kex_algorithm（已 check 实证）。空数组不下发。
+    if (ssh.cipher && ssh.cipher.length > 0) outbound.cipher = ssh.cipher;
+    if (ssh.mac && ssh.mac.length > 0) outbound.mac = ssh.mac;
+    if (ssh.kexAlgorithm && ssh.kexAlgorithm.length > 0) outbound.kex_algorithm = ssh.kexAlgorithm;
 
     // SSH outbound 不需要 TLS 和传输层配置，直接返回
     return outbound;
@@ -335,6 +354,20 @@ export function buildProxyOutbound(
       insecure: server.tlsSettings?.allowInsecure || false,
       alpn: finalAlpn,
     };
+
+    // TLS 栈引擎（P3c，sing-box 1.14 tls.engine）：windows(Schannel)/apple(Network.framework) 用系统原生栈，
+    // ClientHello 指纹更真。仅对 TCP-TLS 协议下发——Hy2/TUIC 走 QUIC 自带 TLS1.3，系统 TCP-TLS 栈不适用，
+    // 表单也不对它们暴露此项。'go'/空 = 跨平台 Go TLS（核心默认），无需显式下发。windows/apple 在非对应平台
+    // 运行时 FATAL，由表单按平台过滤可选值兜底。
+    const tlsEngine = server.tlsSettings?.engine;
+    if (
+      tlsEngine &&
+      tlsEngine !== 'go' &&
+      server.protocol !== 'hysteria2' &&
+      server.protocol !== 'tuic'
+    ) {
+      outbound.tls.engine = tlsEngine;
+    }
 
     // uTLS 仅适用于基于 TCP 的协议，Hysteria2 和 TUIC 使用 QUIC (UDP) 不支持 uTLS
     const fingerprint = server.tlsSettings?.fingerprint;
