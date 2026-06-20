@@ -929,6 +929,18 @@ export const appApi = {
   async openSingboxDashboard(): Promise<{ ok: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD);
   },
+  /**
+   * P5 Phase2：打开远端实例的 /dashboard/（main 据 instanceId 取配置推 URL + 系统浏览器打开）。
+   */
+  async openRemoteDashboard(instanceId: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.OPEN_REMOTE_DASHBOARD, { instanceId });
+  },
+  /**
+   * P5 Phase2：远端实例连通测试（main 用 TLS+Bearer 客户端 probe 一次，secret 取自 main config，不经渲染端）。
+   */
+  async testRemoteInstance(instanceId: string): Promise<{ ok: boolean; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.TEST_REMOTE_INSTANCE, { instanceId });
+  },
 };
 
 /**
