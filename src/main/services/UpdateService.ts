@@ -356,12 +356,16 @@ export class UpdateService {
     }
 
     const currentVersion = app.getVersion();
+    // releaseNotes 按行截前 10 行（比定长 substring(0,500) 更整齐，避免半行截断撑乱 dialog）；完整日志走「查看更新日志」。
+    const noteLines = (updateInfo.releaseNotes || '').split('\n');
+    const notes = noteLines.slice(0, 10).join('\n');
+    const notesSuffix = noteLines.length > 10 ? '\n…' : '';
     const result = await dialog.showMessageBox(this.mainWindow, {
       type: 'info',
       title: '发现新版本',
       message: `发现新版本 ${updateInfo.version}`,
-      detail: `当前版本: v${currentVersion}\n新版本: ${updateInfo.version}\n\n${updateInfo.releaseNotes.substring(0, 500)}${updateInfo.releaseNotes.length > 500 ? '...' : ''}`,
-      buttons: ['立即更新', '稍后提醒', '跳过此版本'],
+      detail: `当前版本: v${currentVersion}\n新版本: ${updateInfo.version}\n\n${notes}${notesSuffix}`,
+      buttons: ['立即更新', '稍后提醒', '跳过此版本', '查看更新日志'],
       defaultId: 0,
       cancelId: 1,
     });
@@ -371,6 +375,11 @@ export class UpdateService {
         return 'update';
       case 2:
         return 'skip';
+      case 3:
+        // 查看更新日志：打开 GitHub Releases 完整日志（复用 openReleasesPage，URL 用 GITHUB_OWNER/GITHUB_REPO 常量），
+        // dialog 随之关闭按「稍后」处理（不更新、不跳过，下次检查再弹）。
+        this.openReleasesPage();
+        return 'later';
       default:
         return 'later';
     }
