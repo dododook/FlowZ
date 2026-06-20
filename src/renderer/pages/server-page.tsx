@@ -6,7 +6,7 @@ import { SubscriptionDialog } from '@/components/settings/subscription-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, RefreshCw, Rss, Server, Network } from 'lucide-react';
+import { Plus, RefreshCw, Rss, Server, Network, ChevronDown, Link, Zap } from 'lucide-react';
 import { isEndpointProtocol } from '../../shared/endpoint-routes';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import {
@@ -24,6 +24,14 @@ import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/page-header';
 import { useServerActions } from './use-server-actions';
+import { useSpeedTest } from '@/components/settings/use-speed-test';
+import { ImportUrlDialog } from '@/components/settings/import-url-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 type ServerConfigWithId = ServerConfig;
 
@@ -48,8 +56,11 @@ export function ServerPage() {
 
   const [isSubDialogOpen, setIsSubDialogOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<SubscriptionConfig | undefined>();
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const servers = config?.servers || [];
+  // 页级「全部测速」：跨所有分组测全量（与托盘 testAllServers 同口径）；hook 内部 filter 不可测节点、全不可测则 toast。
+  const allSpeed = useSpeedTest(servers);
   const subscriptions = config?.subscriptions || [];
   const selectedServerId = config?.selectedServerId;
   const subscriptionIds = new Set(subscriptions.map((s) => s.id));
@@ -133,10 +144,56 @@ export function ServerPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('servers.pageTitle')} description={t('servers.pageDesc')} />
+      <PageHeader
+        title={t('servers.pageTitle')}
+        description={t('servers.pageDesc')}
+        actions={
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={allSpeed.handleSpeedTest}
+              disabled={allSpeed.isTestingSpeed}
+              className="flex items-center gap-1.5"
+            >
+              <Zap
+                className={`h-4 w-4 ${allSpeed.isTestingSpeed ? 'animate-pulse fill-current/20' : ''}`}
+              />
+              {allSpeed.isTestingSpeed
+                ? allSpeed.speedProgress
+                  ? `${t('servers.speedTesting')} ${allSpeed.speedProgress.tested}/${allSpeed.speedProgress.total}`
+                  : t('servers.speedTesting')
+                : t('servers.speedTestAll')}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" className="flex items-center gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  {t('servers.add')}
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleAddServer}>
+                  <Plus className="h-4 w-4 me-2" />
+                  {t('servers.manualAdd')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
+                  <Link className="h-4 w-4 me-2" />
+                  {t('servers.importFromUrl')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleAddSubscription}>
+                  <Rss className="h-4 w-4 me-2" />
+                  {t('servers.addSubscription')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setTabOverride}>
-        {/* Tab 栏：自建节点 + 组网 + 每个订阅（右侧固定「添加订阅」按钮，不在 TabsList 内） */}
+        {/* Tab 栏：自建节点 + 组网 + 每个订阅（可横向滚动；添加/导入/添加订阅已上移页头全局动作） */}
         <div className="flex items-center gap-4">
           {/* 可滚动的 Tab 区域，两侧渐变遮罩提示还有更多内容 */}
           <div className="relative min-w-0 flex-1">
@@ -195,19 +252,6 @@ export function ServerPage() {
               </TabsList>
             </div>
           </div>
-
-          {/* 添加订阅按钮固定在右侧，不参与滚动 */}
-          <div className="flex-shrink-0">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleAddSubscription}
-              className="flex items-center gap-1.5"
-            >
-              <Plus className="h-4 w-4" />
-              {t('servers.addSubscription')}
-            </Button>
-          </div>
         </div>
 
         {/* 自建节点内容（仅代理节点） */}
@@ -220,7 +264,7 @@ export function ServerPage() {
             onDeleteServer={handleDeleteServer}
             onCloneServer={handleCloneServer}
             onSelectServer={handleSelectServer}
-            onImportSuccess={handleImportSuccess}
+            onImportClick={() => setIsImportDialogOpen(true)}
           />
         </TabsContent>
 
@@ -234,7 +278,7 @@ export function ServerPage() {
             onDeleteServer={handleDeleteServer}
             onCloneServer={handleCloneServer}
             onSelectServer={handleSelectServer}
-            onImportSuccess={handleImportSuccess}
+            onImportClick={() => setIsImportDialogOpen(true)}
           />
         </TabsContent>
 
@@ -318,7 +362,7 @@ export function ServerPage() {
                   onDeleteServer={handleDeleteServer}
                   onCloneServer={handleCloneServer}
                   onSelectServer={handleSelectServer}
-                  onImportSuccess={handleImportSuccess}
+                  onImportClick={() => setIsImportDialogOpen(true)}
                 />
               </div>
             </TabsContent>
@@ -339,6 +383,12 @@ export function ServerPage() {
         onOpenChange={setIsSubDialogOpen}
         subscription={editingSub}
         onSave={handleSaveSubscription}
+      />
+
+      <ImportUrlDialog
+        open={isImportDialogOpen}
+        onOpenChange={setIsImportDialogOpen}
+        onImportSuccess={handleImportSuccess}
       />
     </div>
   );

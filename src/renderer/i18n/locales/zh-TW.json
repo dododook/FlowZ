@@ -703,7 +703,6 @@
     "searchPlaceholder": "搜尋節點名稱、位址...",
     "allProtocols": "全部協定",
     "sort": "排序",
-    "addServer": "新增伺服器",
     "manualAdd": "手動新增",
     "importFromUrl": "從 URL 匯入",
     "speedTest": "測速",
@@ -845,7 +844,7 @@
     "editServer": "編輯伺服器設定",
     "addServerConfig": "新增伺服器設定",
     "editServerDesc": "修改伺服器設定資訊。儲存後不會自動重新啟動代理服務。",
-    "addServerDesc": "新增新的代理伺服器設定。支援 VLESS、VMess、Trojan、Hysteria2、Shadowsocks、AnyTLS、TUIC 和 Naive 協定。",
+    "addServerDesc": "新增代理或組網伺服器設定，在下方「協定」中選擇類型。",
     "selectProtocol": "選擇您的代理伺服器協定類型",
     "detour": "前置代理 (Proxy Chain)",
     "directConnection": "直連 (Direct)",
@@ -1008,7 +1007,10 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "為此代理啟用 TLS 加密",
     "bandwidthDesc": "宣告鏈路頻寬（Mbps）；留空則用 BBR 壅塞控制自適應。",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "speedTestAll": "全部測速",
+    "speedTestGroup": "測速本組",
+    "add": "新增"
   },
   "rules": {
     "ruleColumn": "規則",

@@ -703,7 +703,6 @@
     "searchPlaceholder": "جستجوی نام نود، آدرس...",
     "allProtocols": "همهٔ پروتکل‌ها",
     "sort": "مرتب‌سازی",
-    "addServer": "افزودن سرور",
     "manualAdd": "افزودن دستی",
     "importFromUrl": "ورود از URL",
     "speedTest": "تأخیر",
@@ -845,7 +844,7 @@
     "editServer": "ویرایش پیکربندی سرور",
     "addServerConfig": "افزودن پیکربندی سرور",
     "editServerDesc": "پیکربندی سرور را تغییر دهید. پروکسی پس از ذخیره به‌طور خودکار راه‌اندازی مجدد نمی‌شود.",
-    "addServerDesc": "یک سرور پروکسی جدید اضافه کنید. از VLESS، Trojan، Hysteria2، Shadowsocks، AnyTLS، TUIC و Naive پشتیبانی می‌کند.",
+    "addServerDesc": "یک سرور پراکسی یا mesh اضافه کنید. نوع را در «پروتکل» زیر انتخاب کنید.",
     "selectProtocol": "پروتکل سرور پروکسی خود را انتخاب کنید",
     "detour": "زنجیرهٔ پروکسی (Detour)",
     "directConnection": "مستقیم (بدون زنجیره)",
@@ -1008,7 +1007,10 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "فعال‌سازی رمزگذاری TLS برای این پروکسی",
     "bandwidthDesc": "پهنای باند اعلام‌شدهٔ لینک (Mbps)؛ خالی بگذارید تا کنترل ازدحام BBR استفاده شود.",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "speedTestAll": "تست همه",
+    "speedTestGroup": "تست این گروه",
+    "add": "افزودن"
   },
   "rules": {
     "ruleColumn": "قانون",

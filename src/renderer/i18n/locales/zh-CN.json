@@ -703,7 +703,6 @@
     "searchPlaceholder": "搜索节点名称、地址...",
     "allProtocols": "全部协议",
     "sort": "排序",
-    "addServer": "添加服务器",
     "manualAdd": "手动添加",
     "importFromUrl": "从URL导入",
     "speedTest": "测速",
@@ -845,7 +844,7 @@
     "editServer": "编辑服务器配置",
     "addServerConfig": "添加服务器配置",
     "editServerDesc": "修改服务器配置信息。保存后不会自动重启代理服务。",
-    "addServerDesc": "添加新的代理服务器配置。支持 VLESS、VMess、Trojan、Hysteria2、Shadowsocks、AnyTLS、TUIC 和 Naive 协议。",
+    "addServerDesc": "添加新的代理或组网服务器配置，在下方「协议」中选择类型。",
     "selectProtocol": "选择您的代理服务器协议类型",
     "detour": "前置代理 (Proxy Chain)",
     "directConnection": "直连 (Direct)",
@@ -1008,7 +1007,10 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "为此代理启用 TLS 加密",
     "bandwidthDesc": "声明链路带宽（Mbps）；留空则用 BBR 拥塞控制自适应。",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "speedTestAll": "全部测速",
+    "speedTestGroup": "测速本组",
+    "add": "添加"
   },
   "rules": {
     "ruleColumn": "规则",

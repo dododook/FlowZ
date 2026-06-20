@@ -32,7 +32,6 @@ import {
   Plus,
   Trash2,
   Server,
-  ChevronDown,
   LayoutGrid,
   List,
   Search,
@@ -43,7 +42,6 @@ import {
   Zap,
   Link,
 } from 'lucide-react';
-import { ImportUrlDialog } from './import-url-dialog';
 import { generateShareUrl } from '@/bridge/api-wrapper';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
@@ -74,7 +72,7 @@ interface ServerListProps {
   onDeleteServers?: (serverIds: string[]) => void;
   onCloneServer?: (server: ServerConfigWithId) => void;
   onSelectServer: (serverId: string) => void;
-  onImportSuccess?: () => void;
+  onImportClick?: () => void;
 }
 
 export function ServerList({
@@ -87,7 +85,7 @@ export function ServerList({
   onDeleteServers,
   onCloneServer,
   onSelectServer,
-  onImportSuccess,
+  onImportClick,
 }: ServerListProps) {
   const latencyMap = useAppStore((state) => state.latencyMap);
   // 启动前配置校验 gate 剔除的非法节点：列表标灰 + tooltip（不禁用点击，用户仍可选/编辑/删除）。
@@ -150,7 +148,6 @@ export function ServerList({
   // 批量选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const handleDelete = (serverId: string) => {
     onDeleteServer(serverId);
@@ -313,7 +310,7 @@ export function ServerList({
               ? speedProgress
                 ? `${t('servers.speedTesting')} ${speedProgress.tested}/${speedProgress.total}`
                 : t('servers.speedTesting')
-              : t('servers.speedTest')}
+              : t('servers.speedTestGroup')}
           </Button>
 
           {/* 批量选择按钮 */}
@@ -330,28 +327,6 @@ export function ServerList({
               <CheckSquare className="h-4 w-4" />
               {isSelecting ? t('common.cancel') : t('servers.multiSelect')}
             </Button>
-          )}
-
-          {showAddButton && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button className="flex items-center gap-2">
-                  <Plus className="h-4 w-4" />
-                  {t('servers.addServer')}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={onAddServer}>
-                  <Plus className="h-4 w-4 me-2" />
-                  {t('servers.manualAdd')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
-                  <Link className="h-4 w-4 me-2" />
-                  {t('servers.importFromUrl')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           )}
         </div>
       </div>
@@ -520,7 +495,7 @@ export function ServerList({
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setIsImportDialogOpen(true)}
+                  onClick={onImportClick}
                   className="flex items-center gap-2"
                 >
                   <Link className="h-4 w-4" />
@@ -569,12 +544,6 @@ export function ServerList({
           ))}
         </div>
       )}
-
-      <ImportUrlDialog
-        open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
-        onImportSuccess={onImportSuccess}
-      />
     </div>
   );
 }

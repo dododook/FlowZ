@@ -703,7 +703,6 @@
     "searchPlaceholder": "Search node name, address...",
     "allProtocols": "All Protocols",
     "sort": "Sort",
-    "addServer": "Add Server",
     "manualAdd": "Add Manually",
     "importFromUrl": "Import from URL",
     "speedTest": "Latency",
@@ -845,7 +844,7 @@
     "editServer": "Edit Server Config",
     "addServerConfig": "Add Server Config",
     "editServerDesc": "Modify server configuration. Proxy will not restart automatically after saving.",
-    "addServerDesc": "Add a new proxy server. Supports VLESS, Trojan, Hysteria2, Shadowsocks, AnyTLS, TUIC, and Naive.",
+    "addServerDesc": "Add a proxy or mesh server. Choose the type under Protocol below.",
     "selectProtocol": "Select your proxy server protocol",
     "detour": "Proxy Chain (Detour)",
     "directConnection": "Direct (No Chain)",
@@ -1008,7 +1007,10 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "Enable TLS encryption for this proxy",
     "bandwidthDesc": "Declared link bandwidth (Mbps); leave empty to use BBR congestion control.",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "speedTestAll": "Test all",
+    "speedTestGroup": "Test this group",
+    "add": "Add"
   },
   "rules": {
     "ruleColumn": "Rule",

@@ -703,7 +703,6 @@
     "searchPlaceholder": "Поиск по имени узла, адресу...",
     "allProtocols": "Все протоколы",
     "sort": "Сортировка",
-    "addServer": "Добавить сервер",
     "manualAdd": "Добавить вручную",
     "importFromUrl": "Импорт из URL",
     "speedTest": "Задержка",
@@ -845,7 +844,7 @@
     "editServer": "Изменить конфигурацию сервера",
     "addServerConfig": "Добавить конфигурацию сервера",
     "editServerDesc": "Измените конфигурацию сервера. Прокси не перезапустится автоматически после сохранения.",
-    "addServerDesc": "Добавьте новый прокси-сервер. Поддерживаются VLESS, Trojan, Hysteria2, Shadowsocks, AnyTLS, TUIC и Naive.",
+    "addServerDesc": "Добавьте прокси- или mesh-сервер. Выберите тип в поле «Протокол» ниже.",
     "selectProtocol": "Выберите протокол вашего прокси-сервера",
     "detour": "Цепочка прокси (Detour)",
     "directConnection": "Прямое (без цепочки)",
@@ -1008,7 +1007,10 @@
     "httpsEnable": "HTTPS/TLS",
     "httpsEnableDesc": "Включить TLS-шифрование для этого прокси",
     "bandwidthDesc": "Заявленная пропускная способность канала (Мбит/с); пусто — использовать BBR.",
-    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+    "speedTestAll": "Тест всех",
+    "speedTestGroup": "Тест группы",
+    "add": "Добавить"
   },
   "rules": {
     "ruleColumn": "Правило",
