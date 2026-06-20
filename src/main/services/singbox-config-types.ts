@@ -20,6 +20,12 @@ export interface SingBoxDnsServer {
   /** Bootstrap resolver tag: required when server is a domain name (sing-box 1.12+ new format) */
   domain_resolver?: string;
   detour?: string;
+  // Tailscale DNS server（1.14；P4b，sing-box check 实证 alpha.32）：type:"tailscale" 须引用一个
+  // tailscale endpoint 的 tag（endpoint 必填，缺失则 FATAL）。accept_search_domain=短名/MagicDNS/split-DNS；
+  // accept_default_resolvers=额外接受 tailnet 推送的默认解析器。
+  endpoint?: string;
+  accept_search_domain?: boolean;
+  accept_default_resolvers?: boolean;
   // Legacy / compat fields (not emitted in new format)
   address?: string;
   address_resolver?: string;
@@ -34,7 +40,12 @@ export interface SingBoxDnsRule {
   domain?: string[];
   domain_suffix?: string[];
   domain_keyword?: string[];
-  server: string;
+  // preferred_by（1.14；P4b，Listable[string]）：把「某 DNS server 视为首选名」的域名（search domain /
+  // MagicDNS 名）路由给它——替代硬编码 tailnet 后缀。须配 action:"route" + server 指向同一 tailscale server。
+  preferred_by?: string[];
+  action?: string;
+  // preferred_by 规则下 server 可省（由 action 决定），故放宽为可选。
+  server?: string;
 }
 
 export interface SingBoxFakeIPConfig {
@@ -227,6 +238,14 @@ export interface SingBoxEndpoint {
   ephemeral?: boolean;
   advertise_routes?: string[];
   system_interface?: boolean;
+  // 1.14 新增（P4a，sing-box check 实证 alpha.32）：
+  //  advertise_tags = Listable[string]（ACL 标签，向 tailnet 广告本机标签；按标签授权场景）。
+  //  ssh_server = badoption（bool 或 {enabled:bool}，唯一合法键 enabled）：节点跑 Tailscale SSH（tailnet:22，ACL 控权）。
+  //               FlowZ 以 bool 下发（最简形式，等价 {enabled:true}）。
+  //  relay_server_port = int（作 peer relay 收入站中继的监听端口；唯一的 relay_server_* 字段，无 relay_server 开关）。
+  advertise_tags?: string[];
+  ssh_server?: boolean;
+  relay_server_port?: number;
 }
 
 export interface SingBoxRouteRule {

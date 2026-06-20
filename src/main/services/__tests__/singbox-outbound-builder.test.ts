@@ -3,14 +3,34 @@
  * buildProxyOutbound 由 protocol-parser/config-snapshot 集成覆盖；此处锁 step9 抽入的 WG endpoint 构造默认值
  * （keepalive=25 / allowed_ips 全量 / mtu 兜底）与 isNodeUsable naive 门控（resourceManager spy）。
  */
+// buildTailscaleEndpoint 调用 tailscaleStateDir(→ electron app.getPath) + mkdirSync。mock tailscale-state
+// 把 state 目录指向 tmp，避免依赖 electron（与 tailscale-state.test 同款隔离思路，但只 mock 路径产出）。
+import * as os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
+const TS_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-ts-ep-'));
+jest.mock('../tailscale-state', () => ({
+  tailscaleStateDir: (id: string) => `${require('os').tmpdir()}/flowz-ts-ep-state/${id}`,
+}));
+
 import {
   buildWireGuardEndpoint,
+  buildTailscaleEndpoint,
   buildProxyOutbound,
   isNodeUsable,
   prunedSelectorDefault,
 } from '../singbox-outbound-builder';
 import { resourceManager } from '../ResourceManager';
 import type { ServerConfig } from '../../../shared/types';
+
+afterAll(() => {
+  try {
+    fs.rmSync(TS_TMP, { recursive: true, force: true });
+    fs.rmSync(`${os.tmpdir()}/flowz-ts-ep-state`, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+});
 
 const wgServer = (over: Partial<ServerConfig> = {}): ServerConfig =>
   ({
@@ -616,5 +636,68 @@ describe('buildProxyOutbound — http(H2)/gRPC 传输生成', () => {
       tags
     );
     expect(ob.transport?.type).toBe('http');
+  });
+});
+
+// buildTailscaleEndpoint — P4a 新字段（advertise_tags / ssh_server / relay_server_port）。
+// schema 经 resources/linux/sing-box check（1.14-alpha.32）实证：
+//  advertise_tags=Listable[string]；ssh_server=badoption(bool|{enabled})，FlowZ 以 bool 下发；
+//  relay_server_port=int（唯一 relay_server_* 字段，无 relay_server 开关）。
+const tsServer = (over: Partial<ServerConfig> = {}): ServerConfig =>
+  ({
+    id: 'ts1',
+    name: 'TS',
+    protocol: 'tailscale',
+    tailscaleSettings: {},
+    ...over,
+  }) as unknown as ServerConfig;
+
+describe('buildTailscaleEndpoint — P4a 新字段', () => {
+  it('基础 endpoint：type/tag/state_directory，无可选字段时不下发 P4a 字段', () => {
+    const ep = buildTailscaleEndpoint(tsServer(), 'TS');
+    expect(ep.type).toBe('tailscale');
+    expect(ep.tag).toBe('TS');
+    expect(ep.state_directory).toContain('ts1');
+    expect(ep.advertise_tags).toBeUndefined();
+    expect(ep.ssh_server).toBeUndefined();
+    expect(ep.relay_server_port).toBeUndefined();
+  });
+
+  it('advertise_tags：过滤空白后下发数组；全空 → 不下发', () => {
+    const ep = buildTailscaleEndpoint(
+      tsServer({ tailscaleSettings: { advertiseTags: [' tag:server ', '', 'tag:exit'] } }),
+      'TS'
+    );
+    expect(ep.advertise_tags).toEqual(['tag:server', 'tag:exit']);
+
+    const empty = buildTailscaleEndpoint(
+      tsServer({ tailscaleSettings: { advertiseTags: ['', '  '] } }),
+      'TS'
+    );
+    expect(empty.advertise_tags).toBeUndefined();
+  });
+
+  it('ssh_server：true → ssh_server:true（bool 形式）；false/缺省 → 不下发', () => {
+    expect(
+      buildTailscaleEndpoint(tsServer({ tailscaleSettings: { sshServer: true } }), 'TS').ssh_server
+    ).toBe(true);
+    expect(
+      buildTailscaleEndpoint(tsServer({ tailscaleSettings: { sshServer: false } }), 'TS').ssh_server
+    ).toBeUndefined();
+  });
+
+  it('relay_server_port：正整数下发；0 / 负数 / 非数字 → 不下发', () => {
+    expect(
+      buildTailscaleEndpoint(tsServer({ tailscaleSettings: { relayServerPort: 8080 } }), 'TS')
+        .relay_server_port
+    ).toBe(8080);
+    expect(
+      buildTailscaleEndpoint(tsServer({ tailscaleSettings: { relayServerPort: 0 } }), 'TS')
+        .relay_server_port
+    ).toBeUndefined();
+    expect(
+      buildTailscaleEndpoint(tsServer({ tailscaleSettings: { relayServerPort: -1 } }), 'TS')
+        .relay_server_port
+    ).toBeUndefined();
   });
 });

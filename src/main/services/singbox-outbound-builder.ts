@@ -576,7 +576,7 @@ export interface OutboundsDeps {
  * 构造 Tailscale endpoint（sing-box 1.12+ 顶层 endpoints[]）。账号制 mesh，无 server address/port。
  * 默认 tsnet 用户态（system_interface 省略=false，零提权）；auth_key 可选（无则核日志出登录 URL）。
  */
-function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpoint {
+export function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpoint {
   const ts = server.tailscaleSettings || {};
   const stateDir = tailscaleStateDir(server.id);
   try {
@@ -603,6 +603,16 @@ function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingBoxEndpo
   if (ts.ephemeral) ep.ephemeral = true;
   const adv = (ts.advertiseRoutes || []).map((c) => c.trim()).filter(Boolean);
   if (adv.length) ep.advertise_routes = adv;
+  // P4a 新字段（全可选；sing-box check 实证 1.14-alpha.32）：
+  //  advertise_tags：ACL 标签数组（按标签授权 tailnet）；空清单不下发。
+  //  sshServer：true → ssh_server:true（badoption bool 形式，等价 {enabled:true}）；节点跑 Tailscale SSH。
+  //  relayServerPort：>0 → relay_server_port（peer relay 入站中继监听端口）。
+  const advTags = (ts.advertiseTags || []).map((tg) => tg.trim()).filter(Boolean);
+  if (advTags.length) ep.advertise_tags = advTags;
+  if (ts.sshServer) ep.ssh_server = true;
+  if (typeof ts.relayServerPort === 'number' && ts.relayServerPort > 0) {
+    ep.relay_server_port = ts.relayServerPort;
+  }
   // Phase 2：reverseMesh=true → system_interface=true（真 TUN，反向可达/作 subnet router）；需 helper 提权，
   // 由连接闸门/校验确保仅 helper 活跃时成立。缺省省略=tsnet 用户态、零提权。
   if (meshUsesSystemInterface(server)) ep.system_interface = true;

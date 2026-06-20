@@ -43,6 +43,13 @@ const createTailscaleSchema = () =>
     hostname: z.string().optional(),
     ephemeral: z.boolean(),
     advertiseRoutes: z.string().optional(),
+    // P4a endpoint 新字段（全可选）
+    advertiseTags: z.string().optional(),
+    sshServer: z.boolean(),
+    relayServerPort: z.string().optional(),
+    // P4b 按名解析（accept_search_domain + preferred_by 强联动；acceptDefaultResolvers 仅 resolveByName 开时有意义）
+    resolveByName: z.boolean(),
+    acceptDefaultResolvers: z.boolean(),
   });
 
 type TailscaleFormValues = z.infer<ReturnType<typeof createTailscaleSchema>>;
@@ -70,6 +77,11 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
       hostname: '',
       ephemeral: false,
       advertiseRoutes: '',
+      advertiseTags: '',
+      sshServer: false,
+      relayServerPort: '',
+      resolveByName: false,
+      acceptDefaultResolvers: false,
     },
   });
 
@@ -89,12 +101,23 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
         hostname: ts?.hostname || '',
         ephemeral: ts?.ephemeral ?? false,
         advertiseRoutes: (ts?.advertiseRoutes || []).join(', '),
+        advertiseTags: (ts?.advertiseTags || []).join(', '),
+        sshServer: ts?.sshServer ?? false,
+        relayServerPort: ts?.relayServerPort ? String(ts.relayServerPort) : '',
+        resolveByName: ts?.resolveByName ?? false,
+        acceptDefaultResolvers: ts?.acceptDefaultResolvers ?? false,
       });
     }
   }, [serverConfig, form]);
 
   const handleSubmit = async (values: TailscaleFormValues) => {
     const routes = splitTextList(values.routes);
+    // relayServerPort：数字串 → 正整数；非法/空 → undefined（不下发）。
+    const relayPortNum = Number(values.relayServerPort?.trim());
+    const relayServerPort =
+      values.relayServerPort?.trim() && Number.isInteger(relayPortNum) && relayPortNum > 0
+        ? relayPortNum
+        : undefined;
     const config: any = {
       protocol: 'tailscale' as const,
       tailscaleSettings: {
@@ -111,6 +134,14 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
         hostname: values.hostname?.trim() || undefined,
         ephemeral: values.ephemeral,
         advertiseRoutes: splitTextList(values.advertiseRoutes),
+        // P4a endpoint 新字段
+        advertiseTags: splitTextList(values.advertiseTags),
+        sshServer: values.sshServer || undefined,
+        relayServerPort,
+        // P4b 按名解析：acceptDefaultResolvers 仅 resolveByName 开时有意义，关时不下发避免无效残留
+        resolveByName: values.resolveByName || undefined,
+        acceptDefaultResolvers:
+          (values.resolveByName && values.acceptDefaultResolvers) || undefined,
       },
     };
     await onSubmit(config);
@@ -122,6 +153,9 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
   const authKeyValue = form.watch('authKey');
 
   const exitNodeValue = form.watch('exitNode');
+
+  // P4b：acceptDefaultResolvers 仅在按名解析开启时有意义 → 联动显隐 + 关闭时禁用。
+  const resolveByName = form.watch('resolveByName');
 
   // 真实登录态（store 单一真值，与列表「需登录」角标同口径）：驱动登录区三态，替代纯静态 !authKey 门控。
   const serverId = serverConfig?.id;
@@ -401,7 +435,88 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 )}
               />
             </FieldSpan>
+            {/* P4a：endpoint 新字段（advertise_tags / ssh_server / relay_server_port），全可选。 */}
+            <FieldSpan>
+              <FormField
+                control={form.control}
+                name="advertiseTags"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('servers.tsAdvertiseTags', 'Advertise tags')}</FormLabel>
+                    <FormControl>
+                      <Input placeholder="tag:server, tag:exit" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'servers.tsAdvertiseTagsDesc',
+                        'ACL tags this node advertises to the tailnet (tag:*). Comma-separated.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FieldSpan>
+            <FormField
+              control={form.control}
+              name="relayServerPort"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('servers.tsRelayServerPort', 'Peer relay port')}</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={1} max={65535} placeholder="0" {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'servers.tsRelayServerPortDesc',
+                      'Listen port to act as a peer relay (inbound relay). Empty = off.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FieldSpan>
+              <SwitchField
+                control={form.control}
+                name="sshServer"
+                label={t('servers.tsSshServer', 'Tailscale SSH server')}
+                tooltip={t(
+                  'servers.tsSshServerDesc',
+                  'Run a Tailscale SSH server on this node (tailnet:22, access governed by ACLs).'
+                )}
+              />
+            </FieldSpan>
           </FieldGrid>
+        </FormSection>
+
+        {/* P4b：tailnet 按名解析（accept_search_domain + preferred_by 强联动）。与 doh.pub/google 并存，
+            仅 tailnet 短名/MagicDNS 名走此节点解析。仅当此节点被选中为主出口时生效（见 dns-builder）。 */}
+        <FormSection
+          title={t('servers.tsNameResolution', 'Tailnet name resolution')}
+          collapsible
+          defaultOpen={false}
+        >
+          <SwitchField
+            control={form.control}
+            name="resolveByName"
+            label={t('servers.tsResolveByName', 'Resolve tailnet names')}
+            tooltip={t(
+              'servers.tsResolveByNameDesc',
+              'Resolve tailnet short names / MagicDNS names via this node (accept_search_domain + preferred_by). Coexists with your normal DNS — only tailnet names use it. Effective only when this node is the selected exit.'
+            )}
+          />
+          {resolveByName && (
+            <SwitchField
+              control={form.control}
+              name="acceptDefaultResolvers"
+              label={t('servers.tsAcceptDefaultResolvers', 'Accept tailnet default resolvers')}
+              tooltip={t(
+                'servers.tsAcceptDefaultResolversDesc',
+                'Also accept the default DNS resolvers pushed by the tailnet (split-DNS). Optional.'
+              )}
+            />
+          )}
         </FormSection>
 
         <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />

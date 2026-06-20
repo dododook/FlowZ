@@ -184,6 +184,15 @@ export interface TailscaleSettings {
   ephemeral?: boolean; // 临时节点（离线即注销）
   advertiseRoutes?: string[]; // 本机作子网路由器对外广告的段
   reverseMesh?: boolean; // Phase 2：反向 mesh（system_interface=真 TUN，被组网访问）；默认 false=userspace
+  // P4a endpoint 新字段（1.14，全可选；sing-box check 实证 alpha.32）：
+  advertiseTags?: string[]; // 向 tailnet 广告的 ACL 标签（如 tag:server）；按标签授权场景
+  sshServer?: boolean; // 节点跑 Tailscale SSH（tailnet:22，ACL 控权）→ endpoint.ssh_server:true
+  relayServerPort?: number; // 作 peer relay 收入站中继的监听端口 → endpoint.relay_server_port
+  // P4b 按名解析（仅选中此 mesh 节点为主出口时生效，详见 singbox-dns-builder）：
+  // resolveByName=true → 注入 tailscale DNS server(accept_search_domain) + preferred_by 规则，
+  //   让 tailnet 短名/MagicDNS 名自动归位到此节点解析（与 doh.pub/google 并存，仅 tailnet 域走它）。
+  resolveByName?: boolean; // 启用 tailnet 按名解析（短名 + preferred_by 强联动）
+  acceptDefaultResolvers?: boolean; // 额外接受 tailnet 推送的默认 DNS 解析器（可选；resolveByName 开时才有意义）
 }
 
 // 自定义协议（raw-JSON 透传）：用户直接填一份 sing-box outbound/endpoint JSON，FlowZ 不解析语义、只注入 tag。
