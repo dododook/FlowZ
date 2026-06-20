@@ -4,7 +4,7 @@
  * 样本：官方基线（1.13.13 实测）+ 官方预发布/dev + fork 后缀（reF1nd/nekolsd，源码确证）+ 边界（官方跨版本不误报）。
  */
 
-import { classifyCoreBuild, extractVersionToken } from '../core-build';
+import { classifyCoreBuild, decideCoreOverride, extractVersionToken } from '../core-build';
 
 describe('extractVersionToken', () => {
   it('从完整 version 行提取 token', () => {
@@ -66,5 +66,35 @@ describe('classifyCoreBuild — unknown（不硬判 fork）', () => {
     expect(classifyCoreBuild('')).toBe('unknown');
     expect(classifyCoreBuild('sing-box')).toBe('unknown');
     expect(classifyCoreBuild('garbage-output')).toBe('unknown');
+  });
+});
+
+describe('decideCoreOverride — 核覆盖决策（官方/fork/unknown × </=/> 内置基线）', () => {
+  const B = '1.14.0-alpha.32'; // 随包(内置)基线
+
+  it('官方 < 内置 → 内置替换(reseed)，不警告', () => {
+    expect(decideCoreOverride('official', '1.13.13', B)).toEqual({ reseed: true, warn: false });
+    expect(decideCoreOverride('official', '1.14.0-alpha.30', B)).toEqual({
+      reseed: true,
+      warn: false,
+    });
+  });
+  it('官方 == 内置 → 保持(不重播种)，不警告', () => {
+    expect(decideCoreOverride('official', B, B)).toEqual({ reseed: false, warn: false });
+  });
+  it('官方 > 内置 → 保持(不降级)，不警告（release > 同版 prerelease / 更高版）', () => {
+    expect(decideCoreOverride('official', '1.14.0', B)).toEqual({ reseed: false, warn: false });
+    expect(decideCoreOverride('official', '1.15.0', B)).toEqual({ reseed: false, warn: false });
+  });
+  it('fork → 绝不重播种；≤ 内置 → 警告', () => {
+    expect(decideCoreOverride('fork', '1.13.3', B)).toEqual({ reseed: false, warn: true });
+    expect(decideCoreOverride('fork', '1.14.0-alpha.31', B)).toEqual({ reseed: false, warn: true });
+  });
+  it('fork > 内置 → 保持，不警告', () => {
+    expect(decideCoreOverride('fork', '1.15.0', B)).toEqual({ reseed: false, warn: false });
+  });
+  it('unknown → 同 fork：绝不重播种；≤ 内置 → 警告', () => {
+    expect(decideCoreOverride('unknown', '1.13.0', B)).toEqual({ reseed: false, warn: true });
+    expect(decideCoreOverride('unknown', '1.15.0', B)).toEqual({ reseed: false, warn: false });
   });
 });

@@ -57,6 +57,7 @@ import {
   selectedExitRoutesIcmpViaProxy,
   isSpeedTestable,
 } from '../../shared/endpoint-routes';
+import { classifyCoreBuild, decideCoreOverride } from '../../shared/core-build';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
@@ -417,48 +418,66 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.coreVersion = await this.getCoreVersion(true);
     this.logToManager('info', `检测到 sing-box 核心版本: ${this.coreVersion}`);
 
-    // §5 最低版本守卫：配置已硬切 1.14（store_dns/services/route sniff），低于 1.14 的核会因 unknown field 直接
-    // FATAL（隐晦难诊断）。检测到旧核（升级遗留的可写/受保护核）→ 用随包 1.14 核强制刷新后重检；仍 <1.14 → 明确
-    // 报错引导重装/更新内核。正常 1.14 核走此判定即 no-op（无开销）。
-    if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
-      this.logToManager(
-        'warn',
-        `sing-box 内核 ${this.coreVersion} 低于配置要求的 1.14，尝试用随包内核刷新...`
-      );
-      try {
-        if (process.platform === 'linux') {
-          this.singboxPath = await resourceManager.ensureWritableCore(true); // force 覆盖旧可写核
-        } else if (process.platform === 'darwin') {
-          // darwin：受保护目录 root-only，仅 getSingBoxPath 重解析不更新其旧核 → 须经已装 helper 的 install-core
-          // 把随包 1.14 核重播种进受保护目录（免密码）。修真机实证缺口：app 更新 1.13→1.14 后 §5 仅拦截不自愈、
-          // 迫用户手动重装/更新内核。复制随包核到干净临时目录再 install-core（避免把同目录 helper/LICENSE 带入）；
-          // macOS 无 libcronet（静态编入），只播 sing-box。helper 此刻必在位（上方 maybePromptHelperGate 已引导）。
-          const osMod = require('os') as typeof import('os');
-          const pathMod = require('path') as typeof import('path');
-          const fsp = (require('fs') as typeof import('fs')).promises;
-          const seedDir = pathMod.join(osMod.tmpdir(), 'flowz-core-reseed');
-          await fsp.mkdir(seedDir, { recursive: true });
-          await fsp.copyFile(
-            resourceManager.getBundledSingBoxPath(),
-            pathMod.join(seedDir, 'sing-box')
-          );
-          // darwin 下 helperManager 恒为 HelperManager（win 才注入 WindowsServiceHelper）；installCore 是其具体方法
-          // 非 IPrivilegedHelper 接口成员，故 cast。
-          this.helperManager ??= new HelperManager();
-          const r = await (this.helperManager as HelperManager).installCore(seedDir);
-          if (!r.ok) this.logToManager('warn', `随包内核重播种失败: ${r.error ?? ''}`);
-          this.singboxPath = this.getSingBoxPath();
+    // §5 核覆盖 reconcile + 最低版本守卫：内置核是种子（强制落位），决策只针对本机在用的【非内置】核。
+    //  官方 <内置 → 内置替换（取更新随包核）；官方 ≥内置 → 保持（不降级用户装的官方核）；
+    //  fork/unknown → 保持（绝不覆盖用户的 fork/自建核），≤内置 → 发基线兼容警告。
+    // 配置已硬切 1.14，<1.14 核会 unknown-field FATAL，故覆盖决策后仍 <1.14 → 明确报错（含 fork 专属引导）。
+    {
+      const bundledCore = coreManifest.bundledCoreVersion;
+      const coreKind = classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`);
+      const { reseed, warn } = decideCoreOverride(coreKind, this.coreVersion, bundledCore);
+      if (reseed) {
+        this.logToManager(
+          'info',
+          `官方内核 ${this.coreVersion} 旧于随包基线 ${bundledCore}，用随包核替换...`
+        );
+        try {
+          if (process.platform === 'linux') {
+            this.singboxPath = await resourceManager.ensureWritableCore(true); // force 覆盖旧可写核
+          } else if (process.platform === 'darwin') {
+            // darwin 受保护目录 root-only → 经已装 helper install-core 重播种随包核（免密码）。复制到干净临时目录
+            // 再装（避免带入同目录 helper/LICENSE）；macOS 无 libcronet 静态编入只播 sing-box。helper 必在位
+            // （上方 maybePromptHelperGate 已引导）。修真机实证缺口：app 更新后受保护目录旧核不自愈。
+            const osMod = require('os') as typeof import('os');
+            const pathMod = require('path') as typeof import('path');
+            const fsp = (require('fs') as typeof import('fs')).promises;
+            const seedDir = pathMod.join(osMod.tmpdir(), 'flowz-core-reseed');
+            await fsp.mkdir(seedDir, { recursive: true });
+            await fsp.copyFile(
+              resourceManager.getBundledSingBoxPath(),
+              pathMod.join(seedDir, 'sing-box')
+            );
+            // darwin helperManager 恒为 HelperManager（win 才注入 WindowsServiceHelper）；installCore 是具体方法非接口成员，故 cast。
+            this.helperManager ??= new HelperManager();
+            const r = await (this.helperManager as HelperManager).installCore(seedDir);
+            if (!r.ok) this.logToManager('warn', `随包内核重播种失败: ${r.error ?? ''}`);
+            this.singboxPath = this.getSingBoxPath();
+          }
+        } catch (e) {
+          this.logToManager('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
         }
-      } catch (e) {
-        this.logToManager('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
+        this.coreVersion = await this.getCoreVersion(true);
+        this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
       }
-      this.coreVersion = await this.getCoreVersion(true);
+      if (warn) {
+        this.logToManager(
+          'warn',
+          `检测到非官方内核 ${this.coreVersion} 低于随包基线 ${bundledCore}，可能与新版配置不兼容（连接异常/功能缺失）；建议手动升级内核或在「设置 · 内核 · 重置到出厂」切回随包官方核`
+        );
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_CORE_BASELINE_WARNING, {
+          current: this.coreVersion,
+          bundled: bundledCore,
+          kind: coreKind,
+        });
+      }
+      // 覆盖决策后仍 <1.14（仅 fork/unknown 旧核会到此；官方旧核已重播种到 ≥内置≥1.14）→ 配置 FATAL 前明确报错。
       if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
         throw new Error(
-          `当前 sing-box 内核版本 ${this.coreVersion} 低于所需的 1.14。请重新安装应用以获取随包内核，或在「设置 · 内核」中将内核更新到 1.14 及以上。`
+          coreKind === 'official'
+            ? `当前 sing-box 内核版本 ${this.coreVersion} 低于所需的 1.14。请重新安装应用以获取随包内核，或在「设置 · 内核」更新到 1.14 及以上。`
+            : `当前使用的非官方内核 ${this.coreVersion} 低于所需的 1.14，与新版配置不兼容。请手动升级该内核到 ≥1.14，或在「设置 · 内核 · 重置到出厂」切回随包官方核。`
         );
       }
-      this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
     }
 
     // 1.14 管理 API 端口：解析一个空闲本地端口（排除 clash/用户端口），避免硬编 clash+1 撞占致 services bind FATAL（A1）。

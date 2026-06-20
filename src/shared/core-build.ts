@@ -7,6 +7,8 @@
  * docs/design/nonofficial-core-update-guard.md §1。
  */
 
+import { compareSemver } from './version';
+
 export type CoreBuildKind = 'official' | 'fork' | 'unknown';
 
 // 官方所有合法 version 形态（read_tag 产出：release 剥 v 的纯 semver；dev = base + '-' + 短 commit hex）。
@@ -42,4 +44,29 @@ export function classifyCoreBuild(versionLine: string): CoreBuildKind {
   // 非 X.Y.Z 开头 = 脏输入/无法解析 → unknown（不误判 fork）。
   if (!/^\d+\.\d+\.\d+/.test(tok)) return 'unknown';
   return 'fork';
+}
+
+/**
+ * 核覆盖决策（纯函数）：启动时是否用随包(内置)核替换本机正在使用的【非内置】核。
+ * 内置核本身是种子（强制落位），不经此决策；此处只判用户单独装的核。基线 = 随包(内置)版本。
+ *  - official + 本机 ≤ 内置 → reseed（内置替换：随包核更新或同版，统一到随包基线）
+ *  - official + 本机 > 内置 → keep（不降级用户装的更新官方核）
+ *  - fork / unknown        → keep（绝不覆盖用户的 fork/自建核）；本机 ≤ 内置 → warn（基线兼容提醒）
+ * @param kind            classifyCoreBuild(版本行) 结果
+ * @param coreVersion     本机在用核版本（X.Y.Z[-suffix]）
+ * @param bundledVersion  随包(内置)核版本 = 基线
+ */
+export function decideCoreOverride(
+  kind: CoreBuildKind,
+  coreVersion: string,
+  bundledVersion: string
+): { reseed: boolean; warn: boolean } {
+  const cmp = compareSemver(coreVersion, bundledVersion);
+  if (kind === 'official') {
+    // 官方非内置核：严格旧于内置 → 内置替换（取更新的随包核）；同版/更新 → 保持
+    //（同版不重播种，避免每次启动徒劳换核——seed 后受保护核==内置是常态；更新不降级用户装的官方核）。
+    return { reseed: cmp < 0, warn: false };
+  }
+  // fork / unknown：尊重用户选择，绝不覆盖；≤ 基线时提醒兼容风险（含同版 fork——后缀分支可能缺新特性）。
+  return { reseed: false, warn: cmp <= 0 };
 }
