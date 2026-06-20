@@ -726,7 +726,10 @@ export class TrayManager implements ITrayManager {
     this.isSpeedTesting = false;
     this.updateTrayMenu(this.isProxyRunning);
 
+    // 仅列实际测速的节点：不可测节点（Tailscale/reverseMesh/custom-endpoint）经 isSpeedTestable 已不在 results，
+    // 与 buildServerItem 的 undefined→无徽标 同口径，避免 toast 把「不适用」误报成「超时」。
     const resultList = servers
+      .filter((s) => results.has(s.id))
       .map((s) => ({
         name: s.name || s.address,
         protocol: (s.protocol || '').toUpperCase(),
@@ -738,8 +741,8 @@ export class TrayManager implements ITrayManager {
         return a.latency - b.latency;
       });
 
-    // 发送到渲染进程显示 toast
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+    // 发送到渲染进程显示 toast（全不可测/无结果时不弹空 toast）
+    if (resultList.length > 0 && this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('speedTestResult', resultList);
     }
   }
