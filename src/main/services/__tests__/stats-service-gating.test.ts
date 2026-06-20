@@ -387,5 +387,45 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(ref.mock.calls.subscribeStatus).toBe(1);
       expect((service as any).started).toBe(true);
     });
+
+    // F2：resubscribe 须把 snapshot 归零并广播（对齐 stop()），避免重连窗口首页计数显旧值、连接列表已空的不一致。
+    it('resubscribe 归零 snapshot 并广播（onUpdate 全 0 + onConnections 空）', () => {
+      const { service, onUpdate, onConnections, ref, swap } = setupSwitchable({
+        withVisible: true,
+        visible: true,
+      });
+      service.start();
+      service.addConnectionsWatcher();
+      // 先灌入非零状态（速率/总量/连接数 + 一条连接）
+      ref.mock.pushStatus(STATUS);
+      ref.mock.pushConn({
+        reset: true,
+        events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }],
+      });
+      expect(service.getSnapshot().activeConnections).toBe(5);
+      expect(service.getConnectionsSnapshot().connections).toHaveLength(1);
+
+      onUpdate.mockClear();
+      onConnections.mockClear();
+      swap(); // 崩溃重启换 client
+      service.resubscribe();
+
+      // snapshot 归零
+      const snap = service.getSnapshot();
+      expect(snap).toMatchObject({
+        uploadSpeed: 0,
+        downloadSpeed: 0,
+        totalUpload: 0,
+        totalDownload: 0,
+        activeConnections: 0,
+      });
+      // 广播归零的 stats（重连窗口首页立即显 0，不显旧值）
+      const lastStats = onUpdate.mock.calls[onUpdate.mock.calls.length - 1]?.[0];
+      expect(lastStats).toMatchObject({ activeConnections: 0, totalUpload: 0 });
+      // 广播空连接快照（与归零计数一致）
+      const lastConns = onConnections.mock.calls[onConnections.mock.calls.length - 1]?.[0];
+      expect(lastConns?.connections).toHaveLength(0);
+      expect(service.getConnectionsSnapshot().connections).toHaveLength(0);
+    });
   });
 });
