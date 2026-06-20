@@ -6,7 +6,7 @@
 
 import { isIpv4 } from '../../shared/ip';
 import type { UserConfig, ServerConfig, Rule, AppRule, CustomAppPreset } from '../../shared/types';
-import { parseDnsServerSpec } from '../../shared/dns';
+import { parseDnsServerSpec, isIpv6Literal } from '../../shared/dns';
 import { ruleConditions } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
 import { BUILTIN_GEO_RULESETS } from './builtin-geo-rulesets';
@@ -84,9 +84,12 @@ export const DOMESTIC_BANK_AND_STOCK_DOMAINS = [
 /** 主机字符串是否为 IPv4 字面量（收敛到 shared/ip.isIpv4 严格判定，与 DNS 分类同源，避免不一致）。 */
 export const isIpv4Host = (host: string): boolean => isIpv4(host);
 
-/** 主机字符串是否为 IPv6 字面量。 */
-export const isIpv6Host = (host: string): boolean =>
-  /^[0-9a-fA-F:]+$/.test(host) && host.includes(':');
+/**
+ * 主机字符串是否为 IPv6 字面量（收敛到 shared/dns.isIpv6Literal 单一真值：去方括号 + ≥2 冒号 canonical，
+ * 与 /simplify F3 spoof 守卫同口径）。原 `/^[0-9a-fA-F:]+$/ && includes(':')` 仅 1 个冒号即放行，会把
+ * 'dead:beef' 等畸形串误判为 IPv6；真 IPv6（≥2 冒号）/ 真域名（无冒号）判定不变，仅收紧 1-冒号畸形串。
+ */
+export const isIpv6Host = (host: string): boolean => isIpv6Literal(host);
 
 /**
  * #57 节点域名解析器档位 → 实际使用的 DNS server tag。

@@ -286,6 +286,8 @@ export class StatsService {
           // 实测：UPDATE 帧只带 uplinkDelta/downlinkDelta（connection 为 null）→ 把增量累加到既有条目 totals，
           // 维持连接页 per-connection 实时流量（否则恒显 NEW 时的 0，到 CLOSED 又被删，全程流量为 0=regression）。
           // 漏收 NEW（UPDATE 先到）时 ev.connection 兜底补建。
+          // 缺失/keepalive 帧的 delta 缺省按 0 累积，故用 `|| 0` 而非 num()——num() 会把缺失字段算成 NaN，
+          // 一次 NaN 会污染 totals 此后恒 NaN（累积语义被毁），`|| 0`（同 falsy→0）才是累积所需的正确兜底。
           const existing = this.connMap.get(id);
           if (existing) {
             existing.uplinkTotal = String(

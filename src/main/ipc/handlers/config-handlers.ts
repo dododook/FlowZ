@@ -33,6 +33,10 @@ export function registerConfigHandlers(configManager: ConfigManager): void {
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
       // P5 Phase2：渲染端持有的 config 已被 stripRemoteSecrets 剥过 secret（仅 hasSecret 占位）；保存前按 id 合并回
       // 内存已存的 secret（渲染端未给新值 → 沿用旧值，防被清零），并剔除 hasSecret 占位字段。
+      // A-2 安全性：configManager.get 在 currentConfig===null 时返 undefined（不 lazy-load），priorRemote 缺失会致
+      // 已存 secret 合不回 → 静默清零。此路径不可达：主进程 whenReady 先 await loadConfig()（恒填 currentConfig，
+      // 内部 catch 兜默认配置绝不留 null），再 registerConfigHandlers 注册本 CONFIG_SAVE handler——handler 存在时
+      // currentConfig 必已非 null；且渲染端须先 CONFIG_GET 拿到 config 才能构造并保存，不会先于 load 触发保存。
       const priorRemote = configManager.get<UserConfig['remoteInstances']>('remoteInstances');
       config = mergeRemoteSecrets(config, { remoteInstances: priorRemote } as UserConfig);
       await configManager.saveConfig(config);

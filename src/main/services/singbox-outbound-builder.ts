@@ -252,7 +252,7 @@ export function buildProxyOutbound(
   }
 
   // TUIC 特定配置
-  if (server.protocol === 'tuic') {
+  if (protocol === 'tuic') {
     outbound.uuid = server.uuid;
     outbound.password = server.password;
 
@@ -275,7 +275,7 @@ export function buildProxyOutbound(
   }
 
   // NaiveProxy 特定配置
-  if (server.protocol === 'naive') {
+  if (protocol === 'naive') {
     outbound.username = server.username;
     outbound.password = server.password;
 
@@ -303,7 +303,7 @@ export function buildProxyOutbound(
   }
 
   // SOCKS 特定配置
-  if (server.protocol === 'socks') {
+  if (protocol === 'socks') {
     if (server.username) outbound.username = server.username;
     if (server.password) outbound.password = server.password;
     // 默认 SOCKS 版本
@@ -311,7 +311,7 @@ export function buildProxyOutbound(
   }
 
   // HTTP 特定配置
-  if (server.protocol === 'http') {
+  if (protocol === 'http') {
     if (server.username) outbound.username = server.username;
     if (server.password) outbound.password = server.password;
 
@@ -327,7 +327,7 @@ export function buildProxyOutbound(
   }
 
   // SSH 特定配置
-  if (server.protocol === 'ssh') {
+  if (protocol === 'ssh') {
     const ssh = server.sshSettings || {};
     if (ssh.user) outbound.user = ssh.user;
     if (ssh.password) outbound.password = ssh.password;
@@ -349,7 +349,7 @@ export function buildProxyOutbound(
 
   // TLS 配置 (非 Naive 协议，因为 Naive 已在前一段处理了 tls 结构)
   if (
-    server.protocol !== 'naive' &&
+    protocol !== 'naive' &&
     (server.security === 'tls' || server.tlsSettings || tlsProtocols.includes(protocol))
   ) {
     // 为 Trojan 设置默认 ALPN ["http/1.1"] 以提高兼容性
@@ -420,9 +420,9 @@ export function buildProxyOutbound(
 
   // 传输层配置（不适用于 hysteria2、anytls、naive）
   if (
-    server.protocol !== 'hysteria2' &&
-    server.protocol !== 'anytls' &&
-    server.protocol !== 'naive' &&
+    protocol !== 'hysteria2' &&
+    protocol !== 'anytls' &&
+    protocol !== 'naive' &&
     server.network &&
     server.network !== 'tcp'
   ) {
