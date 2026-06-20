@@ -3,7 +3,7 @@
  *  1) 窗口可见性谓词（isWindowVisible）：无可见窗口时收到流帧仍更新内部快照，但跳过 broadcast（onUpdate/onConnections）。
  *  2) 连接页 watcher 引用计数：仅 connectionsWatchers>0 时才订阅 Connections 流（0→1 订阅、→0 退订 stop）。
  *  3) Status 帧字段映射（uplink→uploadSpeed / connectionsIn+Out→activeConnections 等，speed 由 server 直给）。
- *  4) Connections 事件流维护（reset 清空 / NEW 加 / UPDATE 改 / CLOSED 删）→ trim 映射广播。
+ *  4) Connections 事件流维护（reset 清空 / NEW 加 / UPDATE 累加 delta / CLOSED 删）→ trim 映射广播。
  * 经 mock SingBoxApiClient 捕获 subscribeStatus/subscribeConnections 的回调，测试同步 push 流帧驱动（无 fake timer）。
  */
 import { StatsService } from '../StatsService';
@@ -231,23 +231,26 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(snap?.connections).toHaveLength(0);
     });
 
-    it('UPDATE 改字段（同 id 覆盖）', () => {
+    it('UPDATE 累加 delta 到既有条目 totals（实测 UPDATE 无 connection、仅带 delta）', () => {
       const { service, onConnections, mock } = setup({ withVisible: true, visible: true });
       service.start();
       service.addConnectionsWatcher();
-      mock.pushConn({ events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] });
+      mock.pushConn({ events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] }); // totals 12345/67890
       mock.pushConn({
-        events: [
-          {
-            type: 'UPDATE',
-            id: 'conn-1',
-            connection: { ...RAW_CONN, uplinkTotal: '99999' },
-          },
-        ],
+        events: [{ type: 'UPDATE', id: 'conn-1', uplinkDelta: '1000', downlinkDelta: '2000' }],
       });
       const calls = onConnections.mock.calls;
       const snap = calls[calls.length - 1]?.[0];
-      expect(snap?.connections[0].upload).toBe(99999);
+      expect(snap?.connections[0].upload).toBe(13345); // 12345 + 1000 累加（非覆盖）
+      expect(snap?.connections[0].download).toBe(69890); // 67890 + 2000
+    });
+
+    it('UPDATE 先于 NEW（漏收 NEW）：带 connection 时兜底补建条目', () => {
+      const { service, mock } = setup({ withVisible: true, visible: true });
+      service.start();
+      service.addConnectionsWatcher();
+      mock.pushConn({ events: [{ type: 'UPDATE', id: 'conn-1', connection: RAW_CONN }] });
+      expect(service.getConnectionsSnapshot().connections).toHaveLength(1);
     });
 
     it('reset=true 清空旧表后按本帧 events 重建', () => {

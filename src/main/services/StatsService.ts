@@ -268,8 +268,24 @@ export class StatsService {
         case 'CLOSED':
           this.connMap.delete(id);
           break;
+        case 'UPDATE': {
+          // 实测：UPDATE 帧只带 uplinkDelta/downlinkDelta（connection 为 null）→ 把增量累加到既有条目 totals，
+          // 维持连接页 per-connection 实时流量（否则恒显 NEW 时的 0，到 CLOSED 又被删，全程流量为 0=regression）。
+          // 漏收 NEW（UPDATE 先到）时 ev.connection 兜底补建。
+          const existing = this.connMap.get(id);
+          if (existing) {
+            existing.uplinkTotal = String(
+              (Number(existing.uplinkTotal) || 0) + (Number(ev.uplinkDelta) || 0)
+            );
+            existing.downlinkTotal = String(
+              (Number(existing.downlinkTotal) || 0) + (Number(ev.downlinkDelta) || 0)
+            );
+          } else if (ev?.connection) {
+            this.connMap.set(id, ev.connection);
+          }
+          break;
+        }
         case 'NEW':
-        case 'UPDATE':
         default:
           if (ev?.connection) this.connMap.set(id, ev.connection);
           break;
