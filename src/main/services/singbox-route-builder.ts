@@ -168,25 +168,23 @@ export function buildRouteConfig(
   const webrtcLeak = config.webrtcLeakProtection ?? 'off';
 
   // A. 嗅探规则（必须在前，用于识别域名）
-  // 1.13+ 必须在路由层开启 sniff，替代已移除的 inbound 级别 sniff 字段。
+  // sing-box 1.14：路由层开启 sniff，替代早期已移除的 inbound 级别 sniff 字段。恒发射，无版本门控。
   // 注意（旧注释「等效 sniff_override_destination」不准确）：sniff 只把嗅出的域名用于【路由匹配】这半边——
-  // sniff_override_destination（改写 outbound 目标，让节点收到域名）在 1.13.0 已移除且无替代。
+  // sniff_override_destination（改写 outbound 目标，让节点收到域名）已移除且无替代。
   // 故关 FakeIP 时节点仍收真实 IP，域名交付节点只能靠 FakeIP（见 generateDnsConfig / 设计 T1·T4）。
-  if (coreVersionAtLeast(deps.coreVersion, 1, 13)) {
+  rules.push({
+    action: 'sniff',
+  });
+  // WebRTC 防泄露开启时为稳健补一条显式 UDP stun sniffer：裸 {action:'sniff'} 官方语义 sniffer 留空=嗅所有
+  // 协议（含 stun），理论上已足够让下方 protocol:'stun' 命中；显式 sniffer:['stun'] 仅为稳健、免一次真机往返
+  // 才发现裸 sniff 不命中。timeout 短（300ms）避免拖慢非 STUN 的 UDP 首包。（裸 sniff 是否已足够留 Phase-0 真机确认。）
+  if (webrtcLeak !== 'off') {
     rules.push({
+      network: ['udp'],
       action: 'sniff',
+      sniffer: ['stun'],
+      timeout: '300ms',
     });
-    // WebRTC 防泄露开启时为稳健补一条显式 UDP stun sniffer：裸 {action:'sniff'} 官方语义 sniffer 留空=嗅所有
-    // 协议（含 stun），理论上已足够让下方 protocol:'stun' 命中；显式 sniffer:['stun'] 仅为稳健、免一次真机往返
-    // 才发现裸 sniff 不命中。timeout 短（300ms）避免拖慢非 STUN 的 UDP 首包。（裸 sniff 是否已足够留 Phase-0 真机确认。）
-    if (webrtcLeak !== 'off') {
-      rules.push({
-        network: ['udp'],
-        action: 'sniff',
-        sniffer: ['stun'],
-        timeout: '300ms',
-      });
-    }
   }
 
   // A2. 出口 IP 探针钉死路由（必须紧随 sniff、先于一切分流/进程规则，确保短路不受分流策略影响）：

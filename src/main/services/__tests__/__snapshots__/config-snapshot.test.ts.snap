@@ -9638,6 +9638,9 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       ],
       "rules": [
         {
+          "action": "sniff",
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [

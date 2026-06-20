@@ -29,8 +29,8 @@ export function sameMajorMinor(a: string, b: string): boolean {
 
 /**
  * 判断核心版本是否 ≥ major.minor。
- * @param fallback 无法解析时的返回值。默认 true —— 打包核心恒 ≥1.13.13、
- *   且 getCoreVersion 解析失败也兜底返回 "1.13.0"，故"未知"按现代版本处理最安全。
+ * @param fallback 无法解析时的返回值。默认 true —— 打包核心恒 ≥1.14（出厂 1.14.0-alpha.32）、
+ *   且 getCoreVersion 解析失败也兜底返回现代版本，故"未知"按现代版本处理最安全。
  */
 export function coreVersionAtLeast(
   version: string,
@@ -45,24 +45,67 @@ export function coreVersionAtLeast(
 
 /**
  * 健壮三段（及以上）语义版本比较的单一权威：a>b→1、a<b→-1、相等→0。
- *   容忍前导 `v`（"v1.13.13"）与 prerelease/build 后缀（"1.2.3-beta"、"1.2.3+naive"）——
- *   后缀在首个 `-`/`+` 处截断后仅比较数字段，避免 `split('.').map(Number)` 把 "3-beta" 算成 NaN
- *   而误判相等/倒序。每段缺失或非数字按 0 计；不比较 prerelease 优先级（够内核/App 更新判定用）。
+ *   容忍前导 `v`（"v1.13.13"）与 build 后缀（`+naive`，比较时忽略）。
+ *   **支持 semver prerelease 优先级**（1.14 迁移 §6.5 核心改动②，让"预览版→正式版"可被判出）：
+ *     · 主版本号（major.minor.patch…）数字段优先逐段比较；
+ *     · 主版本相同时「有 prerelease」< 「无 prerelease」（`1.14.0-alpha.32 < 1.14.0`）；
+ *     · 两者都有 prerelease 时逐段比 prerelease 标识符——纯数字段按数字、含字母段按 ASCII 字典序、
+ *       数字段 < 字母段；段数不同时较长者更大（`alpha < alpha.1`）。
+ *     · 由此 `alpha.32 < alpha.33 < beta.1 < rc.1 < 1.14.0 < 1.14.1` 全链成立。
+ *   单一真值（CoreUpdateService.compareVersions + UpdateService.isNewerVersion 共用）。
+ *   每段缺失或非数字主版本段按 0 计；build（`+`）后缀不参与比较（semver 规范）。
  */
 export function compareSemver(a: string, b: string): number {
-  const norm = (v: string): number[] =>
-    (v || '')
-      .replace(/^v/i, '')
-      .split(/[-+]/)[0]
-      .split('.')
-      .map((p) => parseInt(p, 10) || 0);
-  const pa = norm(a);
-  const pb = norm(b);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
+  // 拆出主版本段数组与 prerelease 段数组（build `+...` 直接丢弃，不参与比较）。
+  const parse = (v: string): { main: number[]; pre: string[] } => {
+    const stripped = (v || '').replace(/^v/i, '').split('+')[0];
+    const dash = stripped.indexOf('-');
+    const mainStr = dash === -1 ? stripped : stripped.slice(0, dash);
+    const preStr = dash === -1 ? '' : stripped.slice(dash + 1);
+    const main = mainStr.split('.').map((p) => parseInt(p, 10) || 0);
+    const pre = preStr === '' ? [] : preStr.split('.');
+    return { main, pre };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+
+  // 1) 主版本段逐段比较
+  for (let i = 0; i < Math.max(pa.main.length, pb.main.length); i++) {
+    const na = pa.main[i] || 0;
+    const nb = pb.main[i] || 0;
     if (na > nb) return 1;
     if (na < nb) return -1;
+  }
+
+  // 2) 主版本相同：有 prerelease < 无 prerelease
+  const aHasPre = pa.pre.length > 0;
+  const bHasPre = pb.pre.length > 0;
+  if (!aHasPre && !bHasPre) return 0;
+  if (!aHasPre) return 1; // a 是正式版、b 是预览版 → a 更大
+  if (!bHasPre) return -1;
+
+  // 3) 两者都有 prerelease：逐段比较标识符（semver 规则）
+  for (let i = 0; i < Math.max(pa.pre.length, pb.pre.length); i++) {
+    // 段数不同：较短者更小（"1.0.0-alpha" < "1.0.0-alpha.1"）
+    if (i >= pa.pre.length) return -1;
+    if (i >= pb.pre.length) return 1;
+    const sa = pa.pre[i];
+    const sb = pb.pre[i];
+    const isNumA = /^\d+$/.test(sa);
+    const isNumB = /^\d+$/.test(sb);
+    if (isNumA && isNumB) {
+      const na = parseInt(sa, 10);
+      const nb = parseInt(sb, 10);
+      if (na > nb) return 1;
+      if (na < nb) return -1;
+    } else if (isNumA) {
+      return -1; // 数字段 < 字母段
+    } else if (isNumB) {
+      return 1;
+    } else {
+      if (sa > sb) return 1; // ASCII 字典序：alpha < beta < rc
+      if (sa < sb) return -1;
+    }
   }
   return 0;
 }
