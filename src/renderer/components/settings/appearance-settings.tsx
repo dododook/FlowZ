@@ -49,9 +49,10 @@ export function AppearanceSettings() {
             value={theme}
             onChange={handleThemeChange}
             options={[
+              // 跟随系统排首位：它是默认值（uiTheme 默认 'system'），默认项置首更符合预期。
+              { value: 'system', label: t('settings.appearance.system') },
               { value: 'light', label: t('settings.appearance.light') },
               { value: 'dark', label: t('settings.appearance.dark') },
-              { value: 'system', label: t('settings.appearance.system') },
             ]}
           />
         </SettingsRow>
