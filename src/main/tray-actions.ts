@@ -173,7 +173,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
       showWindow();
       // 发送导航事件到渲染进程
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('navigate', '/settings');
+        mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/settings');
       }
     },
     onCheckUpdate: async () => {
@@ -209,7 +209,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
       showWindow();
       // 发送导航事件到渲染进程
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('navigate', '/server');
+        mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/server');
       }
     },
     onSpeedTest: async () => {

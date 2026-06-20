@@ -11,6 +11,7 @@ import { LogManager } from './LogManager';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
+import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
 // 托盘菜单状态圆点（macOS 系统色，18px 抗锯齿）——替代旧的 emoji 大圆圈，更克制现代。
 const STATUS_DOT_PNG: Record<'connected' | 'disconnected' | 'error', string> = {
@@ -20,6 +21,14 @@ const STATUS_DOT_PNG: Record<'connected' | 'disconnected' | 'error', string> = {
     'iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAABmklEQVR4nLWUMW7bQBBF/wwlktgVUkQXyAGcVifIFaTCdxBSqCMMmAQMw42K2EV6Fy6WV8gJ0toHyAU2BSERJG3OpBBpKIxsIII91WL/zNvZnZkF3sjoNVFVKc9zBoD5fC5EpP9FV1VyzgXDfedcoKoHDx8dgnQnt+v1+iMQf94p1f1isfg98DkM6h3Oz799mE7DC4BOiTDdadZfX3+/8745I6JiCKN9SJqmZIyxUTT5Ya2dbTYbqKoAABHxZDLBdrv9WdebL2VZbtM01R7GPSjPc86yTMZjc2WtnRVF0YiIdj4sIloURWOtnY3H5irLMukL8ZxRn+bl5c00jvUX88i07RMR0V8Pq6oaBCMVeSqrij4lydL3sdxnAwBRxCdhGBuRFkNIdz0SaRGGsYkiPtmP5aHzsfbcbABQ1/LQNFXJHEBV/2k+VVXmAE1TlXUtD/ux3KWszrkgSZYeoFtrDQN43Id168edRrdJsvTOuaCv2puVf1iVVxoSHtA775uzLPv6ckMOYQAwHJHVavXiiBy0Y4b2fb+RY+wP33oSwpBBhJQAAAAASUVORK5CYII=',
   error:
     'iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAABQklEQVR4nK2UTUoDQRCFv+qZNmMUF+YCLgRF4tLgAfQIvfEsggRc5BxZuMkR9ACSLAWJ4MILxIX4OxPmuZAJOhmFxHnL+nlV1a+qoSbYX06BEYIDYDDIDbQQu8AUQjRnDyHSL8XnjAIrKutwb5N4ZR+AaXpj17eP5ZhKoiJAne0NGuvnyE4wa305NcF0wcfzqQ3vn8pk9p2EM4zLnTVs9QrvO0wzyMkBcDhiD1k2RG9HHN+90EUFmZu1E4KzLjmW9PC+Q5qlCGE4DIcQaZbifQdLetYlnwlRdDQb6WC3hU8eMGuCrOINBSakV7L3LRuNJ0WuK7oBoJG0iVwTqVIIwJAgck0aSft7rqsIXgr1jmYghRDZaDzB1MfHDpHxc1eEyPCxw9S30XiiEKJCtdrkr38hy2Sw2IlUolajLRP+6xtZBp8CmLpNChT41AAAAABJRU5ErkJggg==',
+};
+
+/** 托盘菜单协议简写（菜单宽度受限，长协议名缩短以保留延迟显示；其余协议已短，原样大写）。 */
+const PROTOCOL_SHORT: Record<string, string> = {
+  wireguard: 'WG',
+  tailscale: 'TS',
+  shadowsocks: 'SS',
+  hysteria2: 'Hy2',
 };
 
 /**
@@ -310,7 +319,9 @@ export class TrayManager implements ITrayManager {
 
     const buildServerItem = (server: ServerConfig): MenuItemConstructorOptions => {
       const name = server.name || server.address;
-      const protocol = (server.protocol || '').toUpperCase();
+      const proto =
+        PROTOCOL_SHORT[(server.protocol || '').toLowerCase()] ??
+        (server.protocol || '').toUpperCase();
       const latency = this.speedTestResults.get(server.id);
       const latencyStr =
         latency !== undefined
@@ -318,10 +329,11 @@ export class TrayManager implements ITrayManager {
             ? ` [${latency}ms]`
             : ` [${this.t('超时', 'Timeout')}]`
           : '';
-      let label = `${name}（${protocol}）${latencyStr}`;
-      if (label.length > maxLabelLength) {
-        label = label.substring(0, maxLabelLength - 3) + '...';
-      }
+      // 超长只截「名字」，保「（协议）[延迟]」完整——延迟是选节点的关键信息，不应被尾部截断吃掉。
+      const suffix = `（${proto}）${latencyStr}`;
+      const maxName = Math.max(6, maxLabelLength - suffix.length);
+      const shownName = name.length > maxName ? `${name.slice(0, maxName - 1)}…` : name;
+      const label = `${shownName}${suffix}`;
       return {
         label,
         type: 'radio' as const,
@@ -662,7 +674,7 @@ export class TrayManager implements ITrayManager {
       // 默认行为：显示窗口并导航到设置页面
       this.handleShowWindow();
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('navigate', '/settings');
+        this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/settings');
       }
     }
   }
@@ -691,7 +703,7 @@ export class TrayManager implements ITrayManager {
       // 默认行为：显示窗口并导航到服务器页面
       this.handleShowWindow();
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('navigate', '/server');
+        this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/server');
       }
     }
   }
@@ -741,9 +753,9 @@ export class TrayManager implements ITrayManager {
         return a.latency - b.latency;
       });
 
-    // 发送到渲染进程显示 toast（全不可测/无结果时不弹空 toast）
+    // 发送到渲染进程显示 toast（全不可测/无结果时不弹空 toast；用独立 LIST 通道，与逐节点流式分开）
     if (resultList.length > 0 && this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('speedTestResult', resultList);
+      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, resultList);
     }
   }
 

@@ -148,7 +148,9 @@ export function setPrivacyMode(value: boolean): void {
   }
   // 通知所有窗口同步此状态
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(value ? 'event:enterPrivacyMode' : 'event:exitPrivacyMode');
+    mainWindow.webContents.send(
+      value ? IPC_CHANNELS.EVENT_ENTER_PRIVACY_MODE : IPC_CHANNELS.EVENT_EXIT_PRIVACY_MODE
+    );
   }
 }
 

@@ -12,6 +12,11 @@ import { ruleConditions } from '../../shared/rules';
 import { effectiveRegionRouting, REGION_LOCAL_GEO } from '../../shared/region-routing';
 import { planCustomRule, customRuleFileBase, usesFakeIp } from './custom-rule-files';
 import { getCustomRulesDir } from '../utils/paths';
+import {
+  findBuiltin,
+  getRuleSetRuntimeDir as getRuntimeRulesDir,
+  isValidSrsFile,
+} from './builtin-geo-rulesets';
 import type { SingBoxDnsConfig, SingBoxDnsServer, SingBoxDnsRule } from './singbox-config-types';
 import {
   isIpv4Host,
@@ -32,6 +37,12 @@ import {
 
 /** 日志回调：注入 ProxyManager.logToManager（source 默认 'ProxyManager'）。 */
 type DnsLogFn = (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
+
+/** 域名 → [精确域名, `.域名`(后缀匹配)]：同时覆盖 exact 与 subdomain（sing-box domain_suffix 语义）。 */
+const withDotPrefix = (d: string): string[] => [d, `.${d}`];
+
+/** 内网 / 反向解析后缀（非 .local 组播）：内网域 .lan / .home.arpa + 反查 .arpa。 */
+const INTERNAL_DNS_SUFFIXES = ['.arpa', '.lan', '.home.arpa'];
 
 export function buildDnsConfig(
   config: UserConfig,
@@ -236,7 +247,7 @@ export function buildDnsConfig(
   // 关接管均走此路）。否则拆三条（mac/Win 有 LAN 解析器，或 Win+takeover 无 LAN 解析器）。
   if (internalResolverTag === 'dns-local' && bankResolverTag === 'dns-local') {
     dnsRules.push({
-      domain_suffix: ['.local', '.arpa', '.lan', '.home.arpa', ...DOMESTIC_BANK_AND_STOCK_DOMAINS],
+      domain_suffix: ['.local', ...INTERNAL_DNS_SUFFIXES, ...DOMESTIC_BANK_AND_STOCK_DOMAINS],
       server: 'dns-local',
     } as SingBoxDnsRule);
   } else {
@@ -246,7 +257,7 @@ export function buildDnsConfig(
       server: bankResolverTag,
     } as SingBoxDnsRule);
     dnsRules.push({
-      domain_suffix: ['.arpa', '.lan', '.home.arpa'],
+      domain_suffix: INTERNAL_DNS_SUFFIXES,
       server: internalResolverTag,
     } as SingBoxDnsRule);
   }
@@ -262,7 +273,7 @@ export function buildDnsConfig(
         server: internalResolverTag,
       } as SingBoxDnsRule);
       dnsRules.push({
-        domain_suffix: FAKEIP_FILTER_NTP_SUFFIXES.flatMap((d) => [d, `.${d}`]),
+        domain_suffix: FAKEIP_FILTER_NTP_SUFFIXES.flatMap(withDotPrefix),
         domain_keyword: FAKEIP_FILTER_NTP_STUN_KEYWORDS,
         server: 'dns-domestic',
       } as SingBoxDnsRule);
@@ -277,7 +288,7 @@ export function buildDnsConfig(
       }
       if (others.length > 0) {
         dnsRules.push({
-          domain_suffix: others.flatMap((d) => [d, `.${d}`]),
+          domain_suffix: others.flatMap(withDotPrefix),
           server: 'dns-domestic',
         } as SingBoxDnsRule);
       }
@@ -330,7 +341,7 @@ export function buildDnsConfig(
       const bypassRule: Record<string, unknown> = { server: 'dns-bootstrap' };
       if (bypassDomains.length) bypassRule.domain = bypassDomains;
       if (bypassSuffixes.length) {
-        bypassRule.domain_suffix = bypassSuffixes.flatMap((d) => [d, `.${d}`]);
+        bypassRule.domain_suffix = bypassSuffixes.flatMap(withDotPrefix);
       }
       if (bypassKeywords.length) bypassRule.domain_keyword = bypassKeywords;
       dnsRules.push(bypassRule as unknown as SingBoxDnsRule);
@@ -356,24 +367,46 @@ export function buildDnsConfig(
     } else {
       // 如果实在没开 FakeIP（比如系统代理模式），那就用 geosite 规则让它各自拿正确的 IP 吧（但也容易被墙污染）
       if (proxyMode === 'smart') {
-        // 地区分流（正向）：本地域名走国内直连解析器（dns-domestic），其余 fallthrough dns-remote。
-        // geo tag 复用 region-routing 单一真值（与 route 侧 REGION_LOCAL_GEO 同源），不硬编码：
-        //   cn=['geosite-cn']（逐字节=今日）/ ir=['geosite-category-ir'] / ru=['geosite-category-ru']。
-        // 反向（回国等）暂未做对应的 DNS 翻转——仍按今日的 region-local→dns-domestic + fallthrough dns-remote
-        //   （次优但不致命，待真机验证 reverse 下的 dns-remote↔dns-domestic 取舍后再优化，见 PR 说明）。
+        // 地区分流的 DNS 解析器划分，镜像 route 侧 localOut/foreignOut/final 的 reverse 翻转（单一真值同源）：
+        //   geo tag 复用 region-routing（与 route 侧 REGION_LOCAL_GEO 同源）：cn=['geosite-cn']（逐字节=今日）/
+        //     ir=['geosite-category-ir'] / ru=['geosite-category-ru']。
+        //   · 正向（reverse=false）：region-local（国内）域名→dns-domestic（国内直连解析最优 IP）、其余 fallthrough
+        //     →dns-remote、final=dns-domestic（=今日行为，逐字节不变）。
+        //   · 反向（reverse=true，如「回国」）：region-local（国内）域名→dns-remote（经回国节点解析国内最优 IP，
+        //     避免境外直接解国内域名拿到不可达/慢的 IP）、其余→dns-domestic、final 同步翻为 dns-remote。
+        //   与 route 侧 localOut=reverse?proxy:direct / foreignOut=reverse?direct:proxy / final 翻转一一对应。
         const region = effectiveRegionRouting(config);
-        const localGeo = REGION_LOCAL_GEO[region.region].geosite;
-        dnsRules.push({
-          // 单 tag 与历史一致序列化为标量字符串（保 cn 逐字节）；多 tag 走数组。
-          rule_set: localGeo.length === 1 ? localGeo[0] : localGeo,
-          server: 'dns-domestic',
-        } as SingBoxDnsRule);
+        // #7 fail-closed：引用 region geo rule_set 前镜像 route 侧「本地 .srs 缺失即跳过」——DNS 侧无末尾悬空剪枝，
+        //   悬空 rule_set 会令 sing-box `initialize rule-set` FATAL。geosite-cn 随包恒在、ir/ru 的 .srs 亦随包
+        //   （resources/data），缺失（损坏/未 seed）时跳过该 region-local 规则：所有域名 fallthrough 到 final，
+        //   次优但不崩（route 侧同款 fail-closed，重下资源后自动恢复）。
+        const runtimeDir = getRuntimeRulesDir();
+        const localGeo = REGION_LOCAL_GEO[region.region].geosite.filter((tag) => {
+          const fileName = findBuiltin(tag)?.fileName ?? `${tag}.srs`;
+          return isValidSrsFile(path.join(runtimeDir, fileName));
+        });
+        // region-local 与其余侧各自的解析器（reverse 翻转）。
+        const localResolver = region.reverse ? 'dns-remote' : 'dns-domestic';
+        const fallthroughResolver = region.reverse ? 'dns-domestic' : 'dns-remote';
+        if (localGeo.length > 0) {
+          dnsRules.push({
+            // 单 tag 与历史一致序列化为标量字符串（保 cn 逐字节）；多 tag 走数组。
+            rule_set: localGeo.length === 1 ? localGeo[0] : localGeo,
+            server: localResolver,
+          } as SingBoxDnsRule);
+        }
 
         // 此处移除了 rule_set: 'geosite-geolocation-!cn'，因为 1.12 的 singbox 在
-        // dns block 里跑规则集会导致某些内置不支持的匹配失效或报错，一律 fallthrough 给 dns-remote
+        // dns block 里跑规则集会导致某些内置不支持的匹配失效或报错，一律 fallthrough（正向 dns-remote / 反向 dns-domestic）
         dnsRules.push({
-          server: 'dns-remote',
+          server: fallthroughResolver,
         } as SingBoxDnsRule);
+
+        // final 兜底解析器同步翻转：反向时未命中任何规则的查询应走 dns-remote（回国节点）。仅 smart 非-FakeIP +
+        //   region.enabled + reverse 才翻（正向/关地区分流/FakeIP 路径 final 保持 dns-domestic 逐字节不变）。
+        if (region.enabled && region.reverse) {
+          dnsConfig.final = 'dns-remote';
+        }
       } else {
         dnsRules.push({
           query_type: ['A', 'AAAA'],

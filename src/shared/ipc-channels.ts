@@ -129,13 +129,16 @@ export const IPC_CHANNELS = {
   EVENT_STATS_UPDATED: 'event:statsUpdated',
   EVENT_CONNECTIONS_UPDATED: 'event:connectionsUpdated',
   EVENT_ENTER_PRIVACY_MODE: 'event:enterPrivacyMode',
+  EVENT_EXIT_PRIVACY_MODE: 'event:exitPrivacyMode', // 退出隐私模式（解锁/idle 计时复位）
+  EVENT_NAVIGATE: 'navigate', // 托盘菜单 -> 渲染端路由跳转
   EVENT_CORE_VERSION_CHANGED: 'event:coreVersionChanged',
   EVENT_CORE_AUTO_UPDATE_STATUS: 'event:coreAutoUpdateStatus', // 内核自动更新状态变更（staged 待生效 / 跨带提示）
   EVENT_AUTO_NODE_SWITCHED: 'event:autoNodeSwitched', // 自动换节点成功通知
   EVENT_PROXY_INVALID_NODES: 'proxy:invalid-nodes', // 启动 gate 剔除的非法节点（空数组=清陈旧标灰）
   EVENT_IP_INFO_UPDATED: 'event:ipInfoUpdated', // 出口 IP 信息更新
   EVENT_RULE_RESOURCE_PROGRESS: 'event:ruleResourceProgress', // 规则资源下载进度
-  EVENT_SPEED_TEST_RESULT: 'event:speedTestResult', // 测速单个节点完成（流式增量显示）
+  EVENT_SPEED_TEST_RESULT: 'event:speedTestResult', // 测速单个节点完成（流式增量显示，payload={serverId,latency}）
+  EVENT_SPEED_TEST_RESULT_LIST: 'speedTestResult', // 测速全部完成的结果列表（托盘→渲染端汇总 toast，payload=数组）——与逐节点 EVENT_SPEED_TEST_RESULT 为不同通道，勿合并
   EVENT_SPEED_TEST_PROGRESS: 'event:speedTestProgress', // 测速进度（已测/成功/总数）
   EVENT_TAILSCALE_AUTH_URL: 'event:tailscaleAuthUrl', // Tailscale 节点需交互登录：核日志抓出的登录 URL
   EVENT_TAILSCALE_AUTH_OK: 'event:tailscaleAuthOk', // Tailscale 节点交互登录成功（轮询 state 目录检出，log-level 无关）

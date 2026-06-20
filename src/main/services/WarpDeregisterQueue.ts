@@ -14,10 +14,10 @@
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import * as crypto from 'crypto';
 import type { LogManager } from './LogManager';
 import { WarpService } from './WarpService';
 import { getUserDataPath } from '../utils/paths';
+import { writeFileAtomic } from '../utils/atomic-write';
 import {
   planDeregisterDrain,
   enqueuePendingDeregister,
@@ -57,6 +57,12 @@ export class WarpDeregisterQueue {
   private readonly writeQueueImpl: (queue: PendingDeregisterEntry[]) => Promise<void>;
   /** 防并发重入（启动 drain 与注册后 drain 可能并发）：同一时刻只跑一次 drain。 */
   private draining = false;
+  /**
+   * drain 进行中再次触发的「补跑」标志（#86-122 复审 #6）：注册成功后 drainInBackground 若撞上正在跑的启动 drain，
+   * 旧实现直接被 draining 互斥静默丢弃 → 注册时点想立即处理的 pending 条目要等下次启动才 drain。改为置位本标志，
+   * 当前 drain 结束后补跑一次（合并多次在途触发为一次补跑，不致风暴），确保该次触发不丢。
+   */
+  private drainPending = false;
   /**
    * 队列「读改写」串行化链（critical section mutex）。drain 的写回阶段与 enqueue 全程都排进此链 →
    * 杜绝二者 read-modify-write 交错导致的 lost-update：drain 进行中（await unregister 网络往返数秒）用户删
@@ -129,14 +135,8 @@ export class WarpDeregisterQueue {
    */
   private async writeQueueToDisk(queue: PendingDeregisterEntry[]): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-    try {
-      await fs.writeFile(tmp, JSON.stringify(queue, null, 2), 'utf8');
-      await fs.rename(tmp, this.filePath);
-    } catch (e) {
-      await fs.rm(tmp, { force: true }).catch(() => {}); // 失败清理临时文件，不留孤儿
-      throw e;
-    }
+    // 原子写（唯一后缀 <pid>.<rand6hex>.tmp + rename + 失败清理）收敛到 writeFileAtomic（语义字节保持）。
+    await writeFileAtomic(this.filePath, JSON.stringify(queue, null, 2));
   }
 
   /**
@@ -145,7 +145,11 @@ export class WarpDeregisterQueue {
    */
   async drain(): Promise<{ done: number; dropped: number; retried: number; expired: number }> {
     const stats = { done: 0, dropped: 0, retried: 0, expired: 0 };
-    if (this.draining) return stats; // 并发重入保护
+    if (this.draining) {
+      // 并发重入：不丢这次触发——置补跑标志，当前 drain 结束后补跑一次（见 finally）。
+      this.drainPending = true;
+      return stats;
+    }
     this.draining = true;
     try {
       const queue = await this.readQueueImpl();
@@ -215,6 +219,12 @@ export class WarpDeregisterQueue {
       return stats;
     } finally {
       this.draining = false;
+      // 本次 drain 期间有触发被合并到补跑标志 → 补跑一次（draining 已释放可进），不丢该次触发。
+      // fire-and-forget：不 await（避免补跑链拉长本次返回），自吞异常（drain 内部已兜底）。
+      if (this.drainPending) {
+        this.drainPending = false;
+        void this.drain().catch(() => {});
+      }
     }
   }
 

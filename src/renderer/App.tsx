@@ -16,6 +16,7 @@ import { ipcClient } from './ipc/ipc-client';
 import { toast } from 'sonner';
 import { PrivacyOverlay } from './components/layout/privacy-overlay';
 import { api } from './ipc/api-client';
+import { IPC_CHANNELS } from '../shared/ipc-channels';
 import i18n from './i18n';
 
 function App() {
@@ -25,7 +26,6 @@ function App() {
   const setSettingsSection = useAppStore((state) => state.setSettingsSection);
   const loadConfig = useAppStore((state) => state.loadConfig);
   const refreshConnectionStatus = useAppStore((state) => state.refreshConnectionStatus);
-  const refreshTailscaleLoginStates = useAppStore((state) => state.refreshTailscaleLoginStates);
   const setPrivacyMode = useAppStore((state) => state.setPrivacyMode);
 
   // 离开设置页重置子节的逻辑已下沉到 store.setCurrentView，此处直接用 setCurrentView
@@ -37,8 +37,8 @@ function App() {
   useEffect(() => {
     loadConfig();
     refreshConnectionStatus();
-    // Tailscale 真实登录态：挂载时刷新一次（驱动「需登录」角标，交互登录成功事件后再刷新对齐）。
-    refreshTailscaleLoginStates();
+    // Tailscale 真实登录态由 loadConfig 内 fire-and-forget 的 refreshTailscaleLoginStates 统一刷新
+    //（app-store.loadConfig）→ 此处无需再单独触发一次。
 
     // Sync initial language to main process for tray menu
     api.config.setLanguage(i18n.language).catch(console.error);
@@ -49,7 +49,7 @@ function App() {
     }, 2000);
 
     return () => clearInterval(statusInterval);
-  }, [loadConfig, refreshConnectionStatus, refreshTailscaleLoginStates]);
+  }, [loadConfig, refreshConnectionStatus]);
 
   // Listen to navigate events from main process (tray menu)
   useEffect(() => {
@@ -64,7 +64,7 @@ function App() {
       '/rules': 'rules',
     };
 
-    const unsubscribe = ipcClient.on<string>('navigate', (route) => {
+    const unsubscribe = ipcClient.on<string>(IPC_CHANNELS.EVENT_NAVIGATE, (route) => {
       const view = routeMap[route];
       if (view) {
         setCurrentView(view);
@@ -78,7 +78,7 @@ function App() {
   useEffect(() => {
     const unsubscribe = ipcClient.on<
       Array<{ name: string; protocol: string; latency: number | null }>
-    >('speedTestResult', (results) => {
+    >(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, (results) => {
       const message = results
         .map((r) =>
           r.latency !== null
@@ -99,10 +99,10 @@ function App() {
 
   // Listen to privacy mode trigger from main process idle timer
   useEffect(() => {
-    const unsubscribeEnter = ipcClient.on('event:enterPrivacyMode', () => {
+    const unsubscribeEnter = ipcClient.on(IPC_CHANNELS.EVENT_ENTER_PRIVACY_MODE, () => {
       setPrivacyMode(true);
     });
-    const unsubscribeExit = ipcClient.on('event:exitPrivacyMode', () => {
+    const unsubscribeExit = ipcClient.on(IPC_CHANNELS.EVENT_EXIT_PRIVACY_MODE, () => {
       setPrivacyMode(false);
     });
     return () => {

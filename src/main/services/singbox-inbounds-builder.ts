@@ -101,7 +101,8 @@ export function buildInbounds(
       : [];
     const excludeAddr =
       process.platform === 'win32' && shouldBypassLAN
-        ? partitionCidrsByOverlap(bypassLanCidrs(effectiveBypassLan(config)), winFakeipRanges).disjoint
+        ? partitionCidrsByOverlap(bypassLanCidrs(effectiveBypassLan(config)), winFakeipRanges)
+            .disjoint
         : ['127.0.0.0/8', '::1/128'];
     // 【已知限制 / Windows 真机待验】Windows+bypassLAN 下这里用宽私网段(10/8、192.168/16 等)整体排除出 TUN，
     // 会顺带把落在私网段内的 endpoint(WG/Tailscale) force-route 段(如 mesh 192.168.50.0/24)也排除 → 该段到不了

@@ -135,7 +135,12 @@ export const proxyApi = {
    * transient=true 表示来自 Phase 2 按需登录核（已自动开浏览器）→ 渲染端降级为可关闭普通 toast。
    */
   onTailscaleAuth(
-    listener: (data: { nodeName: string; url: string; transient?: boolean }) => void
+    listener: (data: {
+      nodeName: string;
+      url: string;
+      transient?: boolean;
+      serverId?: string;
+    }) => void
   ): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, listener);
   },

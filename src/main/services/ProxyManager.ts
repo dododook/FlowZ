@@ -53,11 +53,16 @@ import {
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
 import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
-import { isSpeedTestable } from '../../shared/endpoint-routes';
+import {
+  isEndpointProtocol,
+  selectedExitRoutesIcmpViaProxy,
+  isSpeedTestable,
+} from '../../shared/endpoint-routes';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
-import { tailscaleStateExists, pollTailscaleLoginSuccess } from './tailscale-state';
+import { safeHttpUrl } from '../../shared/url';
+import { tailscaleStateExists } from './tailscale-state';
 import {
   buildTailscaleLoginConfig,
   tailscaleEndpointInRunningCore,
@@ -115,6 +120,28 @@ export function parseCheckEndpointIndex(stderr: string): number | null {
   if (!m) return null;
   const idx = Number(m[1]);
   return Number.isInteger(idx) && idx >= 0 ? idx : null;
+}
+
+/**
+ * 进程优雅终止升级（SIGTERM → 宽限期 → SIGKILL），注入式纯逻辑（便于单测）：
+ *  1. 立即发 SIGTERM（优雅退出窗口）；
+ *  2. graceMs 后若进程仍存活（未触发 exit 收尾）→ 发 SIGKILL 强杀。
+ * 返回升级 timer 句柄，调用方须在进程 exit/error 收尾时 clearTimeout 它（防 timer 泄漏 + 升级被取消）。
+ * 与主核 stopSingBoxProcess 的 SIGTERM→SIGKILL 模式一致（瞬态核宽限期更短：进程轻量、无 TUN/路由要拆）。
+ *
+ * deps 注入 sendSignal（实际为 proc.kill）+ schedule（实际为 setTimeout），单测可零进程验证两段信号序。
+ */
+export function escalateProcessKill(deps: {
+  sendSignal: (signal: NodeJS.Signals) => void;
+  schedule: (fn: () => void, ms: number) => NodeJS.Timeout;
+  graceMs: number;
+}): NodeJS.Timeout {
+  // SIGTERM 对已退出进程为安全 no-op（ChildProcess.kill 返回 false 不抛）。
+  deps.sendSignal('SIGTERM');
+  return deps.schedule(() => {
+    // 宽限期到点仍未被 finalize 取消 → 进程拒绝 SIGTERM，强杀。SIGKILL 对已退出进程同样安全 no-op。
+    deps.sendSignal('SIGKILL');
+  }, deps.graceMs);
 }
 
 export interface IProxyManager {
@@ -1105,6 +1132,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (!toDirect && !old.servers.some((s) => s.id === newConfig.selectedServerId)) {
         return { kind: 'none', puts: [] };
       }
+      // ICMP 兜底跨边界 guard：ICMP 规则 outbound（selectedExitRoutesIcmpViaProxy 单一真值）随选中节点是否为
+      //   全隧道 endpoint 而异（proxy-selector ↔ direct）。clash_api PUT 只改 selector 指向、不重生成 config →
+      //   跨「ICMP 走 proxy ↔ 走 direct」边界（如 WG/TS 全隧道节点 ↔ 普通代理/off-mesh）热切换后 ICMP 规则错配。
+      //   跨界即退回去抖重启（重生成 config 重算 ICMP）；同侧切换（普通↔普通 / 全隧道 endpoint↔全隧道 endpoint）
+      //   ICMP outbound 不变，仍走 PUT 热切换不受影响。
+      if (selectedExitRoutesIcmpViaProxy(old) !== selectedExitRoutesIcmpViaProxy(newConfig)) {
+        return { kind: 'none', puts: [] };
+      }
       const targetTag = resolveGlobalExitTag(newConfig.selectedServerId, this.currentIdToTagMap);
       if (!targetTag) return { kind: 'none', puts: [] };
       puts.push({ selectorTag: 'proxy-selector', memberTag: targetTag });
@@ -1988,7 +2023,8 @@ done
       // （Tailscale=非即起即测临时隧道；system:true 内核接口创建失败会拖垮整批；自定义 endpoint type 分流会错放。）
       if (!isSpeedTestable(server)) return null;
       // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
-      if (server.protocol.toLowerCase() === 'wireguard') {
+      // 此处用 isEndpointProtocol 单一真值（tailscale 已上方 return null 排除，剩余 endpoint 协议即 wireguard）。
+      if (isEndpointProtocol(server.protocol)) {
         return buildWireGuardEndpoint(server, tag);
       }
       const map = new Map<string, string>([[server.id, tag]]);
@@ -3808,6 +3844,9 @@ exit 0
     // 进程已停 → 探针端口失效，置 null 让 IpInfoService 知道代理出口不可测
     this.probeDirectPort = null;
     this.probeProxyPort = null;
+    // Tailscale 登录 URL 去重集随核会话收尾清空（绑定核会话而非整进程）：下个核会话若再触发交互登录，
+    // 同一 URL 应重新弹「需登录」提示。tailscaleAuthPolling 有自身 delete 收尾，不在此动（勿破在飞登录）。
+    this.tailscaleAuthSeen.clear();
   }
 
   /** 注入 macOS 提权 helper（index.ts 启动时调用）。 */
@@ -4744,38 +4783,65 @@ exit 0
     const { nodeName, url } = hit;
     if (this.tailscaleAuthSeen.has(url)) return;
     this.tailscaleAuthSeen.add(url);
-    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, { nodeName, url });
-    this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
-    // 登录成功检测（log-level 无关）：nodeName=tag=server.name，反查 server.id 后轮询其 state 目录。
-    // 会话文件出现即判成功 → 推 EVENT_TAILSCALE_AUTH_OK（渲染端 dismiss Infinity toast + 刷新角标）。
+    // 反查 server.id 提到 emit 之前：登录 URL 事件带 serverId，渲染端 toast id 用 serverId（NIT③：防同
+    //   hostname 不同 serverId 的两个 Tailscale 节点登录 toast 互相覆盖 / AUTH_OK dismiss 错条目）。
+    //   nodeName=tag=server.name；server 缺失（节点已删/未在配置）时渲染端回落 nodeName 作 id（与今日一致）。
     const server = this.currentConfig?.servers.find(
       (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === nodeName
     );
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
+      nodeName,
+      url,
+      serverId: server?.id,
+    });
+    this.logToManager('info', `Tailscale 节点「${nodeName}」需要登录授权`, 'sing-box');
+    // 登录成功检测（log-level 无关）：会话文件出现即判成功 → 推 EVENT_TAILSCALE_AUTH_OK
+    //   （渲染端 dismiss Infinity toast + 刷新角标，dismiss 用同一 serverId-优先 id）。
     if (server) this.watchTailscaleLogin(server.id, nodeName);
+  }
+
+  /** 交互登录成功统一发射：推 EVENT_TAILSCALE_AUTH_OK + 记 info 日志（Phase1 主核检测 / Phase2 瞬态核两路共用）。 */
+  private emitTailscaleAuthOk(serverId: string, nodeName: string): void {
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, { serverId, nodeName });
+    this.logToManager('info', `Tailscale 节点「${nodeName}」登录成功`, 'sing-box');
   }
 
   /**
    * 轮询某 Tailscale 节点的 state 目录直到登录成功 / 超时 / 进程已停（取消）。每节点单飞。
    * 成功 → 发 EVENT_TAILSCALE_AUTH_OK + 记 info 日志；超时/取消静默收尾（toast 仍在，用户可重试）。
    * 轮询纯逻辑在 tailscale-state.pollTailscaleLoginSuccess（check/sleep 可注入、单测覆盖）。
+   * 生命周期编排复用 runLoginPollLifecycle（与 Phase2 瞬态核同路径）；Phase1 是主核日志检测、无瞬态核可杀，
+   * 故 kill 为 no-op（不动主核生命周期）。tailscaleAuthPolling 单飞去重收尾不变。
    */
   private watchTailscaleLogin(serverId: string, nodeName: string): void {
     if (this.tailscaleAuthPolling.has(serverId)) return; // 同节点已在轮询
     this.tailscaleAuthPolling.add(serverId);
-    void pollTailscaleLoginSuccess({
-      check: () => tailscaleStateExists(serverId),
-      // 进程已停 → 取消轮询，避免后台空转到 2min。判据用 getStatus().running（同 UI/健康检查的
-      // activePid 存活口径）：覆盖全部启动路径——helper 零提权 / osascript / UAC 后台进程经 singboxPid，
-      // 直接 spawn（system 代理 / Linux TUN）经 pid。⚠️ 不能用 `singboxProcess === null`：helper 路径
-      // 经 socket 起核、从不 spawn 子进程，singboxProcess 恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
-      isCancelled: () => !this.getStatus().running,
+    void runLoginPollLifecycle({
+      poll: makeLoginPoll(
+        () => tailscaleStateExists(serverId),
+        // 取消轮询（避免后台空转到 2min + 对已切走的节点误发 AUTH_OK）：进程已停 **或** 该节点已不在运行主核里。
+        //   ① 进程存活判据用 getStatus().running（同 UI/健康检查的 activePid 口径）：覆盖全部启动路径——helper
+        //     零提权 / osascript / UAC 后台进程经 singboxPid，直接 spawn（system 代理 / Linux TUN）经 pid。
+        //     ⚠️ 不能只用 `singboxProcess === null`：helper 路径经 socket 起核、从不 spawn 子进程，singboxProcess
+        //     恒 null → 轮询会一进入就误判取消、AUTH_OK 永不发射。
+        //   ② tailscaleEndpointInRunningCore（单一真值，与双写防护同款）：节点已切走且未就绪、或已从运行配置删除
+        //     → 主核不再带其 endpoint，继续轮询既空转又可能对已切走节点误发 AUTH_OK。**不破坏成功路径**：登录成功
+        //     瞬间 state 落盘 → stateExists=true → ready=true → 仍判「在主核里」不取消 → check 命中发 AUTH_OK
+        //     （pollTailscaleLoginSuccess 同轮先 isCancelled 后 check，state 已落盘则 isCancelled 不会误杀）。
+        () =>
+          !this.getStatus().running ||
+          !tailscaleEndpointInRunningCore(
+            serverId,
+            this.getStatus().running,
+            this.currentConfig,
+            tailscaleStateExists(serverId)
+          )
+      ),
+      onSuccess: () => this.emitTailscaleAuthOk(serverId, nodeName),
+      kill: () => {
+        /* Phase1：主核日志检测，无瞬态核可杀（不动主核生命周期） */
+      },
     })
-      .then((result) => {
-        if (result === 'success') {
-          this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, { serverId, nodeName });
-          this.logToManager('info', `Tailscale 节点「${nodeName}」登录成功`, 'sing-box');
-        }
-      })
       .catch(() => {
         /* 轮询本身失败安全（check 已 try/catch），此处兜底防 unhandled rejection */
       })
@@ -4791,7 +4857,14 @@ exit 0
    */
   private tailscaleLoginCores = new Map<
     string,
-    { proc: ChildProcess; timeoutTimer: NodeJS.Timeout; cancelled: boolean }
+    {
+      proc: ChildProcess;
+      timeoutTimer: NodeJS.Timeout;
+      cancelled: boolean;
+      // SIGTERM 后的 SIGKILL 升级 timer：进程拒绝 SIGTERM 时宽限期到点强杀（防泄漏 + 卡 alreadyRunning）。
+      // finalize（proc exit/error）会 clearTimeout 它，进程优雅退出则升级被取消。
+      killTimer?: NodeJS.Timeout;
+    }
   >();
 
   /**
@@ -4862,7 +4935,12 @@ exit 0
       this.killTailscaleLogin(server.id);
     }, 120000);
 
-    const handle = { proc, timeoutTimer, cancelled: false };
+    const handle: {
+      proc: ChildProcess;
+      timeoutTimer: NodeJS.Timeout;
+      cancelled: boolean;
+      killTimer?: NodeJS.Timeout;
+    } = { proc, timeoutTimer, cancelled: false };
     this.tailscaleLoginCores.set(server.id, handle);
 
     // 幂等收尾：置 cancelled（收敛轮询）+ 清 timer + 删 Map + 删临时 config。error 与 exit 两路径都调它。
@@ -4876,6 +4954,8 @@ exit 0
       finalized = true;
       handle.cancelled = true;
       clearTimeout(timeoutTimer);
+      // 进程已退出（优雅 SIGTERM 或自行崩溃）→ 取消挂起的 SIGKILL 升级，防 timer 泄漏。
+      clearTimeout(handle.killTimer);
       this.tailscaleLoginCores.delete(server.id);
       try {
         require('fs').unlinkSync(cfgPath);
@@ -4921,13 +5001,7 @@ exit 0
         () => tailscaleStateExists(server.id),
         () => handle.cancelled
       ),
-      onSuccess: () => {
-        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_OK, {
-          serverId: server.id,
-          nodeName: server.name,
-        });
-        this.logToManager('info', `Tailscale 节点「${server.name}」登录成功`, 'sing-box');
-      },
+      onSuccess: () => this.emitTailscaleAuthOk(server.id, server.name),
       kill: () => this.killTailscaleLogin(server.id),
     });
 
@@ -4937,13 +5011,7 @@ exit 0
   /** 抓到瞬态登录核的 URL：自动开浏览器 + 系统通知（点击再开）+ 推渲染端可关闭 toast（Phase 1 提示条复用）。 */
   private handleTailscaleLoginUrl(server: ServerConfig, url: string): void {
     // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
-    let safeUrl: string | null = null;
-    try {
-      const u = new URL(url);
-      if (u.protocol === 'https:' || u.protocol === 'http:') safeUrl = u.href;
-    } catch {
-      safeUrl = null;
-    }
+    const safeUrl = safeHttpUrl(url);
     if (!safeUrl) {
       this.logToManager('warn', `Tailscale 登录 URL 非法已忽略: ${url}`, 'sing-box');
       return;
@@ -4964,10 +5032,12 @@ exit 0
       /* 通知失败不阻断登录流程 */
     }
     // ③ 推渲染端（提示条记录用，降级为可关闭普通 toast，非 Infinity——浏览器已自动打开）。
+    //    带 serverId（NIT③）：与 Phase1 + AUTH_OK 用同一 serverId 作 toast id，dismiss 精确命中本节点。
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
       nodeName: server.name,
       url: safeUrl,
       transient: true,
+      serverId: server.id,
     });
     this.logToManager('info', `Tailscale 节点「${server.name}」已打开浏览器登录页`, 'sing-box');
   }
@@ -4986,13 +5056,22 @@ exit 0
     if (!handle) return;
     handle.cancelled = true;
     clearTimeout(handle.timeoutTimer);
+    // 已挂起一次升级（重复调用幂等）→ 不重复发信号/排第二个 timer。
+    if (handle.killTimer) return;
     try {
-      handle.proc.kill();
+      // SIGTERM→3s 宽限→SIGKILL 升级：核拒绝 SIGTERM（卡退出）时强杀，否则 proc 永不 exit → finalize 不触发
+      // → cfg/Map 泄漏 + 该节点恒 alreadyRunning 卡死。进程优雅退出会触发 exit→finalize→clearTimeout(killTimer) 取消升级。
+      handle.killTimer = escalateProcessKill({
+        sendSignal: (sig) => {
+          handle.proc.kill(sig);
+        },
+        schedule: (fn, ms) => setTimeout(fn, ms),
+        graceMs: 3000,
+      });
     } catch {
       /* 已退出：忽略 */
     }
     // Map 项 + 临时 config 由 finalize 删（挂在 proc 'exit'/'error'）；此处不删，避免与 finalize 竞态漏清 cfg。
-    // kill 发 SIGTERM → 进程退出触发 'exit' → finalize 收尾；幂等（finalized 标记防 error/exit 重复执行）。
   }
 
   /** app 退出/窗口关闭：杀掉全部残留瞬态登录核（无孤儿进程）。由 stop/teardownForQuit 调用。 */

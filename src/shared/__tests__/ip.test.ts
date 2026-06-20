@@ -110,7 +110,10 @@ describe('partitionCidrsByOverlap + FakeIP 段护栏不变量', () => {
   // 回归不变量：默认旁路清单 CIDR 必须与 fakeip 段全不相交（防有人改回 fc00::/7 或改 fakeip 段再撞墙）。
   it('DEFAULT_BYPASS_LAN 与 FakeIP 段零相交（v4+v6 永久免疫同类撞墙）', () => {
     const ranges = [FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE];
-    const { overlapping } = partitionCidrsByOverlap(bypassLanCidrs([...DEFAULT_BYPASS_LAN]), ranges);
+    const { overlapping } = partitionCidrsByOverlap(
+      bypassLanCidrs([...DEFAULT_BYPASS_LAN]),
+      ranges
+    );
     expect(overlapping).toEqual([]);
   });
 });

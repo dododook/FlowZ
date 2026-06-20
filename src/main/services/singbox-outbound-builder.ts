@@ -16,6 +16,7 @@ import {
   isMeshNodeUnroutable,
 } from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
+import { normalizeDuration } from '../../shared/duration';
 import { tailscaleStateDir, tailscaleStateExists } from './tailscale-state';
 import {
   effectiveCustomRules,
@@ -198,12 +199,15 @@ export function buildProxyOutbound(
   if (protocol === 'anytls') {
     outbound.password = server.password;
     // AnyTLS 的 TLS 永远开启，这里不需要额外处理，类型检查结尾部分统一生成
-    // AnyTLS 会话参数
-    if (server.anyTlsSettings?.idleSessionCheckInterval) {
-      outbound.idle_session_check_interval = server.anyTlsSettings.idleSessionCheckInterval;
+    // AnyTLS 会话参数。时长字段统一经 normalizeDuration 收敛：表单可能录入裸毫秒整数（如 "5000"），
+    // 原样下发会触发 sing-box ParseDuration "missing unit" → 整代理 FATAL。已带单位值幂等透传，空值不下发。
+    const checkInterval = normalizeDuration(server.anyTlsSettings?.idleSessionCheckInterval);
+    if (checkInterval) {
+      outbound.idle_session_check_interval = checkInterval;
     }
-    if (server.anyTlsSettings?.idleSessionTimeout) {
-      outbound.idle_session_timeout = server.anyTlsSettings.idleSessionTimeout;
+    const idleTimeout = normalizeDuration(server.anyTlsSettings?.idleSessionTimeout);
+    if (idleTimeout) {
+      outbound.idle_session_timeout = idleTimeout;
     }
     if (server.anyTlsSettings?.minIdleSession !== undefined) {
       outbound.min_idle_session = server.anyTlsSettings.minIdleSession;
@@ -238,8 +242,10 @@ export function buildProxyOutbound(
       if (server.tuicSettings.zeroRttHandshake !== undefined) {
         outbound.zero_rtt_handshake = server.tuicSettings.zeroRttHandshake;
       }
-      if (server.tuicSettings.heartbeat) {
-        outbound.heartbeat = server.tuicSettings.heartbeat;
+      // heartbeat 经 normalizeDuration 收敛：表单录入裸毫秒整数会致 sing-box ParseDuration FATAL；带单位幂等。
+      const heartbeat = normalizeDuration(server.tuicSettings.heartbeat);
+      if (heartbeat) {
+        outbound.heartbeat = heartbeat;
       }
     }
   }

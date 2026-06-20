@@ -425,7 +425,9 @@ export class ProtocolParser implements IProtocolParser {
     }
 
     // Others like zero_rtt_handshake / heartbeat
-    const heartbeat = params.get('heartbeat');
+    // heartbeat 经 normalizeDuration（与同文件 parseAnyTls idle 对齐）：订阅写裸毫秒整数（如 "10000"）补 ms 单位，
+    // 防 sing-box "missing unit"；已带单位（10s/500ms）透传。
+    const heartbeat = normalizeDuration(params.get('heartbeat'));
     if (heartbeat) {
       config.tuicSettings!.heartbeat = heartbeat;
     }
@@ -462,10 +464,17 @@ export class ProtocolParser implements IProtocolParser {
     const anyTlsSettings: AnyTlsSettings = {};
     const idleCheckInterval = normalizeDuration(params.get('idle_session_check_interval'));
     const idleTimeout = normalizeDuration(params.get('idle_session_timeout'));
-    const minIdle = params.get('min_idle_session');
+    // min_idle_session 口径对齐 ClashSubscriptionParser 的 num()（非空数字串→Number，否则 undefined）+
+    // 生成侧 generateAnyTlsUrl 的 `!== undefined`：min=0 是合法值（须保留），而 parseInt('abc')=NaN 必须丢弃
+    // （旧 `if(minIdle) parseInt(...)` 会把非数字串写成 NaN，且形态与 Clash/生成两路不一致）。
+    const minIdleRaw = params.get('min_idle_session');
+    const minIdle =
+      minIdleRaw !== null && minIdleRaw.trim() !== '' && !isNaN(Number(minIdleRaw))
+        ? Number(minIdleRaw)
+        : undefined;
     if (idleCheckInterval) anyTlsSettings.idleSessionCheckInterval = idleCheckInterval;
     if (idleTimeout) anyTlsSettings.idleSessionTimeout = idleTimeout;
-    if (minIdle) anyTlsSettings.minIdleSession = parseInt(minIdle);
+    if (minIdle !== undefined) anyTlsSettings.minIdleSession = minIdle;
     if (Object.keys(anyTlsSettings).length > 0) {
       config.anyTlsSettings = anyTlsSettings;
     }
@@ -1206,8 +1215,13 @@ export class ProtocolParser implements IProtocolParser {
       if (config.tuicSettings.heartbeat) {
         params.set('heartbeat', config.tuicSettings.heartbeat);
       }
-      if (config.tuicSettings.zeroRttHandshake) {
+      // 往返守恒：解析侧 parseTuic 把 zero_rtt_handshake=0 读成显式 false，旧 truthy 检查丢弃 false →
+      // 再解析得 undefined（生成-解析往返不守恒）。显式 false 写 =0（对称解析侧 '0'→false）；
+      // 未设(undefined)不写。对内核 false 与不写虽等价，但保配置序列化往返一致 + UI 区分「显式关/未设」。
+      if (config.tuicSettings.zeroRttHandshake === true) {
         params.set('zero_rtt_handshake', '1');
+      } else if (config.tuicSettings.zeroRttHandshake === false) {
+        params.set('zero_rtt_handshake', '0');
       }
     }
 

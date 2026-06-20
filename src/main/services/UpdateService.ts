@@ -13,6 +13,7 @@ import { getUserDataPath } from '../utils/paths';
 import { system32 } from '../utils/win-system32';
 import { compareSemver } from '../../shared/version';
 import { ghMirrorUrl } from '../../shared/gh-proxy';
+import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { findSuitableUpdateAsset } from './update-asset';
 import {
@@ -869,7 +870,7 @@ export class UpdateService {
     this.downloadProgress = progress;
     // 发送进度到渲染进程
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('update:progress', progress);
+      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_UPDATE_PROGRESS, progress);
     }
   }
 

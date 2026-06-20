@@ -315,6 +315,38 @@ describe('buildProxyOutbound — 可选协议设置下发（B 组编辑项）', 
     expect(ob.min_idle_session).toBe(0);
   });
 
+  // #86-122 复审硬化 #1：表单/导入可能录入裸毫秒整数（数字或纯数字串），原样下发会触发 sing-box
+  // ParseDuration "missing unit" → 整代理 FATAL。经 normalizeDuration 补 ms 单位，证明裸整数不再致 FATAL。
+  it('anytls：裸整数 idle（数字 5000 / 字符串 "8000"）→ 归一化补 ms 单位（防 ParseDuration FATAL）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'anytls',
+        password: 'p',
+        security: 'tls',
+        anyTlsSettings: {
+          idleSessionCheckInterval: 5000 as unknown as string, // 表单裸数字
+          idleSessionTimeout: '8000', // 纯数字串
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.idle_session_check_interval).toBe('5000ms');
+    expect(ob.idle_session_timeout).toBe('8000ms');
+  });
+
+  it('tuic：裸整数 heartbeat（数字 10000）→ 归一化为 "10000ms"（防 ParseDuration FATAL）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'tuic',
+        uuid: 'u',
+        password: 'p',
+        tuicSettings: { heartbeat: 10000 as unknown as string },
+      }),
+      tags
+    ) as any;
+    expect(ob.heartbeat).toBe('10000ms');
+  });
+
   it('ssh：hostKeyAlgorithms/clientVersion → host_key_algorithms/client_version', () => {
     const ob = buildProxyOutbound(
       node({

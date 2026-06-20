@@ -15,6 +15,7 @@ import type { UpdateInfo } from '../../shared/types/update';
 import { api } from '../ipc';
 import { toast } from 'sonner';
 import i18n from '../i18n';
+import { mergeTailscaleLoginStates } from './tailscale-login-merge';
 
 // 兼容旧的类型定义
 type ProxyMode = UserConfig['proxyMode'];
@@ -32,6 +33,14 @@ export interface AvailableCoreUpdate {
 
 // loadConfig 单飞：防 configChanged 风暴 / 启动期重复拉取（替代原 isLoading 重入守卫）
 let loadConfigInflight: Promise<void> | null = null;
+
+// Tailscale 登录态防覆盖（P5 竞态）：refreshTailscaleLoginStates 整表覆盖 与 setTailscaleLoginState 乐观单点点亮
+// 并发时，一次更早发起、快照仍是登录前 false 的 refresh 后到 → 把刚点亮的 true 覆盖回 false（角标闪/回退）。
+// 用单调代际：每次乐观点亮 true 递增 gen 并登记 serverId→gen；refresh 发起时捕获 gen，响应回来时若某 serverId
+// 在「refresh 发起之后」又被乐观点亮（登记 gen > 捕获 gen）且磁盘快照给的是 falsy → 保留该条乐观 true（丢弃过期覆盖）。
+// 磁盘真值仍权威：登出（磁盘 false 且无更新乐观点亮）正常生效；仅保护「在途 refresh 期间新点亮的 true」。
+let tailscaleOptimisticGen = 0;
+const tailscaleOptimisticTrueAt = new Map<string, number>();
 
 interface ConnectionStatus {
   proxyCore: {
@@ -383,18 +392,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // 整体刷新 Tailscale 登录态（主进程按 hasAuthKey || state 目录存在 判定，整表覆盖）。
+  // 防覆盖：捕获发起时代际；响应回来时，对「在途期间又被乐观点亮 true」的 serverId（登记 gen > 捕获 gen）
+  // 且磁盘快照给 falsy 者，保留乐观 true（丢弃这次过期整表覆盖），避免刚点亮的角标被旧快照打回。
   refreshTailscaleLoginStates: async () => {
+    const genAtStart = tailscaleOptimisticGen;
     try {
       const states = await api.server.getTailscaleLoginStates();
-      set({ tailscaleLoginStates: states });
+      set((s) => ({
+        tailscaleLoginStates: mergeTailscaleLoginStates(
+          states,
+          s.tailscaleLoginStates,
+          tailscaleOptimisticTrueAt,
+          genAtStart
+        ),
+      }));
     } catch (error) {
       console.error('Failed to refresh tailscale login states:', error);
     }
   },
 
   // 单条覆盖（登录成功事件即时点亮，无需等整表 IPC；下次整体刷新会与磁盘真值对齐）。
-  setTailscaleLoginState: (serverId, loggedIn) =>
-    set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } })),
+  // 点亮 true 时递增代际并登记，供 refresh 防覆盖识别「在途期间的新乐观点亮」。
+  setTailscaleLoginState: (serverId, loggedIn) => {
+    if (loggedIn) {
+      tailscaleOptimisticTrueAt.set(serverId, ++tailscaleOptimisticGen);
+    } else {
+      // 显式登出/置 false：撤销乐观保护（不再保留旧 true），让磁盘真值正常生效。
+      tailscaleOptimisticTrueAt.delete(serverId);
+    }
+    set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } }));
+  },
 
   // Server Management Actions
   deleteServer: async (serverId) => {

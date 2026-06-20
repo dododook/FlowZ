@@ -231,3 +231,33 @@ describe('makeLoginPoll（isCancelled 透传：瞬态核自死即收敛，不空
     await expect(poll()).resolves.toBe('success');
   });
 });
+
+// #8：Phase1 watchTailscaleLogin 的取消判定收紧——isCancelled 用 tailscaleEndpointInRunningCore（含 stateExists）
+//   作「该节点是否还在运行主核里」的单一真值，避免节点切走后空转到 2min + 对已切走节点误发 AUTH_OK，
+//   同时不破坏成功路径（登录成功瞬间 state 落盘 → ready=true → 不取消 → check 命中 success）。
+describe('#8 watchTailscaleLogin 取消判定（isCancelled = !running || !endpointInRunningCore）', () => {
+  const tsCfg = (selectedId: string | null): UserConfig =>
+    ({
+      selectedServerId: selectedId,
+      servers: [{ id: 's1', name: 'box', protocol: 'tailscale', tailscaleSettings: {} }],
+    }) as any;
+  // watchTailscaleLogin 内 isCancelled 的等价纯逻辑（running + currentConfig + stateExists 注入）。
+  const isCancelled = (running: boolean, cfg: UserConfig | null, stateExists: boolean): boolean =>
+    !running || !tailscaleEndpointInRunningCore('s1', running, cfg, stateExists);
+
+  it('进程已停 → 取消（与原行为一致）', () => {
+    expect(isCancelled(false, tsCfg('s1'), false)).toBe(true);
+  });
+  it('节点仍选中、未就绪 → 不取消（主核带其 endpoint、正等登录）', () => {
+    expect(isCancelled(true, tsCfg('s1'), false)).toBe(false);
+  });
+  it('节点已切走、未就绪 → 取消（不空转 / 不对已切走节点误发 AUTH_OK）', () => {
+    expect(isCancelled(true, tsCfg('s2'), false)).toBe(true);
+  });
+  it('节点已从配置删除 → 取消', () => {
+    expect(isCancelled(true, { selectedServerId: 's2', servers: [] } as any, false)).toBe(true);
+  });
+  it('成功路径守护：节点切走但 state 已落盘（已登录）→ 不取消（ready=true，让 check 命中发 AUTH_OK）', () => {
+    expect(isCancelled(true, tsCfg('s2'), true)).toBe(false);
+  });
+});

@@ -238,6 +238,17 @@ describe('AnyTLS', () => {
     });
   });
 
+  // #86-122 NIT②：min_idle_session 口径对齐 Clash num()/生成侧 !==undefined。
+  it('min_idle_session=0 保留（合法值，非 truthy 丢弃）', () => {
+    const c = parser.parseUrl('anytls://pw@f.example.com:443?security=tls&min_idle_session=0#n');
+    expect(c.anyTlsSettings?.minIdleSession).toBe(0);
+  });
+
+  it('min_idle_session 非数字 → 丢弃（不写 NaN，对齐 Clash num() 防 NaN 漂移）', () => {
+    const c = parser.parseUrl('anytls://pw@f.example.com:443?security=tls&min_idle_session=abc#n');
+    expect(c.anyTlsSettings?.minIdleSession).toBeUndefined();
+  });
+
   it('往返不动点', () =>
     void expectRoundTripStable(
       'anytls://atlspass@f.example.com:443?security=tls&sni=at.example.com&fp=chrome&idle_session_timeout=30s&idle_session_check_interval=5s&min_idle_session=2#anytls-1'
@@ -295,6 +306,18 @@ describe('TUIC', () => {
     expect(c.tuicSettings?.zeroRttHandshake).toBeUndefined();
     expect(parser.generateUrl(c)).not.toContain('zero_rtt_handshake');
     void expectRoundTripStable(url);
+  });
+
+  // #86-122 NIT①：zero_rtt_handshake=0 显式 false 往返守恒（旧 truthy 检查丢 false → 再解析得 undefined）。
+  it('zero_rtt_handshake=0 解析为显式 false，generate 回写 =0（往返守恒，不退化为 undefined）', () => {
+    const c = parser.parseUrl(
+      'tuic://uuid-tuic:tuicpass@g.example.com:443?congestion_control=bbr&zero_rtt_handshake=0&sni=tu.example.com#zrtt0'
+    );
+    expect(c.tuicSettings?.zeroRttHandshake).toBe(false);
+    expect(parser.generateUrl(c)).toContain('zero_rtt_handshake=0');
+    // 再解析仍为 false（守恒，非被丢成 undefined）
+    const c2 = parser.parseUrl(parser.generateUrl(c));
+    expect(c2.tuicSettings?.zeroRttHandshake).toBe(false);
   });
 });
 

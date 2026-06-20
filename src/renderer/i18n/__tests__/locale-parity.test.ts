@@ -2,10 +2,11 @@
  * i18n locale 完整性护栏。
  *
  * - en-US 是基准（source of truth）。
- * - fa-IR（波斯语，本期新增）要求与 en-US **精确 parity**：零缺漏、零多余键，
- *   且每个含插值占位符 {{var}} 的键，占位符集合与 en-US 一致（机翻草稿也不能漏变量）。
- * - 其余 locale 仅校验「无多余键」（不能残留 en-US 已删除的过时键）；
- *   是否补齐新键由各自维护者推进，不在此处强制（避免把别处的待译项变成本测试的红灯）。
+ * - 全部受支持 locale（zh-CN/zh-TW/ru/fa-IR）要求与 en-US **精确 parity**：零缺漏、零多余键，
+ *   且每个含插值占位符的键，占位符集合与 en-US 一致（机翻草稿/漏译也不能漏变量、漏嵌套引用）。
+ *   当前 4 个 locale 均已满 parity，本护栏防后续新增键时漏译。
+ * - 占位符识别两类：① i18next 插值 {{var}}；② i18next 嵌套引用 $t(key)（变量名/键名含 `.`、`:`、`$`，
+ *   旧正则 [\w.-] 捕获组漏 `$t(...)` 的键名与 `$` 起始引用 → 补认，防嵌套引用键在某 locale 漏写不被察觉）。
  */
 import enUS from '../locales/en-US.json';
 import zhCN from '../locales/zh-CN.json';
@@ -40,14 +41,24 @@ function getByPath(obj: JsonObject, path: string): unknown {
   }, obj);
 }
 
-/** 提取字符串中的 i18next 插值占位符变量名集合（{{var}} / {{ var, format }}）。 */
+/**
+ * 提取字符串中的占位符集合（变量占位 + 嵌套引用），跨 locale 须一致：
+ *  - i18next 插值 {{var}} / {{ var, format }} → 收 `{{var}}`；
+ *  - i18next 嵌套引用 $t(key) → 收 `$t:key`（键名可含 `.` / `:` 命名空间分隔 / `-`，旧 [\w.-] 捕获组
+ *    既不含 `$`（引用起始符）也不含 `:`（命名空间），会漏整条 $t 引用 → 单独正则补认）。
+ */
 function placeholders(value: unknown): Set<string> {
   const set = new Set<string>();
   if (typeof value !== 'string') return set;
-  const re = /\{\{\s*([\w.-]+)/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(value)) !== null) {
-    set.add(m[1]);
+  const interp = /\{\{\s*([\w.-]+)/g;
+  while ((m = interp.exec(value)) !== null) {
+    set.add(`{{${m[1]}}}`);
+  }
+  // 嵌套引用 $t(some.namespaced:key)：捕获键名（含 . : - _），归一为 `$t:<key>` 参与 parity 比对。
+  const nested = /\$t\(\s*([\w.:-]+)/g;
+  while ((m = nested.exec(value)) !== null) {
+    set.add(`$t:${m[1]}`);
   }
   return set;
 }
@@ -75,29 +86,33 @@ describe('i18n locale parity', () => {
     });
   }
 
-  // fa-IR：本期交付，要求与 en-US 精确 parity（零缺漏）。
-  it('fa-IR has full key parity with en-US (no missing keys)', () => {
-    const faKeySet = new Set(leafKeys(faIR as JsonObject));
-    const missing = enKeys.filter((k) => !faKeySet.has(k));
-    expect(missing).toEqual([]);
-  });
+  // 全 locale：与 en-US 精确 parity（零缺漏）。当前 4 个 locale 均满足，护栏防后续新增键漏译。
+  for (const [name, data] of Object.entries(allLocales)) {
+    it(`${name} has full key parity with en-US (no missing keys)`, () => {
+      const keySet = new Set(leafKeys(data));
+      const missing = enKeys.filter((k) => !keySet.has(k));
+      expect(missing).toEqual([]);
+    });
+  }
 
-  // fa-IR：每个键的插值占位符变量与 en-US 一致（机翻不得漏/改 {{var}}）。
-  it('fa-IR preserves interpolation placeholders from en-US', () => {
-    const mismatches: string[] = [];
-    for (const key of enKeys) {
-      const enPlaceholders = placeholders(getByPath(enUS as JsonObject, key));
-      if (enPlaceholders.size === 0) continue;
-      const faPlaceholders = placeholders(getByPath(faIR as JsonObject, key));
-      const same =
-        enPlaceholders.size === faPlaceholders.size &&
-        [...enPlaceholders].every((p) => faPlaceholders.has(p));
-      if (!same) {
-        mismatches.push(
-          `${key}: en={${[...enPlaceholders].sort().join(',')}} fa={${[...faPlaceholders].sort().join(',')}}`
-        );
+  // 全 locale：每个键的占位符（{{var}} 插值 + $t(key) 嵌套引用）与 en-US 一致（机翻/漏译不得漏改）。
+  for (const [name, data] of Object.entries(allLocales)) {
+    it(`${name} preserves interpolation placeholders from en-US`, () => {
+      const mismatches: string[] = [];
+      for (const key of enKeys) {
+        const enPlaceholders = placeholders(getByPath(enUS as JsonObject, key));
+        if (enPlaceholders.size === 0) continue;
+        const locPlaceholders = placeholders(getByPath(data, key));
+        const same =
+          enPlaceholders.size === locPlaceholders.size &&
+          [...enPlaceholders].every((p) => locPlaceholders.has(p));
+        if (!same) {
+          mismatches.push(
+            `${key}: en={${[...enPlaceholders].sort().join(',')}} ${name}={${[...locPlaceholders].sort().join(',')}}`
+          );
+        }
       }
-    }
-    expect(mismatches).toEqual([]);
-  });
+      expect(mismatches).toEqual([]);
+    });
+  }
 });
