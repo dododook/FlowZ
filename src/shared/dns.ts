@@ -46,18 +46,36 @@ export interface ParsedDnsServer {
 }
 
 // 严格 IPv4（每段 0-255），避免 999.1.1.1 等被误收
+// 仅当两端**配对**方括号时脱（'[::1]' → '::1'）；单边畸形（'[::1' / '::1]'）原样返回，使下游 isIpv6Literal
+// 据实拒之（残留单边括号含非 hex 字符 → 正则不过）。与 config-helpers.stripHostBrackets 同口径，杜绝两处分歧。
 function stripBrackets(host: string): string {
-  return host.replace(/^\[/, '').replace(/\]$/, '');
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }
 
 function isIpv4Literal(host: string): boolean {
   return isIpv4(host);
 }
 
-/** 粗判 IPv6 字面量：去方括号后仅含 hex 与冒号，且至少两个冒号（排除 "8.8.8.8:53" 这类带端口裸输入）。 */
+/**
+ * 粗判 IPv6 字面量：去方括号后至少两个冒号（排除 "8.8.8.8:53" 这类带端口裸输入）。
+ * 形态二选一：
+ *  (1) 纯 hex+冒号（canonical：'::1' / '2001:db8::1'）；
+ *  (2) IPv4-mapped/embedded 末段点分（'::ffff:1.2.3.4' / '::1.2.3.4'）——前缀仍是 hex+冒号，
+ *      仅末段为严格 IPv4 点分四段。这样 R3-1 的 target()（含 '.' 仍按 ':' 判 IPv6）与本判定一致：
+ *      builders 的 isIpv4Host||isIpv6Host 闸门接纳该地址 → hostToExcludeCidr 产 '<addr>/128'（合法 CIDR）、
+ *      nodeDomains 当字面量排除，均正确；同时 isIpLiteral 据此正确把它当 IP（spoof 守卫拒、域名预解析跳过）。
+ * 真 IPv4（无冒号）/真域名（无冒号或含非 hex 段且无 IPv4 末段）仍判 false。
+ */
 export function isIpv6Literal(host: string): boolean {
   const h = stripBrackets(host);
-  return /^[0-9a-fA-F:]+$/.test(h) && (h.match(/:/g)?.length ?? 0) >= 2;
+  if ((h.match(/:/g)?.length ?? 0) < 2) return false;
+  // (1) canonical 纯 hex+冒号
+  if (/^[0-9a-fA-F:]+$/.test(h)) return true;
+  // (2) IPv4-mapped/embedded：'<hex+冒号前缀>:<点分 IPv4>'，前缀纯 hex+冒号、末段严格 IPv4
+  const lastColon = h.lastIndexOf(':');
+  const prefix = h.slice(0, lastColon + 1); // 含末尾冒号
+  const lastSeg = h.slice(lastColon + 1);
+  return /^[0-9a-fA-F:]+$/.test(prefix) && isIpv4(lastSeg);
 }
 
 /** 主机字符串是否 IP 字面量（v4 严格 + v6 去括号≥2 冒号）。节点域名预解析跳过判定亦复用，避免多处 v6 判定漂移。 */

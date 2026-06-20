@@ -216,10 +216,15 @@ export function buildRouteConfig(
       // 与 SystemDnsManager 的受控 DNS IP 选择守卫共用（受控 IP 绝不能落此列表，否则逃逸 hijack）。
       ...BOOTSTRAP_DIRECT_DNS_IPS.map((ip) => `${ip}/32`),
       // 用户自定义的国内 DNS（IP 型）也须在 hijack-dns 之前直连放行，否则其 53 端口查询会被劫持成 FakeIP
-      ...(customDomesticDns ? [hostToExcludeCidr(customDomesticDns.ip)] : []),
+      ...(customDomesticDns
+        ? [hostToExcludeCidr(customDomesticDns.ip)].filter((c) => c !== null)
+        : []),
       // 方案B：DNS 接管的内网 LAN 解析器（dns-lan 指向它）必须在 hijack-dns 之前直连放行，否则其 :53 查询会被
-      // hijack-dns 抢走 → 内网域名解析成环。私网 IPv4 /32（getLanResolverForDns 已保证私网，亦经下方私网直连可达）。
-      ...(deps.lanResolverForDns ? [`${deps.lanResolverForDns}/32`] : []),
+      // hijack-dns 抢走 → 内网域名解析成环。经 hostToExcludeCidr 族自适应（v4 /32 / v6 /128；pickLanResolverIp
+      // 现仅 IPv4，未来 IPv6 不再误拼 /32），非 IP 返 null 时 skip（getLanResolverForDns 已保证私网 IP）。
+      ...(deps.lanResolverForDns
+        ? [hostToExcludeCidr(deps.lanResolverForDns)].filter((c) => c !== null)
+        : []),
     ],
     port: Array.from(new Set([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])])),
     action: 'route',
@@ -308,7 +313,8 @@ export function buildRouteConfig(
         (h): h is string => !!h && h.length > 0
       );
       for (const host of hosts) {
-        if (isIpv4Host(host) || isIpv6Host(host)) ipSet.add(hostToExcludeCidr(host));
+        const cidr = isIpv4Host(host) || isIpv6Host(host) ? hostToExcludeCidr(host) : null;
+        if (cidr) ipSet.add(cidr);
         else domainSet.add(host);
       }
     }

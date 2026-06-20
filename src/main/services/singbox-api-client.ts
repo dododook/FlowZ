@@ -274,8 +274,9 @@ export class SingBoxApiClient {
 
   private target(): string {
     // F4：裸 IPv6 字面量（如 '::1'）须方括号包裹，否则 '::1:9090' 是非法 gRPC target。
-    // host 字段不含端口，任何 ':' 即 IPv6 字面量——含 IPv4-mapped 写法 '::ffff:1.2.3.4'
-    //   （isIpv6Literal 因其含 '.' 会误判 false，故此处不用它，仅本地按是否含 ':' 判定）。
+    // host 字段不含端口，任何 ':' 即 IPv6 字面量——含 IPv4-mapped 写法 '::ffff:1.2.3.4'。
+    // 此处刻意保留「含 ':' 即包裹」的最宽判定（gRPC target 仅需正确加括号，无需 IP 校验）；与 shared 的
+    // isIpv6Literal（R4-1 后已纳入 IPv4-mapped）对该地址结论一致，仅本判定更宽容（不校验末段是否严格 IPv4）。
     // 已带方括号（'[::1]'）/IPv4/域名（无 ':'）照旧不包裹。
     const host =
       this.host.includes(':') && !this.host.startsWith('[') ? `[${this.host}]` : this.host;

@@ -85,26 +85,35 @@ export const DOMESTIC_BANK_AND_STOCK_DOMAINS = [
 export const isIpv4Host = (host: string): boolean => isIpv4(host);
 
 /**
- * 主机字符串是否为 IPv6 字面量（收敛到 shared/dns.isIpv6Literal 单一真值：去方括号 + ≥2 冒号 canonical，
- * 与 /simplify F3 spoof 守卫同口径）。相比原 `/^[0-9a-fA-F:]+$/ && includes(':')` 两处分类变化（均更正确）：
+ * 主机字符串是否为 IPv6 字面量（收敛到 shared/dns.isIpv6Literal 单一真值：去方括号 + ≥2 冒号，含
+ * IPv4-mapped 末段点分；与 /simplify F3 spoof 守卫同口径）。相比原 `/^[0-9a-fA-F:]+$/ && includes(':')`：
  *  (1) 收紧——原 1 个冒号即放行，把 'dead:beef' 等畸形串误判为 IPv6，现 ≥2 冒号方为 IPv6（拒畸形串）；
- *  (2) 纳入——原带方括号（'[::1]'）因含 '[' ']' 不匹配 hex/冒号正则被判 false，现去方括号后正确归类为 IPv6。
+ *  (2) 纳入方括号——原带方括号（'[::1]'）因含 '[' ']' 不匹配正则被判 false，现去方括号后正确归类为 IPv6；
+ *  (3) 纳入 IPv4-mapped（R4-1）——'::ffff:1.2.3.4'/'::1.2.3.4' 因含 '.' 原被拒，现末段为严格 IPv4 时归类为
+ *      IPv6，与 api-client target()（含 ':' 即当 IPv6 包裹）对该地址结论一致 → builders 闸门接纳、CIDR 拼 /128。
  * 真 IPv6（裸 ≥2 冒号）/ 真域名（无冒号）判定不变。
  */
 export const isIpv6Host = (host: string): boolean => isIpv6Literal(host);
 
-/** 去 IPv6 字面量方括号（'[::1]' → '::1'）；裸地址/域名/IPv4 原样返回。 */
+/**
+ * 去 IPv6 字面量方括号：仅当两端**配对**方括号时脱（'[::1]' → '::1'）。畸形输入（单边 '[::1' / '::1]'、
+ * 空 '' / '[]'）原样返回——避免把单边括号串截成误判 IP 的形态，让下游 isIp 判定据实拒之。裸地址/域名/IPv4 原样返回。
+ */
 export const stripHostBrackets = (host: string): string =>
-  host.replace(/^\[/, '').replace(/\]$/, '');
+  host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 
 /**
- * IP 字面量 host → 单 IP 排除 CIDR（IPv6 → /128，IPv4/其它 → /32）。route + inbounds 排除节点 IP 共用单一真值。
+ * IP 字面量 host → 单 IP 排除 CIDR（IPv6 → /128，IPv4 → /32）；**非 IP / 空 / 畸形输入返回 null**，调用方 skip。
+ * 防护：'' / '[]' 经 stripHostBrackets → 空串，旧实现会拼出非法 '/32'；域名同理。仅真 IP（v4 严格 / v6 含
+ * IPv4-mapped）才产 CIDR，保持「仅真 IP 才排除」语义（当前调用方均已 isIpv4Host||isIpv6Host 预闸，本防护使 helper 自身健壮）。
  * 先脱方括号：节点 address 经 Clash YAML 导入 / 表单输入可能保留 '[::1]' 方括号（ProtocolParser 会脱、这两条路径不脱），
  * 直接拼 '[::1]/128' 是非法 CIDR，故脱括号后再拼（与 isIpv6Host 去括号判定同口径）。
  */
-export const hostToExcludeCidr = (host: string): string => {
+export const hostToExcludeCidr = (host: string): string | null => {
   const bare = stripHostBrackets(host);
-  return `${bare}/${isIpv6Host(bare) ? 128 : 32}`;
+  if (isIpv6Host(bare)) return `${bare}/128`;
+  if (isIpv4Host(bare)) return `${bare}/32`;
+  return null;
 };
 
 /**

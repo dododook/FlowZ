@@ -118,7 +118,8 @@ export function buildInbounds(
       // 用户自定义的国内 DNS（IP 型）一并排除，防 WFP 进程匹配失效时回流死循环
       const customDns = getCustomDomesticDnsEndpoint(config);
       if (customDns) {
-        excludeAddr.push(hostToExcludeCidr(customDns.ip));
+        const cidr = hostToExcludeCidr(customDns.ip);
+        if (cidr) excludeAddr.push(cidr);
       }
     }
 
@@ -135,10 +136,12 @@ export function buildInbounds(
       const server = config.servers.find((s) => s.id === serverId);
       if (server?.address) {
         if (isIpv4Host(server.address) || isIpv6Host(server.address)) {
-          excludeAddr.push(hostToExcludeCidr(server.address));
+          const cidr = hostToExcludeCidr(server.address);
+          if (cidr) excludeAddr.push(cidr);
         } else if (resolvedIps && resolvedIps[serverId]) {
           // 使用预解析的 IP（域名节点）
-          excludeAddr.push(hostToExcludeCidr(resolvedIps[serverId]));
+          const cidr = hostToExcludeCidr(resolvedIps[serverId]);
+          if (cidr) excludeAddr.push(cidr);
         }
       }
     }
