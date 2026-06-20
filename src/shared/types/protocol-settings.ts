@@ -14,6 +14,10 @@ export interface TlsSettings {
   ech?: boolean; // Encrypted Client Hello（隐藏 SNI）；sing-box tls.ech.enabled
   echConfig?: string; // 可选 ECHConfigList(PEM)；空=sing-box 从 DNS(HTTPS RR type65) 自取，填=下发 tls.ech.config
   fragment?: boolean; // TLS ClientHello 分片，抗 SNI-DPI；sing-box tls.fragment
+  // TLS 栈引擎（P3c，sing-box 1.14 tls.engine）：'go'=跨平台 Go TLS（默认，省略=等价 go）；
+  // 'windows'=Schannel（仅 Windows）；'apple'=Network.framework（仅 Apple）。系统原生栈让 ClientHello 指纹更真，
+  // 但 windows/apple 在非对应平台运行时 FATAL → 表单仅对 TCP-TLS 协议（非 QUIC）暴露，且按平台过滤可选值。
+  engine?: 'go' | 'windows' | 'apple';
 }
 
 export interface RealitySettings {
@@ -40,11 +44,22 @@ export interface HttpSettings {
   headers?: Record<string, string[]>;
 }
 
+// Hysteria2 混淆类型（sing-box 1.14 新增 gecko，与 salamander 并列）。gecko 经 min/max_packet_size 调随机填充长度。
+export type Hysteria2ObfsType = 'salamander' | 'gecko';
+
 // Hysteria2 混淆设置
 export interface Hysteria2ObfsSettings {
-  type?: 'salamander';
+  type?: Hysteria2ObfsType;
   password?: string;
+  // gecko obfs 随机填充包长（P3b，sing-box obfs.min_packet_size / max_packet_size）。仅 gecko 有意义；
+  // salamander 忽略。留空用核心默认。
+  minPacketSize?: number;
+  maxPacketSize?: number;
 }
+
+// Hysteria2 BBR 拥塞控制 profile（P3b，sing-box 1.14 bbr_profile）。仅这三个合法值（已 sing-box check 实证：
+// 其它值 → "unsupported BBR profile"）；留空 = 核心默认拥塞控制。
+export type Hysteria2BbrProfile = 'standard' | 'aggressive' | 'conservative';
 
 // Hysteria2 协议设置
 export interface Hysteria2Settings {
@@ -54,6 +69,7 @@ export interface Hysteria2Settings {
   network?: Hysteria2Network;
   serverPorts?: string; // 端口跳跃范围，如 "20000:30000"；sing-box server_ports
   hopInterval?: string; // 端口跳跃间隔，如 "30s"；sing-box hop_interval
+  bbrProfile?: Hysteria2BbrProfile; // BBR 拥塞控制 profile；sing-box bbr_profile
 }
 
 // Multiplex 多路复用设置（vless/trojan/vmess/shadowsocks）；注意 reality+vision(xtls-rprx-vision) 不兼容
@@ -103,6 +119,11 @@ export interface SshSettings {
   hostKey?: string[]; // 主机公钥（留空接受所有）
   hostKeyAlgorithms?: string[]; // 主机密钥算法
   clientVersion?: string; // 客户端版本字符串
+  // SSH 算法协商可选项（P3d，sing-box outbound cipher / mac / kex_algorithm）。对接老/特定 SSH 服务端时覆盖默认算法集。
+  // 留空 = 用 golang.org/x/crypto/ssh 默认。字段名以 sing-box check 实证为准（cipher/mac/kex_algorithm，非 ciphers/macs/key_exchange）。
+  cipher?: string[]; // 对称加密算法；sing-box cipher
+  mac?: string[]; // 消息认证码算法；sing-box mac
+  kexAlgorithm?: string[]; // 密钥交换算法；sing-box kex_algorithm
 }
 
 // Shadow-TLS 插件设置（套在 SS/其他协议外层，版本固定 v3）

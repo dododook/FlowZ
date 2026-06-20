@@ -974,7 +974,13 @@
       "hostKeyAlgorithms": "Алгоритмы ключей хоста",
       "hostKeyAlgorithmsDesc": "Ограничить допустимые алгоритмы ключей хоста, через запятую/перенос строки. Пусто использует значения по умолчанию ядра.",
       "clientVersion": "Версия клиента",
-      "clientVersionDesc": "Строка идентификатора версии клиента SSH. Пусто использует значение по умолчанию ядра."
+      "clientVersionDesc": "Строка идентификатора версии клиента SSH. Пусто использует значение по умолчанию ядра.",
+      "cipher": "Шифры",
+      "cipherDesc": "Симметричные шифры (через запятую/перенос строки). Пусто использует набор по умолчанию. Поле sing-box: cipher.",
+      "mac": "Алгоритмы MAC",
+      "macDesc": "Алгоритмы аутентификации сообщений (через запятую/перенос строки). Пусто использует набор по умолчанию. Поле sing-box: mac.",
+      "kexAlgorithm": "Алгоритмы обмена ключами",
+      "kexAlgorithmDesc": "Алгоритмы обмена ключами (через запятую/перенос строки). Пусто использует набор по умолчанию. Поле sing-box: kex_algorithm."
     },
     "anytls": {
       "sessionTitle": "Поддержание сессии",
@@ -1006,7 +1012,23 @@
     "tsReverseMeshDesc": "Обратная mesh (быть доступным): создать настоящий интерфейс ядра, чтобы другие устройства tailnet могли обращаться к сервисам на этом устройстве. Требуется привилегированный helper и режим TUN.",
     "speedTestAll": "Тест всех",
     "speedTestGroup": "Тест группы",
-    "add": "Добавить"
+    "add": "Добавить",
+    "obfsType": "Тип обфускации",
+    "obfsTypeDesc": "Salamander или Gecko (sing-box 1.14). Gecko добавляет случайное дополнение размера пакета.",
+    "obfsMinPacketSize": "Мин. размер пакета",
+    "obfsMaxPacketSize": "Макс. размер пакета",
+    "obfsPacketSizeDesc": "Диапазон случайного дополнения для обфускации Gecko. Пусто использует значение по умолчанию ядра.",
+    "bbrProfile": "Профиль BBR",
+    "bbrProfileDefault": "По умолчанию",
+    "bbrProfileStandard": "Standard",
+    "bbrProfileAggressive": "Aggressive",
+    "bbrProfileConservative": "Conservative",
+    "bbrProfileDesc": "Профиль управления перегрузкой BBR (sing-box 1.14). По умолчанию используется управление перегрузкой ядра.",
+    "tlsEngine": "Движок TLS",
+    "tlsEngineGo": "Go (по умолчанию)",
+    "tlsEngineWindows": "Windows (Schannel)",
+    "tlsEngineApple": "Apple (Network.framework)",
+    "tlsEngineDesc": "Движок стека TLS. Системные стеки (Schannel / Network.framework) делают отпечатки рукопожатия более реалистичными; доступны только на соответствующей платформе."
   },
   "rules": {
     "ruleColumn": "Правило",

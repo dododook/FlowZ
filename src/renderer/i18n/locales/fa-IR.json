@@ -965,7 +965,13 @@
       "hostKeyAlgorithms": "الگوریتم‌های کلید میزبان",
       "hostKeyAlgorithmsDesc": "الگوریتم‌های قابل‌قبول کلید میزبان را محدود کنید، جداشده با کاما/خط جدید. خالی از پیش‌فرض‌های هسته استفاده می‌کند.",
       "clientVersion": "نسخهٔ کلاینت",
-      "clientVersionDesc": "رشتهٔ شناسهٔ نسخهٔ کلاینت SSH. خالی از پیش‌فرض هسته استفاده می‌کند."
+      "clientVersionDesc": "رشتهٔ شناسهٔ نسخهٔ کلاینت SSH. خالی از پیش‌فرض هسته استفاده می‌کند.",
+      "cipher": "رمزها",
+      "cipherDesc": "رمزهای متقارن (با کاما/خط جدید جدا کنید). خالی از مجموعهٔ پیش‌فرض استفاده می‌کند. فیلد sing-box: cipher.",
+      "mac": "الگوریتم‌های MAC",
+      "macDesc": "الگوریتم‌های احراز پیام (با کاما/خط جدید جدا کنید). خالی از مجموعهٔ پیش‌فرض استفاده می‌کند. فیلد sing-box: mac.",
+      "kexAlgorithm": "الگوریتم‌های تبادل کلید",
+      "kexAlgorithmDesc": "الگوریتم‌های تبادل کلید (با کاما/خط جدید جدا کنید). خالی از مجموعهٔ پیش‌فرض استفاده می‌کند. فیلد sing-box: kex_algorithm."
     },
     "anytls": {
       "sessionTitle": "زنده‌نگه‌داشتن نشست",
@@ -1006,7 +1012,23 @@
     "tsReverseMeshDesc": "مش معکوس (قابل دسترسی): یک رابط هسته‌ی واقعی ایجاد می‌کند تا سایر دستگاه‌های tailnet بتوانند به سرویس‌های این دستگاه دسترسی پیدا کنند. به helper ممتاز و حالت TUN نیاز دارد.",
     "speedTestAll": "تست همه",
     "speedTestGroup": "تست این گروه",
-    "add": "افزودن"
+    "add": "افزودن",
+    "obfsType": "نوع مبهم‌سازی",
+    "obfsTypeDesc": "Salamander یا Gecko (sing-box 1.14). Gecko پدینگ تصادفی اندازهٔ بسته اضافه می‌کند.",
+    "obfsMinPacketSize": "حداقل اندازهٔ بسته",
+    "obfsMaxPacketSize": "حداکثر اندازهٔ بسته",
+    "obfsPacketSizeDesc": "بازهٔ طول پدینگ تصادفی برای مبهم‌سازی Gecko. خالی از پیش‌فرض هسته استفاده می‌کند.",
+    "bbrProfile": "پروفایل BBR",
+    "bbrProfileDefault": "پیش‌فرض",
+    "bbrProfileStandard": "Standard",
+    "bbrProfileAggressive": "Aggressive",
+    "bbrProfileConservative": "Conservative",
+    "bbrProfileDesc": "پروفایل کنترل ازدحام BBR (sing-box 1.14). پیش‌فرض از کنترل ازدحام هسته استفاده می‌کند.",
+    "tlsEngine": "موتور TLS",
+    "tlsEngineGo": "Go (پیش‌فرض)",
+    "tlsEngineWindows": "Windows (Schannel)",
+    "tlsEngineApple": "Apple (Network.framework)",
+    "tlsEngineDesc": "موتور پشتهٔ TLS. پشته‌های بومی سیستم (Schannel / Network.framework) اثرانگشت دست‌دهی را واقعی‌تر می‌کنند؛ فقط روی پلتفرم متناظر در دسترس‌اند."
   },
   "rules": {
     "ruleColumn": "قانون",

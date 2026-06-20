@@ -103,7 +103,12 @@ export interface SingBoxOutbound {
   obfs?: {
     type: string;
     password: string;
+    // gecko obfs 随机填充包长（sing-box 1.14）
+    min_packet_size?: number;
+    max_packet_size?: number;
   };
+  // Hysteria2 BBR 拥塞控制 profile（sing-box 1.14）：standard / aggressive / conservative
+  bbr_profile?: string;
   network?: string;
   // naive specific: 走 HTTP/3 (QUIC) 传输
   quic?: boolean;
@@ -124,6 +129,8 @@ export interface SingBoxOutbound {
     server_name?: string;
     insecure?: boolean;
     alpn?: string[];
+    // TLS 栈引擎（sing-box 1.14）：go（默认/省略）/ windows(Schannel) / apple(Network.framework)
+    engine?: string;
     utls?: {
       enabled: boolean;
       fingerprint: string;
@@ -175,6 +182,10 @@ export interface SingBoxOutbound {
   host_key?: string[];
   host_key_algorithms?: string[];
   client_version?: string;
+  // SSH 算法协商（sing-box 1.14）：cipher / mac / kex_algorithm
+  cipher?: string[];
+  mac?: string[];
+  kex_algorithm?: string[];
   // selector specific（用于 clash_api 热切换节点：default=当前选中，interrupt_exist_connections=切换时是否中断现有连接）
   outbounds?: string[];
   default?: string;
