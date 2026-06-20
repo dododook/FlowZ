@@ -429,7 +429,25 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         if (process.platform === 'linux') {
           this.singboxPath = await resourceManager.ensureWritableCore(true); // force 覆盖旧可写核
         } else if (process.platform === 'darwin') {
-          this.singboxPath = this.getSingBoxPath(); // 受保护目录核由 helper 在位时持有；重解析路径
+          // darwin：受保护目录 root-only，仅 getSingBoxPath 重解析不更新其旧核 → 须经已装 helper 的 install-core
+          // 把随包 1.14 核重播种进受保护目录（免密码）。修真机实证缺口：app 更新 1.13→1.14 后 §5 仅拦截不自愈、
+          // 迫用户手动重装/更新内核。复制随包核到干净临时目录再 install-core（避免把同目录 helper/LICENSE 带入）；
+          // macOS 无 libcronet（静态编入），只播 sing-box。helper 此刻必在位（上方 maybePromptHelperGate 已引导）。
+          const osMod = require('os') as typeof import('os');
+          const pathMod = require('path') as typeof import('path');
+          const fsp = (require('fs') as typeof import('fs')).promises;
+          const seedDir = pathMod.join(osMod.tmpdir(), 'flowz-core-reseed');
+          await fsp.mkdir(seedDir, { recursive: true });
+          await fsp.copyFile(
+            resourceManager.getBundledSingBoxPath(),
+            pathMod.join(seedDir, 'sing-box')
+          );
+          // darwin 下 helperManager 恒为 HelperManager（win 才注入 WindowsServiceHelper）；installCore 是其具体方法
+          // 非 IPrivilegedHelper 接口成员，故 cast。
+          this.helperManager ??= new HelperManager();
+          const r = await (this.helperManager as HelperManager).installCore(seedDir);
+          if (!r.ok) this.logToManager('warn', `随包内核重播种失败: ${r.error ?? ''}`);
+          this.singboxPath = this.getSingBoxPath();
         }
       } catch (e) {
         this.logToManager('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
