@@ -29,6 +29,7 @@ import {
 } from '../../shared/server-completeness';
 import { isAccountBasedProtocol } from '../../shared/endpoint-routes';
 import { isDirectSelection } from '../../shared/direct-selection';
+import { isLoopbackHost } from '../../shared/remote-instance-security';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -673,6 +674,22 @@ export class ConfigManager implements IConfigManager {
               if (t.skipVerify !== undefined && typeof t.skipVerify !== 'boolean')
                 delete t.skipVerify;
             }
+          }
+          // E-2：非环回主机 + 无 tls（h2c 明文）时剥离 secret——否则 Bearer secret 经 createInsecure() h2c 明文
+          // 上物理链路泄漏（SingBoxApiClient.channelCredentials 无 tls → createInsecure）。环回（localhost/127/::1，
+          // SSH 隧道 / 本机）h2c 合法、放行。剥 secret 而非丢整条实例：保留用户已配的 host/name/dashboardUrl 供
+          // 编辑修正（与「sanitize 不删整条用户数据」基调一致），且无 secret 后 probe 会 UNAUTHENTICATED 失败提示。
+          if (
+            typeof r.secret === 'string' &&
+            r.secret !== '' &&
+            r.tls === undefined &&
+            !isLoopbackHost(r.host)
+          ) {
+            this.log(
+              'warn',
+              `remoteInstance ${r.id}: 非环回主机未启用 TLS，已剥离 secret 防 Bearer 明文泄漏（请配置 TLS）`
+            );
+            delete r.secret;
           }
           return true;
         });

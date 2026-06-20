@@ -136,6 +136,74 @@ describe('remoteInstances sanitize（P5 Phase2）', () => {
     cm.validateConfig(cfg);
     expect(cfg.remoteInstances![0].tls).toBeUndefined();
   });
+
+  // E-2：非环回主机 + 无 tls（h2c 明文）时剥离 secret，防 Bearer 明文上链路泄漏；环回 / 有 tls 放行。
+  describe('E-2 非环回 h2c 明文 Bearer 防护', () => {
+    it('非环回域名 + 无 tls + 有 secret → 剥 secret（实例保留）', () => {
+      const cfg = makeConfig({
+        remoteInstances: [
+          { id: 'a', name: 'A', host: 'remote.example', port: 9090, secret: 'leak-me' },
+        ] as RemoteInstance[],
+      });
+      cm.validateConfig(cfg);
+      expect(cfg.remoteInstances).toHaveLength(1); // 不丢整条
+      expect(cfg.remoteInstances![0].secret).toBeUndefined(); // secret 被剥
+      expect(cfg.remoteInstances![0].host).toBe('remote.example'); // 其余字段保留
+    });
+
+    it('非环回 LAN IP + 无 tls + 有 secret → 剥 secret（LAN 视为非环回，仍泄漏）', () => {
+      const cfg = makeConfig({
+        remoteInstances: [
+          { id: 'a', name: 'A', host: '192.168.1.50', port: 9090, secret: 'leak' },
+        ] as RemoteInstance[],
+      });
+      cm.validateConfig(cfg);
+      expect(cfg.remoteInstances![0].secret).toBeUndefined();
+    });
+
+    it('环回 localhost + 无 tls + 有 secret → 放行（SSH 隧道 / 本机 h2c 合法）', () => {
+      const cfg = makeConfig({
+        remoteInstances: [
+          { id: 'a', name: 'A', host: 'localhost', port: 9090, secret: 'keep' },
+        ] as RemoteInstance[],
+      });
+      cm.validateConfig(cfg);
+      expect(cfg.remoteInstances![0].secret).toBe('keep');
+    });
+
+    it('环回 127.0.0.1 / ::1 + 无 tls + 有 secret → 放行', () => {
+      const cfg = makeConfig({
+        remoteInstances: [
+          { id: 'a', name: 'A', host: '127.0.0.1', port: 9090, secret: 'k1' },
+          { id: 'b', name: 'B', host: '::1', port: 9091, secret: 'k2' },
+        ] as RemoteInstance[],
+      });
+      cm.validateConfig(cfg);
+      expect(cfg.remoteInstances![0].secret).toBe('k1');
+      expect(cfg.remoteInstances![1].secret).toBe('k2');
+    });
+
+    it('非环回 + 有 tls + 有 secret → 放行（TLS 下 Bearer 不明文）', () => {
+      const cfg = makeConfig({
+        remoteInstances: [
+          { id: 'a', name: 'A', host: 'remote.example', port: 443, secret: 's', tls: {} },
+        ] as RemoteInstance[],
+      });
+      cm.validateConfig(cfg);
+      expect(cfg.remoteInstances![0].secret).toBe('s');
+    });
+
+    it('非环回 + 无 tls + 无 secret → 放行（无凭据可泄漏）', () => {
+      const cfg = makeConfig({
+        remoteInstances: [
+          { id: 'a', name: 'A', host: 'remote.example', port: 9090 },
+        ] as RemoteInstance[],
+      });
+      cm.validateConfig(cfg);
+      expect(cfg.remoteInstances).toHaveLength(1);
+      expect(cfg.remoteInstances![0].secret).toBeUndefined();
+    });
+  });
 });
 
 describe('activeInstanceId 收敛', () => {
