@@ -2,8 +2,8 @@
  * singbox-api-client 单测：纯逻辑——Bearer metadata 注入 + clash 等价方法包装 + 订阅 stop 句柄。
  *
  * 不连真 gRPC 服务端：mock @grpc/grpc-js，捕获
- *  - 传给 service 构造器的 target + channel credentials（验 Bearer call credentials 是否合并进通道）；
- *  - call credentials 的 metadata generator 产物（验 authorization: Bearer <secret>）；
+ *  - 传给 service 构造器的 target + channel credentials（验恒 insecure，不再 combineChannelCredentials）；
+ *  - 每次 unary 调用收到的 per-call metadata（验 authorization: Bearer <secret> / 空 secret 无头）；
  *  - 每个 RPC 方法收到的请求体（验 selectOutbound/closeConnection/closeAllConnections 字段）；
  *  - 订阅流的开/停（验 subscribeStatus/subscribeConnections 调对方法 + stop 句柄 cancel）。
  * proto-loader 也 mock 成返回一个把所有 RPC 方法挂到 client 上的 ctor，避免真写临时 proto 文件。
@@ -19,10 +19,7 @@ interface FakeStream {
 const mockState: {
   lastTarget: string;
   lastChannelCreds: unknown;
-  metadataGenerator:
-    | ((params: unknown, cb: (err: Error | null, md: FakeMetadata) => void) => void)
-    | null;
-  combineCalled: boolean;
+  lastMetadata: FakeMetadata | null;
   insecureCreds: { __kind: 'insecure' };
   unaryCalls: Array<{ method: string; req: unknown }>;
   streams: FakeStream[];
@@ -30,8 +27,7 @@ const mockState: {
 } = {
   lastTarget: '',
   lastChannelCreds: null,
-  metadataGenerator: null,
-  combineCalled: false,
+  lastMetadata: null,
   insecureCreds: { __kind: 'insecure' },
   unaryCalls: [],
   streams: [],
@@ -61,8 +57,9 @@ function makeFakeClientCtor() {
   return jest.fn().mockImplementation((target: string, creds: unknown) => {
     mockState.lastTarget = target;
     mockState.lastChannelCreds = creds;
-    const unary = (method: string) => (req: unknown, cb: (err: unknown) => void) => {
+    const unary = (method: string) => (req: unknown, md: unknown, cb: (err: unknown) => void) => {
       mockState.unaryCalls.push({ method, req });
+      mockState.lastMetadata = md as FakeMetadata;
       cb(null);
     };
     const stream = () => {
@@ -91,16 +88,6 @@ jest.mock('@grpc/grpc-js', () => {
     Metadata,
     credentials: {
       createInsecure: () => mockState.insecureCreds,
-      createFromMetadataGenerator: (
-        gen: (params: unknown, cb: (err: Error | null, md: FakeMetadata) => void) => void
-      ) => {
-        mockState.metadataGenerator = gen;
-        return { __kind: 'callCreds' };
-      },
-      combineChannelCredentials: (base: unknown, call: unknown) => {
-        mockState.combineCalled = true;
-        return { __kind: 'combined', base, call };
-      },
     },
     loadPackageDefinition: () => ({
       daemon: { StartedService: makeFakeClientCtor() },
@@ -124,36 +111,29 @@ const ENDPOINT = { host: '127.0.0.1', port: 9091 };
 beforeEach(() => {
   mockState.lastTarget = '';
   mockState.lastChannelCreds = null;
-  mockState.metadataGenerator = null;
-  mockState.combineCalled = false;
+  mockState.lastMetadata = null;
   mockState.unaryCalls = [];
   mockState.streams = [];
   mockState.closedClients = 0;
 });
 
 describe('Bearer metadata 注入', () => {
-  it('secret 非空 → channel creds 合并 call credentials，metadata 产 authorization: Bearer <secret>', async () => {
+  it('secret 非空 → 每调用 metadata 带 authorization: Bearer <secret>（per-call，非 channel creds）', async () => {
     const client = new SingBoxApiClient(ENDPOINT, 'topsecret');
-    // 触发一次建连（unary 走 newClient）
+    // 触发一次 unary（每调用 attach authMetadata）
     await client.closeAllConnections();
 
-    expect(mockState.combineCalled).toBe(true);
-    expect(mockState.metadataGenerator).not.toBeNull();
-
-    // 执行 metadata generator，断言它塞了正确 Bearer 头
-    const captured = await new Promise<FakeMetadata>((resolve, reject) => {
-      mockState.metadataGenerator!({}, (err, md) => (err ? reject(err) : resolve(md)));
-    });
-    expect(captured.store['authorization']).toBe('Bearer topsecret');
+    // 通道恒 insecure（不再 combineChannelCredentials——h2c 下实测抛）；认证走 per-call metadata
+    expect(mockState.lastChannelCreds).toBe(mockState.insecureCreds);
+    expect(mockState.lastMetadata?.store['authorization']).toBe('Bearer topsecret');
   });
 
-  it('secret 为空 → 不建 call credentials，通道恒 insecure（免认证退化）', async () => {
+  it('secret 为空 → metadata 无 authorization（免认证退化），通道恒 insecure', async () => {
     const client = new SingBoxApiClient(ENDPOINT, '');
     await client.closeAllConnections();
 
-    expect(mockState.combineCalled).toBe(false);
-    expect(mockState.metadataGenerator).toBeNull();
     expect(mockState.lastChannelCreds).toBe(mockState.insecureCreds);
+    expect(mockState.lastMetadata?.store['authorization']).toBeUndefined();
   });
 
   it('target = <host>:<port>（host 参数化，Phase 2 远程预留）', async () => {

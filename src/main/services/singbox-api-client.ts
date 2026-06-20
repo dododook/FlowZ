@@ -221,20 +221,6 @@ function getServiceCtor(): grpc.ServiceClientConstructor {
 }
 
 /**
- * Bearer call credentials：secret 非空时为每个 RPC 注入 metadata `authorization: Bearer <secret>`；空则免认证。
- * 经 grpc.credentials.combineChannelCredentials 与 h2c（insecure）通道合并——call credentials 不要求 TLS 通道
- * （@grpc/grpc-js 在 insecure 通道上仍会附带 call metadata，与官方 ClashApiClient 的 Authorization 头同义）。
- */
-function buildCallCredentials(secret: string): grpc.CallCredentials | null {
-  if (!secret) return null;
-  return grpc.credentials.createFromMetadataGenerator((_params, callback) => {
-    const md = new grpc.Metadata();
-    md.set('authorization', `Bearer ${secret}`);
-    callback(null, md);
-  });
-}
-
-/**
  * 连本地 api service（127.0.0.1:<port>，不加密 h2c），订阅 Tailscale 状态流（断线自动重连）+ clash 等价管理方法。
  * 随主核起停：主核起→start()，主核停→stop()。
  *
@@ -243,7 +229,7 @@ function buildCallCredentials(secret: string): grpc.CallCredentials | null {
 export class SingBoxApiClient {
   private readonly host: string;
   private readonly port: number;
-  private readonly callCreds: grpc.CallCredentials | null;
+  private readonly secret: string;
   private readonly onUpdate?: (endpoints: TailscaleEndpointStatus[]) => void;
 
   private client: grpc.Client | null = null;
@@ -263,7 +249,7 @@ export class SingBoxApiClient {
   ) {
     this.host = endpoint.host;
     this.port = endpoint.port;
-    this.callCreds = buildCallCredentials(secret);
+    this.secret = secret;
     this.onUpdate = onUpdate;
   }
 
@@ -271,10 +257,18 @@ export class SingBoxApiClient {
     return `${this.host}:${this.port}`;
   }
 
-  /** 建通道凭据：本地 h2c insecure + （secret 非空时）Bearer call credentials。Phase 2 远程换 createSsl。 */
+  /** 通道凭据：本地 h2c insecure。Phase 2 远程换 createSsl。 */
   private channelCredentials(): grpc.ChannelCredentials {
-    const base = grpc.credentials.createInsecure();
-    return this.callCreds ? grpc.credentials.combineChannelCredentials(base, this.callCreds) : base;
+    return grpc.credentials.createInsecure();
+  }
+
+  /** 每调用 Bearer 认证 metadata。h2c 下 call credentials 不可用——combineChannelCredentials over insecure 实测抛
+   *  'Cannot compose insecure credentials'（@grpc/grpc-js 拒绝明文通道附 call creds）；改逐调用 metadata，实测对
+   *  secret 保护的 api service 认证通过（GetVersion OK / no-auth → 16 UNAUTHENTICATED）。secret 空则免认证。 */
+  private authMetadata(): grpc.Metadata {
+    const md = new grpc.Metadata();
+    if (this.secret) md.set('authorization', `Bearer ${this.secret}`);
+    return md;
   }
 
   private newClient(): grpc.Client {
@@ -295,10 +289,11 @@ export class SingBoxApiClient {
       this.call = (
         this.client as unknown as {
           SubscribeTailscaleStatus: (
-            req: Record<string, never>
+            req: Record<string, never>,
+            md: grpc.Metadata
           ) => grpc.ClientReadableStream<{ endpoints?: TailscaleEndpointStatus[] }>;
         }
-      ).SubscribeTailscaleStatus({});
+      ).SubscribeTailscaleStatus({}, this.authMetadata());
       this.call.on('data', (msg) => {
         // stop 后守卫：gRPC cancel() 是 best-effort，已派发进事件循环的在途 data 帧仍可能触发——
         // 不加守卫会在 stop（换节点/切模式后旧 client 已弃用、ProxyManager 已置 client=null）后
@@ -346,10 +341,11 @@ export class SingBoxApiClient {
           c as unknown as {
             TailscaleLogout: (
               req: { endpointTag: string },
+              md: grpc.Metadata,
               cb: (err: grpc.ServiceError | null) => void
             ) => void;
           }
-        ).TailscaleLogout({ endpointTag }, (err) => {
+        ).TailscaleLogout({ endpointTag }, this.authMetadata(), (err) => {
           try {
             c.close();
           } catch {
@@ -372,9 +368,9 @@ export class SingBoxApiClient {
         (
           c as unknown as Record<
             string,
-            (r: TReq, cb: (err: grpc.ServiceError | null) => void) => void
+            (r: TReq, md: grpc.Metadata, cb: (err: grpc.ServiceError | null) => void) => void
           >
-        )[method](req, (err) => {
+        )[method](req, this.authMetadata(), (err) => {
           try {
             c.close();
           } catch {
@@ -474,8 +470,11 @@ export class SingBoxApiClient {
       try {
         client = this.newClient();
         stream = (
-          client as unknown as Record<string, (r: TReq) => grpc.ClientReadableStream<TMsg>>
-        )[method](req);
+          client as unknown as Record<
+            string,
+            (r: TReq, md: grpc.Metadata) => grpc.ClientReadableStream<TMsg>
+          >
+        )[method](req, this.authMetadata());
         stream.on('data', (msg: TMsg) => {
           if (stopped) return;
           onMsg(msg);
