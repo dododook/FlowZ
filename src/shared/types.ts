@@ -299,6 +299,34 @@ export interface RegionRoutingConfig {
 }
 
 // ============================================================================
+// 远程实例（sing-box 1.14 远程控制，P5 Phase2）
+// ============================================================================
+
+/**
+ * 远程 sing-box 实例（FlowZ 当客户端连远端 ≥1.14 核的管理 API）。
+ * - host/port：远端 api service 监听地址（必填）。
+ * - secret：远端 api service 的鉴权 secret（Bearer per-call）。**反向可读存**——Bearer 必须发原值，无法哈希；
+ *   存于 config.json（0o600，与 clashApiSecret 同保护级）。**渲染端不回读明文**：UI 仅写（保存新值），列表只显
+ *   「已设置/未设置」占位，CONFIG_GET 经 sanitize 不下发明文（见 ConfigManager.sanitizeRemoteSecretsForRenderer）。
+ * - tls：远端走 TLS（远程强制启用，见 dashboard-remote.md §2.4）；ca=自签 PEM CA，skipVerify=跳过校验（不安全便利档）。
+ * - dashboardUrl：可选，远端 /dashboard/ 的完整 URL（openExternal 用，留空则由 host/port 推 https）。
+ */
+export interface RemoteInstance {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  secret?: string;
+  tls?: {
+    ca?: string;
+    skipVerify?: boolean;
+  };
+  dashboardUrl?: string;
+  // 渲染端只读：CONFIG_GET 经 stripRemoteSecrets 注入「是否已设置 secret」占位（明文不下发）。永不持久化（保存前被剔除）。
+  hasSecret?: boolean;
+}
+
+// ============================================================================
 // 用户配置
 // ============================================================================
 
@@ -438,6 +466,15 @@ export interface UserConfig {
   // 核首次联网从官方仓拉 sing-box-dashboard 资源并于 api 监听口 /dashboard/ serve。默认关（undefined=false）；
   // 不随包静态文件，关时核绝不出网拉资源。非 boolean 一律 sanitize 删除（同 appRoutingEnabled 标准，不回填默认）。
   singboxDashboard?: boolean;
+
+  // sing-box 1.14 远程实例控制（P5 Phase2）：FlowZ 当客户端连远端核的管理 API（增删改 + 打开远端面板）。
+  // secret 反向可读存于 config.json（0o600）但 CONFIG_GET 经 sanitize 不下发明文给渲染端（详见 RemoteInstance 注释）。
+  // 非法/缺字段实例在 validateConfig 整条丢弃（sanitize 而非 throw，避免污染配置致 loadConfig 全丢）。
+  remoteInstances?: RemoteInstance[];
+
+  // 当前活动实例：'local'（默认，本地核）| 某条 remoteInstances.id。validateConfig 收敛非法值回落 undefined（=本地）。
+  // 当前批次仅落「远程配置 + 客户端 TLS + 打开远端 dashboard」核心闭环；原生页实时镜像远端状态留 TODO（见 dashboard-remote.md §2.3）。
+  activeInstanceId?: string;
 
   // macOS 提权 helper：用户已忽略「安装提权 helper」启动提示（不再每次启动 TUN 时弹）。可在设置里重新安装。
   // 注：socket 鉴权 token 刻意不放这里——它存独立文件，避免被渲染端整体回写 config 时清零。

@@ -111,6 +111,12 @@ export const IPC_CHANNELS = {
   // 打开 sing-box 官方面板：main 用运行期 tailscaleApiPort（api service 监听口）构造 /dashboard/ URL + shell.openExternal。
   // 渲染端构造不出 startInternal 解析的动态端口，故必须经此 IPC。
   OPEN_SINGBOX_DASHBOARD: 'app:openSingboxDashboard',
+  // P5 Phase2：打开远端实例的 /dashboard/（shell.openExternal）。渲染端给 instanceId，main 据 config 取该实例
+  // dashboardUrl 或按 host/port+tls 推 URL（https/http）。secret 不进 URL（dashboard 首屏自行填）。
+  OPEN_REMOTE_DASHBOARD: 'app:openRemoteDashboard',
+  // P5 Phase2：远端实例连通测试。渲染端给 instanceId，main 用 SingBoxApiClient（TLS+Bearer）发一次轻量 unary 探活，
+  // 返回 { ok, error? }。secret 取自 config（不经渲染端往返）。
+  TEST_REMOTE_INSTANCE: 'app:testRemoteInstance',
 
   // 更新事件 (主进程 -> 渲染进程)
   EVENT_UPDATE_PROGRESS: 'update:progress',

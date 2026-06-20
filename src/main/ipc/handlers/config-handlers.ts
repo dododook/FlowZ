@@ -10,6 +10,7 @@ import { registerIpcHandler } from '../ipc-handler';
 import { ConfigManager } from '../../services/ConfigManager';
 import { ipcEventEmitter } from '../ipc-events';
 import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
+import { stripRemoteSecrets, mergeRemoteSecrets } from '../../services/remote-instance-secrets';
 
 /**
  * 注册配置管理相关的 IPC 处理器
@@ -21,7 +22,8 @@ export function registerConfigHandlers(configManager: ConfigManager): void {
     async (_event: IpcMainInvokeEvent) => {
       const cfg = await configManager.loadConfig();
       // F29：绝不向渲染端下发隐私密码（迁移前的残留明文也一并剥除；哈希本就不在 config 内）
-      return { ...cfg, privacyPassword: undefined };
+      // P5 Phase2：远程实例 secret 同样不下发明文，剥成 hasSecret 占位（渲染端只写不读）。
+      return stripRemoteSecrets({ ...cfg, privacyPassword: undefined });
     }
   );
 
@@ -29,6 +31,10 @@ export function registerConfigHandlers(configManager: ConfigManager): void {
   registerIpcHandler<UserConfig, void>(
     IPC_CHANNELS.CONFIG_SAVE,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
+      // P5 Phase2：渲染端持有的 config 已被 stripRemoteSecrets 剥过 secret（仅 hasSecret 占位）；保存前按 id 合并回
+      // 内存已存的 secret（渲染端未给新值 → 沿用旧值，防被清零），并剔除 hasSecret 占位字段。
+      const priorRemote = configManager.get<UserConfig['remoteInstances']>('remoteInstances');
+      config = mergeRemoteSecrets(config, { remoteInstances: priorRemote } as UserConfig);
       await configManager.saveConfig(config);
 
       // 同步主题到原生系统
