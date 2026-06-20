@@ -86,6 +86,24 @@ export const isWarpNode = (s: ServerConfigWithId): boolean =>
 export const tailscaleNeedsLogin = (s: ServerConfigWithId, loggedIn = false): boolean =>
   s.protocol?.toLowerCase() === 'tailscale' && !(s.tailscaleSettings?.authKey?.trim() || loggedIn);
 
+/**
+ * Tailscale 表单登录区三态（纯函数，便于单测；与 tailscaleNeedsLogin 同登录态口径）。
+ * - 'loggedIn'：已登录 → 显「已登录」+ 退出登录 + 重新登录。
+ * - 'needsLogin'：编辑态（有 id）未登录且未填 authKey → 显「立即登录」。
+ * - 'none'：新建态（无 id），或已填 authKey 未登录（pre-auth：由 key 登录、不显交互登录区）。
+ */
+export type TailscaleLoginUiState = 'loggedIn' | 'needsLogin' | 'none';
+export const tailscaleLoginUiState = (
+  hasId: boolean,
+  loggedIn: boolean,
+  hasAuthKey: boolean
+): TailscaleLoginUiState => {
+  if (!hasId) return 'none';
+  if (loggedIn) return 'loggedIn';
+  if (!hasAuthKey) return 'needsLogin';
+  return 'none';
+};
+
 /** 组网节点（WG/Tailscale）不承载全隧道（关外网 或 Phase2 system 内核接口）→ 列表角标提示「仅内网」，
  *  避免误以为它能作全局出口。system 节点恒 specific-only，故用 meshNodeCarriesFullTunnel 单一真值判定。 */
 export const meshInternetOff = (s: ServerConfigWithId): boolean =>

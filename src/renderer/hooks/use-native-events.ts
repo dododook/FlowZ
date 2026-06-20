@@ -198,6 +198,9 @@ function handleInvalidNodes(data: NativeEventData['invalidNodes']) {
 const tsAuthToastId = (key: string): string => `ts-auth-${key}`;
 
 function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
+  // 核重新要 auth（运行时）= 该节点登录态失效/过期（如 key 过期）→ 即时置 loggedIn=false，
+  // 「需登录」三态随之亮、登录按钮回归（AUTH_OK 对称置 true）。serverId 已由主进程 payload 带。
+  if (data.serverId) useAppStore.getState().setTailscaleLoginState(data.serverId, false);
   // Tailscale 无 auth_key 节点：核给出交互登录 URL → toast + 「打开登录页」action（openExternal）。
   // 安全：URL 取自内核日志正则捕获，openExternal 前限定 http(s)，杜绝 file:///javascript: 等危险 scheme。
   // transient（Phase 2 按需登录核）：主进程已自动开浏览器 + 发系统通知 → 降级为可关闭普通 toast（短时长、

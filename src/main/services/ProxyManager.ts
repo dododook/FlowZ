@@ -62,7 +62,7 @@ import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
-import { tailscaleStateExists } from './tailscale-state';
+import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
 import {
   buildTailscaleLoginConfig,
   tailscaleEndpointInRunningCore,
@@ -5048,6 +5048,27 @@ exit 0
       this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
     }
     this.killTailscaleLogin(serverId);
+  }
+
+  /**
+   * 退出登录：清该节点 Tailscale state 目录（持久会话），下次需重新交互登录。保留节点配置/authKey。
+   * 先取消该节点在飞的瞬态登录核（若有），避免它在清目录后又写回 state。
+   * 若该 endpoint 正在运行中的主核里（state 是其内存会话的落盘），清目录不立即断开内存会话 →
+   * 回传 runningNeedsRestart 供 UI 提示重启代理才彻底生效（真机验证 caveat）。
+   */
+  async tailscaleLogout(serverId: string): Promise<{ runningNeedsRestart: boolean }> {
+    this.cancelTailscaleLogin(serverId);
+    const inRunningCore = tailscaleEndpointInRunningCore(
+      serverId,
+      this.getStatus().running,
+      this.currentConfig,
+      tailscaleStateExists(serverId)
+    );
+    await require('fs')
+      .promises.rm(tailscaleStateDir(serverId), { recursive: true, force: true })
+      .catch(() => {});
+    this.logToManager('info', `Tailscale 节点已退出登录（已清 state 目录）`, 'sing-box');
+    return { runningNeedsRestart: inRunningCore };
   }
 
   /** 杀某节点瞬态登录核（成功/超时/取消/出错统一收口）：置 cancelled 中止轮询 + kill 进程 + 清 timer/Map。幂等。 */

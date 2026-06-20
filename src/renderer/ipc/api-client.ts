@@ -298,6 +298,14 @@ export const serverApi = {
   },
 
   /**
+   * 退出登录：清该节点 Tailscale 持久登录会话（state 目录），下次需重新交互登录。保留节点配置/authKey。
+   * runningNeedsRestart=true 时该节点正在主核运行，需重启代理才彻底生效（UI 据此提示）。
+   */
+  async tailscaleLogout(serverId: string): Promise<{ runningNeedsRestart: boolean }> {
+    return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_LOGOUT, { serverId });
+  },
+
+  /**
    * 切换服务器
    */
   async switch(serverId: string): Promise<void> {

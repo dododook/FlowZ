@@ -37,6 +37,7 @@ export const IPC_CHANNELS = {
   TAILSCALE_GET_LOGIN_STATES: 'tailscale:getLoginStates', // 每个 Tailscale 节点真实登录态（hasAuthKey || state 目录存在）
   TAILSCALE_LOGIN: 'tailscale:login', // 按需瞬态登录核：拉起登录专用 sing-box 取交互登录 URL（Phase 2）
   TAILSCALE_LOGIN_CANCEL: 'tailscale:loginCancel', // 取消某节点在飞的瞬态登录核（用户手动取消）
+  TAILSCALE_LOGOUT: 'tailscale:logout', // 退出登录：清该节点 state 目录（持久会话）；保留节点配置/authKey
 
   // 订阅管理
   SUBSCRIPTION_ADD: 'subscription:add',

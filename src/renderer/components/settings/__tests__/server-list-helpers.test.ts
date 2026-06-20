@@ -2,7 +2,7 @@
  * tailscaleNeedsLogin 角标判定单测（Phase 1：真实登录态驱动，非静态 !authKey）。
  * 三档：有 authKey / 无 authKey 但已登录(loggedIn) / 都无；外加非 Tailscale 节点恒 false。
  */
-import { tailscaleNeedsLogin } from '../server-list-helpers';
+import { tailscaleNeedsLogin, tailscaleLoginUiState } from '../server-list-helpers';
 
 // 仅取 tailscaleNeedsLogin 用到的字段，避免引 @/bridge/types（jest 无 @ 别名）。
 const ts = (over: Record<string, unknown> = {}) =>
@@ -35,5 +35,26 @@ describe('tailscaleNeedsLogin', () => {
   it('非 Tailscale 节点 → 恒 false（即使 loggedIn 缺省）', () => {
     expect(tailscaleNeedsLogin(ts({ protocol: 'vless' }))).toBe(false);
     expect(tailscaleNeedsLogin(ts({ protocol: 'wireguard' }), false)).toBe(false);
+  });
+});
+
+describe('tailscaleLoginUiState（表单登录区三态）', () => {
+  it('新建态（无 id）→ none，与 loggedIn/authKey 无关', () => {
+    expect(tailscaleLoginUiState(false, false, false)).toBe('none');
+    expect(tailscaleLoginUiState(false, true, false)).toBe('none');
+    expect(tailscaleLoginUiState(false, false, true)).toBe('none');
+  });
+
+  it('已登录 → loggedIn（优先于 authKey）', () => {
+    expect(tailscaleLoginUiState(true, true, false)).toBe('loggedIn');
+    expect(tailscaleLoginUiState(true, true, true)).toBe('loggedIn');
+  });
+
+  it('有 id、未登录、未填 authKey → needsLogin', () => {
+    expect(tailscaleLoginUiState(true, false, false)).toBe('needsLogin');
+  });
+
+  it('有 id、未登录、已填 authKey（pre-auth）→ none（不显交互登录区）', () => {
+    expect(tailscaleLoginUiState(true, false, true)).toBe('none');
   });
 });
