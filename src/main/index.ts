@@ -43,7 +43,6 @@ import { SpeedTestService } from './services/SpeedTestService';
 import { AutoSwitchService } from './services/AutoSwitchService';
 import { SubscriptionScheduler } from './services/SubscriptionScheduler';
 import { StatsService } from './services/StatsService';
-import { ClashApiClient } from './services/ClashApiClient';
 import { PlatformPrivilegeService } from './services/PlatformPrivilegeService';
 import { IpInfoService } from './services/IpInfoService';
 import { RuleResourceManager } from './services/RuleResourceManager';
@@ -1022,14 +1021,6 @@ if (gotTheLock) {
     // 系统 DNS 接管单一写者：注入同一 singleton，set（仅 TUN）/restore 统一收口 ProxyManager.start()/终态。
     proxyManager.setSystemDnsManager(systemDnsManager);
 
-    // clash_api 专属客户端（T15：ProxyManager 与 StatsService 共用单一 keep-alive agent，消除两处 plumbing 重复）。
-    // secret/port 均经 getter 回调读 currentConfig（reload 后自动读最新，改 controlPort 无需通知）。
-    const clashApiClient = new ClashApiClient(
-      () => proxyManager?.getClashApiSecret() ?? '',
-      () => proxyManager?.getClashApiPort() ?? 9090
-    );
-    proxyManager.setClashApiClient(clashApiClient);
-
     // 平台提权服务（T16：纯函数/无状态方法 + killOrphans 链迁出 ProxyManager/CoreUpdateService，delegate 后调用点零改动）。
     // ctx.log 桥接两端 source：ProxyManager 侧 logToManager 默认 'ProxyManager'（编排维度，内核 stdout 经 parseAndLogLine 传 'sing-box'），CoreUpdateService 侧透传 'CoreUpdateService'。
     // ctx 各只读回调指向 proxyManager 私有 getter（isTunMode/configPath/singboxPath/currentManagedPid/isProcessAlive/waitForNetworkCleanup），
@@ -1063,18 +1054,18 @@ if (gotTheLock) {
     proxyManager.setPrivilegeService(privilegeService);
     coreUpdateService.setPrivilegeService(privilegeService);
 
-    // 流量统计：代理运行时轮询 clash_api（经 ClashApiClient），经事件推渲染端展示
+    // 流量统计：代理运行时经管理 API（gRPC）订阅 Status/Connections 流，经事件推渲染端展示。
+    // getApiClient 取 ProxyManager 运行期管理 API 客户端（核未起返回 null → 不开流）。
     statsService = new StatsService(
       (stats) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_STATS_UPDATED, stats),
-      clashApiClient,
+      () => proxyManager?.getApiClient() ?? null,
       (snap) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONNECTIONS_UPDATED, snap),
-      // P1/P2：窗口可见才轮询——隐藏（macOS hide / minimizeToTray）/销毁（轻量模式）时无 UI 消费者，
-      // 跳过整轮 clash_api fetch+parse+trim+广播。读模块级 mainWindow 当前值（创建/销毁会变）。
+      // P1/P2：窗口可见才广播——隐藏（macOS hide / minimizeToTray）/销毁（轻量模式）时无 UI 消费者，
+      // 跳过 broadcast（流仍维护快照）。读模块级 mainWindow 当前值（创建/销毁会变）。
       () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
     );
-    // 杀核前静默 clash_api 客户端：停 StatsService 轮询（client.agent 的 RST 由 stopSingBoxProcess 的
-    // destroyClashApiAgent→client.destroyAgent 统一负责，单一 destroy 路径，P0-2 治本不变）。
-    proxyManager.setQuiesceClashClients(() => {
+    // 杀核前静默 StatsService：停其到管理 API 的 Status/Connections gRPC 流（核将死，提前 cancel 避免 RST 噪音）。
+    proxyManager.setQuiesceStats(() => {
       statsService?.stop();
     });
 

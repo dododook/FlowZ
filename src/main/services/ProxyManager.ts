@@ -22,7 +22,6 @@ import { ProxyErrorCode } from '../../shared/types';
 import type { ILogManager } from './LogManager';
 import { HelperManager } from './HelperManager';
 import type { IPrivilegedHelper } from './IPrivilegedHelper';
-import { ClashApiClient } from './ClashApiClient';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
@@ -150,6 +149,8 @@ export interface IProxyManager {
   isStartedViaHelper(): boolean;
   // api service（sing-box 1.14 management api）运行期监听端口；「打开官方面板」IPC 据此构造 /dashboard/ URL（0=未启动）。
   getTailscaleApiPort(): number;
+  // 运行期管理 API 客户端（sing-box 1.14 gRPC）：供 StatsService 经此订阅 Status/Connections 流；未启动核时为 null。
+  getApiClient(): SingBoxApiClient | null;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
   getResolvedNodeIps(): string[];
   on(
@@ -191,12 +192,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 前用并发多上游 DoH 填充，由 generateSingBoxConfig 透传 buildOutbounds → buildProxyOutbound 写 outbound.server。
   // 空 Map=现状（域名）：snapshot/preflight/speedtest/未启动路径恒空 → 生成物逐字节回现状。模块级 TTL 缓存使重启廉价。
   private lastResolvedHosts: Map<string, string> = new Map();
-  // 杀核前「静默 clash_api 客户端」回调（停 StatsService 轮询 + 关其到 9090 的 keep-alive 连接）：让 client 主动关
-  // → 9090 不进 TIME_WAIT → 下次用户态 sing-box 免撞 root TIME_WAIT 等 30s（P0-2 治本 TIME_WAIT）。
-  private quiesceClashClients: (() => void) | null = null;
-  // clash_api 专属 HTTP 客户端（端口默认 9090，可经 config.controlPort 改；T15：原 clashApiAgent 字段 + clashApiRequest/clashAuthHeaders/
-  // destroyClashApiAgent 收口进 ClashApiClient，与 StatsService 共用单一 agent）。经 setClashApiClient 注入。
-  private clashApiClient: ClashApiClient | null = null;
+  // 杀核前「静默 StatsService」回调（停其到管理 API 的 Status/Connections gRPC 流）：核将死，提前 cancel 流避免 RST 噪音。
+  private quiesceStats: (() => void) | null = null;
   // P2a：启用代理 / 切接管模式（两者均经 startInternal）后延迟一次「连接 flush」的延时器。stop()/再次 start 时清。
   private connectionFlushTimer: ReturnType<typeof setTimeout> | null = null;
   // 平台提权服务（T16：原提权脚本生成 / 文件权限 / 提权复制等纯函数迁出，经 setPrivilegeService 注入；
@@ -749,27 +746,31 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * 启动后把各 selector 选择校正回用户意图（压过 cache_file 持久化的旧选择，修 H3）：
    *  - proxy-selector → currentConfig.selectedServerId（启动窗口内用户热切则跟随最新）。
    *  - 各 rule-sel-<id> → currentConfig 中对应规则的 targetServerId（防 cache_file 把规则选择回弹到旧节点）。
-   * best-effort + 短重试，clash_api 刚起可能未就绪；失败不影响启动（cache/default 仍是有效节点）。
-   * proxy-selector 成功后再 reassert rule-sel（clash_api 已就绪，rule-sel 通常首轮即成）。
+   * best-effort + 短重试，管理 API 刚起可能未就绪；失败不影响启动（cache/default 仍是有效节点）。
+   * proxy-selector 成功后再 reassert rule-sel（管理 API 已就绪，rule-sel 通常首轮即成）。
    */
   private async reassertSelectorSelection(config: UserConfig): Promise<void> {
-    // 阶段 1：proxy-selector（带重试，等 clash_api 就绪）
+    // 阶段 1：proxy-selector（带重试，等管理 API 就绪）
     for (let i = 0; i < 10; i++) {
       if (!this.singboxProcess && !this.singboxPid) return; // 已停止则放弃
-      if (this.stopping) return; // 主动停止/重启中：勿在 destroyClashApiAgent 后又用新 agent 重连 9090（M-1：防杀核前重建连接致 9090 TIME_WAIT）
+      if (this.stopping) return; // 主动停止/重启中：勿在杀核窗口里重连管理 API（核将死）
       // 每轮读最新 currentConfig.selectedServerId：若启动窗口内用户已热切到别的节点，则用新节点、
       // 不要把它 revert 回启动时的旧节点。
       const targetId = this.currentConfig?.selectedServerId ?? config.selectedServerId;
       const tag = this.currentIdToTagMap?.get(targetId as string);
       if (!tag) break;
-      const res =
-        (await this.clashApiClient?.request('/proxies/proxy-selector', 'PUT', { name: tag })) ??
-        ({ ok: false, status: 0 } as const);
-      if (res.ok) break;
-      // clash_api 未就绪/瞬时失败 → 短延迟后重试
-      await new Promise((r) => setTimeout(r, 300));
+      const client = this.tailscaleApiClient;
+      if (!client) break; // 管理 API 客户端未创建（核未起/无管理 API）→ 放弃，cache/default 兜底
+      try {
+        // gRPC SelectOutbound throws on error（与 clash_api 的 {ok,status} 不同）：成功即跳出，异常进重试腿。
+        await client.selectOutbound('proxy-selector', tag);
+        break;
+      } catch {
+        // 管理 API 未就绪/瞬时失败 → 短延迟后重试
+        await new Promise((r) => setTimeout(r, 300));
+      }
     }
-    // 阶段 2：各 rule-sel（无重试——proxy-selector 已就绪证 clash_api 可用；失败由 cache/default 兜底）
+    // 阶段 2：各 rule-sel（无重试——proxy-selector 已就绪证管理 API 可用；失败由 cache/default 兜底）
     await this.reassertRuleSelectors(config);
   }
 
@@ -791,9 +792,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (!entry) return;
       const memberTag = idToTag.get(targetServerId);
       if (!memberTag) return; // 目标被 gate 剔除/不存在 → 跳过（selector default 仍有效，不 FATAL）
-      void this.clashApiClient?.request(`/proxies/${entry.selectorTag}`, 'PUT', {
-        name: memberTag,
-      });
+      // gRPC SelectOutbound throws on error；best-effort fire-and-forget（失败由 cache/default 兜底，不阻塞）。
+      void this.tailscaleApiClient?.selectOutbound(entry.selectorTag, memberTag).catch(() => {});
     };
 
     for (const rule of cur.customRules || []) {
@@ -960,8 +960,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private static readonly CONNECTION_FLUSH_DELAY_MS = 1500;
 
   /**
-   * 启用代理 / 切接管模式后（两者均经 startInternal；node 热切换走 clash_api PUT 不经此路径）延迟一次
-   * clash_api `DELETE /connections`，RST 掉 sing-box 跟踪的连接——重点是 app 早于 TUN 建立、泄漏成真实 IP
+   * 启用代理 / 切接管模式后（两者均经 startInternal；node 热切换走管理 API SelectOutbound 不经此路径）延迟一次
+   * 管理 API `CloseAllConnections`，RST 掉 sing-box 跟踪的连接——重点是 app 早于 TUN 建立、泄漏成真实 IP
    * 的旧连接：它们的后续包经 TUN 重新进表后被 RST → app 重连 → DNS 重新经 FakeIP 反查 → 走代理。
    * **不重启内核**（与「切节点」的 interrupt_exist_connections 开关正交）。仅 TUN：systemProxy 的旧连接多在
    * sing-box 表外、flush 够不着，且会误伤已代理连接。
@@ -976,15 +976,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.connectionFlushTimer = null;
       if (gen !== this.lifecycleGeneration) return; // 已被新的 start/stop 接管
       if (!this.singboxProcess && !this.singboxPid) return; // 核已停
-      void this.clashApiClient
-        ?.request('/connections', 'DELETE')
-        .then((r) =>
+      // gRPC CloseAllConnections throws on error；best-effort（与启用流程正交，失败仅记日志）。
+      void this.tailscaleApiClient
+        ?.closeAllConnections()
+        .then(() =>
+          this.logToManager('info', '启用后连接 flush：管理 API CloseAllConnections → ok')
+        )
+        .catch((e) =>
           this.logToManager(
             'info',
-            `启用后连接 flush：clash_api DELETE /connections → ${r.ok ? 'ok' : `失败(${r.status})`}`
+            `启用后连接 flush：管理 API CloseAllConnections 失败(${(e as Error)?.message ?? e})`
           )
-        )
-        .catch(() => {});
+        );
     }, ProxyManager.CONNECTION_FLUSH_DELAY_MS);
   }
 
@@ -1373,17 +1376,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     );
   }
 
-  /** destroy 并重建 clash_api agent（杀核前调，防 9090 root TIME_WAIT）。T15：delegate client.destroyAgent。 */
-  private destroyClashApiAgent(): void {
-    this.clashApiClient?.destroyAgent();
-  }
-
-  /** 当前 clash_api secret（供 StatsService 等其它主进程内部 clash_api 调用带鉴权）。 */
-  getClashApiSecret(): string {
-    return this.currentConfig?.clashApiSecret || '';
-  }
-
-  /** 当前 clash_api 控制端口（ClashApiClient/StatsService/端口冲突清理 统一取用；缺省 9090，可经 config.controlPort 改）。 */
+  /** 启动前端口冲突清理用的控制端口（缺省 9090，可经 config.controlPort 改）。clash_api 已移除，仅 resolveClashApiPortConflict 残留用作清理目标端口。 */
   getClashApiPort(): number {
     return controlApiPort(this.currentConfig ?? {});
   }
@@ -1397,34 +1390,55 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 关闭连接（连接信息页用）：直调 ClashApiClient（专属 agent + Bearer secret 内部封装，渲染端不持 secret）。
-   * id 给定 → DELETE /connections/{id}（关单条）；id 省略 → DELETE /connections（关全部 = CloseAllConnections + ResetNetwork）。
-   * 不抛异常，按 { ok, status } 语义返回（与 reassert/hotSwitch 同治）。
+   * 运行期管理 API 客户端（sing-box 1.14 gRPC）。StatsService 经此订阅 Status/Connections 流（取代 clash_api 轮询）。
+   * 随主核生命周期：startInternal 内核起后创建（this.tailscaleApiClient），stop() 置 null。未启动核时返回 null
+   * → StatsService 据此判定不开流（核未就绪）。
    */
-  async closeConnection(id?: string): Promise<{ ok: boolean; status: number }> {
-    const pathName = id ? `/connections/${encodeURIComponent(id)}` : '/connections';
-    // T15：直调 client.request（原 clashApiRequest wrapper 已删）。client 未注入 → fallback {ok:false}。
-    return (
-      this.clashApiClient?.request(pathName, 'DELETE') ?? Promise.resolve({ ok: false, status: 0 })
-    );
+  getApiClient(): SingBoxApiClient | null {
+    return this.tailscaleApiClient;
   }
 
   /**
-   * clash_api 热切换任一 selector 的选中成员（PUT /proxies/<selectorTag>）。
+   * 关闭连接（连接信息页用）：直调管理 API gRPC（Bearer secret 内部封装，渲染端不持 secret）。
+   * id 给定 → CloseConnection(id)（关单条）；id 省略 → CloseAllConnections()（关全部）。
+   * gRPC 抛错（与 clash_api 的 {ok,status} 不同）→ catch 包成 { ok:false, status:0 }，维持原签名/语义（与 reassert/hotSwitch 同治）。
+   * status：成功 200（无 HTTP 状态码，仅用于 UI 判 ok）；失败 0（管理 API 未就绪/调用异常）。
+   */
+  async closeConnection(id?: string): Promise<{ ok: boolean; status: number }> {
+    const client = this.tailscaleApiClient;
+    if (!client) return { ok: false, status: 0 }; // 客户端未就绪（核未起）→ fallback
+    try {
+      if (id) await client.closeConnection(id);
+      else await client.closeAllConnections();
+      return { ok: true, status: 200 };
+    } catch {
+      return { ok: false, status: 0 };
+    }
+  }
+
+  /**
+   * 管理 API 热切换任一 selector 的选中成员（gRPC SelectOutbound）。
    * 泛化自 hotSwitchNode：全局 proxy-selector 与各 rule-sel-<id> 复用同一原语。
-   * @returns true=PUT 成功；false=定位失败或 HTTP 非 2xx（调用方退回去抖重启兜底）。
+   * @returns true=切换成功；false=定位失败或 gRPC 抛错（调用方退回去抖重启兜底）。
    */
   private async hotSwitchSelector(selectorTag: string, memberTag: string): Promise<boolean> {
     if (!memberTag) return false;
-    // T15：直调 client.request（原 clashApiRequest wrapper 已删）。client 未注入 → fallback {ok:false}。
-    const res =
-      (await this.clashApiClient?.request(`/proxies/${selectorTag}`, 'PUT', { name: memberTag })) ??
-      ({ ok: false, status: 0 } as const);
-    if (!res.ok) {
-      this.logToManager('warn', `clash_api 热切换 ${selectorTag} 失败（HTTP ${res.status}）`);
+    const client = this.tailscaleApiClient;
+    if (!client) {
+      this.logToManager('warn', `管理 API 客户端未就绪，无法热切换 ${selectorTag}`);
       return false;
     }
-    this.logToManager('info', `已热切换 ${selectorTag} → ${memberTag}（clash_api，无重启）`);
+    // gRPC SelectOutbound throws on error（与 clash_api 的 {ok,status} 不同）：catch 包成 false，退去抖重启兜底。
+    try {
+      await client.selectOutbound(selectorTag, memberTag);
+    } catch (e) {
+      this.logToManager(
+        'warn',
+        `管理 API 热切换 ${selectorTag} 失败：${(e as Error)?.message ?? e}`
+      );
+      return false;
+    }
+    this.logToManager('info', `已热切换 ${selectorTag} → ${memberTag}（管理 API，无重启）`);
     return true;
   }
 
@@ -1909,8 +1923,7 @@ done
       }
     }
 
-    // 获取用户数据目录用于缓存文件
-    const userDataPath = getUserDataPath();
+    // 获取缓存数据库路径（experimental.cache_file）
     const cachePath = getCachePath();
 
     // 关键优化：预先生成 ID 到 Tag 的唯一映射，使用服务器名称作为 Tag，确保拓扑和日志显示友好名称
@@ -1987,13 +2000,6 @@ done
           path: cachePath,
           store_fakeip: true,
           store_dns: true,
-        },
-        clash_api: {
-          external_controller: `127.0.0.1:${controlApiPort(config)}`,
-          external_ui: path.join(userDataPath, 'ui'),
-          // 随机 secret 鉴权（持久化于 config）：内部调用带 Authorization，防恶意网页跨域读连接历史
-          secret: config.clashApiSecret || '',
-          default_mode: 'rule',
         },
       },
     };
@@ -3556,16 +3562,13 @@ exit 0
    * 停止 sing-box 进程
    */
   private async stopSingBoxProcess(opts?: { quitting?: boolean }): Promise<void> {
-    // 杀核前先静默 clash_api 客户端（停 StatsService 轮询 + RST 掉其到 9090 的 keep-alive 连接）：让 client 主动
-    // 关闭 → 9090 不进 TIME_WAIT → 下次用户态 sing-box 免撞 root TIME_WAIT 等 30s（P0-2 治本）。同步、不阻塞。
+    // 杀核前先静默 StatsService：停其到管理 API 的 Status/Connections gRPC 流（核将死，提前 cancel 避免 RST 噪音）。
+    // 同步、不阻塞。tailscaleApiClient 自身的 Tailscale 状态流由上层 stop() 另行 stop（gRPC 客户端各自管理生命周期）。
     try {
-      this.quiesceClashClients?.();
+      this.quiesceStats?.();
     } catch {
       /* 忽略 */
     }
-    // 同时 RST 掉 ProxyManager 自己到 9090 的 keep-alive 连接（reassert/hotSwitch 的专属 agent），与 StatsService
-    // 一并收口 → 杀核前所有 9090 client 主动关 → 9090 不进 root TIME_WAIT（P0-2 收口全量，含原 undici 池漏网）。
-    this.destroyClashApiAgent();
 
     // macOS TUN 模式：sing-box 以 root 权限在后台运行，需要用 osascript 终止。
     // T16 子 commit 3：实现迁入 PlatformPrivilegeService.stopElevated（darwin 分支），此处 delegate。
@@ -3961,17 +3964,12 @@ exit 0
     this.systemDnsManager = systemDnsManager;
   }
 
-  /** 注入「杀核前静默 clash_api 客户端」回调（停 StatsService + 关其 9090 连接）。防 9090 TIME_WAIT（P0-2）。 */
-  setQuiesceClashClients(cb: () => void): void {
-    this.quiesceClashClients = cb;
+  /** 注入「杀核前静默 StatsService」回调（停其到管理 API 的 Status/Connections gRPC 流）。杀核前提前 cancel 流避免 RST 噪音。 */
+  setQuiesceStats(cb: () => void): void {
+    this.quiesceStats = cb;
   }
 
-  /** 注入 ClashApiClient（T15：clash_api 调用收口到单一 client，与 StatsService 共用 agent）。 */
-  setClashApiClient(client: ClashApiClient): void {
-    this.clashApiClient = client;
-  }
-
-  /** 注入平台提权服务（T16：原提权纯函数迁出，delegate 后调用点零改动）。镜像 setClashApiClient 注入。 */
+  /** 注入平台提权服务（T16：原提权纯函数迁出，delegate 后调用点零改动）。 */
   setPrivilegeService(service: PlatformPrivilegeService): void {
     this.privilegeService = service;
   }

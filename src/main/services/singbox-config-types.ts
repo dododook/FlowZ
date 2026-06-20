@@ -297,17 +297,7 @@ export interface SingBoxConfig {
   outbounds: SingBoxOutbound[];
   endpoints?: SingBoxEndpoint[];
   route?: SingBoxRouteConfig;
-  experimental?: SingBoxExperimental & {
-    clash_api?: {
-      external_controller: string;
-      external_ui?: string;
-      secret?: string;
-      external_ui_download_url?: string;
-      external_ui_download_detour?: string;
-      default_mode?: string;
-      cache_file?: string;
-    };
-  };
-  // sing-box 1.14 管理 API（仅 1.14 核注入；与 clash_api 共存，端口独立）。
+  experimental?: SingBoxExperimental;
+  // sing-box 1.14 管理 API（仅 1.14 核注入）。clash_api 已彻底移除，管理面统一走此 gRPC service。
   services?: SingBoxApiService[];
 }

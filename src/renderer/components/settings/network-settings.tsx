@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store/app-store';
 import { parseDnsServerSpec } from '@shared/dns';
-import { controlApiPort } from '@shared/proxy-ports';
 import { DEFAULT_BYPASS_LAN } from '@shared/system-proxy-bypass';
 import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
 import { toast } from 'sonner';
@@ -32,7 +31,6 @@ import { SettingsCollapsible } from './settings-collapsible';
 import { ExceptionList } from './exception-list';
 import { DEFAULT_FAKEIP_FILTER_DOMAINS } from '../../../shared/fakeip-filter';
 import { HelperManagementCard } from './helper-management-card';
-import { ExternalControlSection } from './external-control-section';
 import { TerminalProxySection } from './terminal-proxy-section';
 
 const isMac = window.electron?.platform === 'darwin';
@@ -57,8 +55,6 @@ export function NetworkSettings() {
   const [localPort, setLocalPort] = useState(
     (config?.mixedPort || config?.httpPort || 7890).toString()
   );
-  // clash_api 外部控制端口（默认 9090，可改以解端口冲突死局）。失焦提交，外部变更时 resync。
-  const [controlPort, setControlPort] = useState(controlApiPort(config ?? {}).toString());
   // TUN 模式下 FakeIP ON→OFF 一次性风险确认弹窗开关（机场拒纯 IP 不可预判、无法客户端缓解）。
   const [fakeIpOffConfirmOpen, setFakeIpOffConfirmOpen] = useState(false);
   const [subInterval, setSubInterval] = useState(
@@ -76,7 +72,6 @@ export function NetworkSettings() {
   // 回填「未被用户改动」的字段；dirty 守卫（本地值 ≠ 上次种子）避免打断正在输入的用户。
   const seededRef = useRef<{
     localPort: string;
-    controlPort: string;
     subInterval: string;
     domesticDns: string;
     foreignDns: string;
@@ -86,7 +81,6 @@ export function NetworkSettings() {
     if (!config) return;
     const snap = {
       localPort: (config.mixedPort || config.httpPort || 7890).toString(),
-      controlPort: controlApiPort(config).toString(),
       subInterval: config.subscriptionUpdateIntervalHours?.toString() || '12',
       domesticDns: config.dnsConfig?.domesticDns || DNS_DEFAULTS.domesticDns,
       foreignDns: config.dnsConfig?.foreignDns || DNS_DEFAULTS.foreignDns,
@@ -94,7 +88,6 @@ export function NetworkSettings() {
     };
     const prev = seededRef.current;
     setLocalPort((cur) => (prev && cur !== prev.localPort ? cur : snap.localPort));
-    setControlPort((cur) => (prev && cur !== prev.controlPort ? cur : snap.controlPort));
     setSubInterval((cur) => (prev && cur !== prev.subInterval ? cur : snap.subInterval));
     setDomesticDns((cur) => (prev && cur !== prev.domesticDns ? cur : snap.domesticDns));
     setForeignDns((cur) => (prev && cur !== prev.foreignDns ? cur : snap.foreignDns));
@@ -103,7 +96,6 @@ export function NetworkSettings() {
   }, [
     config?.mixedPort,
     config?.httpPort,
-    config?.controlPort,
     config?.subscriptionUpdateIntervalHours,
     config?.dnsConfig?.domesticDns,
     config?.dnsConfig?.foreignDns,
@@ -180,41 +172,9 @@ export function NetworkSettings() {
       revert();
       return;
     }
-    if (portNum === controlApiPort(config)) {
-      // 撞控制端口（clash_api）→ sing-box 两 inbound 同口必 FATAL。两者皆可改，提示改其一并回滚。
-      toast.error(
-        t('settings.advanced.portClashWithControl', '本地端口不能与控制端口相同，请改其中之一')
-      );
-      revert();
-      return;
-    }
     if (portNum === cur) return; // 无变化
     setLocalPort(portNum.toString());
     saveConfig({ ...config, mixedPort: portNum }).catch(() => toast.error(t('common.saveFailed')));
-  };
-
-  // 控制端口（clash_api external_controller）：失焦即生效。范围/与本地端口冲突给提示并回滚。
-  const commitControlPort = () => {
-    const portNum = parseInt(controlPort, 10);
-    const cur = controlApiPort(config);
-    const revert = () => setControlPort(cur.toString());
-    if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-      toast.error(t('settings.advanced.localPortRange', '端口须为 1024-65535'));
-      revert();
-      return;
-    }
-    if (portNum === (config.mixedPort || config.httpPort || 7890)) {
-      toast.error(
-        t('settings.advanced.portClashWithControl', '本地端口不能与控制端口相同，请改其中之一')
-      );
-      revert();
-      return;
-    }
-    if (portNum === cur) return; // 无变化
-    setControlPort(portNum.toString());
-    saveConfig({ ...config, controlPort: portNum }).catch(() =>
-      toast.error(t('common.saveFailed'))
-    );
   };
 
   const numInput = (
@@ -398,13 +358,6 @@ export function NetworkSettings() {
           >
             {numInput(localPort, setLocalPort, 'w-[120px]', commitLocalPort)}
           </SettingsRow>
-          <SettingsRow
-            label={t('settings.advanced.controlPort', '控制端口')}
-            description={t('settings.advanced.controlPortDesc')}
-            tooltip={t('settings.advanced.controlPortDescFull')}
-          >
-            {numInput(controlPort, setControlPort, 'w-[120px]', commitControlPort)}
-          </SettingsRow>
           <div>
             <SettingsRow
               label={t('settings.advanced.allowLan')}
@@ -450,13 +403,6 @@ export function NetworkSettings() {
               />
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* 外部控制 / clash API（从「高级」节迁入，与控制端口同节就近，M2） */}
-      <Card>
-        <CardContent className="divide-y divide-border/60 pt-2">
-          <ExternalControlSection />
         </CardContent>
       </Card>
 

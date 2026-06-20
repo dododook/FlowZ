@@ -3,9 +3,10 @@
  *
  * T6  logToManager source tag = 'ProxyManager'（编排维度，区分 sing-box 内核 stdout）
  * T9  onRetry EADDRINUSE 分支用已 prune 的 singboxConfig（不重新 generateSingBoxConfig 丢 prune）
- * T15 clashApiRequest wrapper 已删 → hotSwitchSelector / closeConnection / reassertRuleSelectors 直调 client.request
+ * T15 §3-C：clash_api 已删 → hotSwitchSelector / closeConnection / reassertRuleSelectors 经管理 API gRPC
+ *     （selectOutbound / closeConnection / closeAllConnections，throws on error）
  *
- * 私有方法经 `(svc as any).method()` 直调，不启动 sing-box；ClashApiClient 用 stub 注入 setClashApiClient。
+ * 私有方法经 `(svc as any).method()` 直调，不启动 sing-box；管理 API 客户端 stub 经 (svc as any).tailscaleApiClient 注入。
  */
 const os = require('os');
 const path = require('path');
@@ -37,7 +38,7 @@ afterAll(() => {
   }
 });
 
-/** 构造 ProxyManager（不启动）。logManager 注入 spy、client 经 setClashApiClient 注入。 */
+/** 构造 ProxyManager（不启动）。logManager 注入 spy、管理 API 客户端 stub 经 (svc as any).tailscaleApiClient 注入。 */
 function makeSvc(opts?: { logManager?: any }) {
   const configPath = path.join(TMP, `sb-${Math.random().toString(36).slice(2)}.json`);
   const svc: any = new ProxyManager(
@@ -49,14 +50,22 @@ function makeSvc(opts?: { logManager?: any }) {
   return svc;
 }
 
-/** ClashApiClient stub：request 返回预设结果，记录调用。 */
-function makeClientStub(result: { ok: boolean; status: number } = { ok: true, status: 204 }) {
-  const calls: { pathName: string; method: string; body?: unknown; timeoutMs?: number }[] = [];
+/**
+ * 管理 API 客户端 stub（§3-C）：selectOutbound/closeConnection/closeAllConnections 记录调用；
+ * shouldThrow=true 时 reject（模拟 gRPC 抛错），验调用方 catch 包装。经 svc.tailscaleApiClient 注入（getApiClient 读它）。
+ */
+function makeApiClientStub(shouldThrow = false) {
+  const calls: { method: string; args: unknown[] }[] = [];
+  const rec =
+    (method: string) =>
+    (...args: unknown[]) => {
+      calls.push({ method, args });
+      return shouldThrow ? Promise.reject(new Error('grpc fail')) : Promise.resolve();
+    };
   const client = {
-    request(pathName: string, method: string, body?: unknown, timeoutMs = 2000) {
-      calls.push({ pathName, method, body, timeoutMs });
-      return Promise.resolve(result);
-    },
+    selectOutbound: rec('selectOutbound'),
+    closeConnection: rec('closeConnection'),
+    closeAllConnections: rec('closeAllConnections'),
   };
   return { client, calls };
 }
@@ -90,34 +99,43 @@ describe('T6：logToManager 编排 source tag = ProxyManager', () => {
 });
 
 // ============================================================================
-// T15：clashApiRequest wrapper 已删 → 直调 client.request
-//      （原 wrapper 私有方法应不存在；hotSwitchSelector/closeConnection/reassertRuleSelectors 直调 client）
+// T15 / §3-C：clash_api 已删 → selector/close 经管理 API gRPC
+//   hotSwitchSelector → selectOutbound(selectorTag, member)；closeConnection(id)→closeConnection / 无 id→closeAllConnections；
+//   reassertRuleSelectors → selectOutbound(selectorTag, memberTag)。gRPC throws on error，调用方 catch 包装。
 // ============================================================================
 
-describe('T15：clashApiRequest wrapper 删除后直调 client.request', () => {
-  it('clashApiRequest 私有方法已不存在于原型链', () => {
-    // 防回潮：wrapper 重新长出来要被发现
+describe('§3-C：selector/close 经管理 API gRPC', () => {
+  it('clash_api 残留私有方法已不存在于原型链（防回潮）', () => {
+    // clashApiRequest（旧 wrapper）/ destroyClashApiAgent / setClashApiClient 均应已删
     expect((ProxyManager.prototype as any).clashApiRequest).toBeUndefined();
+    expect((ProxyManager.prototype as any).destroyClashApiAgent).toBeUndefined();
+    expect((ProxyManager.prototype as any).setClashApiClient).toBeUndefined();
   });
 
-  it('closeConnection(id) → client.request DELETE /connections/{id}', async () => {
+  it('closeConnection(id) → gRPC closeConnection(id)，返回 { ok:true, status:200 }', async () => {
     const svc = makeSvc();
-    const { client, calls } = makeClientStub();
-    svc.setClashApiClient(client as any);
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
     const res = await svc.closeConnection('conn-1');
-    expect(res).toEqual({ ok: true, status: 204 });
-    expect(calls).toEqual([
-      { pathName: '/connections/conn-1', method: 'DELETE', body: undefined, timeoutMs: 2000 },
-    ]);
+    expect(res).toEqual({ ok: true, status: 200 });
+    expect(calls).toEqual([{ method: 'closeConnection', args: ['conn-1'] }]);
   });
 
-  it('closeConnection(无 id) → client.request DELETE /connections（关全部）', async () => {
+  it('closeConnection(无 id) → gRPC closeAllConnections()（关全部）', async () => {
     const svc = makeSvc();
-    const { client, calls } = makeClientStub();
-    svc.setClashApiClient(client as any);
-    await svc.closeConnection();
-    expect(calls[0].pathName).toBe('/connections');
-    expect(calls[0].method).toBe('DELETE');
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
+    const res = await svc.closeConnection();
+    expect(res).toEqual({ ok: true, status: 200 });
+    expect(calls).toEqual([{ method: 'closeAllConnections', args: [] }]);
+  });
+
+  it('closeConnection gRPC 抛错 → catch 包成 { ok:false, status:0 }', async () => {
+    const svc = makeSvc();
+    const { client } = makeApiClientStub(true); // throws
+    svc.tailscaleApiClient = client;
+    const res = await svc.closeConnection('conn-1');
+    expect(res).toEqual({ ok: false, status: 0 });
   });
 
   it('closeConnection client 未注入 → fallback { ok:false, status:0 }', async () => {
@@ -126,31 +144,24 @@ describe('T15：clashApiRequest wrapper 删除后直调 client.request', () => {
     expect(res).toEqual({ ok: false, status: 0 });
   });
 
-  it('hotSwitchSelector 成功 → client.request PUT /proxies/{tag} body={name:member}', async () => {
+  it('hotSwitchSelector 成功 → gRPC selectOutbound(selectorTag, member)，返回 true', async () => {
     const svc = makeSvc();
-    const { client, calls } = makeClientStub({ ok: true, status: 204 });
-    svc.setClashApiClient(client as any);
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
     const ok = await svc.hotSwitchSelector('proxy-selector', 'member-A');
     expect(ok).toBe(true);
-    expect(calls).toEqual([
-      {
-        pathName: '/proxies/proxy-selector',
-        method: 'PUT',
-        body: { name: 'member-A' },
-        timeoutMs: 2000,
-      },
-    ]);
+    expect(calls).toEqual([{ method: 'selectOutbound', args: ['proxy-selector', 'member-A'] }]);
   });
 
-  it('hotSwitchSelector HTTP 非 2xx → 返回 false（调用方退回去抖重启）', async () => {
+  it('hotSwitchSelector gRPC 抛错 → 返回 false（调用方退回去抖重启）', async () => {
     const svc = makeSvc();
-    const { client } = makeClientStub({ ok: false, status: 503 });
-    svc.setClashApiClient(client as any);
+    const { client } = makeApiClientStub(true); // throws
+    svc.tailscaleApiClient = client;
     const ok = await svc.hotSwitchSelector('proxy-selector', 'member-A');
     expect(ok).toBe(false);
   });
 
-  it('hotSwitchSelector client 未注入 → res fallback {ok:false} → false', async () => {
+  it('hotSwitchSelector client 未注入 → false', async () => {
     const svc = makeSvc();
     const ok = await svc.hotSwitchSelector('proxy-selector', 'member-A');
     expect(ok).toBe(false);
@@ -158,17 +169,17 @@ describe('T15：clashApiRequest wrapper 删除后直调 client.request', () => {
 
   it('hotSwitchSelector memberTag 为空 → 提前 return false（不调 client）', async () => {
     const svc = makeSvc();
-    const { client, calls } = makeClientStub();
-    svc.setClashApiClient(client as any);
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
     const ok = await svc.hotSwitchSelector('proxy-selector', '');
     expect(ok).toBe(false);
     expect(calls).toHaveLength(0);
   });
 
-  it('reassertRuleSelectors 对每条启用的 proxy 规则 → client.request PUT /proxies/{selectorTag}', async () => {
+  it('reassertRuleSelectors 对每条启用的 proxy 规则 → gRPC selectOutbound(selectorTag, memberTag)', async () => {
     const svc = makeSvc();
-    const { client, calls } = makeClientStub();
-    svc.setClashApiClient(client as any);
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
     // 注入启动期生成侧映射
     svc.currentRuleTargetMap = new Map([
       ['custom:r1', { selectorTag: 'rule-sel-r1', memberTag: 'm-r1' }],
@@ -185,25 +196,15 @@ describe('T15：clashApiRequest wrapper 删除后直调 client.request', () => {
     } as any;
     await svc.reassertRuleSelectors(svc.currentConfig);
     expect(calls).toEqual([
-      {
-        pathName: '/proxies/rule-sel-r1',
-        method: 'PUT',
-        body: { name: 'tagA' },
-        timeoutMs: 2000,
-      },
-      {
-        pathName: '/proxies/rule-sel-app1',
-        method: 'PUT',
-        body: { name: 'tagB' },
-        timeoutMs: 2000,
-      },
+      { method: 'selectOutbound', args: ['rule-sel-r1', 'tagA'] },
+      { method: 'selectOutbound', args: ['rule-sel-app1', 'tagB'] },
     ]);
   });
 
   it('reassertRuleSelectors map/idToTag 未注入 → 提前 return（不调 client）', async () => {
     const svc = makeSvc();
-    const { client, calls } = makeClientStub();
-    svc.setClashApiClient(client as any);
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
     svc.currentRuleTargetMap = null;
     svc.currentIdToTagMap = null;
     await svc.reassertRuleSelectors({} as any);

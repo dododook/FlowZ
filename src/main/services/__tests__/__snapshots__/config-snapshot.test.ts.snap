@@ -171,12 +171,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -837,12 +831,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -1475,12 +1463,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -2091,12 +2073,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -2731,12 +2707,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -3322,12 +3292,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -3887,12 +3851,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -4451,12 +4409,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -5023,12 +4975,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -5629,12 +5575,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -6265,12 +6205,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -6903,12 +6837,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -7576,12 +7504,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -8172,12 +8094,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -8849,12 +8765,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -9430,12 +9340,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -10037,12 +9941,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -10615,12 +10513,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -11230,12 +11122,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -11842,12 +11728,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -12475,12 +12355,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -13080,12 +12954,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -13716,12 +13584,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -14331,12 +14193,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -14936,12 +14792,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -15571,12 +15421,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -16222,12 +16066,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -16856,12 +16694,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -17493,12 +17325,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -18098,12 +17924,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -18712,12 +18532,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -19325,12 +19139,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -19903,12 +19711,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
@@ -20598,12 +20400,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "store_dns": true,
         "store_fakeip": true,
       },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
-      },
     },
     "inbounds": [
       {
@@ -21214,12 +21010,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "path": "/fake/userData/cache.db",
         "store_dns": true,
         "store_fakeip": true,
-      },
-      "clash_api": {
-        "default_mode": "rule",
-        "external_controller": "127.0.0.1:9090",
-        "external_ui": "/fake/userData/ui",
-        "secret": "testsecret",
       },
     },
     "inbounds": [
