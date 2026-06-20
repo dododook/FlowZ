@@ -70,14 +70,57 @@ describe('compareSemver', () => {
     expect(compareSemver('V2.0.0', 'v1.0.0')).toBe(1);
   });
 
-  it('容忍 prerelease/build 后缀（核心修复点：原 split.map(Number) 会算成 NaN 误判）', () => {
-    // 后缀在首个 -/+ 处截断后只比数字段
-    expect(compareSemver('1.2.3-beta', '1.2.3')).toBe(0);
-    expect(compareSemver('1.2.3', '1.2.3-beta')).toBe(0);
+  it('主版本不同：prerelease/build 后缀不阻碍数字段比较', () => {
     expect(compareSemver('1.2.4-beta', '1.2.3')).toBe(1); // 新版带后缀仍被识别为更新
-    expect(compareSemver('1.2.3+naive', '1.2.3')).toBe(0);
     expect(compareSemver('1.2.3-rc.1', '1.2.2')).toBe(1);
     expect(compareSemver('v1.13.14-beta', 'v1.13.13')).toBe(1);
+  });
+
+  it('build 后缀（+...）不参与比较（semver 规范）', () => {
+    expect(compareSemver('1.2.3+naive', '1.2.3')).toBe(0);
+    expect(compareSemver('1.2.3+naive', '1.2.3+other')).toBe(0);
+    expect(compareSemver('1.2.4+naive', '1.2.3')).toBe(1);
+  });
+
+  it('主版本相同：有 prerelease < 无 prerelease（1.14 §6.5：预览版→正式版可升）', () => {
+    expect(compareSemver('1.14.0', '1.14.0-alpha.32')).toBe(1); // 正式版 > 预览版
+    expect(compareSemver('1.14.0-alpha.32', '1.14.0')).toBe(-1);
+    expect(compareSemver('1.2.3', '1.2.3-beta')).toBe(1);
+    expect(compareSemver('1.2.3-beta', '1.2.3')).toBe(-1);
+  });
+
+  it('prerelease 优先级链：alpha.32 < alpha.33 < beta.1 < rc.1 < 1.14.0 < 1.14.1', () => {
+    // 同档比数字
+    expect(compareSemver('1.14.0-alpha.32', '1.14.0-alpha.33')).toBe(-1);
+    expect(compareSemver('1.14.0-alpha.33', '1.14.0-alpha.32')).toBe(1);
+    // alpha < beta < rc（ASCII 字典序）
+    expect(compareSemver('1.14.0-alpha.33', '1.14.0-beta.1')).toBe(-1);
+    expect(compareSemver('1.14.0-beta.1', '1.14.0-rc.1')).toBe(-1);
+    // 预览 < 正式
+    expect(compareSemver('1.14.0-rc.1', '1.14.0')).toBe(-1);
+    // 正式逐 patch
+    expect(compareSemver('1.14.0', '1.14.1')).toBe(-1);
+
+    // 端到端链：相邻全部 -1，且首 < 尾
+    const chain = [
+      '1.14.0-alpha.32',
+      '1.14.0-alpha.33',
+      '1.14.0-beta.1',
+      '1.14.0-rc.1',
+      '1.14.0',
+      '1.14.1',
+    ];
+    for (let i = 0; i < chain.length - 1; i++) {
+      expect(compareSemver(chain[i], chain[i + 1])).toBe(-1);
+      expect(compareSemver(chain[i + 1], chain[i])).toBe(1);
+    }
+    expect(compareSemver(chain[0], chain[chain.length - 1])).toBe(-1);
+  });
+
+  it('prerelease 数字段 < 字母段，段数不同时较短者更小', () => {
+    expect(compareSemver('1.0.0-1', '1.0.0-alpha')).toBe(-1); // 数字 < 字母
+    expect(compareSemver('1.0.0-alpha', '1.0.0-alpha.1')).toBe(-1); // 较短 < 较长
+    expect(compareSemver('1.0.0-alpha.1', '1.0.0-alpha')).toBe(1);
   });
 
   it('不同段数：缺失段按 0 计', () => {
