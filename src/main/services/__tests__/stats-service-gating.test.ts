@@ -427,5 +427,49 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(lastConns?.connections).toHaveLength(0);
       expect(service.getConnectionsSnapshot().connections).toHaveLength(0);
     });
+
+    // R3-3(a)：归零广播须无条件（对齐 stop()），不受可见性门控——窗口不可见时仍广播归零帧，
+    // 否则崩溃重启后隐藏窗口再恢复，首页仍残留旧值（resubscribe 走直广播，绕过 isWindowVisible 门控）。
+    it('窗口不可见（isWindowVisible→false）时 resubscribe 仍无条件归零广播', () => {
+      const { service, onUpdate, onConnections, ref, swap } = setupSwitchable({
+        withVisible: true,
+        visible: false,
+      });
+      service.start();
+      service.addConnectionsWatcher();
+      ref.mock.pushStatus(STATUS); // 灌非零快照（不可见→pushStatus 不广播，但更新快照）
+      expect(service.getSnapshot().activeConnections).toBe(5);
+
+      onUpdate.mockClear();
+      onConnections.mockClear();
+      swap();
+      service.resubscribe();
+
+      // 不可见仍广播归零帧（与 stop() 同语义，绕过可见性门控）
+      const lastStats = onUpdate.mock.calls[onUpdate.mock.calls.length - 1]?.[0];
+      expect(lastStats).toMatchObject({ activeConnections: 0, totalUpload: 0, downloadSpeed: 0 });
+      const lastConns = onConnections.mock.calls[onConnections.mock.calls.length - 1]?.[0];
+      expect(lastConns?.connections).toHaveLength(0);
+    });
+
+    // R3-3(b)：resubscribe 期间归零帧只广播一次（防未来误加多次推送 regression）。
+    // mockClear 后到 resubscribe 返回（新流尚未推帧）期间，onUpdate 恰好 1 次（归零）、onConnections 恰好 1 次（空）。
+    it('resubscribe 归零帧广播次数恰为 1（不多推）', () => {
+      const { service, onUpdate, onConnections, ref, swap } = setupSwitchable({
+        withVisible: true,
+        visible: true,
+      });
+      service.start();
+      service.addConnectionsWatcher();
+      ref.mock.pushStatus(STATUS);
+
+      onUpdate.mockClear();
+      onConnections.mockClear();
+      swap();
+      service.resubscribe(); // 新 client 流已订阅但尚未 pushStatus
+
+      expect(onUpdate).toHaveBeenCalledTimes(1); // 仅归零帧
+      expect(onConnections).toHaveBeenCalledTimes(1); // 仅空连接帧
+    });
   });
 });
