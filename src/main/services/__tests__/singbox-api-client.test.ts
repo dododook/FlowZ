@@ -21,6 +21,7 @@ const mockState: {
   lastChannelCreds: unknown;
   lastMetadata: FakeMetadata | null;
   insecureCreds: { __kind: 'insecure' };
+  sslCalls: Array<{ rootCerts: unknown; verifyOptions: unknown }>;
   unaryCalls: Array<{ method: string; req: unknown }>;
   streams: FakeStream[];
   closedClients: number;
@@ -29,6 +30,7 @@ const mockState: {
   lastChannelCreds: null,
   lastMetadata: null,
   insecureCreds: { __kind: 'insecure' },
+  sslCalls: [],
   unaryCalls: [],
   streams: [],
   closedClients: 0,
@@ -88,6 +90,12 @@ jest.mock('@grpc/grpc-js', () => {
     Metadata,
     credentials: {
       createInsecure: () => mockState.insecureCreds,
+      // createSsl(rootCerts?, privateKey?, certChain?, verifyOptions?)：捕获 rootCerts + verifyOptions 供断言。
+      createSsl: (rootCerts: unknown, _pk: unknown, _cc: unknown, verifyOptions: unknown) => {
+        const creds = { __kind: 'ssl' as const, rootCerts, verifyOptions };
+        mockState.sslCalls.push({ rootCerts, verifyOptions });
+        return creds;
+      },
     },
     loadPackageDefinition: () => ({
       daemon: { StartedService: makeFakeClientCtor() },
@@ -112,6 +120,7 @@ beforeEach(() => {
   mockState.lastTarget = '';
   mockState.lastChannelCreds = null;
   mockState.lastMetadata = null;
+  mockState.sslCalls = [];
   mockState.unaryCalls = [];
   mockState.streams = [];
   mockState.closedClients = 0;
@@ -204,5 +213,79 @@ describe('订阅流（subscribeStatus / subscribeConnections）', () => {
     // stop 后再来一帧（best-effort 在途帧）不应透传
     stream.handlers['data']?.({ events: [], reset: true });
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe('远程 TLS 通道凭据（Phase 2）', () => {
+  it('无 tls（本地）→ createInsecure（h2c），不走 createSsl', async () => {
+    const client = new SingBoxApiClient({ host: '127.0.0.1', port: 9090 }, 's');
+    await client.closeAllConnections();
+    expect(mockState.lastChannelCreds).toBe(mockState.insecureCreds);
+    expect(mockState.sslCalls).toHaveLength(0);
+  });
+
+  it('tls={}（无 CA、不跳过）→ createSsl(rootCerts=undefined)：用系统默认 CA 链验证', async () => {
+    const client = new SingBoxApiClient({ host: 'remote.example', port: 443, tls: {} }, 's');
+    await client.closeAllConnections();
+    expect(mockState.sslCalls).toHaveLength(1);
+    expect(mockState.sslCalls[0].rootCerts).toBeUndefined();
+    expect(mockState.sslCalls[0].verifyOptions).toBeUndefined();
+  });
+
+  it('tls.ca → createSsl(rootCerts=该 CA 的 Buffer)（自签证书校验）', async () => {
+    const ca = '-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----';
+    const client = new SingBoxApiClient({ host: 'remote.example', port: 443, tls: { ca } }, 's');
+    await client.closeAllConnections();
+    expect(mockState.sslCalls).toHaveLength(1);
+    const root = mockState.sslCalls[0].rootCerts as Buffer;
+    expect(Buffer.isBuffer(root)).toBe(true);
+    expect(root.toString('utf-8')).toBe(ca);
+    expect(mockState.sslCalls[0].verifyOptions).toBeUndefined();
+  });
+
+  it('tls.skipVerify → createSsl 带 checkServerIdentity no-op（放过 SAN/hostname）+ rootCerts 兜底空 Buffer', async () => {
+    const client = new SingBoxApiClient(
+      { host: 'self-signed.example', port: 443, tls: { skipVerify: true } },
+      's'
+    );
+    await client.closeAllConnections();
+    expect(mockState.sslCalls).toHaveLength(1);
+    const vo = mockState.sslCalls[0].verifyOptions as { checkServerIdentity?: () => unknown };
+    expect(typeof vo?.checkServerIdentity).toBe('function');
+    // no-op 返回 undefined（不抛 = 接受）
+    expect(vo.checkServerIdentity!()).toBeUndefined();
+    const root = mockState.sslCalls[0].rootCerts as Buffer;
+    expect(Buffer.isBuffer(root)).toBe(true);
+    expect(root.length).toBe(0);
+  });
+
+  it('远程 TLS + Bearer：target 用远端 host:port，per-call metadata 仍带 Bearer', async () => {
+    const client = new SingBoxApiClient(
+      { host: 'remote.example', port: 8443, tls: {} },
+      'remote-secret'
+    );
+    await client.closeAllConnections();
+    expect(mockState.lastTarget).toBe('remote.example:8443');
+    expect(mockState.lastMetadata?.store['authorization']).toBe('Bearer remote-secret');
+  });
+});
+
+describe('probe 连通探活（Phase 2 连通测试）', () => {
+  it('首帧 → resolve（开 SubscribeStatus 流，收 data 即通），并 cancel 流', async () => {
+    const client = new SingBoxApiClient({ host: 'r', port: 1, tls: {} }, 's');
+    const p = client.probe(1000);
+    const stream = mockState.streams[0];
+    expect(stream).toBeDefined();
+    stream.handlers['data']?.({ memory: '1' });
+    await expect(p).resolves.toBeUndefined();
+    expect(stream.cancel).toHaveBeenCalled();
+  });
+
+  it('流 error → reject（鉴权失败/TLS 握手失败/拒连）', async () => {
+    const client = new SingBoxApiClient({ host: 'r', port: 1, tls: {} }, 's');
+    const p = client.probe(1000);
+    const stream = mockState.streams[0];
+    stream.handlers['error']?.(new Error('16 UNAUTHENTICATED'));
+    await expect(p).rejects.toThrow('UNAUTHENTICATED');
   });
 });

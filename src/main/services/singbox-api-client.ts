@@ -11,8 +11,11 @@
  * metadata `authorization: "Bearer <secret>"`（缺失/不符 → Unauthenticated）。本客户端经 call credentials 把 Bearer
  * 注入到所有 unary + stream 调用；secret 为空时退化为不带 metadata（免认证，本地调试/旧核）。
  *
- * 端点（Phase 2 预留）：构造参数 endpoint = { host, port }，本任务只做本地 h2c（createInsecure）。远程 TLS
- * （channel credentials 换 createSsl + Bearer 仍走 call credentials）留 Phase 2，此处只把 host 参数化、不引入 TLS。
+ * 端点（Phase 2 已落地）：构造参数 endpoint = { host, port, tls? }。本地实例仍 h2c（createInsecure）；远程实例经
+ * TLS——channel credentials 换 createSsl（带可选 CA / skip-verify），Bearer 仍走 per-call metadata（h2c/TLS 一致，不变）。
+ * TLS 行为对照 @grpc/grpc-js：createSsl(rootCerts?, ...) —— rootCerts=undefined 用系统默认 CA 链验证；传 CA Buffer
+ * 用自定义 CA（自签证书场景）；skipVerify 走 checkServerIdentity no-op + 自签 CA 注入（grpc-js 无「全跳过校验」开关，
+ * 见 channelCredentials 实现说明）。远程 createSsl 的具体 CA/skip-verify wire 行为须真机对真实 1.14 核（TLS+secret）验。
  */
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
@@ -195,10 +198,23 @@ export interface SingBoxConnectionEvents {
   reset?: boolean;
 }
 
-/** 管理 API 端点（Phase 2 预留 host 参数化；本任务恒 127.0.0.1 本地 h2c）。 */
+/**
+ * 管理 API 端点。本地实例 = { host:'127.0.0.1', port } 不带 tls（h2c）；远程实例带 tls 走 TLS（Phase 2）。
+ * tls.ca：自签证书的 PEM CA（Buffer/字符串均可，留空用系统默认 CA 链）；tls.skipVerify：跳过证书校验（不安全，仅
+ * 自签且无 CA 的便利档，UI 警示）。secret 不在端点里——它是 Bearer per-call metadata（见 authMetadata），h2c/TLS 一致。
+ */
+export interface SingBoxApiTlsOptions {
+  /** PEM 格式 CA（自签证书校验用）；空 → 系统默认 CA 链。 */
+  ca?: string;
+  /** 跳过服务端证书校验（不安全，仅自签且未提供 CA 的便利场景）。 */
+  skipVerify?: boolean;
+}
+
 export interface SingBoxApiEndpoint {
   host: string;
   port: number;
+  /** 存在即走 TLS（createSsl）；不存在 → 本地 h2c（createInsecure）。 */
+  tls?: SingBoxApiTlsOptions;
 }
 
 // service 构造器只解析一次（proto 内嵌→写临时文件→loadSync）。
@@ -229,6 +245,7 @@ function getServiceCtor(): grpc.ServiceClientConstructor {
 export class SingBoxApiClient {
   private readonly host: string;
   private readonly port: number;
+  private readonly tls?: SingBoxApiTlsOptions;
   private readonly secret: string;
   private readonly onUpdate?: (endpoints: TailscaleEndpointStatus[]) => void;
 
@@ -238,8 +255,8 @@ export class SingBoxApiClient {
   private retryTimer: NodeJS.Timeout | null = null;
 
   /**
-   * @param endpoint 管理 API 端点（{host, port}）。本任务恒本地 h2c。
-   * @param secret   Bearer 鉴权 secret（= config.clashApiSecret）；空串 → 免认证。
+   * @param endpoint 管理 API 端点（{host, port, tls?}）。本地 = 无 tls（h2c）；远程 = 带 tls（TLS）。
+   * @param secret   Bearer 鉴权 secret（本地 = config.clashApiSecret；远程 = 远端实例 secret）；空串 → 免认证。
    * @param onUpdate Tailscale 状态订阅回调（可选——纯做 clash 管理调用时可不传，不自动 start 订阅）。
    */
   constructor(
@@ -249,6 +266,7 @@ export class SingBoxApiClient {
   ) {
     this.host = endpoint.host;
     this.port = endpoint.port;
+    this.tls = endpoint.tls;
     this.secret = secret;
     this.onUpdate = onUpdate;
   }
@@ -257,9 +275,30 @@ export class SingBoxApiClient {
     return `${this.host}:${this.port}`;
   }
 
-  /** 通道凭据：本地 h2c insecure。Phase 2 远程换 createSsl。 */
+  /**
+   * 通道凭据：本地（无 tls）= h2c insecure；远程（带 tls）= TLS createSsl。
+   *
+   * createSsl(rootCerts?, privateKey?, certChain?, verifyOptions?)（@grpc/grpc-js）：
+   *  - rootCerts=null/undefined → 用系统默认受信 CA 链验证服务端证书（公网正规证书场景）；
+   *  - rootCerts=CA Buffer（PEM）→ 仅用该 CA 验证（自签证书场景，FlowZ 把 tls.ca 字符串转 Buffer 传入）；
+   *  - skipVerify：grpc-js 无「完全关闭校验」单一开关；用 verifyOptions.checkServerIdentity 返回 undefined（不抛=接受）
+   *    放过 hostname/SAN 不匹配。注意——仅 checkServerIdentity 仍会按 rootCerts 验证书链；自签且未提供 CA 时链亦不过，
+   *    故 skipVerify 同时把 rootCerts 兜底为空 Buffer + 该 no-op，达到「自签便利直连」效果（不安全，仅便利档，UI 警示）。
+   *
+   * 真机待验：createSsl 的 CA/skipVerify 对真实 sing-box 1.14 核（api service 开 TLS + secret）的握手行为，本机无远程
+   * 实例难验；以 grpc-js 文档语义实现，标记真机验证（远端 1.14 核暴露 TLS 管理 API 后跑连通测试）。
+   */
   private channelCredentials(): grpc.ChannelCredentials {
-    return grpc.credentials.createInsecure();
+    if (!this.tls) return grpc.credentials.createInsecure();
+    const caBuf = this.tls.ca ? Buffer.from(this.tls.ca, 'utf-8') : undefined;
+    if (this.tls.skipVerify) {
+      // 跳过校验：rootCerts 给空 Buffer（避免系统 CA 链对自签直接拒）+ checkServerIdentity no-op（放过 SAN/hostname）。
+      return grpc.credentials.createSsl(caBuf ?? Buffer.alloc(0), null, null, {
+        checkServerIdentity: () => undefined,
+      });
+    }
+    // 正常校验：有 CA 用 CA，无 CA 用系统默认 CA 链（caBuf=undefined）。
+    return grpc.credentials.createSsl(caBuf);
   }
 
   /** 每调用 Bearer 认证 metadata。h2c 下 call credentials 不可用——combineChannelCredentials over insecure 实测抛
@@ -393,6 +432,51 @@ export class SingBoxApiClient {
   /** clash 等价：按 id 关闭单条连接。 */
   closeConnection(id: string): Promise<void> {
     return this.unary('CloseConnection', { id });
+  }
+
+  /**
+   * 连通探活（P5 Phase2 远端连通测试，只读无副作用）：开一条 SubscribeStatus 流，收到首帧 → ok（鉴权/TLS/可达均通过）；
+   * 流 error（含 16 UNAUTHENTICATED / TLS 握手失败 / 连接拒绝） → reject；timeoutMs 内无任何帧/错误 → reject('timeout')。
+   * 探活后立即 cancel 流 + close client（不留连接）。供「连通测试」按钮用，不影响 start/stop 的订阅生命周期。
+   */
+  probe(timeoutMs = 5000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let client: grpc.Client | null = null;
+      let stream: grpc.ClientReadableStream<unknown> | null = null;
+      const done = (err?: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          stream?.cancel();
+        } catch {
+          /* ignore */
+        }
+        try {
+          client?.close();
+        } catch {
+          /* ignore */
+        }
+        if (err) reject(err);
+        else resolve();
+      };
+      const timer = setTimeout(() => done(new Error('probe timeout')), timeoutMs);
+      try {
+        client = this.newClient();
+        stream = (
+          client as unknown as Record<
+            string,
+            (r: { interval: number }, md: grpc.Metadata) => grpc.ClientReadableStream<unknown>
+          >
+        ).SubscribeStatus({ interval: 1_000_000_000 }, this.authMetadata());
+        stream.on('data', () => done());
+        stream.on('error', (e: Error) => done(e));
+        stream.on('end', () => done(new Error('stream ended before any frame')));
+      } catch (e) {
+        done(e as Error);
+      }
+    });
   }
 
   /** clash 等价：关闭全部连接（Empty 请求）。 */
