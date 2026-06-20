@@ -4833,7 +4833,6 @@ exit 0
     {
       proc: ChildProcess;
       timeoutTimer: NodeJS.Timeout;
-      cancelled: boolean;
       // SIGTERM 后的 SIGKILL 升级 timer：进程拒绝 SIGTERM 时宽限期到点强杀（防泄漏 + 卡 alreadyRunning）。
       // finalize（proc exit/error）会 clearTimeout 它，进程优雅退出则升级被取消。
       killTimer?: NodeJS.Timeout;
@@ -4911,21 +4910,17 @@ exit 0
     const handle: {
       proc: ChildProcess;
       timeoutTimer: NodeJS.Timeout;
-      cancelled: boolean;
       killTimer?: NodeJS.Timeout;
-    } = { proc, timeoutTimer, cancelled: false };
+    } = { proc, timeoutTimer };
     this.tailscaleLoginCores.set(server.id, handle);
 
-    // 幂等收尾：置 cancelled（收敛轮询）+ 清 timer + 删 Map + 删临时 config。error 与 exit 两路径都调它。
+    // 幂等收尾：清 timer + 删 Map + 删临时 config。error 与 exit 两路径都调它。
     //  - spawn 失败（ENOENT/EACCES…）只 emit 'error' 不 emit 'exit'：收尾只挂 exit 会致 cfg 文件 + Map 项双泄漏
     //    （Map 残留 → 该节点再点登录恒返回 alreadyRunning 卡死）。故 error 路径也须 finalize。
-    //  - 瞬态核**自行崩溃/退出**（非经 killTailscaleLogin，如核拒绝 config / panic）时置 handle.cancelled=true 是关键：
-    //    否则 runLoginPollLifecycle 的 isCancelled(=()=>handle.cancelled) 永为 false → poll 空转到 2min 才超时。
     let finalized = false;
     const finalize = (): void => {
       if (finalized) return;
       finalized = true;
-      handle.cancelled = true;
       clearTimeout(timeoutTimer);
       // 进程已退出（优雅 SIGTERM 或自行崩溃）→ 取消挂起的 SIGKILL 升级，防 timer 泄漏。
       clearTimeout(handle.killTimer);
@@ -4957,7 +4952,7 @@ exit 0
       this.logToManager('error', `Tailscale 登录进程启动失败: ${e.message}`, 'sing-box');
       finalize();
     });
-    // 进程退出（正常被杀 / 自行崩溃 / 核拒绝 config）：finalize 置 cancelled 收敛轮询并清 cfg/Map。
+    // 进程退出（正常被杀 / 自行崩溃 / 核拒绝 config）：finalize 清 timer/cfg/Map（幂等）。
     proc.on('exit', finalize);
 
     this.logToManager(
@@ -5072,11 +5067,10 @@ exit 0
     return { runningNeedsRestart: inRunningCore };
   }
 
-  /** 杀某节点瞬态登录核（成功/超时/取消/出错统一收口）：置 cancelled 中止轮询 + kill 进程 + 清 timer/Map。幂等。 */
+  /** 杀某节点瞬态登录核（超时/取消/出错统一收口）：kill 进程 + 清 timer/Map。幂等。 */
   private killTailscaleLogin(serverId: string): void {
     const handle = this.tailscaleLoginCores.get(serverId);
     if (!handle) return;
-    handle.cancelled = true;
     clearTimeout(handle.timeoutTimer);
     // 已挂起一次升级（重复调用幂等）→ 不重复发信号/排第二个 timer。
     if (handle.killTimer) return;
