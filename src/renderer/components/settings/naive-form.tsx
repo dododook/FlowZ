@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { AddressField, PortField } from './shared/basic-fields';
-import { FingerprintField } from './shared/tls-fields';
+import { FingerprintField, TlsEngineField } from './shared/tls-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { FormButtons } from './shared/form-buttons';
 import { InfoTooltip } from './shared/info-tooltip';
@@ -28,6 +28,7 @@ const createNaiveSchema = (t: any) =>
     password: z.string().min(1, t('servers.passwordRequired')),
     tlsServerName: z.string().optional(),
     tlsFingerprint: z.string().optional(),
+    tlsEngine: z.string().optional(),
     useHttp3: z.boolean().optional(),
   });
 
@@ -51,6 +52,7 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
         password: serverConfig.password || '',
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'none',
+        tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         useHttp3: serverConfig.naiveSettings?.useHttp3 ?? false,
       };
     }
@@ -61,6 +63,7 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
       password: '',
       tlsServerName: '',
       tlsFingerprint: 'none',
+      tlsEngine: 'go',
       useHttp3: false,
     };
   };
@@ -83,6 +86,10 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
         serverName: values.tlsServerName?.trim() || undefined,
         allowInsecure: false,
         fingerprint: values.tlsFingerprint || 'none',
+        engine:
+          values.tlsEngine && values.tlsEngine !== 'go'
+            ? (values.tlsEngine as 'windows' | 'apple')
+            : undefined,
       },
       naiveSettings: values.useHttp3 ? { useHttp3: true } : undefined,
     };
@@ -146,6 +153,7 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
             <FieldSpan>
               <FingerprintField control={form.control} t={t} />
             </FieldSpan>
+            <TlsEngineField control={form.control} t={t} />
             <FieldSpan>
               <FormField
                 control={form.control}

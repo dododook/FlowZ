@@ -21,7 +21,12 @@ import {
 import { FormButtons } from './shared/form-buttons';
 import { EchField } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
-import { TlsServerNameField, FingerprintField, AllowInsecureField } from './shared/tls-fields';
+import {
+  TlsServerNameField,
+  FingerprintField,
+  AllowInsecureField,
+  TlsEngineField,
+} from './shared/tls-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
 import { echSchemaShape, echDefaults, readEchDefault } from './shared/field-schemas';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
@@ -42,6 +47,7 @@ const createAnyTlsSchema = (t: any) =>
     security: z.enum(['tls', 'reality']),
     tlsServerName: z.string().optional(),
     tlsFingerprint: z.string().optional(),
+    tlsEngine: z.string().optional(),
     tlsAllowInsecure: z.boolean(),
     realityPublicKey: z.string().optional(),
     realityShortId: z.string().optional(),
@@ -71,6 +77,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         security: (serverConfig.security === 'reality' ? 'reality' : 'tls') as 'tls' | 'reality',
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'chrome',
+        tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         realityPublicKey: serverConfig.realitySettings?.publicKey || '',
         realityShortId: serverConfig.realitySettings?.shortId || '',
@@ -87,6 +94,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
       security: 'tls',
       tlsServerName: '',
       tlsFingerprint: 'chrome',
+      tlsEngine: 'go',
       tlsAllowInsecure: false,
       realityPublicKey: '',
       realityShortId: '',
@@ -112,6 +120,10 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
       tlsSettings: {
         serverName: values.tlsServerName?.trim() || undefined,
         fingerprint: values.tlsFingerprint || 'chrome',
+        engine:
+          values.security === 'tls' && values.tlsEngine && values.tlsEngine !== 'go'
+            ? values.tlsEngine
+            : undefined,
         allowInsecure: values.security === 'tls' ? values.tlsAllowInsecure : false,
         ech: values.ech ? true : undefined,
         echConfig: values.echConfig?.trim() || undefined,
@@ -224,6 +236,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
                 optional
               />
               <FingerprintField control={form.control} t={t} />
+              <TlsEngineField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

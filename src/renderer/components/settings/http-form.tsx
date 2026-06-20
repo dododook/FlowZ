@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FormButtons } from './shared/form-buttons';
 import { AddressField, PortField } from './shared/basic-fields';
-import { TlsServerNameField, AllowInsecureField } from './shared/tls-fields';
+import { TlsServerNameField, AllowInsecureField, TlsEngineField } from './shared/tls-fields';
 import { FormSection, FieldGrid } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +28,7 @@ const createHttpSchema = (t: any) =>
     isHttps: z.boolean(),
     tlsAllowInsecure: z.boolean(),
     tlsServerName: z.string().optional(),
+    tlsEngine: z.string().optional(),
   });
 
 type HttpFormValues = z.infer<ReturnType<typeof createHttpSchema>>;
@@ -52,6 +53,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
         isHttps,
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
+        tlsEngine: serverConfig.tlsSettings?.engine || 'go',
       };
     }
     return {
@@ -62,6 +64,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
       isHttps: false,
       tlsAllowInsecure: false,
       tlsServerName: '',
+      tlsEngine: 'go',
     };
   };
 
@@ -85,6 +88,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
       config.tlsSettings = {
         serverName: values.tlsServerName?.trim() || undefined,
         allowInsecure: values.tlsAllowInsecure,
+        engine: values.tlsEngine && values.tlsEngine !== 'go' ? values.tlsEngine : undefined,
       };
     }
 
@@ -161,6 +165,7 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
                 optional
               />
               <AllowInsecureField control={form.control} t={t} />
+              <TlsEngineField control={form.control} t={t} />
             </FieldGrid>
           )}
         </FormSection>
