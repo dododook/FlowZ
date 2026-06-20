@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { MeshOptionsSection } from './shared/mesh-fields';
+import { InfoTooltip } from './shared/info-tooltip';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -268,7 +269,10 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             name="allowedIPs"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('servers.wgAllowedIPs', 'Routed subnets (Allowed IPs)')}</FormLabel>
+                <FormLabel className="flex items-center gap-1.5">
+                  {t('servers.wgAllowedIPs', 'Routed subnets')}
+                  <InfoTooltip content={t('servers.wgAllowedIPsLabelTip', 'AllowedIPs')} />
+                </FormLabel>
                 <FormControl>
                   <Input
                     placeholder={t(

@@ -32,6 +32,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { InfoTooltip } from './info-tooltip';
 
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
@@ -54,7 +55,10 @@ export function EchField({ control, t }: { control: AnyControl; t: TFn }) {
               <Checkbox checked={field.value === true} onCheckedChange={field.onChange} />
             </FormControl>
             <div className="space-y-1 leading-none">
-              <FormLabel>{t('servers.ech')}</FormLabel>
+              <FormLabel className="flex items-center gap-1.5">
+                {t('servers.ech')}
+                <InfoTooltip content={t('servers.echLabelTip', 'Encrypted ClientHello')} />
+              </FormLabel>
               <FormDescription>{t('servers.echDesc')}</FormDescription>
             </div>
           </FormItem>
