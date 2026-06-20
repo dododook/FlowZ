@@ -10,6 +10,8 @@
 import * as path from 'path';
 import type { Rule, CustomRuleSet, RuleResource, RuleCondition } from '../../shared/types';
 import { ruleConditions } from '../../shared/rules';
+import { isValidTlsSpoofMethod, isTlsSpoofSupportedArch } from '../../shared/tls-spoof';
+import { isIpv4Host, isIpv6Host } from './singbox-config-helpers';
 import {
   EXT_TYPES,
   planCustomRule,
@@ -178,7 +180,8 @@ export function buildCustomRules(
           selectedServerId,
           idToTagMap,
           selectedServerTag,
-          rule.id
+          rule.id,
+          { spoof: rule.tlsSpoof, method: rule.tlsSpoofMethod }
         );
         rules.push(extRule);
         continue;
@@ -242,7 +245,8 @@ export function buildCustomRules(
       selectedServerId,
       idToTagMap,
       selectedServerTag,
-      rule.id
+      rule.id,
+      { spoof: rule.tlsSpoof, method: rule.tlsSpoofMethod }
     );
     rules.push(finalRule);
   }
@@ -267,7 +271,9 @@ function applyRuleAction(
   _selectedServerId?: string, // 3b 后不再用于条件判断（保留位参以不动调用方），下划线跳过未用检查
   idToTagMap?: Map<string, string>,
   selectedServerTag: string = 'proxy',
-  ruleId?: string // rule-sel selector 命名所需（customRule.id）；缺省则回落旧行为
+  ruleId?: string, // rule-sel selector 命名所需（customRule.id）；缺省则回落旧行为
+  // P3a：route action TLS spoof（成对的 spoof SNI + 方法）。block 规则不挂（reject 无握手）。
+  tlsSpoof?: { spoof?: string; method?: string }
 ): void {
   // 设置出站
   if (action === 'proxy') {
@@ -294,5 +300,24 @@ function applyRuleAction(
   } else {
     // 如果没有指定，默认使用主节点
     singboxRule.outbound = selectedServerTag;
+  }
+
+  // P3a：route action TLS spoof（sing-box 1.14 tls_spoof/tls_spoof_method）。仅非 block 规则挂（block=reject 无握手）。
+  // 四重门控（任一不满足即不 emit，否则内核 FATAL / 行为无效），与 outbound spoof 同口径：
+  //   1. arch：ARM64 不支持；2. 方法合法；3. spoof SNI 非空且为域名（IP 字面量内核拒）。
+  // 提权是运行期生效条件，不影响配置合法性 → 此处不门控（UI 已提示）。
+  if (action !== 'block') {
+    const spoofSni = (tlsSpoof?.spoof || '').trim();
+    const method = tlsSpoof?.method;
+    const sniIsIpLiteral = !!spoofSni && (isIpv4Host(spoofSni) || isIpv6Host(spoofSni));
+    if (
+      isValidTlsSpoofMethod(method) &&
+      isTlsSpoofSupportedArch(process.arch) &&
+      !!spoofSni &&
+      !sniIsIpLiteral
+    ) {
+      singboxRule.tls_spoof = spoofSni;
+      singboxRule.tls_spoof_method = method;
+    }
   }
 }

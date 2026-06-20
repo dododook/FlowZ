@@ -1039,7 +1039,13 @@
     "tlsEngineGo": "Go（預設）",
     "tlsEngineWindows": "Windows (Schannel)",
     "tlsEngineApple": "Apple (Network.framework)",
-    "tlsEngineDesc": "TLS 堆疊引擎。系統原生堆疊（Schannel / Network.framework）讓握手指紋更真實；僅在對應平台可用。"
+    "tlsEngineDesc": "TLS 堆疊引擎。系統原生堆疊（Schannel / Network.framework）讓握手指紋更真實；僅在對應平台可用。",
+    "tlsSpoof": "TLS 偽造",
+    "tlsSpoofDesc": "真握手前先發一份偽造 ClientHello（用誘餌 SNI），騙過 SNI 過濾中間盒。需提權（CAP_NET_RAW+NET_ADMIN / root / 管理員）。",
+    "tlsSpoofDescFull": "抗審查：真 TLS 握手前先發一份偽造 ClientHello（用誘餌白名單 SNI），誘使 SNI 阻斷中間盒放行連線。限界：需提權（Linux CAP_NET_RAW+NET_ADMIN / macOS root / Windows 管理員）、ARM64 不支援、誘餌 SNI 須為網域（非 IP 字面量）且必須不同於真 server_name。",
+    "tlsSpoofArchUnsupported": "ARM64 不支援 TLS 偽造（核心僅在 amd64 實作）。",
+    "tlsSpoofSni": "誘餌 SNI",
+    "tlsSpoofSniDesc": "偽造 ClientHello 中使用的誘餌網域（如某白名單站點）。須為網域（非 IP）且必須不同於真 server_name；留空則不啟用偽造。"
   },
   "rules": {
     "ruleColumn": "規則",

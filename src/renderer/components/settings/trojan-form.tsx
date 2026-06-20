@@ -27,6 +27,7 @@ import {
   AllowInsecureField,
   AlpnField,
   TlsEngineField,
+  TlsSpoofField,
 } from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
@@ -34,11 +35,15 @@ import { FormButtons } from './shared/form-buttons';
 import {
   echSchemaShape,
   multiplexSchemaShape,
+  tlsSpoofSchemaShape,
   echDefaults,
   multiplexDefaults,
+  tlsSpoofDefaults,
   readEchDefault,
   readMultiplexDefaults,
+  readTlsSpoofDefault,
   buildMultiplexSettings,
+  buildTlsSpoofSettings,
   readTransportDefaults,
   buildTransportSettings,
 } from './shared/field-schemas';
@@ -62,6 +67,7 @@ const createTrojanSchema = (t: any) =>
     grpcServiceName: z.string().optional(),
     ...echSchemaShape,
     ...multiplexSchemaShape,
+    ...tlsSpoofSchemaShape,
   });
 
 type TrojanFormValues = z.infer<ReturnType<typeof createTrojanSchema>>;
@@ -91,6 +97,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
       ...readTransportDefaults(),
       ...echDefaults,
       ...multiplexDefaults,
+      ...tlsSpoofDefaults,
     },
   });
 
@@ -126,6 +133,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         ...readTransportDefaults(serverConfig),
         ...readEchDefault(serverConfig),
         ...readMultiplexDefaults(serverConfig),
+        ...readTlsSpoofDefault(serverConfig),
       };
       form.reset(formData);
     }
@@ -150,6 +158,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
               alpn: values.alpn ? values.alpn.split(',').map((s) => s.trim()) : undefined,
               ech: values.ech ? true : undefined,
               echConfig: values.echConfig?.trim() || undefined,
+              ...buildTlsSpoofSettings(values),
             }
           : null,
       ...buildTransportSettings(network, values),
@@ -249,6 +258,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
               <AlpnField control={form.control} t={t} placeholder="http/1.1" />
               <FingerprintField control={form.control} t={t} />
               <TlsEngineField control={form.control} t={t} />
+              <TlsSpoofField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

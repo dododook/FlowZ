@@ -142,6 +142,10 @@ export interface SingBoxOutbound {
     alpn?: string[];
     // TLS 栈引擎（sing-box 1.14）：go（默认/省略）/ windows(Schannel) / apple(Network.framework)
     engine?: string;
+    // TLS spoof（sing-box 1.14 抗审查）：spoof=伪造 ClientHello 的 SNI（字符串，非空才生效）；
+    // spoof_method=方法（wrong-ack/wrong-md5/wrong-timestamp）。内核：spoof_method 非空时 spoof 必须非空。
+    spoof?: string;
+    spoof_method?: string;
     utls?: {
       enabled: boolean;
       fingerprint: string;
@@ -274,6 +278,11 @@ export interface SingBoxRouteRule {
   timeout?: string;
   domain_resolver?: string; // sing-box 1.13+: 指定该规则使用的 DNS 解析器
   override_address?: string; // sing-box 1.13+: 在规则层强制修改目标地址
+  // TLS spoof（sing-box 1.14 route action rule）：per-rule 抗审查 spoof，挂在 action:'route' 规则上。
+  // tls_spoof=伪造 ClientHello 的 SNI（字符串，非空才生效），tls_spoof_method=方法（wrong-ack/wrong-md5/wrong-timestamp）。
+  // 内核：tls_spoof_method 非空时 tls_spoof 必须非空（否则 FATAL）；方法非法 → `tls_spoof: unknown method`。
+  tls_spoof?: string;
+  tls_spoof_method?: string;
   // logical 规则（多条件跨维度 OR / AND）：type:'logical' + mode + rules(纯 matcher 子规则，无 action/outbound)
   type?: string;
   mode?: string;

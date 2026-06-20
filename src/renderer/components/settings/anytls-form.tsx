@@ -26,9 +26,18 @@ import {
   FingerprintField,
   AllowInsecureField,
   TlsEngineField,
+  TlsSpoofField,
 } from './shared/tls-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
-import { echSchemaShape, echDefaults, readEchDefault } from './shared/field-schemas';
+import {
+  echSchemaShape,
+  echDefaults,
+  readEchDefault,
+  tlsSpoofSchemaShape,
+  tlsSpoofDefaults,
+  readTlsSpoofDefault,
+  buildTlsSpoofSettings,
+} from './shared/field-schemas';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -55,6 +64,7 @@ const createAnyTlsSchema = (t: any) =>
     idleSessionTimeout: z.string().optional(),
     minIdleSession: z.number().int().min(0).optional(),
     ...echSchemaShape,
+    ...tlsSpoofSchemaShape,
   });
 
 type AnyTlsFormValues = z.infer<ReturnType<typeof createAnyTlsSchema>>;
@@ -85,6 +95,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         idleSessionTimeout: serverConfig.anyTlsSettings?.idleSessionTimeout || '',
         minIdleSession: serverConfig.anyTlsSettings?.minIdleSession ?? undefined,
         ...readEchDefault(serverConfig),
+        ...readTlsSpoofDefault(serverConfig),
       };
     }
     return {
@@ -102,6 +113,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
       idleSessionTimeout: '',
       minIdleSession: undefined,
       ...echDefaults,
+      ...tlsSpoofDefaults,
     };
   };
 
@@ -127,6 +139,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         allowInsecure: values.security === 'tls' ? values.tlsAllowInsecure : false,
         ech: values.ech ? true : undefined,
         echConfig: values.echConfig?.trim() || undefined,
+        ...(values.security === 'tls' ? buildTlsSpoofSettings(values) : {}),
       },
     };
 
@@ -237,6 +250,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
               />
               <FingerprintField control={form.control} t={t} />
               <TlsEngineField control={form.control} t={t} />
+              <TlsSpoofField control={form.control} t={t} />
               <FieldSpan>
                 <AllowInsecureField control={form.control} t={t} />
               </FieldSpan>

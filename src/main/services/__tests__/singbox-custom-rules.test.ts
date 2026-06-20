@@ -156,3 +156,136 @@ describe('buildCustomRules — legacy customRuleSets 告警', () => {
     expect(deps.logs.some((m) => m.includes('legacy 远程规则集已不再支持'))).toBe(true);
   });
 });
+
+// P3a：route action TLS spoof（sing-box 1.14 tls_spoof/tls_spoof_method）。规则携带成对 spoof SNI + 方法时，
+// applyRuleAction 在非 block 规则上挂 tls_spoof/tls_spoof_method。门控：arch(非 ARM64)+方法合法+域名 SNI。
+describe('buildCustomRules — route TLS spoof（P3a 抗审查）', () => {
+  it('proxy 规则 + 域名 spoof + 合法方法 → tls_spoof/tls_spoof_method 下发', () => {
+    const deps = mkDeps();
+    const { rules } = buildCustomRules(
+      [rule({ id: 'rs', action: 'proxy', tlsSpoof: 'www.spoof.com', tlsSpoofMethod: 'wrong-ack' })],
+      [],
+      's1',
+      idMap,
+      'proxy-selector',
+      [],
+      false,
+      deps
+    );
+    expect(rules[0].tls_spoof).toBe('www.spoof.com');
+    expect(rules[0].tls_spoof_method).toBe('wrong-ack');
+  });
+
+  it('direct 规则也可挂 spoof（非 block 即可）', () => {
+    const deps = mkDeps();
+    const { rules } = buildCustomRules(
+      [
+        rule({
+          id: 'rd',
+          action: 'direct',
+          tlsSpoof: 'cdn.example.com',
+          tlsSpoofMethod: 'wrong-md5',
+        }),
+      ],
+      [],
+      undefined,
+      idMap,
+      'proxy-selector',
+      [],
+      false,
+      deps
+    );
+    expect(rules[0].outbound).toBe('direct');
+    expect(rules[0].tls_spoof).toBe('cdn.example.com');
+    expect(rules[0].tls_spoof_method).toBe('wrong-md5');
+  });
+
+  it('block 规则不挂 spoof（reject 无握手）', () => {
+    const deps = mkDeps();
+    const { rules } = buildCustomRules(
+      [rule({ id: 'rb', action: 'block', tlsSpoof: 'x.com', tlsSpoofMethod: 'wrong-ack' })],
+      [],
+      undefined,
+      idMap,
+      'proxy-selector',
+      [],
+      false,
+      deps
+    );
+    expect(rules[0].outbound).toBe('block');
+    expect(rules[0].tls_spoof).toBeUndefined();
+    expect(rules[0].tls_spoof_method).toBeUndefined();
+  });
+
+  it('IP 字面量 spoof SNI → 不下发（内核拒）', () => {
+    const deps = mkDeps();
+    const { rules } = buildCustomRules(
+      [rule({ id: 'rip', action: 'proxy', tlsSpoof: '203.0.113.5', tlsSpoofMethod: 'wrong-ack' })],
+      [],
+      's1',
+      idMap,
+      'proxy-selector',
+      [],
+      false,
+      deps
+    );
+    expect(rules[0].tls_spoof).toBeUndefined();
+    expect(rules[0].tls_spoof_method).toBeUndefined();
+  });
+
+  it('缺方法或缺 spoof（任一缺）→ 不下发（成对才生效）', () => {
+    const deps = mkDeps();
+    const { rules } = buildCustomRules(
+      [
+        rule({ id: 'rm', action: 'proxy', tlsSpoof: 'a.com' }), // 缺方法
+        rule({
+          id: 'rn',
+          action: 'proxy',
+          type: 'geoip',
+          values: ['cn'],
+          tlsSpoofMethod: 'wrong-ack',
+        }), // 缺 spoof
+      ],
+      [],
+      's1',
+      idMap,
+      'proxy-selector',
+      [],
+      false,
+      deps
+    );
+    for (const r of rules) {
+      expect(r.tls_spoof).toBeUndefined();
+      expect(r.tls_spoof_method).toBeUndefined();
+    }
+  });
+
+  it('ARM64（mock process.arch=arm64）→ 不下发 spoof', () => {
+    const orig = process.arch;
+    Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true });
+    try {
+      const deps = mkDeps();
+      const { rules } = buildCustomRules(
+        [
+          rule({
+            id: 'ra',
+            action: 'proxy',
+            tlsSpoof: 'www.spoof.com',
+            tlsSpoofMethod: 'wrong-ack',
+          }),
+        ],
+        [],
+        's1',
+        idMap,
+        'proxy-selector',
+        [],
+        false,
+        deps
+      );
+      expect(rules[0].tls_spoof).toBeUndefined();
+      expect(rules[0].tls_spoof_method).toBeUndefined();
+    } finally {
+      Object.defineProperty(process, 'arch', { value: orig, configurable: true });
+    }
+  });
+});

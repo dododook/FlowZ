@@ -18,6 +18,14 @@ export interface TlsSettings {
   // 'windows'=Schannel（仅 Windows）；'apple'=Network.framework（仅 Apple）。系统原生栈让 ClientHello 指纹更真，
   // 但 windows/apple 在非对应平台运行时 FATAL → 表单仅对 TCP-TLS 协议（非 QUIC）暴露，且按平台过滤可选值。
   engine?: 'go' | 'windows' | 'apple';
+  // TLS spoof（P3a 抗审查，sing-box 1.14 tls.spoof/spoof_method）：真握手前发伪造 ClientHello 骗 SNI 过滤中间盒。
+  // spoofMethod 非空 + spoofSni 非空（成对）才启用 → tls.spoof=spoofSni（伪造 ClientHello 的「诱饵 SNI」）、
+  // tls.spoof_method=spoofMethod。方法仅 wrong-ack/wrong-md5/wrong-timestamp（sing-box check 实证）。
+  // **硬限界（已 sing-box 真核 check 实证，见 shared/tls-spoof.ts）**：需提权、ARM64 不支持、诱饵 SNI 须为域名（拒 IP 字面量）、
+  //   且**诱饵 SNI 必须不同于真 server_name**（内核 FATAL `spoof must differ from server_name`）。
+  //   表单按 arch 门控置灰；构建期对 IP 字面量、等于 server_name、QUIC/naive 协议不 emit。
+  spoofSni?: string;
+  spoofMethod?: 'wrong-ack' | 'wrong-md5' | 'wrong-timestamp';
 }
 
 export interface RealitySettings {

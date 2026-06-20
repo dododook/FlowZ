@@ -18,6 +18,43 @@ export const echSchemaShape = {
   echConfig: z.string().optional(),
 };
 
+/**
+ * TLS spoof 字段的 zod 形状（P3a，展开进 z.object）。tlsSpoofMethod + tlsSpoofSni 成对非空才启用（method none→undefined）。
+ * 方法仅这三个 + undefined（与 sing-box check 实证一致）；tlsSpoofSni=诱饵 SNI（须为域名、且不同于真 SNI，构建期门控）。
+ */
+export const tlsSpoofSchemaShape = {
+  tlsSpoofMethod: z.enum(['wrong-ack', 'wrong-md5', 'wrong-timestamp']).optional(),
+  tlsSpoofSni: z.string().optional(),
+};
+
+/** TLS spoof 字段的新建表单默认值（默认不启用）。 */
+export const tlsSpoofDefaults = {
+  tlsSpoofMethod: undefined as 'wrong-ack' | 'wrong-md5' | 'wrong-timestamp' | undefined,
+  tlsSpoofSni: '',
+};
+
+/** 从既有 serverConfig 读取 TLS spoof 默认值（加载分支）。 */
+export function readTlsSpoofDefault(serverConfig: ServerConfig) {
+  return {
+    tlsSpoofMethod: serverConfig.tlsSettings?.spoofMethod,
+    tlsSpoofSni: serverConfig.tlsSettings?.spoofSni || '',
+  };
+}
+
+/**
+ * 构造提交用的 TLS spoof 设置片段（注入 tlsSettings 的 spoofMethod + spoofSni）。
+ * 方法为空 → 两者都 undefined（不启用）。诱饵 SNI 留空也照传——内核要求成对，但构建期会再做
+ * 「非空 / 非 IP / 不同于真 SNI」门控（applyAntiCensorshipOptions），此处只做 trim 透传。
+ */
+export function buildTlsSpoofSettings(values: { tlsSpoofMethod?: string; tlsSpoofSni?: string }) {
+  const m = values.tlsSpoofMethod;
+  const valid = m === 'wrong-ack' || m === 'wrong-md5' || m === 'wrong-timestamp';
+  return {
+    spoofMethod: valid ? m : undefined,
+    spoofSni: valid ? values.tlsSpoofSni?.trim() || undefined : undefined,
+  };
+}
+
 /** Multiplex 字段的 zod 形状（展开进 z.object）。 */
 export const multiplexSchemaShape = {
   muxEnabled: z.boolean().optional(),

@@ -701,3 +701,138 @@ describe('buildTailscaleEndpoint — P4a 新字段', () => {
     ).toBeUndefined();
   });
 });
+
+// P3a：outbound TLS spoof（sing-box 1.14 tls.spoof/spoof_method，抗审查）。
+// spoofMethod + spoofSni（诱饵 SNI，须不同于真 server_name）成对启用 → tls.spoof=spoofSni + tls.spoof_method。
+// 五重门控：arch(非 ARM64) + 协议(TCP-TLS) + 诱饵 SNI 非空 + 非 IP 字面量 + 不同于真 server_name + 方法合法。
+// 本机 process.arch=x64（支持），ARM64 路径单独 mock process.arch 验证。
+describe('buildProxyOutbound — TLS spoof（P3a 抗审查）', () => {
+  const tags = new Map<string, string>();
+  const node = (over: Partial<ServerConfig>): ServerConfig =>
+    ({ id: 'n', name: 'N', address: 'node.example.com', port: 443, ...over }) as ServerConfig;
+
+  it('诱饵 SNI（不同于真 SNI）+ 合法方法 → tls.spoof=诱饵 + tls.spoof_method（trojan）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'real.example.com',
+          spoofSni: 'decoy.microsoft.com',
+          spoofMethod: 'wrong-ack',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.server_name).toBe('real.example.com');
+    expect(ob.tls.spoof).toBe('decoy.microsoft.com'); // 诱饵，非真 SNI
+    expect(ob.tls.spoof_method).toBe('wrong-ack');
+  });
+
+  it('诱饵 SNI == 真 server_name → 不下发（内核 FATAL `spoof must differ from server_name`）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'vless',
+        uuid: 'u',
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'same.example.com',
+          spoofSni: 'same.example.com',
+          spoofMethod: 'wrong-timestamp',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.spoof).toBeUndefined();
+    expect(ob.tls.spoof_method).toBeUndefined();
+  });
+
+  it('诱饵 SNI 为 IP 字面量 → 不下发（内核拒 `spoof requires TLS ClientHello with SNI`）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'real.example.com',
+          spoofSni: '203.0.113.9',
+          spoofMethod: 'wrong-ack',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.spoof).toBeUndefined();
+    expect(ob.tls.spoof_method).toBeUndefined();
+  });
+
+  it('有方法但诱饵 SNI 留空 → 不下发（成对才生效）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: { serverName: 'real.example.com', spoofMethod: 'wrong-ack' },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.spoof).toBeUndefined();
+    expect(ob.tls.spoof_method).toBeUndefined();
+  });
+
+  it('hysteria2(QUIC) 即便成对设置也不下发（无 TCP ClientHello）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'hysteria2',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'a.com',
+          spoofSni: 'decoy.microsoft.com',
+          spoofMethod: 'wrong-ack',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls?.spoof).toBeUndefined();
+    expect(ob.tls?.spoof_method).toBeUndefined();
+  });
+
+  it('未设 spoofMethod → 不下发（向后兼容）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: { serverName: 'a.com' },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.spoof).toBeUndefined();
+    expect(ob.tls.spoof_method).toBeUndefined();
+  });
+
+  it('ARM64（mock process.arch=arm64）→ 不下发 spoof（内核仅 amd64 实现）', () => {
+    const orig = process.arch;
+    Object.defineProperty(process, 'arch', { value: 'arm64', configurable: true });
+    try {
+      const ob = buildProxyOutbound(
+        node({
+          protocol: 'trojan',
+          password: 'pw',
+          security: 'tls',
+          tlsSettings: {
+            serverName: 'real.example.com',
+            spoofSni: 'decoy.microsoft.com',
+            spoofMethod: 'wrong-ack',
+          },
+        }),
+        tags
+      ) as any;
+      expect(ob.tls.spoof).toBeUndefined();
+      expect(ob.tls.spoof_method).toBeUndefined();
+    } finally {
+      Object.defineProperty(process, 'arch', { value: orig, configurable: true });
+    }
+  });
+});

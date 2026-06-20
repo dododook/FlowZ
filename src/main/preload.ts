@@ -10,6 +10,8 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
  */
 const electronAPI = {
   platform: process.platform,
+  // CPU 架构（'x64'/'arm64'/...）：渲染层 TLS spoof 等按 arch 门控的特性用（ARM64 不支持）。
+  arch: process.arch,
   ipcRenderer: {
     /**
      * 调用主进程方法
