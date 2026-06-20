@@ -79,19 +79,18 @@ function App() {
     const unsubscribe = ipcClient.on<
       Array<{ name: string; protocol: string; latency: number | null }>
     >(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, (results) => {
-      const message = results
-        .map((r) =>
-          r.latency !== null
-            ? `${r.name}（${r.protocol}）: ${r.latency}ms`
-            : `${r.name}（${r.protocol}）: ${i18n.t('servers.timeout')}`
-        )
-        .join('\n');
+      // 延迟明细已在各节点卡 ⚡ 徽标显示；此处只报完成 + 一行摘要（节点数 + 最快），不再 dump 全列表压垮注意力。
+      // resultList 已按延迟升序（TrayManager），首个非 null 即最快可测节点。
+      const fastest = results.find((r) => r.latency !== null);
+      const description = fastest
+        ? i18n.t('home.speedTestSummary', {
+            count: results.length,
+            name: fastest.name,
+            ms: fastest.latency,
+          })
+        : i18n.t('home.speedTestNoResult', { count: results.length });
 
-      toast.info(i18n.t('home.speedTestResult'), {
-        description: message,
-        duration: 10000,
-        style: { whiteSpace: 'pre-line' },
-      });
+      toast.success(i18n.t('home.speedTestDone'), { description });
     });
 
     return () => unsubscribe();

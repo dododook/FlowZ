@@ -753,8 +753,14 @@ export class TrayManager implements ITrayManager {
         return a.latency - b.latency;
       });
 
-    // 发送到渲染进程显示 toast（全不可测/无结果时不弹空 toast；用独立 LIST 通道，与逐节点流式分开）
-    if (resultList.length > 0 && this.mainWindow && !this.mainWindow.isDestroyed()) {
+    // 发送 toast 事件（仅当窗口可见）：托盘触发的测速若窗口隐藏，结果已在托盘子菜单延迟徽标呈现，
+    // 不再经此弹 in-app toast——否则用户稍后打开窗口才弹出已滞后的陈旧提示。空结果/不可测也不弹。
+    if (
+      resultList.length > 0 &&
+      this.mainWindow &&
+      !this.mainWindow.isDestroyed() &&
+      this.mainWindow.isVisible()
+    ) {
       this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, resultList);
     }
   }

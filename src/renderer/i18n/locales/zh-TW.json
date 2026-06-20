@@ -280,7 +280,6 @@
     "myDevice": "我的裝置",
     "type": "類型",
     "connections": "連線數",
-    "speedTestResult": "測速結果",
     "autoSwitched": "已自動切換到 {{name}}（{{latency}}ms）",
     "autoSwitchedDesc": "觸發原因：連線偵測連續失敗",
     "flow": "流量",
@@ -321,7 +320,10 @@
     "plsConfigServer": "請先設定伺服器",
     "meshNoInternetGate": "無外網存取權限：請開啟該節點的「允許存取外網」或新增路由網段",
     "meshExitDirectHint": "所選組網節點未開啟外網存取：外網流量走直連，僅其網段經此節點。",
-    "stopProxyFailed": "停止代理失敗"
+    "stopProxyFailed": "停止代理失敗",
+    "speedTestDone": "測速完成",
+    "speedTestSummary": "已測 {{count}} 個節點 · 最快 {{name}}（{{ms}}ms）",
+    "speedTestNoResult": "已測 {{count}} 個節點 · 均逾時"
   },
   "settings": {
     "nav": {

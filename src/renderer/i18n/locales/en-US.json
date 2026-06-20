@@ -280,7 +280,6 @@
     "myDevice": "My Device",
     "type": "Type",
     "connections": "Connections",
-    "speedTestResult": "Speed Test Result",
     "autoSwitched": "Auto-switched to {{name}} ({{latency}}ms)",
     "autoSwitchedDesc": "Reason: connectivity check failed repeatedly",
     "flow": "Traffic",
@@ -321,7 +320,10 @@
     "plsConfigServer": "Please configure a server first",
     "meshNoInternetGate": "No internet access: enable \"Allow internet access\" for this node, or add routed subnets",
     "meshExitDirectHint": "Selected mesh node has internet access off: outbound traffic goes direct; only its subnets route through it.",
-    "stopProxyFailed": "Failed to stop proxy"
+    "stopProxyFailed": "Failed to stop proxy",
+    "speedTestDone": "Speed test complete",
+    "speedTestSummary": "Tested {{count}} nodes · fastest {{name}} ({{ms}}ms)",
+    "speedTestNoResult": "Tested {{count}} nodes · all timed out"
   },
   "settings": {
     "nav": {

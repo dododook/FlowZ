@@ -280,7 +280,6 @@
     "myDevice": "我的设备",
     "type": "类型",
     "connections": "连接数",
-    "speedTestResult": "测速结果",
     "autoSwitched": "已自动切换到 {{name}}（{{latency}}ms）",
     "autoSwitchedDesc": "触发原因：连通性检测连续失败",
     "flow": "流量",
@@ -321,7 +320,10 @@
     "plsConfigServer": "请先配置服务器",
     "meshNoInternetGate": "无外网访问权限：请开启该节点的「允许访问外网」或添加路由网段",
     "meshExitDirectHint": "所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。",
-    "stopProxyFailed": "停止代理失败"
+    "stopProxyFailed": "停止代理失败",
+    "speedTestDone": "测速完成",
+    "speedTestSummary": "已测 {{count}} 个节点 · 最快 {{name}}（{{ms}}ms）",
+    "speedTestNoResult": "已测 {{count}} 个节点 · 均超时"
   },
   "settings": {
     "nav": {
