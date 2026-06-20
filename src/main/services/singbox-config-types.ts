@@ -279,7 +279,7 @@ export interface SingBoxExperimental {
 }
 
 // sing-box 1.14 services[]（管理 API）：daemon.StartedService gRPC（h2c，反射）。
-// Tailscale 状态订阅(SubscribeTailscaleStatus)/原生登出(TailscaleLogout) 经此（见 tailscale-api-client.ts）。
+// Tailscale 状态订阅(SubscribeTailscaleStatus)/原生登出(TailscaleLogout) 经此（见 singbox-api-client.ts）。
 export interface SingBoxApiService {
   type: 'api';
   listen: string;

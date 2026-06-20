@@ -64,7 +64,7 @@ import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
 import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
 import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from './tailscale-login-core';
-import { TailscaleApiClient, type TailscaleEndpointStatus } from './tailscale-api-client';
+import { SingBoxApiClient, type TailscaleEndpointStatus } from './singbox-api-client';
 import {
   getUserDataPath,
   getSingBoxConfigPath,
@@ -272,8 +272,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private logManager: ILogManager | null = null;
   // 隐私模式 provider（index 注入 getPrivacyMode）：隐私开 → sing-box 日志级别抬到 ≥warn，不记访问域名/SNI。
   private privacyProvider: () => boolean = () => false;
-  // sing-box 1.14 管理 API：Tailscale 状态订阅客户端 + 其 api service 端口（clash 端口 +1，独立共存）。
-  private tailscaleApiClient: TailscaleApiClient | null = null;
+  // sing-box 1.14 管理 API：统一管理面客户端（Tailscale 状态订阅 + clash 等价方法）+ 其 api service 端口（clash 端口 +1，独立共存）。
+  private tailscaleApiClient: SingBoxApiClient | null = null;
   private tailscaleApiPort = 0;
   private lastLogMessage: string = '';
   private lastLogCount: number = 0;
@@ -730,8 +730,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // sing-box 1.14 管理 API：核起后连 api service 订阅 Tailscale 状态（断线重连，随主核生命周期）。
     if (this.hasManagementApi()) {
       this.tailscaleApiClient?.stop();
-      this.tailscaleApiClient = new TailscaleApiClient(this.tailscaleApiPort, (eps) =>
-        this.handleTailscaleStatus(eps)
+      // 修复（P0）：api service 注入了 secret（= clashApiSecret）→ 每个 RPC 须带 Bearer，否则真机被拒认证。
+      // 客户端接收 secret 经 call credentials 注入 Bearer；空串退化免认证。endpoint host 为 Phase 2 远程预留（本地恒 127.0.0.1）。
+      this.tailscaleApiClient = new SingBoxApiClient(
+        { host: '127.0.0.1', port: this.tailscaleApiPort },
+        config.clashApiSecret || '',
+        (eps) => this.handleTailscaleStatus(eps)
       );
       this.tailscaleApiClient.start();
     }
