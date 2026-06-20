@@ -15,18 +15,14 @@ export function MeshOptionsSection<TFieldValues extends FieldValues>({
   control,
   protocol,
   reverseMesh,
-  allowInternet,
 }: {
   control: Control<TFieldValues>;
   protocol: MeshProtocol;
   /** 当前 reverseMesh 值（form.watch）——驱动 allowInternet 联动禁用与文案。 */
   reverseMesh: boolean;
-  /** 当前 allowInternet 值（form.watch）——保留以便未来联动，本期 allowInternet tooltip 文案随 reverseMesh 切换。 */
-  allowInternet: boolean;
 }) {
   const { t } = useTranslation();
   const isTs = protocol === 'tailscale';
-  void allowInternet; // 文案当前仅随 reverseMesh 切换；保留入参与签名稳定
 
   const allowInternetTooltip = reverseMesh
     ? t(

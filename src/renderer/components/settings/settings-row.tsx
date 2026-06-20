@@ -18,13 +18,10 @@ interface SettingsRowProps {
 
 /** 标签 + 可选 ⓘ 行（tooltip 存在时横排在 label 右侧）。 */
 function RowLabel({ label, tooltip }: { label: ReactNode; tooltip?: ReactNode }) {
-  if (!tooltip) {
-    return <div className="text-sm font-medium">{label}</div>;
-  }
   return (
-    <div className="flex items-center gap-1.5 text-sm font-medium">
-      <span>{label}</span>
-      <InfoTooltip content={tooltip} />
+    <div className={cn('text-sm font-medium', tooltip && 'flex items-center gap-1.5')}>
+      {tooltip ? <span>{label}</span> : label}
+      {tooltip && <InfoTooltip content={tooltip} />}
     </div>
   );
 }

@@ -259,7 +259,6 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             control={form.control}
             protocol="wireguard"
             reverseMesh={reverseMesh}
-            allowInternet={allowInternet}
           />
           <FormField
             control={form.control}

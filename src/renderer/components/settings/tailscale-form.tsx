@@ -242,7 +242,6 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
             control={form.control}
             protocol="tailscale"
             reverseMesh={reverseMesh}
-            allowInternet={allowInternet}
           />
           <SwitchField
             control={form.control}
