@@ -41,6 +41,43 @@ type DnsLogFn = (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: 
 /** 域名 → [精确域名, `.域名`(后缀匹配)]：同时覆盖 exact 与 subdomain（sing-box domain_suffix 语义）。 */
 const withDotPrefix = (d: string): string[] => [d, `.${d}`];
 
+// P4b 内部预留 tag：tailscale 按名解析 DNS server 的固定 tag。不与节点 tag 撞车（节点 tag=节点显示名，
+// 不会取此前缀；与 ProxyManager.usedTags 内置保留 tag 同理为内部固定 tag）。
+const TS_NAME_DNS_TAG = 'dns-tailscale';
+
+/**
+ * 复刻 ProxyManager.getUniqueTag 的 id→tag 推导（节点 tag = 节点显示名，撞车追加 ` (n)`；内置 tag 预占）。
+ * 单一真值在 ProxyManager（buildDnsConfig 不接 idToTagMap、不碰 ProxyManager 签名），此处按相同入参顺序
+ * 与同款去重规则重放，仅为「选中的 mesh tailscale 节点」算出其 endpoint tag，供按名解析 DNS server 引用。
+ * 二者任何漂移会被 config-snapshot/集成验证捕获（tailscale endpoint tag 须与本函数一致）。
+ */
+function selectedTailscaleEndpointTag(config: UserConfig): string | null {
+  const selectedId = config.selectedServerId;
+  if (!selectedId) return null;
+  const selected = config.servers.find((s) => s.id === selectedId);
+  if (!selected || selected.protocol.toLowerCase() !== 'tailscale') return null;
+  const used = new Set<string>([
+    'proxy-selector',
+    'direct',
+    'block',
+    'direct-loopback',
+    'probe-direct-in',
+    'probe-proxy-in',
+  ]);
+  for (const s of config.servers) {
+    const base = s.name.trim() || '未命名节点';
+    let tag = base;
+    let count = 1;
+    while (used.has(tag)) {
+      tag = `${base} (${count})`;
+      count++;
+    }
+    used.add(tag);
+    if (s.id === selectedId) return tag;
+  }
+  return null;
+}
+
 /** 内网 / 反向解析后缀（非 .local 组播）：内网域 .lan / .home.arpa + 反查 .arpa。 */
 const INTERNAL_DNS_SUFFIXES = ['.arpa', '.lan', '.home.arpa'];
 
@@ -413,6 +450,47 @@ export function buildDnsConfig(
           server: 'dns-remote',
         } as SingBoxDnsRule);
       }
+    }
+  }
+
+  // P4b ⭐tailnet 按名解析（仅选中此 mesh tailscale 节点为主出口时生效）：注入 tailscale DNS server +
+  // preferred_by 规则。preferred_by 让 tailnet search domain / MagicDNS 短名自动归位到此节点解析——
+  // 替代硬编码后缀。与 doh.pub/google **并存**：仅 preferred_by 命中的 tailnet 名走 dns-tailscale，
+  // 其余域名规则/final 不变（preferred_by 规则置于尾部 catch-all 之前，不影响既有分流字节）。
+  // accept_search_domain 与 preferred_by 强联动：accept_search_domain 提供短名解析能力，preferred_by 决定
+  // 哪些名字优先归它——故二者同开同关（resolveByName 一个开关同时拉起 server.accept_search_domain + 规则）。
+  const tsResolveNode = (() => {
+    const selectedId = config.selectedServerId;
+    if (!selectedId) return null;
+    const sel = config.servers.find((s) => s.id === selectedId);
+    if (!sel || sel.protocol.toLowerCase() !== 'tailscale') return null;
+    if (!sel.tailscaleSettings?.resolveByName) return null;
+    return sel;
+  })();
+  if (tsResolveNode) {
+    const epTag = selectedTailscaleEndpointTag(config);
+    if (epTag) {
+      dnsServers.push({
+        tag: TS_NAME_DNS_TAG,
+        type: 'tailscale',
+        // tailscale DNS server 必填：引用该 mesh 节点的 endpoint tag（缺失则 sing-box FATAL）。
+        endpoint: epTag,
+        accept_search_domain: true,
+        ...(tsResolveNode.tailscaleSettings?.acceptDefaultResolvers
+          ? { accept_default_resolvers: true }
+          : {}),
+      });
+      // preferred_by 规则须置于「全量 catch-all（smart/global 的 fallthrough / FakeIP query_type 全匹配）」**之前**，
+      // 否则无条件 catch-all 先短路、preferred_by 永不命中。故 unshift 到规则链最前（tailnet 名为具体名优先归位，
+      // 高优先合理；非 tailnet 名不被 preferred_by 命中，照常 fallthrough 既有规则，字节不变）。
+      dnsRules.unshift({
+        preferred_by: [TS_NAME_DNS_TAG],
+        action: 'route',
+        server: TS_NAME_DNS_TAG,
+      } as SingBoxDnsRule);
+      log('info', `Tailscale 按名解析已启用：tailnet 名 → ${TS_NAME_DNS_TAG}(endpoint=${epTag})`);
+    } else {
+      log('warn', 'Tailscale 按名解析已开启，但未能定位选中节点的 endpoint tag，已跳过');
     }
   }
 
