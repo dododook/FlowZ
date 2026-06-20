@@ -158,6 +158,8 @@ export function readTransportDefaults(serverConfig?: ServerConfig) {
  * 其余置 null（与各表单既有 wsSettings 三元同构）。ws 与 httpupgrade 共用 wsSettings。
  */
 export function buildTransportSettings(network: string, values: TransportValues) {
+  // 空 wsHost（用户清空/未设）→ 省略 Host（而非下发空 `Host:` header，后者非标准无意义）。
+  // Host 为字符串、无「合法值恰为 falsy」情形，故 `values.wsHost ? … : undefined` 是正确归一化，非 falsy-zero bug。
   return {
     wsSettings:
       network === 'ws' || network === 'httpupgrade'
