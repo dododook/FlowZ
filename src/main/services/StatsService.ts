@@ -196,6 +196,16 @@ export class StatsService {
     this.unsubscribeConnectionsStream();
   }
 
+  /** 流 stop 句柄安全调用（吞异常）并清空：两条流退订同构，单一真值复用。返回 null 供调用方回写句柄字段。 */
+  private clearStop(handle: (() => void) | null): null {
+    try {
+      handle?.();
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+
   // ── Status 流 ────────────────────────────────────────────────────────────────
   private subscribeStatusStream(): void {
     if (this.statusStop) return;
@@ -205,14 +215,7 @@ export class StatsService {
   }
 
   private unsubscribeStatusStream(): void {
-    if (this.statusStop) {
-      try {
-        this.statusStop();
-      } catch {
-        /* ignore */
-      }
-      this.statusStop = null;
-    }
+    this.statusStop = this.clearStop(this.statusStop);
   }
 
   /**
@@ -243,14 +246,7 @@ export class StatsService {
   }
 
   private unsubscribeConnectionsStream(): void {
-    if (this.connectionsStop) {
-      try {
-        this.connectionsStop();
-      } catch {
-        /* ignore */
-      }
-      this.connectionsStop = null;
-    }
+    this.connectionsStop = this.clearStop(this.connectionsStop);
     this.connMap.clear();
     this.connections = [];
   }

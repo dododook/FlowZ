@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { FormButtons } from './shared/form-buttons';
+import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation, Trans } from 'react-i18next';
 
@@ -137,17 +138,12 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
       sshSettings.clientVersion = values.clientVersion.trim();
     }
 
-    // 算法协商可选项（逗号/换行分隔）→ sing-box cipher / mac / kex_algorithm
-    const splitList = (raw?: string): string[] =>
-      (raw || '')
-        .split(/[\n,]/)
-        .map((s: string) => s.trim())
-        .filter(Boolean);
-    const cipher = splitList(values.cipher);
+    // 算法协商可选项（逗号/空白/换行分隔）→ sing-box cipher / mac / kex_algorithm。复用 splitTextList 单一真值。
+    const cipher = splitTextList(values.cipher);
     if (cipher.length) sshSettings.cipher = cipher;
-    const mac = splitList(values.mac);
+    const mac = splitTextList(values.mac);
     if (mac.length) sshSettings.mac = mac;
-    const kexAlgorithm = splitList(values.kexAlgorithm);
+    const kexAlgorithm = splitTextList(values.kexAlgorithm);
     if (kexAlgorithm.length) sshSettings.kexAlgorithm = kexAlgorithm;
 
     const config: any = {

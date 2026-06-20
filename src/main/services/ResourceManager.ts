@@ -309,9 +309,36 @@ export class ResourceManager {
   }
 
   /**
-   * 确保 Linux 下使用用户目录的可写核心，以解决 AppImage (EROFS) 的权限和更新问题
+   * 确保「现役核」就位并返回其路径——平台感知的随包核播种入口（§5 两平台统一调用 ensureWritableCore(true)）：
+   *  - linux：用户目录可写核（解决 AppImage EROFS + setcap），force 时随包核覆盖刷新；
+   *  - darwin：受保护目录 root-only，force 时经已装 helper install-core 重播种随包核（免密码）——复制到干净临时
+   *    目录再装（避免带入同目录 helper/LICENSE），macOS 无 libcronet 静态编入只播 sing-box。需注入 deps.installCore
+   *    （由 ProxyManager 传 HelperManager.installCore，保持本模块零 HelperManager 依赖）；缺注入 / 非 force → no-op
+   *    回落 getSingBoxPath（行为同改动前：受保护目录无核则用 bundle 出厂核）；
+   *  - 其它平台：no-op 返回 getSingBoxPath。
+   *
+   * @param deps.installCore darwin 重播种用——把 seedDir 内的随包核经提权 helper 装进受保护目录（{ok,error}）。
    */
-  async ensureWritableCore(force = false): Promise<string> {
+  async ensureWritableCore(
+    force = false,
+    deps?: { installCore?: (seedDir: string) => Promise<{ ok: boolean; error?: string }> }
+  ): Promise<string> {
+    if (this.platform === 'darwin') {
+      // 仅 force（§5 reseed 决策）+ 注入了 helper installCore 时才重播种；否则 no-op（保持改动前行为）。
+      if (force && deps?.installCore) {
+        try {
+          const os = require('os') as typeof import('os');
+          const seedDir = path.join(os.tmpdir(), 'flowz-core-reseed');
+          await fs.mkdir(seedDir, { recursive: true });
+          await fs.copyFile(this.getBundledSingBoxPath(), path.join(seedDir, 'sing-box'));
+          const r = await deps.installCore(seedDir);
+          if (!r.ok) this.log('warn', `随包内核重播种失败: ${r.error ?? ''}`);
+        } catch (e) {
+          this.log('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
+        }
+      }
+      return this.getSingBoxPath();
+    }
     if (this.platform !== 'linux') {
       return this.getSingBoxPath();
     }

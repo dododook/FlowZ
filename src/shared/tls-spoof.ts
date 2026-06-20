@@ -47,3 +47,33 @@ export function isTlsSpoofSupportedProtocol(protocol: string | undefined): boole
   const p = (protocol || '').toLowerCase();
   return p !== 'hysteria2' && p !== 'tuic' && p !== 'naive';
 }
+
+/**
+ * TLS spoof 是否应下发（构建期统一门控）—— outbound（singbox-outbound-builder）与 route action rule
+ * （singbox-custom-rules）共用单一真值，杜绝两处门控漂移。任一不满足即返回 false（不 emit，否则内核 FATAL/无效）：
+ *   1. 方法合法（wrong-ack/wrong-md5/wrong-timestamp）；
+ *   2. arch 支持（ARM64 不支持，内核仅 amd64 实现）；
+ *   3. 诱饵 SNI 非空；
+ *   4. 诱饵 SNI 非 IP 字面量（内核拒 `spoof requires TLS ClientHello with SNI`）；
+ *   5.（仅 outbound：传入 protocol 时）协议为标准 TCP-TLS 栈（排除 hy2/tuic/naive）；
+ *   6.（仅 outbound：传入 serverSni 时）诱饵 SNI 不同于真 server_name（内核 FATAL `spoof must differ from server_name`）。
+ * 提权是运行期生效条件，不影响配置合法性 → 不在此门控（UI 已提示）。
+ *
+ * @param isIpLiteral 注入的 IP 字面量判定（shared/dns.isIpLiteral）；保持 shared/tls-spoof 零跨模块依赖。
+ */
+export function validateTlsSpoof(
+  spoofSni: string | undefined,
+  method: string | undefined,
+  arch: string | undefined,
+  isIpLiteral: (host: string) => boolean,
+  opts?: { protocol?: string; serverSni?: string }
+): boolean {
+  const sni = spoofSni?.trim();
+  if (!isValidTlsSpoofMethod(method)) return false;
+  if (!isTlsSpoofSupportedArch(arch)) return false;
+  if (!sni) return false;
+  if (isIpLiteral(sni)) return false;
+  if (opts?.protocol !== undefined && !isTlsSpoofSupportedProtocol(opts.protocol)) return false;
+  if (opts?.serverSni !== undefined && sni === opts.serverSni) return false;
+  return true;
+}

@@ -222,7 +222,8 @@ let serviceCtor: grpc.ServiceClientConstructor | null = null;
 function getServiceCtor(): grpc.ServiceClientConstructor {
   if (serviceCtor) return serviceCtor;
   const protoPath = path.join(os.tmpdir(), 'flowz-started-service.proto');
-  fs.writeFileSync(protoPath, PROTO_SRC);
+  // proto 内容恒定（内嵌 PROTO_SRC）：已存在即跳过写盘，免每次冷启动重复落盘临时文件（内容一致，幂等）。
+  if (!fs.existsSync(protoPath)) fs.writeFileSync(protoPath, PROTO_SRC);
   const def = protoLoader.loadSync(protoPath, {
     keepCase: true,
     longs: String,

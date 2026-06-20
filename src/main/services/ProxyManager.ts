@@ -33,6 +33,7 @@ import {
   isIpv6Host,
   effectiveAppRules,
   applyRuleSetPrune,
+  buildIdToTagMap,
 } from './singbox-config-helpers';
 import { buildDnsConfig } from './singbox-dns-builder';
 import { buildRouteConfig } from './singbox-route-builder';
@@ -432,27 +433,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           `官方内核 ${this.coreVersion} 旧于随包基线 ${bundledCore}，用随包核替换...`
         );
         try {
-          if (process.platform === 'linux') {
-            this.singboxPath = await resourceManager.ensureWritableCore(true); // force 覆盖旧可写核
-          } else if (process.platform === 'darwin') {
-            // darwin 受保护目录 root-only → 经已装 helper install-core 重播种随包核（免密码）。复制到干净临时目录
-            // 再装（避免带入同目录 helper/LICENSE）；macOS 无 libcronet 静态编入只播 sing-box。helper 必在位
-            // （上方 maybePromptHelperGate 已引导）。修真机实证缺口：app 更新后受保护目录旧核不自愈。
-            const osMod = require('os') as typeof import('os');
-            const pathMod = require('path') as typeof import('path');
-            const fsp = (require('fs') as typeof import('fs')).promises;
-            const seedDir = pathMod.join(osMod.tmpdir(), 'flowz-core-reseed');
-            await fsp.mkdir(seedDir, { recursive: true });
-            await fsp.copyFile(
-              resourceManager.getBundledSingBoxPath(),
-              pathMod.join(seedDir, 'sing-box')
-            );
-            // darwin helperManager 恒为 HelperManager（win 才注入 WindowsServiceHelper）；installCore 是具体方法非接口成员，故 cast。
-            this.helperManager ??= new HelperManager();
-            const r = await (this.helperManager as HelperManager).installCore(seedDir);
-            if (!r.ok) this.logToManager('warn', `随包内核重播种失败: ${r.error ?? ''}`);
-            this.singboxPath = this.getSingBoxPath();
-          }
+          // §5 两平台统一经 ensureWritableCore(true)：linux force 覆盖可写核；darwin 经注入的 helper installCore
+          // 重播种随包核到受保护目录（root-only，helper 上方 maybePromptHelperGate 已引导在位）。临时目录复制 +
+          // installCore 编排已下沉 ResourceManager（平台感知，免 ProxyManager 内联）。修：app 更新后受保护目录旧核不自愈。
+          // darwin helperManager 恒为 HelperManager（win 才注入 WindowsServiceHelper）；installCore 是具体方法非接口成员，故 cast。
+          if (process.platform === 'darwin') this.helperManager ??= new HelperManager();
+          this.singboxPath = await resourceManager.ensureWritableCore(true, {
+            installCore: (seedDir) => (this.helperManager as HelperManager).installCore(seedDir),
+          });
         } catch (e) {
           this.logToManager('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
         }
@@ -1964,34 +1952,9 @@ done
     const cachePath = getCachePath();
 
     // 关键优化：预先生成 ID 到 Tag 的唯一映射，使用服务器名称作为 Tag，确保拓扑和日志显示友好名称
-    // 这样做之后内容拓扑（Clash API）和日志中显示的将是“香港 01”而不是“proxy-uuid”
-    const idToTagMap = new Map<string, string>();
-    // 预占内置出站 tag，防止用户把节点命名为 proxy-selector/direct/block 等导致 tag 撞车启动 FATAL
-    const usedTags = new Set<string>([
-      'proxy-selector',
-      'direct',
-      'block',
-      'direct-loopback',
-      'probe-direct-in',
-      'probe-proxy-in',
-    ]);
-
-    const getUniqueTag = (server: ServerConfig) => {
-      let baseTag = server.name.trim() || '未命名节点';
-      let tag = baseTag;
-      let count = 1;
-      while (usedTags.has(tag)) {
-        tag = `${baseTag} (${count})`;
-        count++;
-      }
-      usedTags.add(tag);
-      return tag;
-    };
-
-    // 为所有服务器预生成 Tag
-    for (const s of config.servers) {
-      idToTagMap.set(s.id, getUniqueTag(s));
-    }
+    // 这样做之后内容拓扑（Clash API）和日志中显示的将是“香港 01”而不是“proxy-uuid”。去重规则
+    // （预占内置 tag + 撞名追加 (n)）抽到 buildIdToTagMap 单一真值，dns-builder 按名解析 tailscale endpoint 共用同一份。
+    const idToTagMap = buildIdToTagMap(config.servers);
     // 记录本次生成的 id→tag 映射，供 clash_api 热切换定位 selector 成员 tag（见 hotSwitchNode）
     this.currentIdToTagMap = idToTagMap;
 
@@ -2013,8 +1976,12 @@ done
 
     const singboxConfig: SingBoxConfig = {
       log: buildLogConfig(config, this.privacyProvider()),
-      dns: buildDnsConfig(config, 'proxy-selector', this.lanResolverForDns, (level, message) =>
-        this.logToManager(level, message)
+      dns: buildDnsConfig(
+        config,
+        'proxy-selector',
+        this.lanResolverForDns,
+        idToTagMap,
+        (level, message) => this.logToManager(level, message)
       ),
       inbounds: buildInbounds(config, resolvedIps, {
         probeDirectPort: this.probeDirectPort,

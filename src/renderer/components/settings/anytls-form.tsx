@@ -19,15 +19,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { FormButtons } from './shared/form-buttons';
-import { EchField } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
-import {
-  TlsServerNameField,
-  FingerprintField,
-  AllowInsecureField,
-  TlsEngineField,
-  TlsSpoofField,
-} from './shared/tls-fields';
+import { TlsServerNameField, FingerprintField, TlsAdvancedFields } from './shared/tls-fields';
 import { RealityPublicKeyField, RealityShortIdField } from './shared/reality-fields';
 import {
   echSchemaShape,
@@ -240,24 +233,13 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
         {/* 高级仅 TLS 模式有可选项（SNI/指纹/insecure/ECH）；Reality 模式全为基础项，故无高级区。 */}
         {isTls && (
           <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-            <FieldGrid cols={2}>
-              <TlsServerNameField
-                control={form.control}
-                t={t}
-                labelKey="servers.sni"
-                descKey="servers.sniDesc"
-                optional
-              />
-              <FingerprintField control={form.control} t={t} />
-              <TlsEngineField control={form.control} t={t} />
-              <TlsSpoofField control={form.control} t={t} />
-              <FieldSpan>
-                <AllowInsecureField control={form.control} t={t} />
-              </FieldSpan>
-              <FieldSpan>
-                <EchField control={form.control} t={t} />
-              </FieldSpan>
-            </FieldGrid>
+            <TlsAdvancedFields
+              control={form.control}
+              t={t}
+              sniLabelKey="servers.sni"
+              sniDescKey="servers.sniDesc"
+              sniOptional
+            />
           </FormSection>
         )}
 

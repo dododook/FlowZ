@@ -5,12 +5,47 @@
  */
 
 import { isIpv4 } from '../../shared/ip';
-import type { UserConfig, Rule, AppRule, CustomAppPreset } from '../../shared/types';
+import type { UserConfig, ServerConfig, Rule, AppRule, CustomAppPreset } from '../../shared/types';
 import { parseDnsServerSpec } from '../../shared/dns';
 import { ruleConditions } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
 import { BUILTIN_GEO_RULESETS } from './builtin-geo-rulesets';
 import type { SingBoxConfig, SingBoxRouteRule } from './singbox-config-types';
+
+/**
+ * 内置出站/inbound 保留 tag：节点显示名撞这些会致 sing-box tag 冲突 FATAL，故去重时预占。
+ * 单一真值——id→tag 映射与「按名解析 tailscale endpoint tag」均以此为基准（杜绝多处重抄漂移）。
+ */
+const RESERVED_OUTBOUND_TAGS: readonly string[] = [
+  'proxy-selector',
+  'direct',
+  'block',
+  'direct-loopback',
+  'probe-direct-in',
+  'probe-proxy-in',
+];
+
+/**
+ * 按节点顺序生成「serverId → 唯一 tag（=节点显示名，撞名/撞保留 tag 追加 (n)）」映射。
+ * 单一真值：ProxyManager（config-gen）与 dns-builder（tailscale endpoint 按名解析）共用同一份去重规则，
+ * 避免两处各自重放循环漂移（tailscale endpoint tag 须与 outbound tag 逐字节一致，否则 sing-box FATAL）。
+ */
+export function buildIdToTagMap(servers: ServerConfig[]): Map<string, string> {
+  const idToTagMap = new Map<string, string>();
+  const usedTags = new Set<string>(RESERVED_OUTBOUND_TAGS);
+  for (const s of servers) {
+    const baseTag = s.name.trim() || '未命名节点';
+    let tag = baseTag;
+    let count = 1;
+    while (usedTags.has(tag)) {
+      tag = `${baseTag} (${count})`;
+      count++;
+    }
+    usedTags.add(tag);
+    idToTagMap.set(s.id, tag);
+  }
+  return idToTagMap;
+}
 
 /**
  * 国内常见网银 U盾插件及本地证券/炒股软件的专属域名

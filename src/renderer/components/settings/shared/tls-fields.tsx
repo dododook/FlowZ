@@ -26,6 +26,8 @@ import {
 } from '@/components/ui/form';
 import { TLS_SPOOF_METHODS, isTlsSpoofSupportedArch } from '@shared/tls-spoof';
 import { InfoTooltip } from './info-tooltip';
+import { FieldGrid, FieldSpan } from './form-layout';
+import { EchField } from './anti-censor-fields';
 
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
@@ -289,5 +291,50 @@ export function AlpnField({
         </FormItem>
       )}
     />
+  );
+}
+
+/**
+ * TLS 高级字段块（SNI/Fingerprint/Engine/Spoof/AllowInsecure/ECH 六字段）—— vless/vmess/trojan/anytls 四表单
+ * 高级区此前各自重复同一组渲染，此处收敛为单一组件（字段顺序/包裹与各表单原实现逐字节一致）。差异以 props 显式化：
+ *   · alpn：仅 trojan 传（在 SNI 之后插入 ALPN 输入，placeholder 如 "http/1.1"）；其余不传 → 不渲染 ALPN。
+ *   · sniLabelKey/sniDescKey/sniOptional：仅 anytls 传（SNI 用「服务器名称指示(SNI)」标签 + 可选标记）；
+ *     其余不传 → TlsServerNameField 用默认 labelKey/descKey（tlsServerName）、非可选。
+ */
+export function TlsAdvancedFields({
+  control,
+  t,
+  alpn,
+  sniLabelKey,
+  sniDescKey,
+  sniOptional = false,
+}: {
+  control: AnyControl;
+  t: TFn;
+  alpn?: string;
+  sniLabelKey?: string;
+  sniDescKey?: string;
+  sniOptional?: boolean;
+}) {
+  return (
+    <FieldGrid cols={2}>
+      <TlsServerNameField
+        control={control}
+        t={t}
+        labelKey={sniLabelKey}
+        descKey={sniDescKey}
+        optional={sniOptional}
+      />
+      {alpn !== undefined && <AlpnField control={control} t={t} placeholder={alpn} />}
+      <FingerprintField control={control} t={t} />
+      <TlsEngineField control={control} t={t} />
+      <TlsSpoofField control={control} t={t} />
+      <FieldSpan>
+        <AllowInsecureField control={control} t={t} />
+      </FieldSpan>
+      <FieldSpan>
+        <EchField control={control} t={t} />
+      </FieldSpan>
+    </FieldGrid>
   );
 }

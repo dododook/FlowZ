@@ -19,17 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { FormButtons } from './shared/form-buttons';
-import { EchField, MultiplexFields } from './shared/anti-censor-fields';
+import { MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
-import {
-  TlsServerNameField,
-  FingerprintField,
-  AllowInsecureField,
-  TlsEngineField,
-  TlsSpoofField,
-} from './shared/tls-fields';
+import { TlsAdvancedFields } from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
+import { normalizeNetworkUpper } from './shared/normalize-network';
 import {
   echSchemaShape,
   multiplexSchemaShape,
@@ -86,17 +81,6 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
   const { t } = useTranslation();
   const vmessFormSchema = createVmessSchema(t);
 
-  const normalizeNetwork = (
-    n: string | undefined
-  ): 'Tcp' | 'Ws' | 'Grpc' | 'Http' | 'HttpUpgrade' => {
-    const lower = (n || 'tcp').toLowerCase();
-    if (lower === 'ws' || lower === 'websocket') return 'Ws';
-    if (lower === 'httpupgrade') return 'HttpUpgrade';
-    if (lower === 'grpc') return 'Grpc';
-    if (lower === 'h2' || lower === 'http' || lower === 'http2') return 'Http';
-    return 'Tcp';
-  };
-
   const normalizeSecurity = (s: string | undefined): 'None' | 'Tls' => {
     const lower = (s || 'none').toLowerCase();
     if (lower === 'tls') return 'Tls';
@@ -111,7 +95,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
         uuid: serverConfig.uuid || '',
         alterId: serverConfig.alterId ?? 0,
         vmessSecurity: serverConfig.vmessSecurity || 'auto',
-        network: normalizeNetwork(serverConfig.network),
+        network: normalizeNetworkUpper(serverConfig.network),
         security: normalizeSecurity(serverConfig.security),
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
@@ -312,20 +296,7 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
             />
           </FieldGrid>
 
-          {isTlsEnabled && (
-            <FieldGrid cols={2}>
-              <TlsServerNameField control={form.control} t={t} />
-              <FingerprintField control={form.control} t={t} />
-              <TlsEngineField control={form.control} t={t} />
-              <TlsSpoofField control={form.control} t={t} />
-              <FieldSpan>
-                <AllowInsecureField control={form.control} t={t} />
-              </FieldSpan>
-              <FieldSpan>
-                <EchField control={form.control} t={t} />
-              </FieldSpan>
-            </FieldGrid>
-          )}
+          {isTlsEnabled && <TlsAdvancedFields control={form.control} t={t} />}
 
           {showPathHostFields && (
             <FieldGrid cols={2}>

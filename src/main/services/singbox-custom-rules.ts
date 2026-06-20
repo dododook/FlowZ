@@ -10,13 +10,13 @@
 import * as path from 'path';
 import type { Rule, CustomRuleSet, RuleResource, RuleCondition } from '../../shared/types';
 import { ruleConditions } from '../../shared/rules';
-import { isValidTlsSpoofMethod, isTlsSpoofSupportedArch } from '../../shared/tls-spoof';
+import { validateTlsSpoof } from '../../shared/tls-spoof';
+import { isIpLiteral } from '../../shared/dns';
 import {
   isValidMacAddress,
   isValidSourceHostname,
   isSourceDeviceMatchSupported,
 } from '../../shared/neighbor';
-import { isIpv4Host, isIpv6Host } from './singbox-config-helpers';
 import {
   EXT_TYPES,
   planCustomRule,
@@ -325,19 +325,13 @@ function applyRuleAction(
   }
 
   // P3a：route action TLS spoof（sing-box 1.14 tls_spoof/tls_spoof_method）。仅非 block 规则挂（block=reject 无握手）。
-  // 四重门控（任一不满足即不 emit，否则内核 FATAL / 行为无效），与 outbound spoof 同口径：
-  //   1. arch：ARM64 不支持；2. 方法合法；3. spoof SNI 非空且为域名（IP 字面量内核拒）。
-  // 提权是运行期生效条件，不影响配置合法性 → 此处不门控（UI 已提示）。
+  // 门控（方法合法 / arch 支持 / SNI 非空且非 IP 字面量）经 validateTlsSpoof 单一真值，与 outbound spoof 共用。
+  // route action 规则无固定协议 / 无单一 server_name 上下文 → 不传 protocol / serverSni（那两层仅 outbound 适用）。
+  // 提权是运行期生效条件，不影响配置合法性 → 不门控（UI 已提示）。
   if (action !== 'block') {
     const spoofSni = (tlsSpoof?.spoof || '').trim();
     const method = tlsSpoof?.method;
-    const sniIsIpLiteral = !!spoofSni && (isIpv4Host(spoofSni) || isIpv6Host(spoofSni));
-    if (
-      isValidTlsSpoofMethod(method) &&
-      isTlsSpoofSupportedArch(process.arch) &&
-      !!spoofSni &&
-      !sniIsIpLiteral
-    ) {
+    if (validateTlsSpoof(spoofSni, method, process.arch, isIpLiteral)) {
       singboxRule.tls_spoof = spoofSni;
       singboxRule.tls_spoof_method = method;
     }

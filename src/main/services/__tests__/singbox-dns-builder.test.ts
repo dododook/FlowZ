@@ -18,6 +18,7 @@ jest.mock('../../utils/paths', () => ({
 }));
 
 import { buildDnsConfig } from '../singbox-dns-builder';
+import { buildIdToTagMap } from '../singbox-config-helpers';
 import type { UserConfig, ServerConfig } from '../../../shared/types';
 import { withPlatform } from './platform-test-utils';
 
@@ -42,7 +43,8 @@ const baseConfig = (servers: ServerConfig[], selectedServerId: string | null): U
   }) as unknown as UserConfig;
 
 const noopLog = () => {};
-const build = (config: UserConfig) => buildDnsConfig(config, 'proxy-selector', null, noopLog);
+const build = (config: UserConfig) =>
+  buildDnsConfig(config, 'proxy-selector', null, buildIdToTagMap(config.servers), noopLog);
 
 describe('buildDnsConfig — P4b Tailscale 按名解析', () => {
   it('选中 tailscale 节点 + resolveByName → 注入 dns-tailscale server + preferred_by(最前) + endpoint 引用节点 tag', () => {

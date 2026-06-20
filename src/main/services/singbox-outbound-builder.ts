@@ -16,20 +16,24 @@ import {
 } from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
-import {
-  isValidTlsSpoofMethod,
-  isTlsSpoofSupportedArch,
-  isTlsSpoofSupportedProtocol,
-} from '../../shared/tls-spoof';
+import { validateTlsSpoof } from '../../shared/tls-spoof';
+import { isIpLiteral } from '../../shared/dns';
 import { tailscaleStateDir } from './tailscale-state';
 import {
   effectiveCustomRules,
   effectiveAppRules,
   getNodeResolverTag,
-  isIpv4Host,
-  isIpv6Host,
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
+
+/**
+ * 协议的 TLS 是否「在 QUIC 内自管」（hy2/tuic）：无 TCP ClientHello → 不挂 uTLS / tls.engine / fragment / spoof。
+ * 三处 QUIC 门控（tls.engine、uTLS、fragment 排除集）共用单一谓词，杜绝重抄 `!== 'hysteria2' && !== 'tuic'` 漂移。
+ */
+function isQuicManagedTls(protocol: string): boolean {
+  const p = protocol.toLowerCase();
+  return p === 'hysteria2' || p === 'tuic';
+}
 
 /** 组网节点「不承载全隧道」的原因短语，供诊断 warn 复用（Phase2 system 内核接口 vs 关外网）。 */
 function meshNonFullTunnelReason(server: ServerConfig): string {
@@ -114,7 +118,6 @@ export function buildProxyOutbound(
 ): SingBoxOutbound {
   // sing-box 要求协议类型必须是小写
   const protocol = server.protocol.toLowerCase();
-  const protocolLower = protocol;
   const tlsProtocols = ['trojan', 'anytls', 'hysteria2', 'tuic'];
 
   // 自定义协议（raw-JSON 透传）：原样下发用户的 outbound 对象，仅【强制覆盖 tag】（防撞/防注入），
@@ -351,7 +354,7 @@ export function buildProxyOutbound(
   ) {
     // 为 Trojan 设置默认 ALPN ["http/1.1"] 以提高兼容性
     let finalAlpn = server.tlsSettings?.alpn;
-    if (!finalAlpn && protocolLower === 'trojan') {
+    if (!finalAlpn && protocol === 'trojan') {
       finalAlpn = ['http/1.1'];
     }
 
@@ -367,12 +370,7 @@ export function buildProxyOutbound(
     // 表单也不对它们暴露此项。'go'/空 = 跨平台 Go TLS（核心默认），无需显式下发。windows/apple 在非对应平台
     // 运行时 FATAL，由表单按平台过滤可选值兜底。
     const tlsEngine = server.tlsSettings?.engine;
-    if (
-      tlsEngine &&
-      tlsEngine !== 'go' &&
-      server.protocol !== 'hysteria2' &&
-      server.protocol !== 'tuic'
-    ) {
+    if (tlsEngine && tlsEngine !== 'go' && !isQuicManagedTls(protocol)) {
       outbound.tls.engine = tlsEngine;
     }
 
@@ -382,18 +380,14 @@ export function buildProxyOutbound(
     // 默认行为：VLESS 等协议默认开启 chrome 指纹，Trojan 默认不开启（none）以通过标准 TLS 握手
     let finalFingerprint = fingerprint;
     if (!finalFingerprint) {
-      if (protocolLower === 'vless' || protocolLower === 'anytls') {
+      if (protocol === 'vless' || protocol === 'anytls') {
         finalFingerprint = 'chrome';
       } else {
         finalFingerprint = 'none';
       }
     }
 
-    if (
-      server.protocol !== 'hysteria2' &&
-      server.protocol !== 'tuic' &&
-      finalFingerprint !== 'none'
-    ) {
+    if (!isQuicManagedTls(protocol) && finalFingerprint !== 'none') {
       outbound.tls.utls = {
         enabled: true,
         fingerprint: finalFingerprint,
@@ -504,8 +498,7 @@ function applyAntiCensorshipOptions(outbound: SingBoxOutbound, server: ServerCon
   //   · naive：TLS 由 Cronet 自管，naive 出站直接拒绝 fragment 字段（实测
   //     "fragment is not supported on naive outbound" → 启动 FATAL），无论 h2/h3。
   // 注：ECH 不受此限——QUIC 与 naive(Cronet) 均原生支持 ECH。
-  const fragmentUnsupported =
-    protocolLower === 'hysteria2' || protocolLower === 'tuic' || protocolLower === 'naive';
+  const fragmentUnsupported = isQuicManagedTls(protocolLower) || protocolLower === 'naive';
 
   // ECH（隐藏 SNI）+ 每节点 TLS 分片（抗 SNI-DPI）：需已有 tls 块
   if (outbound.tls) {
@@ -535,14 +528,13 @@ function applyAntiCensorshipOptions(outbound: SingBoxOutbound, server: ServerCon
     const spoofMethod = server.tlsSettings?.spoofMethod;
     const spoofSni = server.tlsSettings?.spoofSni?.trim();
     const realSni = outbound.tls.server_name;
-    const spoofSniIsIpLiteral = !!spoofSni && (isIpv4Host(spoofSni) || isIpv6Host(spoofSni));
+    // 六重门控（方法/arch/SNI 非空/SNI 非 IP/协议 TCP-TLS/SNI≠真 server_name）经 validateTlsSpoof 单一真值，
+    // 与 route action spoof（singbox-custom-rules）共用同一份。
     if (
-      isValidTlsSpoofMethod(spoofMethod) &&
-      isTlsSpoofSupportedArch(process.arch) &&
-      isTlsSpoofSupportedProtocol(protocolLower) &&
-      !!spoofSni &&
-      !spoofSniIsIpLiteral &&
-      spoofSni !== realSni
+      validateTlsSpoof(spoofSni, spoofMethod, process.arch, isIpLiteral, {
+        protocol: protocolLower,
+        serverSni: realSni,
+      })
     ) {
       outbound.tls.spoof = spoofSni;
       outbound.tls.spoof_method = spoofMethod;

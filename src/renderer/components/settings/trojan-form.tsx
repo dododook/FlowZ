@@ -19,18 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { EchField, MultiplexFields } from './shared/anti-censor-fields';
+import { MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
-import {
-  TlsServerNameField,
-  FingerprintField,
-  AllowInsecureField,
-  AlpnField,
-  TlsEngineField,
-  TlsSpoofField,
-} from './shared/tls-fields';
+import { TlsAdvancedFields } from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
+import { normalizeNetworkLower } from './shared/normalize-network';
 import { FormButtons } from './shared/form-buttons';
 import {
   echSchemaShape,
@@ -104,16 +98,6 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   useEffect(() => {
     if (serverConfig && serverConfig.protocol?.toLowerCase() === 'trojan') {
       // 标准化 network 和 security 值（转为全小写以匹配 schema）
-      const normalizeNetwork = (
-        n: string | undefined
-      ): 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade' => {
-        const lower = (n || 'tcp').toLowerCase();
-        if (lower === 'ws' || lower === 'websocket') return 'ws';
-        if (lower === 'httpupgrade') return 'httpupgrade';
-        if (lower === 'grpc') return 'grpc';
-        if (lower === 'h2' || lower === 'http' || lower === 'http2') return 'http';
-        return 'tcp';
-      };
       const normalizeSecurity = (s: string | undefined): 'none' | 'tls' => {
         const lower = (s || 'tls').toLowerCase();
         return lower === 'none' ? 'none' : 'tls';
@@ -123,7 +107,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         address: serverConfig.address || '',
         port: serverConfig.port || 443,
         password: serverConfig.password || '',
-        network: normalizeNetwork(serverConfig.network),
+        network: normalizeNetworkLower(serverConfig.network),
         security: normalizeSecurity(serverConfig.security),
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
@@ -252,21 +236,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         </FormSection>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-          {isTlsEnabled && (
-            <FieldGrid cols={2}>
-              <TlsServerNameField control={form.control} t={t} />
-              <AlpnField control={form.control} t={t} placeholder="http/1.1" />
-              <FingerprintField control={form.control} t={t} />
-              <TlsEngineField control={form.control} t={t} />
-              <TlsSpoofField control={form.control} t={t} />
-              <FieldSpan>
-                <AllowInsecureField control={form.control} t={t} />
-              </FieldSpan>
-              <FieldSpan>
-                <EchField control={form.control} t={t} />
-              </FieldSpan>
-            </FieldGrid>
-          )}
+          {isTlsEnabled && <TlsAdvancedFields control={form.control} t={t} alpn="http/1.1" />}
 
           {showPathHostFields && (
             <FieldGrid cols={2}>

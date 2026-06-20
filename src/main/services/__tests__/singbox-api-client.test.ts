@@ -107,8 +107,9 @@ jest.mock('@grpc/proto-loader', () => ({
   loadSync: () => ({}),
 }));
 
-// 临时 proto 写盘也 stub 掉（不实际写文件）。
+// 临时 proto 写盘也 stub 掉（不实际写文件）。existsSync 返 false → 走写盘分支（getServiceCtor 已存在即跳过写盘）。
 jest.mock('fs', () => ({
+  existsSync: jest.fn(() => false),
   writeFileSync: jest.fn(),
 }));
 

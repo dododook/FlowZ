@@ -47,36 +47,19 @@ const withDotPrefix = (d: string): string[] => [d, `.${d}`];
 const TS_NAME_DNS_TAG = 'dns-tailscale';
 
 /**
- * 复刻 ProxyManager.getUniqueTag 的 id→tag 推导（节点 tag = 节点显示名，撞车追加 ` (n)`；内置 tag 预占）。
- * 单一真值在 ProxyManager（buildDnsConfig 不接 idToTagMap、不碰 ProxyManager 签名），此处按相同入参顺序
- * 与同款去重规则重放，仅为「选中的 mesh tailscale 节点」算出其 endpoint tag，供按名解析 DNS server 引用。
- * 二者任何漂移会被 config-snapshot/集成验证捕获（tailscale endpoint tag 须与本函数一致）。
+ * 「选中的 mesh tailscale 节点」的 endpoint tag，供按名解析 DNS server 引用。直接读 buildIdToTagMap 产出的
+ * idToTagMap（id→唯一 tag 单一真值），不再复刻去重循环——杜绝与 ProxyManager 侧推导漂移（tag 须逐字节一致，
+ * 否则 sing-box FATAL）。非选中 / 选中节点非 tailscale → null。
  */
-function selectedTailscaleEndpointTag(config: UserConfig): string | null {
+function selectedTailscaleEndpointTag(
+  config: UserConfig,
+  idToTagMap: Map<string, string>
+): string | null {
   const selectedId = config.selectedServerId;
   if (!selectedId) return null;
   const selected = config.servers.find((s) => s.id === selectedId);
   if (!selected || selected.protocol.toLowerCase() !== 'tailscale') return null;
-  const used = new Set<string>([
-    'proxy-selector',
-    'direct',
-    'block',
-    'direct-loopback',
-    'probe-direct-in',
-    'probe-proxy-in',
-  ]);
-  for (const s of config.servers) {
-    const base = s.name.trim() || '未命名节点';
-    let tag = base;
-    let count = 1;
-    while (used.has(tag)) {
-      tag = `${base} (${count})`;
-      count++;
-    }
-    used.add(tag);
-    if (s.id === selectedId) return tag;
-  }
-  return null;
+  return idToTagMap.get(selectedId) ?? null;
 }
 
 /** 内网 / 反向解析后缀（非 .local 组播）：内网域 .lan / .home.arpa + 反查 .arpa。 */
@@ -86,6 +69,8 @@ export function buildDnsConfig(
   config: UserConfig,
   selectedServerTag: string,
   lanResolverForDns: string | null,
+  // id→唯一 tag 映射（buildIdToTagMap 单一真值）：tailscale 按名解析的 endpoint tag 直接读它，免重抄去重循环。
+  idToTagMap: Map<string, string>,
   log: DnsLogFn
 ): SingBoxDnsConfig {
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
@@ -501,7 +486,7 @@ export function buildDnsConfig(
     return sel;
   })();
   if (tsResolveNode) {
-    const epTag = selectedTailscaleEndpointTag(config);
+    const epTag = selectedTailscaleEndpointTag(config, idToTagMap);
     if (epTag) {
       dnsServers.push({
         tag: TS_NAME_DNS_TAG,
