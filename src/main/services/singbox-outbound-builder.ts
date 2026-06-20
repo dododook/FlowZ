@@ -956,6 +956,8 @@ export function buildOutbounds(
         // #57 resolve-ahead：外层 shadowtls 才是真正的 TCP 拨号目标（内层 SS 经 detour 指向它），同样命中预解析表
         // 写 IP；server_name（下方 :827）仍用 shadowTlsSettings.sni（身份），不被 IP 覆盖。与 buildProxyOutbound 同语义。
         server: deps.resolvedHosts?.get(srv.address) ?? srv.address,
+        // port `||` 非 falsy-zero bug：ShadowTLS 端口合法值 1-65535，0/未设 → 降级用主端口；
+        // 改 `??` 反而会把非法 0 透传给核致 FATAL，故 `||` 才是正确选择。
         server_port: srv.shadowTlsSettings.port || srv.port,
         version: 3,
         password: srv.shadowTlsSettings.password,
