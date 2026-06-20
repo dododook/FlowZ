@@ -526,7 +526,7 @@
       "disableLogFileDesc": "完全禁用 sing-box 日志（隐私 / 省盘）。",
       "subAutoUpdate": "订阅自动更新",
       "autoUpdateSub": "自动更新订阅",
-      "autoUpdateSubDesc": "启动时补更陈旧订阅，运行期按周期自动更新。更新不会重启代理，不打断当前连接（保留选中节点及其 id）。",
+      "autoUpdateSubDesc": "启动时补更陈旧订阅，运行期按周期自动更新。",
       "subUpdateInterval": "更新间隔（小时）",
       "subUpdateIntervalDesc": "订阅距上次更新超过该小时数（1–168）即自动刷新。默认 12。",
       "subUpdateViaProxy": "订阅更新经代理",
@@ -867,7 +867,7 @@
     "saveFailed": "保存失败",
     "echConfig": "ECH 配置（可选）",
     "echConfigDesc": "留空则自动从 DNS(HTTPS 记录) 获取；粘贴 ECHConfigList(PEM) 可显式指定",
-    "wgIntro": "WireGuard 组网节点：可访问对端内网、或作为外网出口。「允许访问外网」控制是否承载默认出网流量（关 = 仅路由下方网段）；多个组网节点同网段时按列表顺序首个生效，可用自定义规则覆盖。",
+    "wgIntro": "WireGuard 组网节点：可访问对端内网或作外网出口。",
     "wgImportConf": "从 wg-quick .conf 导入（可选）",
     "wgParseAndFill": "解析并填充",
     "wgConfParseFailed": "无法解析该 .conf，请手动填写字段",
@@ -878,7 +878,7 @@
     "warpGenerateSave": "生成并添加 WARP 节点",
     "warpNameFirst": "请先在上方填写节点名称",
     "protocolCustom": "自定义出站 JSON",
-    "customIntro": "粘贴一份 sing-box outbound JSON（如 snell）。会用当前内核检测兼容性；当前内核不支持的协议需换用支持它的第三方内核。",
+    "customIntro": "粘贴一份 sing-box outbound JSON（如 snell）。",
     "customJsonInvalid": "JSON 非法——必须是含 \"type\" 字段的对象",
     "customProbing": "正在检测当前内核兼容性…",
     "customCompatible": "当前内核兼容",
@@ -997,7 +997,8 @@
     "tsExitNodeDescFull": "把全部流量经此 tailnet 节点出口（全量代理）。留空=仅访问 tailnet / 已接受的子网路由。",
     "tsRoutesDescFull": "把这些 advertised 子网（如 192.168.50.0/24）的流量送进此 Tailscale 节点；tailnet 段 100.64.0.0/10 自动包含。逗号分隔。填了会自动开启「接受子网路由」。",
     "echDescFull": "加密 ClientHello、隐藏 SNI，规避基于 SNI 的阻断。需服务端/DNS 支持 ECH。",
-    "wgAllowedIPsDescFull": "填写需经此节点路由的网段（CIDR），多个用逗号或换行分隔。仅访问对端内网则填具体段，如 10.8.0.0/24。留空 = 全部流量经此节点（全隧道，需开启「允许访问外网」）。"
+    "wgAllowedIPsDescFull": "填写需经此节点路由的网段（CIDR），多个用逗号或换行分隔。仅访问对端内网则填具体段，如 10.8.0.0/24。留空 = 全部流量经此节点（全隧道，需开启「允许访问外网」）。",
+    "customIntroFull": "粘贴一份 sing-box outbound JSON（如 snell）。会用当前内核检测兼容性；当前内核不支持的协议需换用支持它的第三方内核。"
   },
   "rules": {
     "ruleColumn": "规则",

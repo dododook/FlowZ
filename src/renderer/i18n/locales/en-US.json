@@ -526,7 +526,7 @@
       "disableLogFileDesc": "Fully disable sing-box logging (privacy / disk).",
       "subAutoUpdate": "Subscription Auto-Update",
       "autoUpdateSub": "Auto-update subscriptions",
-      "autoUpdateSubDesc": "Refresh stale subscriptions on startup and periodically while running. Updates never restart the proxy, so the current connection is not interrupted (selected node and its id are preserved).",
+      "autoUpdateSubDesc": "Refresh stale subscriptions on startup and periodically while running.",
       "subUpdateInterval": "Update interval (hours)",
       "subUpdateIntervalDesc": "A subscription is refreshed when its last update is older than this many hours (1–168). Default 12.",
       "subUpdateViaProxy": "Fetch subscriptions through proxy",
@@ -867,7 +867,7 @@
     "saveFailed": "Failed to save",
     "echConfig": "ECH Config (optional)",
     "echConfigDesc": "Leave empty to auto-load from DNS (HTTPS record); paste ECHConfigList (PEM) to set explicitly",
-    "wgIntro": "WireGuard node: reach a peer LAN, or act as an internet exit. \"Allow internet access\" controls whether it carries default outbound traffic (off = only routes the subnets below). When several mesh nodes list the same subnet, the first in the list wins; override with a custom rule.",
+    "wgIntro": "WireGuard node: reach a peer LAN, or act as an internet exit.",
     "wgImportConf": "Import from wg-quick .conf (optional)",
     "wgParseAndFill": "Parse & fill",
     "wgConfParseFailed": "Could not parse the .conf — please fill the fields manually",
@@ -878,7 +878,7 @@
     "warpGenerateSave": "Generate & Add WARP node",
     "warpNameFirst": "Enter a node name above first",
     "protocolCustom": "Custom Outbound JSON",
-    "customIntro": "Paste a raw sing-box outbound JSON (e.g. snell). Compatibility is checked against the current kernel; an incompatible protocol needs a third-party kernel that supports it.",
+    "customIntro": "Paste a raw sing-box outbound JSON (e.g. snell).",
     "customJsonInvalid": "Invalid JSON — must be an object with a \"type\" field",
     "customProbing": "Checking kernel compatibility…",
     "customCompatible": "Compatible with the current kernel",
@@ -997,7 +997,8 @@
     "tsExitNodeDescFull": "Route all traffic through this tailnet node (full-tunnel). Empty = only reach tailnet / accepted routes.",
     "tsRoutesDescFull": "Send these advertised subnets (e.g. 192.168.50.0/24) through this Tailscale node; tailnet 100.64.0.0/10 is auto-included. Comma-separated. Setting this auto-enables Accept Routes.",
     "echDescFull": "Encrypts the ClientHello and hides the SNI to bypass SNI-based blocking. Requires server/DNS ECH support.",
-    "wgAllowedIPsDescFull": "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on."
+    "wgAllowedIPsDescFull": "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on.",
+    "customIntroFull": "Paste a raw sing-box outbound JSON (e.g. snell). Compatibility is checked against the current kernel; an incompatible protocol needs a third-party kernel that supports it."
   },
   "rules": {
     "ruleColumn": "Rule",

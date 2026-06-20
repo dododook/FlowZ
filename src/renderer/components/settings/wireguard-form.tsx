@@ -191,10 +191,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
         {/* 组网概要：降低 WG/组网概念门槛（与 Tailscale tsIntro 对齐） */}
         <p className="text-xs text-muted-foreground">
-          {t(
-            'servers.wgIntro',
-            'WireGuard node: reach a peer LAN, or act as an internet exit. "Allow internet access" controls whether it carries default outbound traffic (off = only routes the subnets below). When several mesh nodes list the same subnet, the first in the list wins; override with a custom rule.'
-          )}
+          {t('servers.wgIntro', 'WireGuard node: reach a peer LAN, or act as an internet exit.')}
         </p>
 
         {/* 基础：仅连接必填（地址/端口/私钥/对端公钥/本地地址）。 */}

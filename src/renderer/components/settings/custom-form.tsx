@@ -131,11 +131,9 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
   return (
     <div className="space-y-6">
       <FormSection title={t('servers.basic', 'Basic')}>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'servers.customIntro',
-            'Paste a raw sing-box outbound JSON (e.g. snell). Compatibility is checked against the current kernel; an incompatible protocol needs a third-party kernel that supports it.'
-          )}
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {t('servers.customIntro', 'Paste a raw sing-box outbound JSON (e.g. snell).')}
+          <InfoTooltip content={t('servers.customIntroFull')} />
         </p>
         <Textarea
           rows={10}
