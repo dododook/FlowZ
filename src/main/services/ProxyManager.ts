@@ -3251,14 +3251,9 @@ exit 0
           args = ['run', '-c', this.configPath];
         }
 
-        // 启动进程
-        // 关键：为 sing-box 1.12.x 注入环境变量以启用已弃用的 override_address 功能
-        // 这是银行 U盾本地域名（如 windows10.microdone.cn → 127.0.0.1）正常工作的前提。
-        // 1.13+ 已将此功能迁移到路由规则，不需要此环境变量。
+        // 启动进程（spawn 环境继承主进程；旧 1.12.x 的 ENABLE_DEPRECATED_DESTINATION_OVERRIDE_FIELDS env 已随
+        // 硬切 1.14 + §5 守卫剥离——live 核恒 ≥1.14、配置亦不再含 sniff_override_destination，U盾域名走路由规则）。
         const spawnEnv = { ...process.env };
-        if (!coreVersionAtLeast(this.coreVersion, 1, 13)) {
-          spawnEnv['ENABLE_DEPRECATED_DESTINATION_OVERRIDE_FIELDS'] = 'true';
-        }
 
         this.singboxProcess = spawn(command, args, {
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -4916,10 +4911,8 @@ exit 0
     require('fs').writeFileSync(cfgPath, JSON.stringify(loginConfig));
 
     // 直接以 app 用户 spawn 非提权进程（绝不走 helper/TUN/提权）。用户态 tailscale endpoint 零提权可起。
+    // env 继承主进程（旧 1.12.x ENABLE_DEPRECATED_DESTINATION_OVERRIDE_FIELDS 已随硬切 1.14 + §5 守卫剥离）。
     const spawnEnv = { ...process.env };
-    if (!coreVersionAtLeast(this.coreVersion, 1, 13)) {
-      spawnEnv['ENABLE_DEPRECATED_DESTINATION_OVERRIDE_FIELDS'] = 'true';
-    }
     const proc = spawn(this.singboxPath, ['run', '-c', cfgPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: spawnEnv,

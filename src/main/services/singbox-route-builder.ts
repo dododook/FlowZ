@@ -338,33 +338,21 @@ export function buildRouteConfig(
     }
   }
 
-  // 0a. U盾/安全插件的本地伪域名 → 强制 127.0.0.1，完全跳过 DNS
-  // windows10.microdone.cn 等域名是 U盾厂商注册在本地的专用域名，公网 DNS 中不存在。
-  // 普通 direct outbound 会先做 DNS 解析 → NXDOMAIN → 连接失败。
-  // 版本分支：
-  //   1.12.x → 使用 direct-loopback outbound（outbound 层面 override_address）
-  //   1.13+  → 使用路由规则层面的 override_address（outbound 层面已移除此功能）
+  // 0a. U盾/安全插件的本地伪域名 → 路由规则层 override_address 强制 127.0.0.1，完全跳过 DNS。
+  // windows10.microdone.cn 等是 U盾厂商注册在本地的专用域名，公网 DNS 不存在 → 普通 direct 会 NXDOMAIN 连接失败。
+  // sing-box 1.14：override_address 收敛在路由规则层（旧 1.12.x 的 outbound 层 direct-loopback 已随硬切 §2.1 移除，
+  // 故此处不再按版本分支——分支的 else 会 push 已不存在的 direct-loopback 出站）。
   const UKEY_LOCAL_DOMAINS = ['.microdone.cn'];
   const otherBankDomains = DOMESTIC_BANK_AND_STOCK_DOMAINS.filter(
     (d) => !UKEY_LOCAL_DOMAINS.includes(d)
   );
 
-  if (coreVersionAtLeast(deps.coreVersion, 1, 13)) {
-    // 1.13+：路由规则支持 override_address
-    rules.push({
-      domain_suffix: UKEY_LOCAL_DOMAINS,
-      action: 'route',
-      outbound: 'direct',
-      override_address: '127.0.0.1',
-    });
-  } else {
-    // 1.12.x：使用专用的 direct-loopback outbound
-    rules.push({
-      domain_suffix: UKEY_LOCAL_DOMAINS,
-      action: 'route',
-      outbound: 'direct-loopback',
-    });
-  }
+  rules.push({
+    domain_suffix: UKEY_LOCAL_DOMAINS,
+    action: 'route',
+    outbound: 'direct',
+    override_address: '127.0.0.1',
+  });
 
   // 0b. 其余银行/证券域名 → 普通 direct（正常 DNS 解析，这些域名在公网真实存在）
   if (otherBankDomains.length > 0) {

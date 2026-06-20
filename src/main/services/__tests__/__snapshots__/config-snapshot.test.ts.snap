@@ -9720,7 +9720,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "domain_suffix": [
             ".microdone.cn",
           ],
-          "outbound": "proxy-selector",
+          "outbound": "direct",
+          "override_address": "127.0.0.1",
         },
         {
           "action": "route",
