@@ -26,7 +26,7 @@ export function RealityPublicKeyField({ control, t }: { control: AnyControl; t: 
       name="realityPublicKey"
       render={({ field }) => (
         <FormItem>
-          <FormLabel>Public Key</FormLabel>
+          <FormLabel>{t('servers.realityPublicKey', 'Public Key')}</FormLabel>
           <FormControl>
             <Input placeholder={t('servers.publicKeyPlaceholder')} {...field} />
           </FormControl>

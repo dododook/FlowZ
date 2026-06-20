@@ -196,9 +196,9 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
                 name="uuid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>UUID</FormLabel>
+                    <FormLabel>{t('servers.uuid', 'UUID')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
+                      <Input placeholder={t('servers.uuidPlaceholder')} {...field} />
                     </FormControl>
                     <FormDescription>{t('servers.uuidDesc')}</FormDescription>
                     <FormMessage />

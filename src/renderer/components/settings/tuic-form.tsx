@@ -133,9 +133,9 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
                 name="uuid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>UUID</FormLabel>
+                    <FormLabel>{t('servers.uuid', 'UUID')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter UUID" {...field} />
+                      <Input placeholder={t('servers.uuidPlaceholder')} {...field} />
                     </FormControl>
                     <FormDescription>{t('servers.tuicUuidDesc')}</FormDescription>
                     <FormMessage />

@@ -815,7 +815,6 @@
     "random": "Random",
     "upMbps": "Upload (Mbps)",
     "downMbps": "Download (Mbps)",
-    "bbrDesc": "Enable BBR congestion control",
     "obfsEnabled": "Enable Obfuscation",
     "obfsEnabledDesc": "Use Salamander obfuscation",
     "obfsPassword": "Obfuscation Password",
@@ -998,7 +997,13 @@
     "tsRoutesDescFull": "Send these advertised subnets (e.g. 192.168.50.0/24) through this Tailscale node; tailnet 100.64.0.0/10 is auto-included. Comma-separated. Setting this auto-enables Accept Routes.",
     "echDescFull": "Encrypts the ClientHello and hides the SNI to bypass SNI-based blocking. Requires server/DNS ECH support.",
     "wgAllowedIPsDescFull": "Subnets (CIDR) to route through this node, comma/newline-separated. For peer LAN only, list specific CIDRs like 10.8.0.0/24. Empty = full tunnel (all traffic) — only when 'Allow internet access' is on.",
-    "customIntroFull": "Paste a raw sing-box outbound JSON (e.g. snell). Compatibility is checked against the current kernel; an incompatible protocol needs a third-party kernel that supports it."
+    "customIntroFull": "Paste a raw sing-box outbound JSON (e.g. snell). Compatibility is checked against the current kernel; an incompatible protocol needs a third-party kernel that supports it.",
+    "uuid": "UUID",
+    "realityPublicKey": "Public Key",
+    "httpsEnable": "HTTPS/TLS",
+    "httpsEnableDesc": "Enable TLS encryption for this proxy",
+    "bandwidthDesc": "Declared link bandwidth (Mbps); leave empty to use BBR congestion control.",
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   },
   "rules": {
     "ruleColumn": "Rule",

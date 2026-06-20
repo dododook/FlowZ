@@ -176,7 +176,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                       }}
                     />
                   </FormControl>
-                  <FormDescription>{t('servers.bbrDesc')}</FormDescription>
+                  <FormDescription>{t('servers.bandwidthDesc')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -199,7 +199,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                       }}
                     />
                   </FormControl>
-                  <FormDescription>{t('servers.bbrDesc')}</FormDescription>
+                  <FormDescription>{t('servers.bandwidthDesc')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -255,16 +255,11 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
               name="serverPorts"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('servers.hopPorts', '端口跳跃范围')}</FormLabel>
+                  <FormLabel>{t('servers.hopPorts', 'Port Hopping Range')}</FormLabel>
                   <FormControl>
                     <Input placeholder="20000:30000,40000:50000" {...field} />
                   </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.hopPortsDesc',
-                      '逗号分隔的端口范围，如 20000:30000,40000:50000。留空则不启用。'
-                    )}
-                  </FormDescription>
+                  <FormDescription>{t('servers.hopPortsDesc')}</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

@@ -815,7 +815,6 @@
     "random": "随机",
     "upMbps": "上行带宽 (Mbps)",
     "downMbps": "下行带宽 (Mbps)",
-    "bbrDesc": "启用 BBR 拥塞控制",
     "obfsEnabled": "启用混淆",
     "obfsEnabledDesc": "使用 Salamander 混淆",
     "obfsPassword": "混淆密码",
@@ -998,7 +997,13 @@
     "tsRoutesDescFull": "把这些 advertised 子网（如 192.168.50.0/24）的流量送进此 Tailscale 节点；tailnet 段 100.64.0.0/10 自动包含。逗号分隔。填了会自动开启「接受子网路由」。",
     "echDescFull": "加密 ClientHello、隐藏 SNI，规避基于 SNI 的阻断。需服务端/DNS 支持 ECH。",
     "wgAllowedIPsDescFull": "填写需经此节点路由的网段（CIDR），多个用逗号或换行分隔。仅访问对端内网则填具体段，如 10.8.0.0/24。留空 = 全部流量经此节点（全隧道，需开启「允许访问外网」）。",
-    "customIntroFull": "粘贴一份 sing-box outbound JSON（如 snell）。会用当前内核检测兼容性；当前内核不支持的协议需换用支持它的第三方内核。"
+    "customIntroFull": "粘贴一份 sing-box outbound JSON（如 snell）。会用当前内核检测兼容性；当前内核不支持的协议需换用支持它的第三方内核。",
+    "uuid": "UUID",
+    "realityPublicKey": "Public Key",
+    "httpsEnable": "HTTPS/TLS",
+    "httpsEnableDesc": "为此代理启用 TLS 加密",
+    "bandwidthDesc": "声明链路带宽（Mbps）；留空则用 BBR 拥塞控制自适应。",
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   },
   "rules": {
     "ruleColumn": "规则",

@@ -815,7 +815,6 @@
     "random": "隨機",
     "upMbps": "上行頻寬 (Mbps)",
     "downMbps": "下行頻寬 (Mbps)",
-    "bbrDesc": "啟用 BBR 壅塞控制",
     "obfsEnabled": "啟用混淆",
     "obfsEnabledDesc": "使用 Salamander 混淆",
     "obfsPassword": "混淆密碼",
@@ -998,7 +997,13 @@
     "tsRoutesDescFull": "把這些 advertised 子網（如 192.168.50.0/24）的流量送進此 Tailscale 節點；tailnet 段 100.64.0.0/10 自動包含。逗號分隔。填了會自動開啟「接受子網路由」。",
     "echDescFull": "加密 ClientHello、隱藏 SNI，規避基於 SNI 的阻斷。需伺服端/DNS 支援 ECH。",
     "wgAllowedIPsDescFull": "填寫需經此節點路由的網段（CIDR），多個用逗號或換行分隔。僅存取對端內網則填具體段，如 10.8.0.0/24。留空 = 全部流量經此節點（全隧道，需開啟「允許存取外網」）。",
-    "customIntroFull": "貼上一份 sing-box outbound JSON（如 snell）。會用目前核心偵測相容性；目前核心不支援的協定需換用支援它的第三方核心。"
+    "customIntroFull": "貼上一份 sing-box outbound JSON（如 snell）。會用目前核心偵測相容性；目前核心不支援的協定需換用支援它的第三方核心。",
+    "uuid": "UUID",
+    "realityPublicKey": "Public Key",
+    "httpsEnable": "HTTPS/TLS",
+    "httpsEnableDesc": "為此代理啟用 TLS 加密",
+    "bandwidthDesc": "宣告鏈路頻寬（Mbps）；留空則用 BBR 壅塞控制自適應。",
+    "uuidPlaceholder": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
   },
   "rules": {
     "ruleColumn": "規則",

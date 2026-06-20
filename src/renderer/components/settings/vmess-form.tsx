@@ -180,9 +180,9 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
                 name="uuid"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>UUID</FormLabel>
+                    <FormLabel>{t('servers.uuid', 'UUID')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
+                      <Input placeholder={t('servers.uuidPlaceholder')} {...field} />
                     </FormControl>
                     <FormDescription>
                       {t('servers.vmessUuidDesc', 'VMess 用户 UUID')}

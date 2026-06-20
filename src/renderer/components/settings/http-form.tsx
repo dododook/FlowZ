@@ -143,8 +143,8 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
                     <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                   </FormControl>
                   <div className="space-y-1 leading-none">
-                    <FormLabel>HTTPS/TLS</FormLabel>
-                    <FormDescription>Enable TLS security for this proxy</FormDescription>
+                    <FormLabel>{t('servers.httpsEnable', 'HTTPS/TLS')}</FormLabel>
+                    <FormDescription>{t('servers.httpsEnableDesc')}</FormDescription>
                   </div>
                 </FormItem>
               )}
