@@ -78,7 +78,7 @@ function App() {
   useEffect(() => {
     const unsubscribe = ipcClient.on<
       Array<{ name: string; protocol: string; latency: number | null }>
-    >(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, (results) => {
+    >(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, (results) => {
       const message = results
         .map((r) =>
           r.latency !== null

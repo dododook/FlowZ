@@ -741,7 +741,7 @@ export class TrayManager implements ITrayManager {
 
     // 发送到渲染进程显示 toast
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, resultList);
+      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, resultList);
     }
   }
 
