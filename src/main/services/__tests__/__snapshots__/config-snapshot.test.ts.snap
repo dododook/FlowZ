@@ -9776,6 +9776,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "rule_set": "geosite-private",
         },
         {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
+        },
+        {
           "action": "reject",
           "domain_keyword": [
             "dns.google",

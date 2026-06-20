@@ -1511,8 +1511,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 为「核心更新预检」生成针对目标版本的配置 JSON：用当前活动配置 + 目标核心版本的生成风格
-   * （<1.13 走 inbound sniff，≥1.13 走 route action），供 sing-box check 校验新核心能否解析。
+   * 为「核心更新预检」生成针对目标版本的配置 JSON：用当前活动配置 + 目标核心版本（this.coreVersion 临时设为
+   * targetVersion），供 sing-box check 校验新核能否解析。配置已硬切 1.14（route 层 sniff 无条件、services 仅
+   * hasManagementApi(≥1.14) 注入），故 targetVersion<1.14 的预检配置不含 1.14-only 字段。
    * 无活动配置（代理从未启动）时返回 null —— 调用方仅校验二进制可执行即可。
    */
   buildPreflightConfigJson(targetVersion: string): string | null {
@@ -5048,7 +5049,11 @@ exit 0
         (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === ep.endpointTag
       );
       if (!server) continue;
-      const loggedIn = ep.backendState === 'Running' || ep.backendState === 'Starting';
+      // loggedIn = 已认证(Running||Starting) 且 key 未过期。key 过期(self.expired)即便 backendState 仍短暂 Running，
+      // 也判未登录 → 渲染端「需登录」角标亮、引导重新认证（取代旧 expired→回落需登录启发式）。
+      const loggedIn =
+        (ep.backendState === 'Running' || ep.backendState === 'Starting') &&
+        ep.self?.expired !== true;
       this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, {
         serverId: server.id,
         backendState: ep.backendState,

@@ -105,7 +105,13 @@ export class TailscaleApiClient {
           ) => grpc.ClientReadableStream<{ endpoints?: TailscaleEndpointStatus[] }>;
         }
       ).SubscribeTailscaleStatus({});
-      this.call.on('data', (msg) => this.onUpdate(msg?.endpoints || []));
+      this.call.on('data', (msg) => {
+        // stop 后守卫：gRPC cancel() 是 best-effort，已派发进事件循环的在途 data 帧仍可能触发——
+        // 不加守卫会在 stop（换节点/切模式后旧 client 已弃用、ProxyManager 已置 tailscaleApiClient=null）后
+        // 用陈旧 endpoint 状态推一条跨代 EVENT_TAILSCALE_STATUS，误点亮/熄灭错节点登录态。
+        if (this.stopped) return;
+        this.onUpdate(msg?.endpoints || []);
+      });
       this.call.on('error', () => this.scheduleReconnect());
       this.call.on('end', () => this.scheduleReconnect());
     } catch {
