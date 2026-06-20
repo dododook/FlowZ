@@ -416,8 +416,8 @@
       "uninstallWarn": "This cannot be undone. The app will quit when finished.",
       "uninstallConfirmBtn": "Uninstall completely",
       "uninstallFail": "Uninstall failed",
-      "restrictCoreUpdateDescFull": "When off, \"Check for updates\" can surface cross-band versions (e.g. 1.14), which still require manual confirmation to install. Auto-update always stays within the band and is unaffected by this option.",
-      "autoUpdateDescFull": "Auto-updates only within the compatible version band (e.g. 1.13.x→1.13.y); crossing a major version (e.g. 1.13→1.14) requires manual confirmation. While running, updates are only downloaded and staged — your connection is never interrupted."
+      "restrictCoreUpdateDescFull": "When off, \"Check for updates\" can surface cross-band versions, which still require manual confirmation to install. Auto-update always stays within the band and is unaffected by this option.",
+      "autoUpdateDescFull": "Auto-updates only within the compatible version band; crossing a major version requires manual confirmation. While running, updates are only downloaded and staged — your connection is never interrupted."
     },
     "appearance": {
       "title": "Appearance",
@@ -958,8 +958,6 @@
     "alpn": "ALPN",
     "alpnDesc": "Application-Layer Protocol Negotiation, e.g. h3",
     "naive": {
-      "versionWarning": "⚠️ Naive protocol requires sing-box v1.13+ core. If you are using v1.12, please go to 'Settings -> About' to update your core.",
-      "goUpdate": "Update Core",
       "useHttp3": "HTTP/3 (QUIC)",
       "useHttp3Desc": "Dial this node over QUIC/UDP (server must enable HTTP/3).",
       "useHttp3DescFull": "This node dials over QUIC/UDP (server must listen on quic://, with HTTP/3 enabled). Its own QUIC dial is protected and not killed by \"Block QUIC\"; browser QUIC to this node is still handled per the \"Block QUIC\" setting."
