@@ -217,13 +217,13 @@ export function buildRouteConfig(
       ...BOOTSTRAP_DIRECT_DNS_IPS.map((ip) => `${ip}/32`),
       // 用户自定义的国内 DNS（IP 型）也须在 hijack-dns 之前直连放行，否则其 53 端口查询会被劫持成 FakeIP
       ...(customDomesticDns
-        ? [hostToExcludeCidr(customDomesticDns.ip)].filter((c) => c !== null)
+        ? [hostToExcludeCidr(customDomesticDns.ip)].filter((c): c is string => c !== null)
         : []),
       // 方案B：DNS 接管的内网 LAN 解析器（dns-lan 指向它）必须在 hijack-dns 之前直连放行，否则其 :53 查询会被
       // hijack-dns 抢走 → 内网域名解析成环。经 hostToExcludeCidr 族自适应（v4 /32 / v6 /128；pickLanResolverIp
       // 现仅 IPv4，未来 IPv6 不再误拼 /32），非 IP 返 null 时 skip（getLanResolverForDns 已保证私网 IP）。
       ...(deps.lanResolverForDns
-        ? [hostToExcludeCidr(deps.lanResolverForDns)].filter((c) => c !== null)
+        ? [hostToExcludeCidr(deps.lanResolverForDns)].filter((c): c is string => c !== null)
         : []),
     ],
     port: Array.from(new Set([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])])),

@@ -379,4 +379,9 @@ describe('buildRouteConfig — 节点 IP 直连排除（CIDR 形状）', () => {
     );
     expect(directCidrs(rc)).toContain('192.168.1.1/32');
   });
+  it('lanResolverForDns（IPv6）→ ip_cidr 含 <ip>/128（族自适应 helper）', () => {
+    const n = ipNode('s1', '1.2.3.4');
+    const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([], { lanResolverForDns: 'fd00::1' }));
+    expect(directCidrs(rc)).toContain('fd00::1/128');
+  });
 });

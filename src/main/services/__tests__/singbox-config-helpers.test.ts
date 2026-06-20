@@ -14,6 +14,7 @@ import {
   getRequiredGeoCategories,
 } from '../singbox-config-helpers';
 import type { UserConfig, Rule, AppRule } from '../../../shared/types';
+import { parseDnsServerSpec } from '../../../shared/dns';
 
 describe('isIpv4Host', () => {
   it('真 IPv4 字面量', () => {
@@ -46,6 +47,9 @@ describe('isIpv6Host', () => {
     expect(isIpv6Host('::ffff:1.2.3.999')).toBe(false);
     // 仅 1 个冒号（IP:port 裸输入）→ 仍 false
     expect(isIpv6Host('8.8.8.8:53')).toBe(false);
+  });
+  it('zone-id（含 %）→ false（% 非 hex 字符，不被误收为合法 IPv6）', () => {
+    expect(isIpv6Host('fe80::1%eth0')).toBe(false);
   });
 });
 
@@ -255,5 +259,11 @@ describe('getRequiredGeoCategories — 扫 customRules + appRules 收集 geo 类
     const { geosite, geoip } = getRequiredGeoCategories([], [], []);
     expect(geosite.size).toBe(0);
     expect(geoip.size).toBe(0);
+  });
+});
+
+describe('parseDnsServerSpec — 非法输入 → null', () => {
+  it('单边左括号（畸形 IPv6）→ null', () => {
+    expect(parseDnsServerSpec('[::1')).toBeNull();
   });
 });
