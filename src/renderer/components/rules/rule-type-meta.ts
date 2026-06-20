@@ -6,17 +6,24 @@ import type { RuleType } from '../../../shared/types';
 import type { RuleCategory } from '../../../shared/rules';
 import { RULE_TYPE_CATEGORY, BYPASS_FAKEIP_TYPES } from '../../../shared/rules';
 import { RULE_RESOURCE_CATALOG } from '../../../shared/rule-resource-catalog';
-import { Globe, Network, AppWindow, Library } from 'lucide-react';
+import { Globe, Network, AppWindow, Library, Router } from 'lucide-react';
 
 // 单一来源：分组映射与 bypassFakeIP 适用类型复用 shared/rules，避免与之漂移（review P2-6）
 export const TYPE_TO_CATEGORY = RULE_TYPE_CATEGORY;
 export { BYPASS_FAKEIP_TYPES };
 
-export const RULE_CATEGORIES: RuleCategory[] = ['domain', 'network', 'process', 'ruleset'];
+export const RULE_CATEGORIES: RuleCategory[] = [
+  'domain',
+  'network',
+  'device',
+  'process',
+  'ruleset',
+];
 
 export const CATEGORY_TYPES: Record<RuleCategory, RuleType[]> = {
   domain: ['domain', 'domainSuffix', 'domainKeyword', 'domainRegex'],
   network: ['ipCidr', 'sourceIpCidr', 'port', 'sourcePort'],
+  device: ['sourceMac', 'sourceHostname'],
   process: ['processName', 'processPath'],
   ruleset: ['geosite', 'geoip', 'ruleSet'],
 };
@@ -25,6 +32,7 @@ export const CATEGORY_TYPES: Record<RuleCategory, RuleType[]> = {
 export const CATEGORY_NAME: Record<RuleCategory, string> = {
   domain: '域名',
   network: 'IP / 端口',
+  device: '局域网设备',
   process: '进程',
   ruleset: '规则集',
 };
@@ -32,14 +40,16 @@ export const CATEGORY_NAME: Record<RuleCategory, string> = {
 export const CATEGORY_ICON: Record<RuleCategory, typeof Globe> = {
   domain: Globe,
   network: Network,
+  device: Router,
   process: AppWindow,
   ruleset: Library,
 };
 
-/** 分组 Badge 着色（域名蓝 / IP紫 / 进程橙 / 规则集青）。 */
+/** 分组 Badge 着色（域名蓝 / IP紫 / 设备绿 / 进程橙 / 规则集青）。 */
 export const CATEGORY_BADGE_CLASS: Record<RuleCategory, string> = {
   domain: 'border-transparent bg-badge-blue/15 text-badge-blue',
   network: 'border-transparent bg-badge-purple/15 text-badge-purple',
+  device: 'border-transparent bg-badge-green/15 text-badge-green',
   process: 'border-transparent bg-badge-orange/15 text-badge-orange',
   ruleset: 'border-transparent bg-badge-cyan/15 text-badge-cyan',
 };
@@ -54,6 +64,8 @@ export const RULE_TYPE_NAME: Record<RuleType, string> = {
   sourceIpCidr: '源 IP/CIDR',
   port: '目的端口',
   sourcePort: '源端口',
+  sourceMac: '源设备 MAC',
+  sourceHostname: '源设备主机名',
   processName: '进程名',
   processPath: '进程路径',
   geosite: 'Geosite',
@@ -71,6 +83,8 @@ export const RULE_TYPE_DESC: Record<RuleType, string> = {
   sourceIpCidr: '源 IP/CIDR（按来源设备分流）',
   port: '目的端口，支持单端口与区间（如 1000-2000）',
   sourcePort: '源端口（高级，少用）',
+  sourceMac: '按来源设备 MAC 分流（局域网网关场景，仅 Linux/macOS）',
+  sourceHostname: '按来源设备主机名分流（DHCP 租约名，仅 Linux/macOS）',
   processName: '进程可执行文件名（Windows 含 .exe）；仅本机发起的连接可识别',
   processPath: '进程可执行文件完整路径（区分同名程序）',
   geosite: 'sing-geosite 域名分类库标签（如 youtube）',
@@ -88,6 +102,8 @@ export const RULE_TYPE_PLACEHOLDER: Record<RuleType, string> = {
   sourceIpCidr: '192.168.1.100/32',
   port: '443\n1000-2000',
   sourcePort: '5060',
+  sourceMac: '00:11:22:33:44:55',
+  sourceHostname: 'my-laptop',
   processName: 'Telegram',
   processPath: '/Applications/Telegram.app/Contents/MacOS/Telegram',
   geosite: 'youtube',
@@ -107,6 +123,8 @@ export const RULE_TYPE_HINT: Record<RuleType, string> = {
   sourceIpCidr: '每行一条源 IP/CIDR',
   port: '每行一条端口或区间（如 443 或 1000-2000）',
   sourcePort: '每行一条源端口或区间',
+  sourceMac: '每行一个 MAC（00:11:22:33:44:55 / 00-11-22-33-44-55 / 0011.2233.4455）',
+  sourceHostname: '每行一个设备主机名（来自 DHCP 租约）',
   processName: '每行一个进程名（Windows 含 .exe）',
   processPath: '每行一个进程完整路径',
   geosite: '每行一个标签（如 youtube），或从下方常用标签选择',
@@ -119,6 +137,8 @@ export const SHORT_VALUE_TYPES: RuleType[] = [
   'domainRegex',
   'port',
   'sourcePort',
+  'sourceMac',
+  'sourceHostname',
   'geosite',
   'geoip',
 ];

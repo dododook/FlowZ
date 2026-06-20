@@ -164,7 +164,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
 
   const addCondition = () => {
     const next = RULE_TYPE_IDS.find((tp) => !usedTypes.has(tp));
-    if (!next) return; // 13 种类型全部用尽
+    if (!next) return; // 全部类型用尽
     setFocusedType(null);
     setConditionTypes((prev) => [...prev, next]);
   };

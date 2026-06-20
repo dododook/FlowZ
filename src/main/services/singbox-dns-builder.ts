@@ -9,6 +9,7 @@ import * as path from 'path';
 import type { UserConfig } from '../../shared/types';
 import { parseDnsServerSpec, type ParsedDnsServer } from '../../shared/dns';
 import { ruleConditions } from '../../shared/rules';
+import { normalizeNeighborDomain, isSourceDeviceMatchSupported } from '../../shared/neighbor';
 import { effectiveRegionRouting, REGION_LOCAL_GEO } from '../../shared/region-routing';
 import { planCustomRule, customRuleFileBase, usesFakeIp } from './custom-rule-files';
 import { getCustomRulesDir } from '../utils/paths';
@@ -187,6 +188,28 @@ export function buildDnsConfig(
     // 否则在境内直接发起会因 GFW 拦截/污染导致 FakeIP 映射失败或 TTL 极短产生大量无效解析。
     buildUserDns('dns-remote', foreign, selectedServerTag),
   ];
+
+  // P6 局域网网关：local DNS server 邻居解析（sing-box 1.14 neighbor_domain）——对这些后缀的单标签短名
+  // （如 nas.lan）走局域网邻居解析（主机名→IP），实现「按局域网设备短名访问」。内核硬限界（实证 alpha.32）：
+  //   · 每条须以 '.' 开头（normalizeNeighborDomain 归一化，否则 init FATAL）；· 仅 type:'local' server 支持；
+  //   · 平台限 Linux/macOS（与 source_mac/hostname 同 neighbor 子系统）。
+  // 仅当用户配置了 neighborDomains 且平台支持时附到 dns-local（缺省=空，配置字节零变化、snapshot 零回归）。
+  if (isSourceDeviceMatchSupported(process.platform)) {
+    const neighborDomains = Array.from(
+      new Set(
+        (config.tunConfig?.neighborDomains || [])
+          .map((d) => normalizeNeighborDomain(d))
+          .filter((d): d is string => !!d)
+      )
+    );
+    if (neighborDomains.length > 0) {
+      const local = dnsServers.find((s) => s.tag === 'dns-local');
+      if (local) {
+        local.neighbor_domain = neighborDomains;
+        log('info', `local DNS 邻居解析后缀: ${neighborDomains.join(', ')}`);
+      }
+    }
+  }
 
   if (enableFakeIp) {
     dnsServers.push({

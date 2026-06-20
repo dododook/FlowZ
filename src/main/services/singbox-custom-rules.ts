@@ -11,6 +11,11 @@ import * as path from 'path';
 import type { Rule, CustomRuleSet, RuleResource, RuleCondition } from '../../shared/types';
 import { ruleConditions } from '../../shared/rules';
 import { isValidTlsSpoofMethod, isTlsSpoofSupportedArch } from '../../shared/tls-spoof';
+import {
+  isValidMacAddress,
+  isValidSourceHostname,
+  isSourceDeviceMatchSupported,
+} from '../../shared/neighbor';
 import { isIpv4Host, isIpv6Host } from './singbox-config-helpers';
 import {
   EXT_TYPES,
@@ -52,7 +57,7 @@ export function buildCustomRules(
   // 把一个条件的 type→字段累积到 target（值并集；geosite/geoip→rule_set tag；ruleSet→注册定义+tag）。返回 hasMatcher。
   const applyConditionFields = (cond: RuleCondition, target: SingBoxRouteRule): boolean => {
     // EXT 类型（域名/IP/端口/进程 系）委托单一真值 condMatcherFields——与外化文件内容永不漂移。
-    // geosite/geoip/ruleSet 不可 headless 表达，留 inline（下方 switch）。
+    // geosite/geoip/ruleSet 与源设备类（sourceMac/sourceHostname）不可 headless 表达，留 inline（下方 switch）。
     if (EXT_TYPES.has(cond.type)) {
       const fields = condMatcherFields(cond);
       if (!fields) return false;
@@ -65,6 +70,23 @@ export function buildCustomRules(
     const vals = (cond.values || []).map((v) => v.trim()).filter(Boolean);
     if (vals.length === 0) return false;
     switch (cond.type) {
+      case 'sourceMac': {
+        // P6：源设备 MAC（sing-box 1.14 source_mac_address）。**仅 Linux/macOS**——win32 上内核不支持，发射即 FATAL，
+        // 故平台不支持时整条不产 matcher（fail-closed，与脏 MAC 过滤同口径）。脏 MAC 过滤（合法值才下发，杜绝脏值入 config）。
+        if (!isSourceDeviceMatchSupported(process.platform)) return false;
+        const macs = vals.filter(isValidMacAddress);
+        if (macs.length === 0) return false; // 全脏 → 不产 matcher、不留空数组在 target
+        target.source_mac_address = pushU(target.source_mac_address, macs);
+        return true;
+      }
+      case 'sourceHostname': {
+        // P6：源设备主机名（sing-box 1.14 source_hostname，DHCP 租约名）。仅 Linux/macOS（同上）。
+        if (!isSourceDeviceMatchSupported(process.platform)) return false;
+        const hosts = vals.filter(isValidSourceHostname);
+        if (hosts.length === 0) return false;
+        target.source_hostname = pushU(target.source_hostname, hosts);
+        return true;
+      }
       case 'geosite':
         // 裸标签 → geosite-<tag>（lowercase 对齐 getRequiredGeoCategories 与远程 .srs 文件名）
         target.rule_set = pushU(

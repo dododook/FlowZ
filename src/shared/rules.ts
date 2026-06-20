@@ -4,6 +4,7 @@
  * 保证两侧规则语义完全一致（仿 shared/version.ts 的共享惯例）。
  */
 import type { Rule, RuleType, RuleCondition, LegacyDomainRule, RuleAction } from './types';
+import { isValidMacAddress, isValidSourceHostname } from './neighbor';
 
 export const RULE_TYPE_IDS: RuleType[] = [
   'domain',
@@ -14,6 +15,8 @@ export const RULE_TYPE_IDS: RuleType[] = [
   'sourceIpCidr',
   'port',
   'sourcePort',
+  'sourceMac',
+  'sourceHostname',
   'processName',
   'processPath',
   'geosite',
@@ -21,7 +24,8 @@ export const RULE_TYPE_IDS: RuleType[] = [
   'ruleSet',
 ];
 
-export type RuleCategory = 'domain' | 'network' | 'process' | 'ruleset';
+// device = 按源设备识别（MAC / 主机名，sing-box 1.14 局域网网关场景，仅 Linux/macOS）。
+export type RuleCategory = 'domain' | 'network' | 'device' | 'process' | 'ruleset';
 
 export const RULE_TYPE_CATEGORY: Record<RuleType, RuleCategory> = {
   domain: 'domain',
@@ -32,6 +36,8 @@ export const RULE_TYPE_CATEGORY: Record<RuleType, RuleCategory> = {
   sourceIpCidr: 'network',
   port: 'network',
   sourcePort: 'network',
+  sourceMac: 'device',
+  sourceHostname: 'device',
   processName: 'process',
   processPath: 'process',
   geosite: 'ruleset',
@@ -136,6 +142,12 @@ export function validateRuleValue(type: RuleType, value: string): boolean {
     case 'port':
     case 'sourcePort':
       return validPortToken(v);
+    case 'sourceMac':
+      // EUI-48 MAC（冒号/连字符/Cisco 点分）；脏 MAC 会让 TUN 侧 check / 启动 FATAL。
+      return isValidMacAddress(v);
+    case 'sourceHostname':
+      // DHCP 租约主机名形状（字母数字 + 连字符）。
+      return isValidSourceHostname(v);
     case 'processName':
       return !v.includes('/') && !v.includes('\\');
     case 'processPath':

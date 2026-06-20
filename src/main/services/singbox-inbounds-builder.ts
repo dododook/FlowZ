@@ -19,6 +19,7 @@ import { bypassLanCidrs, effectiveBypassLan } from '../../shared/system-proxy-by
 import { partitionCidrsByOverlap } from '../../shared/ip';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
 import { usesFakeIp } from './custom-rule-files';
+import { isValidMacAddress, isTunMacFilterSupported } from '../../shared/neighbor';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
 export interface InboundsDeps {
@@ -171,17 +172,35 @@ export function buildInbounds(
         ? platformDefaultStack
         : userStack;
 
+    const autoRoute = config.tunConfig?.autoRoute ?? true;
     const tunInbound: SingBoxInbound = {
       type: 'tun',
       tag: 'tun-in',
       address: tunAddress,
       mtu: effectiveMtu,
-      auto_route: config.tunConfig?.autoRoute ?? true,
+      auto_route: autoRoute,
       strict_route: config.tunConfig?.strictRoute ?? true,
       // macOS 必须使用 gvisor 栈(3.3.18)。Windows 下 system 栈配合 Wintun 性能最强且稳定(3.4.0)。
       stack: effectiveStack,
       route_exclude_address: excludeAddr,
     };
+
+    // P6 局域网网关：按 MAC 限/排设备进 TUN（sing-box 1.14 include/exclude_mac_address）。
+    // 内核硬限界（实证 alpha.32）：**仅 Linux + auto_route + auto_redirect**，脏 MAC → check/启动 FATAL，
+    // include/exclude 互斥。四重门控（任一不满足即整组不发射，保持零变化、防 FATAL）：
+    //   1. 平台=Linux（isTunMacFilterSupported）；2. auto_route 开；3. 有合法 MAC（脏值剔除后非空）。
+    // 满足时：发射 auto_redirect:true（必需前置）+ 仅 include/exclude 之一（按 macFilterMode）。
+    const macMode = config.tunConfig?.macFilterMode;
+    if (macMode && isTunMacFilterSupported(process.platform) && autoRoute) {
+      const macs = (config.tunConfig?.macFilterList || [])
+        .map((m) => m.trim())
+        .filter(isValidMacAddress);
+      if (macs.length > 0) {
+        tunInbound.auto_redirect = true;
+        if (macMode === 'exclude') tunInbound.exclude_mac_address = macs;
+        else tunInbound.include_mac_address = macs;
+      }
+    }
 
     // macOS 平台特定配置
     if (process.platform === 'darwin') {
