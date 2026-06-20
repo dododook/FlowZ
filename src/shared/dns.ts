@@ -55,7 +55,7 @@ function isIpv4Literal(host: string): boolean {
 }
 
 /** 粗判 IPv6 字面量：去方括号后仅含 hex 与冒号，且至少两个冒号（排除 "8.8.8.8:53" 这类带端口裸输入）。 */
-function isIpv6Literal(host: string): boolean {
+export function isIpv6Literal(host: string): boolean {
   const h = stripBrackets(host);
   return /^[0-9a-fA-F:]+$/.test(h) && (h.match(/:/g)?.length ?? 0) >= 2;
 }
