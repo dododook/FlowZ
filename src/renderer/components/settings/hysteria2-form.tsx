@@ -30,30 +30,46 @@ import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
 const createHysteria2Schema = (t: any) =>
-  z.object({
-    address: z.string().min(1, t('servers.addressRequired')),
-    port: z.number().min(1).max(65535),
-    password: z.string().min(1, t('servers.passwordRequired')),
-    // 带宽限制
-    upMbps: z.number().optional(),
-    downMbps: z.number().optional(),
-    // 混淆设置
-    obfsEnabled: z.boolean(),
-    obfsType: z.enum(['salamander', 'gecko']),
-    obfsPassword: z.string().optional(),
-    obfsMinPacketSize: z.number().optional(),
-    obfsMaxPacketSize: z.number().optional(),
-    // 拥塞控制
-    bbrProfile: z.string().optional(),
-    // TLS 设置
-    tlsServerName: z.string().optional(),
-    tlsAllowInsecure: z.boolean(),
-    // ECH
-    ...echSchemaShape,
-    // 端口跳跃
-    serverPorts: z.string().optional(),
-    hopInterval: z.string().optional(),
-  });
+  z
+    .object({
+      address: z.string().min(1, t('servers.addressRequired')),
+      port: z.number().min(1).max(65535),
+      password: z.string().min(1, t('servers.passwordRequired')),
+      // 带宽限制
+      upMbps: z.number().optional(),
+      downMbps: z.number().optional(),
+      // 混淆设置
+      obfsEnabled: z.boolean(),
+      obfsType: z.enum(['salamander', 'gecko']),
+      obfsPassword: z.string().optional(),
+      obfsMinPacketSize: z.number().optional(),
+      obfsMaxPacketSize: z.number().optional(),
+      // 拥塞控制
+      bbrProfile: z.string().optional(),
+      // TLS 设置
+      tlsServerName: z.string().optional(),
+      tlsAllowInsecure: z.boolean(),
+      // ECH
+      ...echSchemaShape,
+      // 端口跳跃
+      serverPorts: z.string().optional(),
+      hopInterval: z.string().optional(),
+    })
+    .refine(
+      // A-1：gecko obfs 的 min/max 包长仅各自 >0 校验，可 min>max 下发致核 FATAL。前置拦 min≤max
+      // （仅 gecko obfs 启用且两值均填时；任一缺省由「仅 gecko 有意义」下发逻辑兜底，不在此约束）。
+      (v) =>
+        !(
+          v.obfsEnabled &&
+          v.obfsType === 'gecko' &&
+          typeof v.obfsMinPacketSize === 'number' &&
+          typeof v.obfsMaxPacketSize === 'number'
+        ) || v.obfsMinPacketSize <= v.obfsMaxPacketSize,
+      {
+        path: ['obfsMaxPacketSize'],
+        message: t('servers.obfsPacketSizeOrder', '最大包长须 ≥ 最小包长'),
+      }
+    );
 
 type Hysteria2FormValues = z.infer<ReturnType<typeof createHysteria2Schema>>;
 

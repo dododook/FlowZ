@@ -1083,6 +1083,7 @@
     "obfsMinPacketSize": "Min Packet Size",
     "obfsMaxPacketSize": "Max Packet Size",
     "obfsPacketSizeDesc": "Random padding length range for Gecko obfuscation. Empty uses the core default.",
+    "obfsPacketSizeOrder": "Max packet size must be ≥ min packet size",
     "bbrProfile": "BBR Profile",
     "bbrProfileDefault": "Default",
     "bbrProfileStandard": "Standard",

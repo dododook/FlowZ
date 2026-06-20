@@ -1083,6 +1083,7 @@
     "obfsMinPacketSize": "最小封包長度",
     "obfsMaxPacketSize": "最大封包長度",
     "obfsPacketSizeDesc": "Gecko 混淆的隨機填充長度範圍；留空用核心預設。",
+    "obfsPacketSizeOrder": "最大包長須 ≥ 最小包長",
     "bbrProfile": "BBR Profile",
     "bbrProfileDefault": "預設",
     "bbrProfileStandard": "Standard",

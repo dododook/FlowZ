@@ -1083,6 +1083,7 @@
     "obfsMinPacketSize": "حداقل اندازهٔ بسته",
     "obfsMaxPacketSize": "حداکثر اندازهٔ بسته",
     "obfsPacketSizeDesc": "بازهٔ طول پدینگ تصادفی برای مبهم‌سازی Gecko. خالی از پیش‌فرض هسته استفاده می‌کند.",
+    "obfsPacketSizeOrder": "حداکثر اندازهٔ بسته باید ≥ حداقل اندازهٔ بسته باشد",
     "bbrProfile": "پروفایل BBR",
     "bbrProfileDefault": "پیش‌فرض",
     "bbrProfileStandard": "Standard",

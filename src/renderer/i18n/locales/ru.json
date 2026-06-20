@@ -1083,6 +1083,7 @@
     "obfsMinPacketSize": "Мин. размер пакета",
     "obfsMaxPacketSize": "Макс. размер пакета",
     "obfsPacketSizeDesc": "Диапазон случайного дополнения для обфускации Gecko. Пусто использует значение по умолчанию ядра.",
+    "obfsPacketSizeOrder": "Максимальный размер пакета должен быть ≥ минимального",
     "bbrProfile": "Профиль BBR",
     "bbrProfileDefault": "По умолчанию",
     "bbrProfileStandard": "Standard",
