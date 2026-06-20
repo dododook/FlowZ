@@ -168,8 +168,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -834,8 +834,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -1472,8 +1472,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -2089,8 +2089,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -2728,8 +2728,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -3319,8 +3319,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -3884,8 +3884,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -4449,8 +4449,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -5021,8 +5021,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -5627,8 +5627,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -6263,8 +6263,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -6901,8 +6901,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -7573,8 +7573,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -8170,8 +8170,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -8846,8 +8846,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -9428,8 +9428,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -10030,8 +10030,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -10609,8 +10609,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -11223,8 +11223,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -11836,8 +11836,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -12468,8 +12468,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -13074,8 +13074,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -13709,8 +13709,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -14324,8 +14324,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -14930,8 +14930,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -15565,8 +15565,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -16215,8 +16215,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -16850,8 +16850,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -17486,8 +17486,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -18092,8 +18092,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -18705,8 +18705,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -19318,8 +19318,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -19897,8 +19897,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -20591,8 +20591,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",
@@ -21208,8 +21208,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "cache_file": {
         "enabled": true,
         "path": "/fake/userData/cache.db",
+        "store_dns": true,
         "store_fakeip": true,
-        "store_rdrc": true,
       },
       "clash_api": {
         "default_mode": "rule",

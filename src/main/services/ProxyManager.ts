@@ -69,6 +69,7 @@ import {
   runLoginPollLifecycle,
   makeLoginPoll,
 } from './tailscale-login-core';
+import { TailscaleApiClient, type TailscaleEndpointStatus } from './tailscale-api-client';
 import {
   getUserDataPath,
   getSingBoxConfigPath,
@@ -274,6 +275,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private logManager: ILogManager | null = null;
   // 隐私模式 provider（index 注入 getPrivacyMode）：隐私开 → sing-box 日志级别抬到 ≥warn，不记访问域名/SNI。
   private privacyProvider: () => boolean = () => false;
+  // sing-box 1.14 管理 API：Tailscale 状态订阅客户端 + 其 api service 端口（clash 端口 +1，独立共存）。
+  private tailscaleApiClient: TailscaleApiClient | null = null;
+  private tailscaleApiPort = 0;
   private lastLogMessage: string = '';
   private lastLogCount: number = 0;
   private lastLogTime: number = 0;
@@ -418,6 +422,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 0. 获取核心版本（用于后续生成兼容的配置文件）。force=true：内核可能已更新，启动时强制重检测刷新缓存。
     this.coreVersion = await this.getCoreVersion(true);
     this.logToManager('info', `检测到 sing-box 核心版本: ${this.coreVersion}`);
+    // 1.14 管理 API 端口 = clash 端口 +1（clash 端口已 resolveClashApiPortConflict 解冲突）。
+    this.tailscaleApiPort = controlApiPort(config) + 1;
 
     // 修复可能被 root 创建的文件权限（从 TUN 模式切换到系统代理模式时）
     await this.fixFilePermissions();
@@ -697,6 +703,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 单一真值、压过缓存。best-effort（不阻塞启动成功）。
     void this.reassertSelectorSelection(config);
 
+    // sing-box 1.14 管理 API：核起后连 api service 订阅 Tailscale 状态（断线重连，随主核生命周期）。
+    if (coreVersionAtLeast(this.coreVersion, 1, 14)) {
+      this.tailscaleApiClient?.stop();
+      this.tailscaleApiClient = new TailscaleApiClient(this.tailscaleApiPort, (eps) =>
+        this.handleTailscaleStatus(eps)
+      );
+      this.tailscaleApiClient.start();
+    }
+
     // P2a：启用代理 / 切接管模式后延迟一次连接 flush（见 scheduleConnectionFlush）——RST 泄漏成真实 IP 的旧连接
     // 逼其重连重解析（经 FakeIP 走代理），不重启内核；node 热切换不经 startInternal、由 interrupt 开关另管。
     this.scheduleConnectionFlush(config);
@@ -770,6 +785,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // Phase 2：停止/退出语境一并杀掉残留的瞬态登录核（无孤儿进程）。放早退之前——列表直接点登录时
     // 主核未运行，下方 `!singboxProcess && !singboxPid` 会早退，故在此先收瞬态核。
     this.killAllTailscaleLoginCores();
+    // 1.14 管理 API 客户端随核停（停订阅 + 关连接）。
+    this.tailscaleApiClient?.stop();
+    this.tailscaleApiClient = null;
     // 生命周期世代 +1：标记一次停止接管（退避中的 attemptAutoRestart 比对到变化即让位，M-2′/L-1′）。
     this.lifecycleGeneration++;
     // 取消未决的去抖重启（停止/退出优先于 trailing 重启，避免停了又被自动拉起）
@@ -1902,7 +1920,7 @@ done
           enabled: true,
           path: cachePath,
           store_fakeip: true,
-          store_rdrc: true,
+          store_dns: true,
         },
         clash_api: {
           external_controller: `127.0.0.1:${controlApiPort(config)}`,
@@ -1918,6 +1936,19 @@ done
     // proxy-selector / rule-sel / route 中作为成员被引用，与 outbound 一视同仁）。
     if (this.pendingEndpoints.length > 0) {
       singboxConfig.endpoints = this.pendingEndpoints;
+    }
+
+    // sing-box 1.14 管理 API：注入 api service（h2c gRPC，与 clash_api 共存、端口独立）。Tailscale 状态/登出经此。
+    // 仅 1.14 核（1.13 无 services schema，注入即 FATAL）。
+    if (coreVersionAtLeast(this.coreVersion, 1, 14)) {
+      singboxConfig.services = [
+        {
+          type: 'api',
+          listen: '127.0.0.1',
+          listen_port: this.tailscaleApiPort,
+          secret: config.clashApiSecret || undefined,
+        },
+      ];
     }
 
     // 路由规则若指向「已被跳过/不存在的出站」（如缺 libcronet 被跳过的 naive 节点），sing-box 会以
@@ -5048,6 +5079,28 @@ exit 0
       this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
     }
     this.killTailscaleLogin(serverId);
+  }
+
+  /**
+   * sing-box 1.14 管理 API 状态流回调：endpointTag(=server.name)→serverId，推 EVENT_TAILSCALE_STATUS 驱动渲染端登录态。
+   * loggedIn = Running||Starting（认证完成）；authURL 驱动登录流；expired 驱动过期。取代 1.13 stateExists/stdout 启发式。
+   */
+  private handleTailscaleStatus(endpoints: TailscaleEndpointStatus[]): void {
+    for (const ep of endpoints) {
+      const server = this.currentConfig?.servers.find(
+        (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === ep.endpointTag
+      );
+      if (!server) continue;
+      const loggedIn = ep.backendState === 'Running' || ep.backendState === 'Starting';
+      this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, {
+        serverId: server.id,
+        backendState: ep.backendState,
+        loggedIn,
+        authURL: ep.authURL || undefined,
+        tailscaleIPs: ep.self?.tailscaleIPs || [],
+        expired: ep.self?.expired === true,
+      });
+    }
   }
 
   /**

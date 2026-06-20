@@ -275,8 +275,17 @@ export interface SingBoxExperimental {
     enabled: boolean;
     path: string;
     store_fakeip?: boolean;
-    store_rdrc?: boolean;
+    store_dns?: boolean; // sing-box 1.14：取代 1.13 的 store_rdrc（全量 DNS 缓存持久化）
   };
+}
+
+// sing-box 1.14 services[]（管理 API）：daemon.StartedService gRPC（h2c，反射）。
+// Tailscale 状态订阅(SubscribeTailscaleStatus)/原生登出(TailscaleLogout) 经此（见 tailscale-api-client.ts）。
+export interface SingBoxApiService {
+  type: 'api';
+  listen: string;
+  listen_port: number;
+  secret?: string;
 }
 
 export interface SingBoxConfig {
@@ -297,4 +306,6 @@ export interface SingBoxConfig {
       cache_file?: string;
     };
   };
+  // sing-box 1.14 管理 API（仅 1.14 核注入；与 clash_api 共存，端口独立）。
+  services?: SingBoxApiService[];
 }
