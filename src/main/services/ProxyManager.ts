@@ -1440,8 +1440,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 又避免在全量 stdout 上误匹配后续行（如 Environment 的 `go1.25.10` 含 `1.25.10`）。
       const line = await this.spawnCoreVersionFirstLine();
       this.coreVersionLine = line; // 顺带缓存原始行（含 fork 后缀）供内核来源判定
-      const match = line.match(/(?:version\s+|v)(\d+\.\d+(\.\d+)?)/i);
-      const secondMatch = line.match(/(\d+\.\d+\.\d+)/);
+      // 保留 prerelease 后缀（如 1.14.0-alpha.32）：供 compareSemver 排序预览版（alpha.32<alpha.33<…<正式），
+      // 驱动「预览→正式可升、正式↛预览」更新逻辑。coreVersionAtLeast/encodeMajorMinor 已容忍后缀。
+      const match = line.match(/(?:version\s+|v)(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.]+)?)/i);
+      const secondMatch = line.match(/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/);
       const detected = match
         ? match[1]
         : secondMatch
