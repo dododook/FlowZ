@@ -51,6 +51,8 @@ interface NativeEventData {
   };
   systemProxyResidual: { proxy: string };
   speedTestResult: { serverId: string; latency: number };
+  // #40 核覆盖 reconcile：本机在用的非官方核 ≤ 随包基线 → 兼容风险提醒（启动时主进程 emit）。
+  coreBaselineWarning: { current: string; bundled: string; kind: string };
 }
 
 type NativeEventListener<K extends keyof NativeEventData> = (data: NativeEventData[K]) => void;
@@ -99,6 +101,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'speedTestResult':
         unsubscribe = api.server.onSpeedTestResult(callback as any);
+        break;
+      case 'coreBaselineWarning':
+        unsubscribe = api.proxy.onCoreBaselineWarning(callback as any);
         break;
       default:
         console.warn(`Unknown event: ${eventName}`);
@@ -294,6 +299,20 @@ function handleSpeedTestResult(data: NativeEventData['speedTestResult']) {
   useAppStore.getState().setLatencyMap((prev) => ({ ...prev, [data.serverId]: data.latency }));
 }
 
+// #40：非官方核 ≤ 随包基线 → 兼容风险警告 toast（每会话一次，避免每次启动唠叨；同 systemProxyResidual 模式）。
+let coreBaselineWarnedThisSession = false;
+function handleCoreBaselineWarning(data: NativeEventData['coreBaselineWarning']) {
+  if (coreBaselineWarnedThisSession) return;
+  coreBaselineWarnedThisSession = true;
+  toast.warning(i18n.t('settings.advanced.coreBaselineWarnTitle'), {
+    description: i18n.t('settings.advanced.coreBaselineWarnDesc', {
+      current: data.current,
+      bundled: data.bundled,
+    }),
+    duration: 15000,
+  });
+}
+
 /**
  * Hook to listen to all native events and update store
  */
@@ -310,4 +329,5 @@ export function useNativeEventListeners() {
   useNativeEvent('tailscaleStatus', handleTailscaleStatus);
   useNativeEvent('systemProxyResidual', handleSystemProxyResidual);
   useNativeEvent('speedTestResult', handleSpeedTestResult);
+  useNativeEvent('coreBaselineWarning', handleCoreBaselineWarning);
 }

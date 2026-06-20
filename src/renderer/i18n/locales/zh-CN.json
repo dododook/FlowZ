@@ -506,6 +506,8 @@
       "dnsTimeoutDesc": "单次查询超时（毫秒）。留空用内核默认。治理慢上游不拖整体解析。",
       "dnsTimeoutPlaceholder": "默认",
       "dnsTimeoutRange": "DNS 超时须为 1-60000 毫秒",
+      "coreBaselineWarnTitle": "内核版本低于基线",
+      "coreBaselineWarnDesc": "非官方内核 {{current}} 低于随包基线 {{bundled}}，可能与新版配置不兼容（连接失败/功能缺失）。请手动升级内核，或在「设置·内核·重置到出厂」切回随包官方版。",
       "mainSessionViaProxy": "更新检查走代理",
       "mainSessionViaProxyDesc": "应用/内核更新检查与规则下载经代理。",
       "localProxyLan": "本地代理 / 局域网",

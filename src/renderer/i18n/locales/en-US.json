@@ -506,6 +506,8 @@
       "dnsTimeoutDesc": "Per-query timeout in ms. Empty uses the core default. Keeps slow upstreams from stalling resolution.",
       "dnsTimeoutPlaceholder": "Default",
       "dnsTimeoutRange": "DNS timeout must be 1-60000 ms",
+      "coreBaselineWarnTitle": "Core version below baseline",
+      "coreBaselineWarnDesc": "Non-official core {{current}} is below the bundled baseline {{bundled}}; it may be incompatible with the new config (connection failures / missing features). Upgrade the core manually, or reset to the bundled official core in Settings · Core.",
       "mainSessionViaProxy": "Update checks via proxy",
       "mainSessionViaProxyDesc": "Route app/core update checks and rule downloads through the proxy.",
       "localProxyLan": "Local proxy & LAN",

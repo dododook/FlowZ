@@ -506,6 +506,8 @@
       "dnsTimeoutDesc": "單次查詢逾時（毫秒）。留空用核心預設。治理慢上游不拖累整體解析。",
       "dnsTimeoutPlaceholder": "預設",
       "dnsTimeoutRange": "DNS 逾時須為 1-60000 毫秒",
+      "coreBaselineWarnTitle": "核心版本低於基準",
+      "coreBaselineWarnDesc": "非官方核心 {{current}} 低於隨附基準 {{bundled}}，可能與新版設定不相容（連線失敗/功能缺失）。請手動升級核心，或在「設定·核心·重設為出廠」切回隨附官方版。",
       "mainSessionViaProxy": "更新檢查走代理",
       "mainSessionViaProxyDesc": "應用/核心更新檢查與規則下載經代理。",
       "localProxyLan": "本地代理 / 區域網路",
