@@ -22,6 +22,7 @@ import * as protoLoader from '@grpc/proto-loader';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { isIpv6Literal } from '../../shared/dns';
 
 const PROTO_SRC = `
 syntax = "proto3";
@@ -273,7 +274,11 @@ export class SingBoxApiClient {
   }
 
   private target(): string {
-    return `${this.host}:${this.port}`;
+    // F4：裸 IPv6 字面量（如 '::1'）须方括号包裹，否则 '::1:9090' 是非法 gRPC target。
+    // 已带方括号（'[::1]'）/IPv4/域名照旧；isIpv6Literal 去括号后判定（与 shared/dns 单一真值同口径）。
+    const host =
+      isIpv6Literal(this.host) && !this.host.startsWith('[') ? `[${this.host}]` : this.host;
+    return `${host}:${this.port}`;
   }
 
   /**

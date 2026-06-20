@@ -172,6 +172,29 @@ describe('Bearer metadata 注入', () => {
     await client.closeAllConnections();
     expect(mockState.lastTarget).toBe('10.0.0.5:1234');
   });
+
+  // F4：裸 IPv6 字面量须方括号包裹，否则 '::1:9090' 是非法 gRPC target。
+  it('裸 IPv6 字面量 → 方括号包裹的 target（[::1]:9090）', async () => {
+    const client = new SingBoxApiClient({ host: '::1', port: 9090 }, 's');
+    await client.closeAllConnections();
+    expect(mockState.lastTarget).toBe('[::1]:9090');
+  });
+
+  it('已带方括号的 IPv6 → 不重复加括号', async () => {
+    const client = new SingBoxApiClient({ host: '[2001:db8::1]', port: 443 }, 's');
+    await client.closeAllConnections();
+    expect(mockState.lastTarget).toBe('[2001:db8::1]:443');
+  });
+
+  it('IPv4 / 域名 → target 不变（不误包裹）', async () => {
+    const v4 = new SingBoxApiClient({ host: '127.0.0.1', port: 9091 }, 's');
+    await v4.closeAllConnections();
+    expect(mockState.lastTarget).toBe('127.0.0.1:9091');
+
+    const dn = new SingBoxApiClient({ host: 'remote.example', port: 8443 }, 's');
+    await dn.closeAllConnections();
+    expect(mockState.lastTarget).toBe('remote.example:8443');
+  });
 });
 
 describe('clash 等价方法包装', () => {
