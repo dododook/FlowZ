@@ -62,6 +62,12 @@ export interface SingBoxDnsConfig {
   fakeip?: SingBoxFakeIPConfig;
   // 关 FakeIP 时注入：用 DNS 解析结果反查域名补无 SNI/ECH 流量的路由匹配（不改节点收 IP 事实）。
   reverse_mapping?: boolean;
+  // P2b 乐观 DNS 缓存（sing-box 1.14 顶层 dns.optimistic，boolean）：过期先返旧值后台刷新。仅 true 时下发。
+  // schema 实证：resources/linux/sing-box(1.14-alpha.32) check —— dns.optimistic 接受 boolean，server 级 optimistic 报 unknown field。
+  optimistic?: boolean;
+  // P2c DNS 查询超时（sing-box 1.14 顶层 dns.timeout，Go duration 字符串，如 "5s"/"500ms"）：治理慢上游。仅 >0 时下发。
+  // schema 实证：dns.timeout 须带单位字符串（裸数字 / 空串 FATAL；server 级 timeout 报 unknown field）。
+  timeout?: string;
 }
 
 export interface SingBoxInbound {

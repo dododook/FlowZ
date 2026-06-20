@@ -505,6 +505,19 @@ export class ConfigManager implements IConfigManager {
       throw new Error('tunConfig.strictRoute must be a boolean');
     }
 
+    // P2c DNS 查询超时 sanitize（一律不 throw，与上方 CIDR/规则同标准防整配置回落）：
+    // dnsTimeoutMs 必为有限正整数且 ∈ [1, 60000]ms（>60s 无意义、解析早已该失败），否则删除该字段 → 回落核默认。
+    // dns-builder 仅在 >0 时 emit "<n>ms"，此处提前清洗使持久化配置不留脏值（saveConfig 亦经本校验）。
+    if (config.dnsConfig && config.dnsConfig.dnsTimeoutMs !== undefined) {
+      const ms = config.dnsConfig.dnsTimeoutMs;
+      if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 1 || ms > 60000) {
+        delete config.dnsConfig.dnsTimeoutMs;
+        this.log('warn', `[ConfigManager] 丢弃非法 dns.timeout（须 1..60000ms）: ${ms}`);
+      } else if (!Number.isInteger(ms)) {
+        config.dnsConfig.dnsTimeoutMs = Math.round(ms);
+      }
+    }
+
     // 校验 customRules（新 Rule shape）。**一律告警不 throw**：防单条脏数据触发整配置回落
     // 默认（loadConfig catch 会用默认配置覆盖保存 → 用户规则全丢）。结构非法的规则丢弃，值非法仅告警保留。
     // 单条脏配置可批量出现 → 丢弃/sanitize 事件累计计数，循环结束后各汇总一条，防逐条刷屏。

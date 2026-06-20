@@ -105,3 +105,72 @@ describe('buildDnsConfig — P4b Tailscale 按名解析', () => {
     expect(tsServer!.endpoint).toBe('MyMeshNode (1)');
   });
 });
+
+/**
+ * singbox-dns-builder P2b/P2c 单测：乐观 DNS 缓存(optimistic) + DNS 查询超时(timeout) 映射。
+ *
+ * 字段 schema 经 resources/linux/sing-box check（1.14-alpha.32）实证（顶层 dns 对象、非 server/rule 级）：
+ *  - dns.optimistic：boolean（server 级 optimistic 报 unknown field）
+ *  - dns.timeout：Go duration 字符串，如 "5s"/"500ms"（裸数字 / 空串 / 无单位 FATAL；server 级 timeout 报 unknown field）
+ *
+ * 映射约定（保配置字节最小化）：optimisticCache!==true → 不下发 optimistic；dnsTimeoutMs 非有限正数 → 不下发 timeout。
+ */
+const dnsP2Config = (
+  dnsExtra: Record<string, unknown>,
+  selected: string | null = null
+): UserConfig =>
+  ({
+    servers: [],
+    selectedServerId: selected,
+    proxyMode: 'global',
+    proxyModeType: 'tun',
+    enableIPv6: false,
+    dnsConfig: { enableFakeIp: false, ...dnsExtra },
+  }) as unknown as UserConfig;
+
+describe('buildDnsConfig — P2b 乐观 DNS 缓存(optimistic)', () => {
+  it('optimisticCache=true → 顶层 dns.optimistic=true', () => {
+    const dns = build(dnsP2Config({ optimisticCache: true }));
+    expect(dns.optimistic).toBe(true);
+  });
+
+  it('optimisticCache=false → 不下发 optimistic（保字节）', () => {
+    const dns = build(dnsP2Config({ optimisticCache: false }));
+    expect(dns.optimistic).toBeUndefined();
+  });
+
+  it('未设 optimisticCache → 不下发 optimistic', () => {
+    const dns = build(dnsP2Config({}));
+    expect(dns.optimistic).toBeUndefined();
+  });
+});
+
+describe('buildDnsConfig — P2c DNS 查询超时(timeout)', () => {
+  it('dnsTimeoutMs=5000 → dns.timeout="5000ms"（带单位字符串）', () => {
+    const dns = build(dnsP2Config({ dnsTimeoutMs: 5000 }));
+    expect(dns.timeout).toBe('5000ms');
+  });
+
+  it('dnsTimeoutMs=250 → "250ms"', () => {
+    const dns = build(dnsP2Config({ dnsTimeoutMs: 250 }));
+    expect(dns.timeout).toBe('250ms');
+  });
+
+  it('dnsTimeoutMs 为小数 → 四舍五入为整数毫秒', () => {
+    const dns = build(dnsP2Config({ dnsTimeoutMs: 1499.6 }));
+    expect(dns.timeout).toBe('1500ms');
+  });
+
+  it('dnsTimeoutMs<=0 / 非有限 / 未设 → 不下发 timeout', () => {
+    expect(build(dnsP2Config({ dnsTimeoutMs: 0 })).timeout).toBeUndefined();
+    expect(build(dnsP2Config({ dnsTimeoutMs: -100 })).timeout).toBeUndefined();
+    expect(build(dnsP2Config({ dnsTimeoutMs: NaN })).timeout).toBeUndefined();
+    expect(build(dnsP2Config({})).timeout).toBeUndefined();
+  });
+
+  it('optimistic + timeout 可并存（两者独立映射）', () => {
+    const dns = build(dnsP2Config({ optimisticCache: true, dnsTimeoutMs: 3000 }));
+    expect(dns.optimistic).toBe(true);
+    expect(dns.timeout).toBe('3000ms');
+  });
+});
