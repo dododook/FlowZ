@@ -7,7 +7,6 @@
 import type { ServerConfig, UserConfig, InvalidNodeInfo } from '../../shared/types';
 import type { SingBoxOutbound, SingBoxEndpoint } from './singbox-config-types';
 import { resourceManager } from './ResourceManager';
-import { coreVersionAtLeast } from '../../shared/version';
 import {
   isEndpointProtocol,
   meshNodeCarriesFullTunnel,
@@ -867,17 +866,6 @@ export function buildOutbounds(
     type: 'direct',
     tag: 'direct',
   });
-
-  // 版本条件：sing-box 1.12.x 需要在 outbound 层面做 override_address
-  // 因为 1.12 的路由规则不支持 override_address 字段（会被静默忽略）。
-  // 1.13+ 已将此功能迁移到路由规则，不需要额外的 outbound。
-  if (!coreVersionAtLeast(deps.coreVersion, 1, 13)) {
-    outbounds.push({
-      type: 'direct',
-      tag: 'direct-loopback',
-      override_address: '127.0.0.1',
-    });
-  }
 
   // 阻断出站
   outbounds.push({

@@ -65,8 +65,7 @@ export interface SingBoxInbound {
   auto_route?: boolean;
   strict_route?: boolean;
   stack?: string;
-  sniff?: boolean;
-  sniff_override_destination?: boolean; // Keep for interface compatibility if needed by types, but won't be used for 1.13+
+  sniff?: boolean; // sing-box 1.14 已移 inbound 级 sniff；保留字段仅为旧单测断言兼容，生成时不下发
   route_exclude_address?: string[];
   platform?: {
     http_proxy?: {

@@ -9442,8 +9442,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       {
         "listen": "127.0.0.1",
         "listen_port": 7890,
-        "sniff": true,
-        "sniff_override_destination": true,
         "tag": "mixed-in",
         "type": "mixed",
       },
@@ -9474,11 +9472,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
       {
         "tag": "direct",
-        "type": "direct",
-      },
-      {
-        "override_address": "127.0.0.1",
-        "tag": "direct-loopback",
         "type": "direct",
       },
       {
@@ -9727,7 +9720,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "domain_suffix": [
             ".microdone.cn",
           ],
-          "outbound": "direct-loopback",
+          "outbound": "proxy-selector",
         },
         {
           "action": "route",

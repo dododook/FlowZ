@@ -90,19 +90,6 @@ describe('buildOutbounds — 基础装配 + 载体', () => {
     expect(sel.outbounds).toEqual(['direct']);
     expect(sel.default).toBe('direct');
   });
-
-  it('1.12 → 增 direct-loopback；1.13 → 无', () => {
-    const servers = [vless('s1', 'HK')];
-    const r12 = buildOutbounds(
-      servers[0],
-      cfg(servers),
-      idMap(servers),
-      deps({ coreVersion: '1.12.8' })
-    );
-    expect(r12.outbounds.map((o) => o.tag)).toContain('direct-loopback');
-    const r13 = buildOutbounds(servers[0], cfg(servers), idMap(servers), deps());
-    expect(r13.outbounds.map((o) => o.tag)).not.toContain('direct-loopback');
-  });
 });
 
 describe('buildOutbounds — rule-sel 载体（smart）', () => {

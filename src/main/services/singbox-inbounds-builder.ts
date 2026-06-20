@@ -7,7 +7,6 @@
  */
 
 import type { UserConfig } from '../../shared/types';
-import { coreVersionAtLeast } from '../../shared/version';
 import { localProxyPort } from '../../shared/proxy-ports';
 import type { SingBoxInbound } from './singbox-config-types';
 import {
@@ -48,12 +47,8 @@ export function buildInbounds(
   // 症状：Instagram 消息中心无网络、WhatsApp 二维码无法扫码等 WebSocket 类应用异常。
   // NekoBox 等 sing-box 客户端默认开启 sniff，FlowZ 之前遗漏了。
   //
-  // 版本兼容：
-  //   1.12.x → sniff/sniff_override_destination 是 inbound 级别字段
-  //   1.13.x → 这两个字段均已移除。sniff（嗅出域名用于路由匹配）由路由层只 push {action:'sniff'} 替代；
-  //            sniff_override_destination（改写 outbound 目标让节点收到域名）在 1.13.0 已移除且无替代
-  //            （详见 generateRouteConfig A. 嗅探规则段注释）。
-  const useLegacySniff = !coreVersionAtLeast(deps.coreVersion, 1, 13);
+  // sing-box 1.14：sniff/sniff_override_destination inbound 级字段已移除。嗅出域名用于路由匹配由路由层
+  // push {action:'sniff'} 承担（详见 generateRouteConfig 嗅探规则段）；sniff_override_destination 无替代。
 
   // mixed-only：单个 mixed inbound 同口服务 HTTP + SOCKS（取代原 http-in + socks-in + 可选 mixed-in）。
   // 要 SOCKS 的 app 指同一端口即可。端口取单一真值 localProxyPort（mixedPort，旧配置回退 httpPort）。
@@ -63,10 +58,6 @@ export function buildInbounds(
     listen: listenAddr,
     listen_port: localProxyPort(config),
   };
-  if (useLegacySniff) {
-    mixedInbound.sniff = true;
-    mixedInbound.sniff_override_destination = true;
-  }
   inbounds.push(mixedInbound);
 
   // 出口 IP 探针 inbound（仅本地回环，端口动态分配）：经 probe-direct-in 的请求由 route.rules 头部
@@ -192,12 +183,6 @@ export function buildInbounds(
       stack: effectiveStack,
       route_exclude_address: excludeAddr,
     };
-
-    // 兼容 sing-box 1.12.x 版本（打包核心现已全部 ≥1.13.13，此分支仅为向后兼容旧 userData 核心保留），必须在 inbound 定义 sniff 否则无法域名分流。
-    // 对于 1.13.0+，嗅探逻辑已经统一由后方 route.rules 承担，但在入站开启会报错，因此需精准版本判断。
-    if (!coreVersionAtLeast(deps.coreVersion, 1, 13)) {
-      (tunInbound as any).sniff = true;
-    }
 
     // macOS 平台特定配置
     if (process.platform === 'darwin') {

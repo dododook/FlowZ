@@ -50,15 +50,6 @@ describe('buildInbounds — mixed + probe', () => {
     expect(byTag(ibs, 'mixed-in').listen).toBe('::');
   });
 
-  it('coreVersion 1.12 → mixed 带 legacy sniff/sniff_override_destination', () => {
-    const ibs = withPlatform('linux', () =>
-      buildInbounds(cfg({}), undefined, deps({ coreVersion: '1.12.8' }))
-    );
-    const mixed = byTag(ibs, 'mixed-in');
-    expect(mixed.sniff).toBe(true);
-    expect(mixed.sniff_override_destination).toBe(true);
-  });
-
   it('probe 端口注入 → 增 probe-direct-in/probe-proxy-in（对应端口）', () => {
     const ibs = withPlatform('linux', () =>
       buildInbounds(cfg({}), undefined, deps({ probeDirectPort: 21001, probeProxyPort: 21002 }))
