@@ -58,10 +58,13 @@ const createHysteria2Schema = (t: any) =>
     .refine(
       // A-1：gecko obfs 的 min/max 包长仅各自 >0 校验，可 min>max 下发致核 FATAL。前置拦 min≤max
       // （仅 gecko obfs 启用且两值均填时；任一缺省由「仅 gecko 有意义」下发逻辑兜底，不在此约束）。
+      // A-1 后继：obfs 实际下发还要求 obfsPassword 非空（见 singbox-outbound-builder），
+      // 故仅在 obfs 真会下发（含密码非空）时才校验包长顺序，避免空密码场景误拦保存。
       (v) =>
         !(
           v.obfsEnabled &&
           v.obfsType === 'gecko' &&
+          !!v.obfsPassword &&
           typeof v.obfsMinPacketSize === 'number' &&
           typeof v.obfsMaxPacketSize === 'number'
         ) || v.obfsMinPacketSize <= v.obfsMaxPacketSize,
