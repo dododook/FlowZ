@@ -527,9 +527,8 @@ export interface PendingRuleSelector {
   targetServerId?: string;
 }
 
-/** 注入依赖：generateOutbounds 原读/写的实例态（coreVersion 值 / gateInvalidNodes Map 就地改 / log 回调）。 */
+/** 注入依赖：generateOutbounds 原读/写的实例态（gateInvalidNodes Map 就地改 / log 回调）。 */
 export interface OutboundsDeps {
-  coreVersion: string;
   gateInvalidNodes: Map<string, InvalidNodeInfo>;
   log: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
   // #57 resolve-ahead：域名→IP 预解析表（this.lastResolvedHosts），透传 buildProxyOutbound 写 outbound.server。
@@ -638,7 +637,7 @@ function generateRuleSelectors(
 
 /**
  * 生成 outbounds（节点出站 + selector + rule-sel + direct/block/shadow-tls + detour 死引用预校验）。
- * 注入 coreVersion/gateInvalidNodes/log；返回 outbounds + 两载体 pendingEndpoints/pendingRuleSelectors
+ * 注入 gateInvalidNodes/log；返回 outbounds + 两载体 pendingEndpoints/pendingRuleSelectors
  * （由 generateSingBoxConfig 回写 this.*，供顶层 endpoints[] 注入与 hotSwitch/clash_api 回读）。
  */
 export function buildOutbounds(

@@ -12,7 +12,6 @@ import { buildOutbounds, type OutboundsDeps } from '../singbox-outbound-builder'
 import type { ServerConfig, UserConfig, InvalidNodeInfo } from '../../../shared/types';
 
 const deps = (over: Partial<OutboundsDeps> = {}): OutboundsDeps => ({
-  coreVersion: '1.13.0',
   gateInvalidNodes: new Map<string, InvalidNodeInfo>(),
   log: () => {},
   ...over,

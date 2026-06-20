@@ -22,7 +22,6 @@ import { usesFakeIp } from './custom-rule-files';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
 export interface InboundsDeps {
-  coreVersion: string;
   probeDirectPort: number | null;
   probeProxyPort: number | null;
 }

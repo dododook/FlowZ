@@ -78,7 +78,6 @@ const udp443RejectRule = (matcher: Record<string, unknown> = {}): SingBoxRouteRu
 
 /** 注入依赖：generateRouteConfig 原读的实例态（值 + 回调），抽出后由 generateSingBoxConfig 注入。 */
 export interface RouteConfigDeps {
-  coreVersion: string;
   probeDirectPort: number | null;
   probeProxyPort: number | null;
   lanResolverForDns: string | null;

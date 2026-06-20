@@ -444,8 +444,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
     }
 
-    // 1.14 管理 API 端口 = clash 端口 +1（clash 端口已 resolveClashApiPortConflict 解冲突）。
-    this.tailscaleApiPort = controlApiPort(config) + 1;
+    // 1.14 管理 API 端口：解析一个空闲本地端口（排除 clash/用户端口），避免硬编 clash+1 撞占致 services bind FATAL（A1）。
+    this.tailscaleApiPort = await this.resolveTailscaleApiPort(config);
 
     // 修复可能被 root 创建的文件权限（从 TUN 模式切换到系统代理模式时）
     await this.fixFilePermissions();
@@ -1532,6 +1532,36 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
+   * 为 1.14 管理 API service 解析一个空闲本地端口（net.listen 0，排除 clash 端口与用户代理端口）。每次 start 重解析，
+   * 避免硬编 clash+1 被占 → services bind FATAL（A1）。解析失败（极少见）兜底 clash+1（与旧行为一致）。
+   */
+  private async resolveTailscaleApiPort(config: UserConfig): Promise<number> {
+    const exclude = new Set<number>(
+      [controlApiPort(config), config.httpPort, config.socksPort, config.mixedPort].filter(
+        (p): p is number => typeof p === 'number' && p > 0
+      )
+    );
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const srv = net.createServer();
+      try {
+        const port = await new Promise<number>((resolve, reject) => {
+          srv.once('error', reject);
+          srv.listen(0, '127.0.0.1', () => resolve((srv.address() as net.AddressInfo).port));
+        });
+        await new Promise<void>((resolve) => srv.close(() => resolve()));
+        if (!exclude.has(port)) return port;
+      } catch {
+        try {
+          srv.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return controlApiPort(config) + 1; // 兜底
+  }
+
+  /**
    * 为出口 IP 探针分配两个空闲端口（probe-direct-in / probe-proxy-in）。每次 start 重新分配，避免
    * 端口被占。失败（极少见）则置 null，generateInbounds/generateRouteConfig 据此跳过探针，不影响代理。
    */
@@ -1904,7 +1934,6 @@ done
     // outbounds 须先于 route/endpoints 生成：其产出的两载体（pendingEndpoints / pendingRuleSelectors）
     // 由下方 route deps + endpoints 注入 + 末尾 currentRuleTargetMap 回填消费。回写 this.* 维持原时序。
     const outboundsResult = buildOutbounds(selectedServer, config, idToTagMap, {
-      coreVersion: this.coreVersion,
       gateInvalidNodes: this.gateInvalidNodes,
       log: (level, message) => this.logToManager(level, message),
       // #57 resolve-ahead：透传预解析表（startInternal 前置填充）。空 Map → buildProxyOutbound 回退原域名（现状）。
@@ -1924,13 +1953,11 @@ done
         this.logToManager(level, message)
       ),
       inbounds: buildInbounds(config, resolvedIps, {
-        coreVersion: this.coreVersion,
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
       }),
       outbounds: outboundsResult.outbounds,
       route: buildRouteConfig(config, idToTagMap, {
-        coreVersion: this.coreVersion,
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
         lanResolverForDns: this.lanResolverForDns,

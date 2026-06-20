@@ -14,7 +14,6 @@ import type { UserConfig } from '../../../shared/types';
 import { withPlatform } from './platform-test-utils';
 
 const deps = (over: Partial<InboundsDeps> = {}): InboundsDeps => ({
-  coreVersion: '1.13.0',
   probeDirectPort: null,
   probeProxyPort: null,
   ...over,

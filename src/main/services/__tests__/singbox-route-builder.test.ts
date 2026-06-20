@@ -18,7 +18,6 @@ const deps = (
   pendingEndpoints: SingBoxEndpoint[],
   over: Partial<RouteConfigDeps> = {}
 ): RouteConfigDeps => ({
-  coreVersion: '1.13.0',
   probeDirectPort: null,
   probeProxyPort: null,
   lanResolverForDns: null,
@@ -259,17 +258,6 @@ describe('buildRouteConfig — ICMP 路由（跟随 final 出口）', () => {
   it('① 无任何 protocol:icmp 规则（死规则已删）', () => {
     const n = proxyNode();
     const rc = buildRouteConfig(cfg([n], { proxyMode: 'smart' }), idMap([n]), deps([]));
-    expect(hasProtocolIcmp(rc)).toBe(false);
-  });
-
-  it('② <1.13 核 → 无 network:icmp 规则（维持核默认）', () => {
-    const n = proxyNode();
-    const rc = buildRouteConfig(
-      cfg([n], { proxyMode: 'smart' }),
-      idMap([n]),
-      deps([], { coreVersion: '1.12.8' })
-    );
-    expect(icmpRule(rc)).toBeUndefined();
     expect(hasProtocolIcmp(rc)).toBe(false);
   });
 

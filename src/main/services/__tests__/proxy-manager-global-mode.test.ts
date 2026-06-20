@@ -26,7 +26,6 @@ import type { UserConfig } from '../../../shared/types';
 
 /** generateRouteConfig 已抽到 singbox-route-builder（buildRouteConfig）；注入 deps（端到端断言不依赖 probe/lan/version 细节）。 */
 const routeDeps = (): RouteConfigDeps => ({
-  coreVersion: '1.13.0',
   probeDirectPort: null,
   probeProxyPort: null,
   lanResolverForDns: null,
