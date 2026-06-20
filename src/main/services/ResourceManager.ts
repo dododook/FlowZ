@@ -311,7 +311,7 @@ export class ResourceManager {
   /**
    * 确保 Linux 下使用用户目录的可写核心，以解决 AppImage (EROFS) 的权限和更新问题
    */
-  async ensureWritableCore(): Promise<string> {
+  async ensureWritableCore(force = false): Promise<string> {
     if (this.platform !== 'linux') {
       return this.getSingBoxPath();
     }
@@ -320,8 +320,9 @@ export class ResourceManager {
     const updateDir = path.join(userDataPath, 'core_update');
     const targetPath = path.join(updateDir, 'sing-box');
 
-    // 检查是否已经有可写核心
-    if (await this.fileExists(targetPath)) {
+    // 检查是否已经有可写核心（force=true 跳过复用、强制用随包核覆盖——§5 最低版本守卫：升级遗留的旧可写核
+    // 会被硬切 1.14 的配置 FATAL，须随包 1.14 核覆盖刷新）
+    if (!force && (await this.fileExists(targetPath))) {
       // 已有可写核心：仍需确保 libcronet 在旁（naive 出站靠 purego 同目录/系统库路径加载）
       await this.ensureCronetBeside(updateDir);
       return targetPath;
@@ -330,7 +331,7 @@ export class ResourceManager {
     // 创建目录
     await fs.mkdir(updateDir, { recursive: true });
 
-    // 从应用内置的包中复制
+    // 从应用内置的包中复制（force 时 copyFile 覆盖旧核）
     const platformDir = this.getPlatformResourceDir();
     const sourcePath = path.join(platformDir, 'sing-box');
 

@@ -417,6 +417,33 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 0. 获取核心版本（用于后续生成兼容的配置文件）。force=true：内核可能已更新，启动时强制重检测刷新缓存。
     this.coreVersion = await this.getCoreVersion(true);
     this.logToManager('info', `检测到 sing-box 核心版本: ${this.coreVersion}`);
+
+    // §5 最低版本守卫：配置已硬切 1.14（store_dns/services/route sniff），低于 1.14 的核会因 unknown field 直接
+    // FATAL（隐晦难诊断）。检测到旧核（升级遗留的可写/受保护核）→ 用随包 1.14 核强制刷新后重检；仍 <1.14 → 明确
+    // 报错引导重装/更新内核。正常 1.14 核走此判定即 no-op（无开销）。
+    if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
+      this.logToManager(
+        'warn',
+        `sing-box 内核 ${this.coreVersion} 低于配置要求的 1.14，尝试用随包内核刷新...`
+      );
+      try {
+        if (process.platform === 'linux') {
+          this.singboxPath = await resourceManager.ensureWritableCore(true); // force 覆盖旧可写核
+        } else if (process.platform === 'darwin') {
+          this.singboxPath = this.getSingBoxPath(); // 受保护目录核由 helper 在位时持有；重解析路径
+        }
+      } catch (e) {
+        this.logToManager('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
+      }
+      this.coreVersion = await this.getCoreVersion(true);
+      if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
+        throw new Error(
+          `当前 sing-box 内核版本 ${this.coreVersion} 低于所需的 1.14。请重新安装应用以获取随包内核，或在「设置 · 内核」中将内核更新到 1.14 及以上。`
+        );
+      }
+      this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
+    }
+
     // 1.14 管理 API 端口 = clash 端口 +1（clash 端口已 resolveClashApiPortConflict 解冲突）。
     this.tailscaleApiPort = controlApiPort(config) + 1;
 
