@@ -19,7 +19,7 @@ import type { LogManager } from './LogManager';
 import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
 import { resolveSpeedTestTarget, type SpeedTestTarget } from '../../shared/speed-test';
-import { isEndpointProtocol } from '../../shared/endpoint-routes';
+import { isEndpointProtocol, isSpeedTestable } from '../../shared/endpoint-routes';
 
 /** 基于 UDP/QUIC 的协议，需要走真实代理测速 */
 const UDP_PROTOCOLS = new Set(['hysteria2', 'tuic']);
@@ -70,7 +70,11 @@ export class SpeedTestService {
     onProgress?: (tested: number, ok: number, total: number) => void,
     testUrl?: string
   ): Promise<Map<string, number | null>> {
-    if (servers.length === 0) {
+    // 单一真值闸（下沉于此，UI/托盘两入口共用）：不可测节点（Tailscale / 自定义 endpoint / reverseMesh
+    // system 内核接口）不参与测速——buildSpeedTestOutbound 对它们返 null，若不在此剔除，托盘等全量入口会把
+    // 它们测出 latency:null→-1「超时」，与 UI 角标「不适用」口径冲突。isSpeedTestable 即测速排除的单一真值。
+    const testable = servers.filter(isSpeedTestable);
+    if (testable.length === 0) {
       return new Map();
     }
     // 双入口（UI/托盘）并发复用同一次测速，避免起两个临时 sing-box（端口/资源冲突）。
@@ -78,9 +82,11 @@ export class SpeedTestService {
     // 可接受：数据最终正确，且 EVENT_SPEED_TEST_RESULT/PROGRESS 是 IPC broadcast，second caller 的 renderer
     // 订阅仍能收到 first caller 推的事件（latencyMap/进度照常更新）。
     if (this.currentTest) return this.currentTest;
-    this.currentTest = this.doTestAllServers(servers, onResult, onProgress, testUrl).finally(() => {
-      this.currentTest = null;
-    });
+    this.currentTest = this.doTestAllServers(testable, onResult, onProgress, testUrl).finally(
+      () => {
+        this.currentTest = null;
+      }
+    );
     return this.currentTest;
   }
 
