@@ -994,7 +994,6 @@
     "tsRelayServerPortDesc": "Порт прослушивания для работы как peer relay (входящий ретранслятор). Пусто = выключено.",
     "tsSshServer": "Сервер Tailscale SSH",
     "tsSshServerDesc": "Запустить сервер Tailscale SSH на этом узле (tailnet:22, доступ управляется ACL).",
-    "tsNameResolution": "Разрешение имён tailnet",
     "tsResolveByName": "Разрешать имена tailnet",
     "tsResolveByNameDesc": "Разрешать короткие имена tailnet / имена MagicDNS через этот узел (accept_search_domain + preferred_by). Работает вместе с обычным DNS — через него идут только имена tailnet. Действует, только когда этот узел выбран как выход.",
     "tsAcceptDefaultResolvers": "Принимать стандартные резолверы tailnet",

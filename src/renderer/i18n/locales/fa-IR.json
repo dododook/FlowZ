@@ -994,7 +994,6 @@
     "tsRelayServerPortDesc": "پورت گوش‌دادن برای عمل به‌عنوان peer relay (رله ورودی). خالی = خاموش.",
     "tsSshServer": "سرور Tailscale SSH",
     "tsSshServerDesc": "اجرای سرور Tailscale SSH روی این نود (tailnet:22، دسترسی بر اساس ACL کنترل می‌شود).",
-    "tsNameResolution": "تفکیک نام tailnet",
     "tsResolveByName": "تفکیک نام‌های tailnet",
     "tsResolveByNameDesc": "نام‌های کوتاه tailnet / نام‌های MagicDNS را از طریق این نود تفکیک کن (accept_search_domain + preferred_by). در کنار DNS معمولی کار می‌کند — فقط نام‌های tailnet از آن استفاده می‌کنند. فقط زمانی که این نود به‌عنوان خروجی انتخاب شده باشد فعال است.",
     "tsAcceptDefaultResolvers": "پذیرش تفکیک‌کننده‌های پیش‌فرض tailnet",

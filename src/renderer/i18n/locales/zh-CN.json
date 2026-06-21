@@ -994,7 +994,6 @@
     "tsRelayServerPortDesc": "作为 peer relay（入站中继）的监听端口。留空＝关闭。",
     "tsSshServer": "Tailscale SSH 服务",
     "tsSshServerDesc": "在本节点运行 Tailscale SSH 服务（tailnet:22，访问由 ACL 控制）。",
-    "tsNameResolution": "tailnet 按名解析",
     "tsResolveByName": "解析 tailnet 名称",
     "tsResolveByNameDesc": "经此节点解析 tailnet 短名 / MagicDNS 名（accept_search_domain + preferred_by）。与常规 DNS 并存——仅 tailnet 名称走它。仅当此节点被选为主出口时生效。",
     "tsAcceptDefaultResolvers": "接受 tailnet 默认解析器",

@@ -487,36 +487,33 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                 )}
               />
             </FieldSpan>
-          </FieldGrid>
-        </FormSection>
-
-        {/* P4b：tailnet 按名解析（accept_search_domain + preferred_by 强联动）。与 doh.pub/google 并存，
-            仅 tailnet 短名/MagicDNS 名走此节点解析。仅当此节点被选中为主出口时生效（见 dns-builder）。 */}
-        <FormSection
-          title={t('servers.tsNameResolution', 'Tailnet name resolution')}
-          collapsible
-          defaultOpen={false}
-        >
-          <SwitchField
-            control={form.control}
-            name="resolveByName"
-            label={t('servers.tsResolveByName', 'Resolve tailnet names')}
-            tooltip={t(
-              'servers.tsResolveByNameDesc',
-              'Resolve tailnet short names / MagicDNS names via this node (accept_search_domain + preferred_by). Coexists with your normal DNS — only tailnet names use it. Effective only when this node is the selected exit.'
+            {/* P4b tailnet 按名解析并入「高级」：accept_search_domain + preferred_by 强联动，与 doh.pub/google
+                并存（仅 tailnet 短名/MagicDNS 名走此节点），仅当此节点被选中为主出口时生效（见 dns-builder）。 */}
+            <FieldSpan>
+              <SwitchField
+                control={form.control}
+                name="resolveByName"
+                label={t('servers.tsResolveByName', 'Resolve tailnet names')}
+                tooltip={t(
+                  'servers.tsResolveByNameDesc',
+                  'Resolve tailnet short names / MagicDNS names via this node (accept_search_domain + preferred_by). Coexists with your normal DNS — only tailnet names use it. Effective only when this node is the selected exit.'
+                )}
+              />
+            </FieldSpan>
+            {resolveByName && (
+              <FieldSpan>
+                <SwitchField
+                  control={form.control}
+                  name="acceptDefaultResolvers"
+                  label={t('servers.tsAcceptDefaultResolvers', 'Accept tailnet default resolvers')}
+                  tooltip={t(
+                    'servers.tsAcceptDefaultResolversDesc',
+                    'Also accept the default DNS resolvers pushed by the tailnet (split-DNS). Optional.'
+                  )}
+                />
+              </FieldSpan>
             )}
-          />
-          {resolveByName && (
-            <SwitchField
-              control={form.control}
-              name="acceptDefaultResolvers"
-              label={t('servers.tsAcceptDefaultResolvers', 'Accept tailnet default resolvers')}
-              tooltip={t(
-                'servers.tsAcceptDefaultResolversDesc',
-                'Also accept the default DNS resolvers pushed by the tailnet (split-DNS). Optional.'
-              )}
-            />
-          )}
+          </FieldGrid>
         </FormSection>
 
         <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />

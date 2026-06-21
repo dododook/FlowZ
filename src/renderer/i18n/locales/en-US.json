@@ -994,7 +994,6 @@
     "tsRelayServerPortDesc": "Listen port to act as a peer relay (inbound relay). Empty = off.",
     "tsSshServer": "Tailscale SSH server",
     "tsSshServerDesc": "Run a Tailscale SSH server on this node (tailnet:22, access governed by ACLs).",
-    "tsNameResolution": "Tailnet name resolution",
     "tsResolveByName": "Resolve tailnet names",
     "tsResolveByNameDesc": "Resolve tailnet short names / MagicDNS names via this node (accept_search_domain + preferred_by). Coexists with your normal DNS — only tailnet names use it. Effective only when this node is the selected exit.",
     "tsAcceptDefaultResolvers": "Accept tailnet default resolvers",
