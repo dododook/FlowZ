@@ -1076,7 +1076,7 @@
     "wgReverseMeshDesc": "建立真实 WG 内核接口（OS 持有隧道 IP），使对端能反向访问本机服务；需提权 helper + TUN",
     "tsReverseMeshDesc": "反向 mesh（被访问）：建真实内核接口，使本机可被 tailnet 其它设备反向访问本机服务；需提权 helper + TUN",
     "speedTestAll": "全部测速",
-    "speedTestGroup": "测速本组",
+    "speedTestGroup": "测速",
     "add": "添加",
     "obfsType": "混淆类型",
     "obfsTypeDesc": "Salamander 或 Gecko（sing-box 1.14）。Gecko 额外做随机包长填充。",

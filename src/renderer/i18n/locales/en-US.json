@@ -1076,7 +1076,7 @@
     "wgReverseMeshDesc": "Create a real WireGuard kernel interface (the OS holds the tunnel IP) so peers can reach services on this device. Requires the privileged helper and TUN mode.",
     "tsReverseMeshDesc": "Reverse mesh (be reachable): create a real kernel interface so other tailnet devices can reach services on this device. Requires the privileged helper and TUN mode.",
     "speedTestAll": "Test all",
-    "speedTestGroup": "Test this group",
+    "speedTestGroup": "Test",
     "add": "Add",
     "obfsType": "Obfuscation Type",
     "obfsTypeDesc": "Salamander or Gecko (sing-box 1.14). Gecko adds random packet-size padding.",
