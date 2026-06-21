@@ -271,6 +271,9 @@ export interface DiagnosticReportInput {
     nodeDomainResolver?: string; // #57 节点域名解析档位
     logLevel: string;
     captureActive: boolean;
+    cronetLibStatus?: string; // libcronet 可用性：available / copy-failed（损坏/拷贝失败）/ no-lib（无内置库）
+    cronetHealTriggered?: number; // 本会话 libcronet 自愈触发次数
+    cronetHealFailed?: number; // 本会话 libcronet 自愈失败次数（连续失败疑库被反复删/杀软）
   };
   redactedUserConfig: unknown;
   redactedSingboxConfig: unknown;
@@ -340,6 +343,12 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   if (runtime.nodeDomainResolver) lines.push(`- 节点域名解析档位：${runtime.nodeDomainResolver}`);
   lines.push(`- 日志级别：${runtime.logLevel}`);
   lines.push(`- 诊断采集中：${runtime.captureActive ? '是' : '否'}`);
+  if (runtime.cronetLibStatus) lines.push(`- libcronet 状态：${runtime.cronetLibStatus}`);
+  if (runtime.cronetHealTriggered || runtime.cronetHealFailed) {
+    lines.push(
+      `- libcronet 自愈：触发 ${runtime.cronetHealTriggered ?? 0} 次 / 失败 ${runtime.cronetHealFailed ?? 0} 次`
+    );
+  }
   lines.push('');
 
   lines.push('## 生成的 sing-box 配置（脱敏）');

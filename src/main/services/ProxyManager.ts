@@ -261,6 +261,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private gateInvalidNodes = new Map<string, InvalidNodeInfo>();
   // 本次 start 是否已用过「run-FATAL dependency not found」解析修正腿（A7 备用腿，单次闸，防重写抖动）。
   private refFixAttempted = false;
+  // libcronet 启动失败自愈（T2 冷路径）一次性闸：本次 start 内命中 cronet FATAL → strong 重拷 + 重启一次，
+  // 仅一次（防「拷不动/版本错位反复 restored」抖动循环）。每次 start 复位（与 refFixAttempted 同生命周期）。
+  private cronetHealAttempted = false;
+  // 诊断计数（本会话累计，跨多次 start 累加）：自愈触发次数 / 失败次数，纳入诊断报告供「库被反复删（疑杀软）」定位。
+  private cronetHealTriggeredCount = 0;
+  private cronetHealFailedCount = 0;
   // 出口 IP 探针 inbound 的动态端口（每次 start 重新分配）：probe-direct-in → direct 出站，
   // probe-proxy-in → proxy-selector。经此两口发请求，能在「三种接管 × 三种分流」全矩阵下稳定测出
   // 真实直连出口 IP 与代理出口 IP（inbound 规则在 route.rules 头部短路，不受分流策略影响）。
@@ -536,6 +542,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //      之前）：每次 start 重新判定坏节点，换核 / 修好配置后自动复活，不跨会话残留。
     this.gateInvalidNodes.clear();
     this.refFixAttempted = false;
+    this.cronetHealAttempted = false; // T2：每次 start 复位 cronet 自愈一次性闸（换核/修好后可再触发一次）
 
     // 3.8 方案B：DNS 接管激活时,先读接管前的内网 LAN 解析器(私网 IPv4),供 generateDnsConfig 把内网/captive 域名
     //     重定向到它(takeover 把系统 DNS 改公网 8.8.8.8 后 dns-local 解不了内网/可能环)。必须在 generateSingBoxConfig
@@ -614,87 +621,121 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     await this.ensureCronetReadyForLaunch();
 
     // 5. 启动 sing-box 进程
-    await retry(() => this.startSingBoxProcess(), {
-      maxRetries: 2,
-      delay: 2000,
-      exponentialBackoff: true,
-      shouldRetry: (error) => {
-        // 启动 gate 备用腿（补 check 盲区）：run 阶段 `dependency[X] not found` FATAL（detour/selector 幽灵
-        // tag）→ 允许重试一次（onRetry 会解析 tag、pruneTagsClosure 修正重写盘），refFixAttempted 闸保证只修一次。
-        if (/dependency\[(.+?)\] not found/i.test(error.message)) {
-          return !this.refFixAttempted;
-        }
-        // 只对特定错误进行重试
-        const message = error.message.toLowerCase();
+    const runStartWithRetry = (): Promise<void> =>
+      retry(() => this.startSingBoxProcess(), {
+        maxRetries: 2,
+        delay: 2000,
+        exponentialBackoff: true,
+        shouldRetry: (error) => {
+          // 启动 gate 备用腿（补 check 盲区）：run 阶段 `dependency[X] not found` FATAL（detour/selector 幽灵
+          // tag）→ 允许重试一次（onRetry 会解析 tag、pruneTagsClosure 修正重写盘），refFixAttempted 闸保证只修一次。
+          if (/dependency\[(.+?)\] not found/i.test(error.message)) {
+            return !this.refFixAttempted;
+          }
+          // libcronet 缺库 FATAL：内层裸重试无意义（库还是坏的）→ 不重试，交由外层 cronet 自愈闭环 strong 重拷后整体重启一次。
+          if (this.isCronetLibError(error.message)) {
+            return false;
+          }
+          // 只对特定错误进行重试
+          const message = error.message.toLowerCase();
 
-        // 不重试的错误类型
-        const nonRetryableErrors = [
-          '找不到',
-          '权限',
-          'permission',
-          'enoent',
-          'eacces',
-          'eperm',
-          '配置文件格式错误',
-          'invalid config',
-        ];
+          // 不重试的错误类型
+          const nonRetryableErrors = [
+            '找不到',
+            '权限',
+            'permission',
+            'enoent',
+            'eacces',
+            'eperm',
+            '配置文件格式错误',
+            'invalid config',
+          ];
 
-        // 如果是不可重试的错误，直接失败
-        if (nonRetryableErrors.some((pattern) => message.includes(pattern))) {
-          return false;
-        }
+          // 如果是不可重试的错误，直接失败
+          if (nonRetryableErrors.some((pattern) => message.includes(pattern))) {
+            return false;
+          }
 
-        // 其他错误可以重试
-        return true;
-      },
-      onRetry: (error, attempt) => {
-        this.logToManager('warn', `启动失败，正在进行第 ${attempt} 次重试: ${error.message}`);
-        // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置（review P1-4）。
-        // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
-        if (/address already in use|in use|bind|eaddrinuse/i.test(error.message)) {
-          void (async () => {
-            try {
-              await this.allocateProbePorts(config);
-              // T9：用已 prune 的 singboxConfig（捕获 startInternal :746 外层变量），不重新 generateSingBoxConfig
-              //     ——否则会丢掉 :754 checkAndPruneConfig 已就地剔除的坏节点，导致坏节点回流重撞 FATAL。
-              //     仅把新探针端口回填到对应 inbound.listen_port（allocateProbePorts 只改 this.probe*Port 字段，
-              //     不改 singboxConfig 对象；不回填则 sing-box 仍 bind 旧冲突端口）。
-              for (const ib of singboxConfig.inbounds) {
-                if (ib.tag === 'probe-direct-in' && this.probeDirectPort) {
-                  ib.listen_port = this.probeDirectPort;
-                } else if (ib.tag === 'probe-proxy-in' && this.probeProxyPort) {
-                  ib.listen_port = this.probeProxyPort;
+          // 其他错误可以重试
+          return true;
+        },
+        onRetry: (error, attempt) => {
+          this.logToManager('warn', `启动失败，正在进行第 ${attempt} 次重试: ${error.message}`);
+          // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置（review P1-4）。
+          // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
+          if (/address already in use|in use|bind|eaddrinuse/i.test(error.message)) {
+            void (async () => {
+              try {
+                await this.allocateProbePorts(config);
+                // T9：用已 prune 的 singboxConfig（捕获 startInternal :746 外层变量），不重新 generateSingBoxConfig
+                //     ——否则会丢掉 :754 checkAndPruneConfig 已就地剔除的坏节点，导致坏节点回流重撞 FATAL。
+                //     仅把新探针端口回填到对应 inbound.listen_port（allocateProbePorts 只改 this.probe*Port 字段，
+                //     不改 singboxConfig 对象；不回填则 sing-box 仍 bind 旧冲突端口）。
+                for (const ib of singboxConfig.inbounds) {
+                  if (ib.tag === 'probe-direct-in' && this.probeDirectPort) {
+                    ib.listen_port = this.probeDirectPort;
+                  } else if (ib.tag === 'probe-proxy-in' && this.probeProxyPort) {
+                    ib.listen_port = this.probeProxyPort;
+                  }
                 }
+                await this.writeSingBoxConfig(singboxConfig);
+              } catch {
+                /* 忽略：下次尝试用现有配置 */
               }
-              await this.writeSingBoxConfig(singboxConfig);
-            } catch {
-              /* 忽略：下次尝试用现有配置 */
-            }
-          })();
+            })();
+          }
+          // 启动 gate 备用腿：run 阶段 `dependency[X] not found` → 解析幽灵 tag、pruneTagsClosure 修正重写盘，
+          // 只修一次（refFixAttempted 闸）。tag 经 idToTagMap 进 gateInvalidNodes，下次 generateSingBoxConfig 跳过。
+          const depMatch = /dependency\[(.+?)\] not found/i.exec(error.message);
+          if (depMatch && !this.refFixAttempted) {
+            this.refFixAttempted = true;
+            void (async () => {
+              try {
+                const cfg = this.generateSingBoxConfig(config, resolvedServerIps);
+                this.pruneTagsClosure(cfg, config, new Set([depMatch[1]]), 'detour');
+                await this.writeSingBoxConfig(cfg);
+                this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_INVALID_NODES, [
+                  ...this.gateInvalidNodes.values(),
+                ]);
+              } catch (e) {
+                this.logToManager(
+                  'warn',
+                  `启动 gate 引用修正失败（将按现有配置重试）: ${(e as Error)?.message ?? e}`
+                );
+              }
+            })();
+          }
+        },
+      });
+
+    // T2 libcronet 启动失败冷路径闭环：起核失败且命中 cronet 缺库 FATAL（linux/win）→ strong（hash 强校验）
+    // 重拷 → 若 restored 则整体重启内核一次（一次性 cronetHealAttempted 闸，防抖动循环）→ 仍失败/未恢复 →
+    // 抛原错误（带可读文案，由 start() 收口落终态），不再重试。mac 无独立库不进此分支。
+    try {
+      await runStartWithRetry();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!this.cronetHealAttempted && this.isCronetLibError(msg)) {
+        this.cronetHealAttempted = true;
+        this.cronetHealTriggeredCount++;
+        const loadDir = path.dirname(this.getSingBoxPath());
+        this.logToManager(
+          'warn',
+          `内核启动失败疑因 libcronet 缺失/损坏，正在强校验自愈（hash）后重启一次: ${msg}`
+        );
+        const heal = await resourceManager.ensureCronetHealthy(loadDir, { strong: true });
+        if (heal.action === 'restored') {
+          this.logToManager('info', `libcronet 已从内置恢复，重启内核一次...`);
+          await runStartWithRetry(); // 仍失败则抛出，由 start() 终态收口（不再二次自愈）
+        } else {
+          // 未恢复（拷贝失败/无内置库）→ 计失败数 + 抛原错误（含 cronet 文案，UI 引导改协议/查权限）。
+          this.cronetHealFailedCount++;
+          throw err;
         }
-        // 启动 gate 备用腿：run 阶段 `dependency[X] not found` → 解析幽灵 tag、pruneTagsClosure 修正重写盘，
-        // 只修一次（refFixAttempted 闸）。tag 经 idToTagMap 进 gateInvalidNodes，下次 generateSingBoxConfig 跳过。
-        const depMatch = /dependency\[(.+?)\] not found/i.exec(error.message);
-        if (depMatch && !this.refFixAttempted) {
-          this.refFixAttempted = true;
-          void (async () => {
-            try {
-              const cfg = this.generateSingBoxConfig(config, resolvedServerIps);
-              this.pruneTagsClosure(cfg, config, new Set([depMatch[1]]), 'detour');
-              await this.writeSingBoxConfig(cfg);
-              this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_INVALID_NODES, [
-                ...this.gateInvalidNodes.values(),
-              ]);
-            } catch (e) {
-              this.logToManager(
-                'warn',
-                `启动 gate 引用修正失败（将按现有配置重试）: ${(e as Error)?.message ?? e}`
-              );
-            }
-          })();
-        }
-      },
-    });
+      } else {
+        throw err;
+      }
+    }
 
     // 系统代理单一写者收口（拆双轨）：systemProxy 模式 → 置系统代理（marker + 防自指在 SystemProxyManager 内，
     // 杜绝把自己当原始保存致 disable restore 死端口）；TUN/manual 模式 → 反向清掉可能残留的系统代理
@@ -5493,11 +5534,34 @@ exit 0
   }
 
   /**
+   * 识别 libcronet 缺失/损坏致的内核 FATAL：缺库时 sing-box 在构建 naive outbound 阶段报
+   * `cronet: library not found`（Windows 还提示 `Place libcronet.dll in the executable directory or PATH`）。
+   * 命中即触发 T2 冷路径自愈闭环（strong 重拷 + 重启一次）。
+   */
+  private isCronetLibError(message: string): boolean {
+    const m = message.toLowerCase();
+    return (
+      m.includes('cronet') &&
+      (m.includes('library not found') ||
+        m.includes('not found') ||
+        m.includes('libcronet') ||
+        m.includes('executable directory'))
+    );
+  }
+
+  /** T2 诊断：本会话 libcronet 自愈触发/失败计数（纳入诊断报告供「库被反复删（疑杀软）」定位）。 */
+  getCronetHealStats(): { triggered: number; failed: number } {
+    return { triggered: this.cronetHealTriggeredCount, failed: this.cronetHealFailedCount };
+  }
+
+  /**
    * 与 translateErrorMessage 同序镜像分类，仅并行产出结构化错误码；translateErrorMessage 的输出
    * （含日志路径）保持逐字不变，零回归风险。新增 includes 分支顺序必须与上面一致。
    */
   private classifyCoreError(message: string): ProxyErrorCode {
     const lowerMessage = message.toLowerCase();
+    // libcronet 缺库 FATAL 优先识别（结构化错误码，供诊断/UI 分类）：与 translate 侧文案无冲突（translate 无 cronet 分支 → 原样返回）。
+    if (this.isCronetLibError(lowerMessage)) return ProxyErrorCode.CRONET_LIB_MISSING;
     if (lowerMessage.includes('report handshake success: connection refused'))
       return ProxyErrorCode.DEST_CONNECTION_REFUSED;
     if (

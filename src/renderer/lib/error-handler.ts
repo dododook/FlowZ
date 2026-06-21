@@ -172,6 +172,7 @@ export function proxyErrorCategory(code: unknown): ErrorCategory | null {
     case ProxyErrorCode.SYSTEM_PROXY_FAILED:
     case ProxyErrorCode.BINARY_NOT_EXECUTABLE:
     case ProxyErrorCode.BINARY_NOT_FOUND:
+    case ProxyErrorCode.CRONET_LIB_MISSING:
       return ErrorCategory.System;
     case ProxyErrorCode.STARTUP_FAILED:
     case ProxyErrorCode.PROCESS_KILLED:

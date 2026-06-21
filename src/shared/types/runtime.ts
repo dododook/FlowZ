@@ -41,6 +41,7 @@ export enum ProxyErrorCode {
   SYSTEM_PROXY_FAILED = 'SYSTEM_PROXY_FAILED', // 核心已起但系统代理 networksetup/reg 设置失败（非终态提示）
   BINARY_NOT_EXECUTABLE = 'BINARY_NOT_EXECUTABLE', // 退出码 126
   BINARY_NOT_FOUND = 'BINARY_NOT_FOUND', // 退出码 127
+  CRONET_LIB_MISSING = 'CRONET_LIB_MISSING', // 'cronet: library not found' / dlopen 失败（naive 出站缺/坏 libcronet → 整核 FATAL，自愈冷路径触发）
   // 进程生命周期类 → ErrorCategory.Process
   STARTUP_FAILED = 'STARTUP_FAILED', // 退出码 1
   PROCESS_KILLED = 'PROCESS_KILLED', // 退出码 137

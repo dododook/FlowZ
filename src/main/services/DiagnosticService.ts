@@ -27,6 +27,7 @@ import type { LogManager } from './LogManager';
 import type { ProxyManager } from './ProxyManager';
 import type { IConfigManager } from './ConfigManager';
 import type { ISystemProxyManager } from './SystemProxyManager';
+import { resourceManager } from './ResourceManager';
 
 /** 每个日志文件最多纳入报告的尾部字节数（足够排障，又不让报告爆大）。 */
 const LOG_TAIL_BYTES = 64 * 1024;
@@ -137,6 +138,16 @@ export class DiagnosticService {
         nodeDomainResolver: config.dnsConfig?.nodeDomainResolver || 'auto',
         logLevel: effLevel,
         captureActive,
+        // libcronet 现状 + 本会话自愈计数：naive 缺/坏库根因 + 「库被反复删（疑杀软）」可观测（取数 best-effort，绝不阻断报告）。
+        cronetLibStatus: (() => {
+          try {
+            return resourceManager.getCronetLibStatus();
+          } catch {
+            return undefined;
+          }
+        })(),
+        cronetHealTriggered: this.proxyManager.getCronetHealStats().triggered,
+        cronetHealFailed: this.proxyManager.getCronetHealStats().failed,
       },
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,
