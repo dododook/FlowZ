@@ -96,6 +96,24 @@ describe('buildTailscaleLoginConfig', () => {
     expect(ep.advertise_routes).toBeUndefined();
     expect(ep.system_interface).toBeUndefined();
   });
+
+  it('不传 api 入参 → 无 services（退回纯 stdout AUTH_URL 路径）', () => {
+    const cfg = buildTailscaleLoginConfig(tsServer());
+    expect(cfg.services).toBeUndefined();
+  });
+
+  it('传 api 入参 → 注入 1.14 管理 api service（type=api、listen=127.0.0.1、独立端口 + 随机 secret）', () => {
+    const cfg = buildTailscaleLoginConfig(tsServer(), { port: 54321, secret: 'rndsecret' });
+    expect(cfg.services).toEqual([
+      { type: 'api', listen: '127.0.0.1', listen_port: 54321, secret: 'rndsecret' },
+    ]);
+  });
+
+  it('api 入参 secret 为空串 → secret 字段省略（退化免认证）', () => {
+    const cfg = buildTailscaleLoginConfig(tsServer(), { port: 1234, secret: '' });
+    expect(cfg.services?.[0]).toEqual({ type: 'api', listen: '127.0.0.1', listen_port: 1234 });
+    expect(cfg.services?.[0].secret).toBeUndefined();
+  });
 });
 
 describe('tailscaleEndpointInRunningCore（双写防护判定）', () => {

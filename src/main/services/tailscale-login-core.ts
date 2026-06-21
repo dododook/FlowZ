@@ -12,25 +12,44 @@
 import type { ServerConfig, UserConfig } from '../../shared/types';
 import { tailscaleStateDir } from './tailscale-state';
 
-/** 登录专用 config 的最小形状（无 inbound / 无 clash_api / 无 route，仅 tailscale endpoint + direct）。 */
+/** 瞬态登录核管理 API（1.14 services[]）入参：独立空闲端口 + 随机 secret，使瞬态核暴露 STATUS 流。 */
+export interface TailscaleLoginApiService {
+  /** 本地空闲端口（须独立于主核 api 端口，避 bind 冲突；由 startTailscaleLogin resolve 后传入）。 */
+  port: number;
+  /** 每次随机 secret（gRPC Bearer 鉴权；空串退化免认证）。 */
+  secret: string;
+}
+
+/** 登录专用 config 的最小形状（无 inbound / 无 route，仅 tailscale endpoint + direct + 可选管理 api service）。 */
 export interface TailscaleLoginConfig {
   log: { level: 'info'; timestamp: true };
   endpoints: Array<Record<string, unknown>>;
   outbounds: Array<{ type: 'direct'; tag: 'direct' }>;
+  // 1.14 管理 API：传入 api 入参时注入 → 瞬态核暴露 SubscribeTailscaleStatus（STATUS 验真登录态）。
+  // 与主核 api service 同形（singbox-config-types SingBoxApiService），但端口独立、secret 每次随机。
+  services?: Array<{ type: 'api'; listen: '127.0.0.1'; listen_port: number; secret?: string }>;
 }
 
 /**
  * 生成登录专用 config：仅含该节点的 tailscale endpoint（state_directory 复用 tailscale-state，与主核一致）
- * + 一个 direct outbound。**auth_key 永不写入**（有 authKey 就不需要交互登录，此路径专为无 key 节点）。
+ * + 一个 direct outbound（+ 传入 api 入参时的管理 api service）。**auth_key 永不写入**（有 authKey 就不需要
+ * 交互登录，此路径专为无 key 节点）。
  *
  * log.level 强制 info + timestamp:true（不读用户 logLevel/隐私）→ 一并解决 P2（登录捕获不再受日志等级摆布）。
- * 不含 inbound/clash_api/route：PoC 验过无 inbound 合法；瞬态无监听端口故与主核并存无冲突。
+ * 不含 inbound/route：PoC 验过无 inbound 合法；瞬态无监听代理端口故与主核并存无冲突（api service 端口独立解析）。
+ *
+ * api 入参（可选）：传入则注入 1.14 services[]（type=api，listen=127.0.0.1，独立空闲端口 + 随机 secret），
+ * 使瞬态核有 STATUS 流——根治 #132「toast 报已登录但角标恒需登录」：登录成功改由 STATUS(backendState=Running)
+ * 经 EVENT_TAILSCALE_STATUS 驱动渲染端 loggedIn，不再靠 stateExists 启发式。不传则退回纯 stdout AUTH_URL 路径。
  *
  * controlUrl/hostname 等身份字段从 tailscaleSettings 透传（与 buildTailscaleEndpoint 同语义），
  * 但**只透传登录相关的少量字段**——瞬态核只为拿 URL + 落 state，不承载路由/出口，故不带 exit_node/
  * advertise_routes/system_interface 等运行期字段（带了也无害，但保持最小、零提权、零接口创建意图）。
  */
-export function buildTailscaleLoginConfig(server: ServerConfig): TailscaleLoginConfig {
+export function buildTailscaleLoginConfig(
+  server: ServerConfig,
+  api?: TailscaleLoginApiService
+): TailscaleLoginConfig {
   const ts = server.tailscaleSettings || {};
   const endpoint: Record<string, unknown> = {
     type: 'tailscale',
@@ -45,11 +64,17 @@ export function buildTailscaleLoginConfig(server: ServerConfig): TailscaleLoginC
   const ephemeral = ts.ephemeral === true;
   if (ephemeral) endpoint.ephemeral = true;
 
-  return {
+  const cfg: TailscaleLoginConfig = {
     log: { level: 'info', timestamp: true },
     endpoints: [endpoint],
     outbounds: [{ type: 'direct', tag: 'direct' }],
   };
+  if (api) {
+    cfg.services = [
+      { type: 'api', listen: '127.0.0.1', listen_port: api.port, secret: api.secret || undefined },
+    ];
+  }
+  return cfg;
 }
 
 /**
