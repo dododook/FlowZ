@@ -827,6 +827,7 @@
     "saveSuccessDesc": "服务器 {{name}} 已保存",
     "saveFail": "保存失败",
     "saveFailDesc": "保存服务器时发生错误",
+    "tailscaleSingleOnly": "Tailscale 一台设备只能加一个——所有账号共用同一段网络地址，多个会互相顶掉。要换账号，先删掉现有的那个。",
     "remarks": "备注名称",
     "remarksDesc": "为服务器设置一个易于识别的名称",
     "remarksPlaceholder": "例如：香港节点",

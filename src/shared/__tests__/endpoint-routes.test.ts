@@ -13,6 +13,7 @@ import {
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
   isSpeedTestable,
+  tailscaleSlotTaken,
 } from '../endpoint-routes';
 import type { ServerConfig, UserConfig } from '../types';
 
@@ -395,5 +396,48 @@ describe('isSpeedTestable（不可测节点单一真值：tailscale / 自定义 
   });
   it('vless → true（普通代理节点正常测速）', () => {
     expect(isSpeedTestable({ id: 'v', protocol: 'vless' } as any)).toBe(true);
+  });
+});
+
+describe('tailscaleSlotTaken（Tailscale 单节点硬限：纯函数，UI 拦截 + ConfigManager 兜底共用）', () => {
+  // 带任意 id/protocol 的最小节点（绕过 ts/wg 工厂的固定 id，便于测 editingId 排除自身）
+  const node = (id: string, protocol: string): ServerConfig => ({ id, name: id, protocol }) as any;
+
+  it('无 TS 节点时加 TS → 放行（slot 空）', () => {
+    const servers = [node('a', 'vless'), node('b', 'wireguard')];
+    expect(tailscaleSlotTaken(servers)).toBe(false);
+  });
+
+  it('已有 1 个 TS 节点再加第二个 TS → 拦下（slot 被占）', () => {
+    const servers = [node('t1', 'tailscale')];
+    expect(tailscaleSlotTaken(servers)).toBe(true);
+  });
+
+  it('已有 1 个 TS 节点，编辑该 TS（传 editingId=自身）→ 放行（排除自身）', () => {
+    const servers = [node('t1', 'tailscale')];
+    expect(tailscaleSlotTaken(servers, 't1')).toBe(false);
+  });
+
+  it('已有 1 个 TS 节点，editingId 指向另一个节点 → 仍拦下（编辑的不是那个 TS）', () => {
+    const servers = [node('t1', 'tailscale'), node('v', 'vless')];
+    expect(tailscaleSlotTaken(servers, 'v')).toBe(true);
+  });
+
+  it('已有 1 个 TS 节点，加 WARP/WG/其它协议 → 不受限（仅限 tailscale）', () => {
+    // tailscaleSlotTaken 只看「是否已有 TS」；新增的 WG/WARP/vless 不是 TS，调用方据 serverData.protocol 不进闸门。
+    // 此处直接验：传 editingId=undefined（新增），已有 1 TS → slot 确占用，但调用侧仅对 protocol==='tailscale' 才查此函数。
+    const servers = [node('t1', 'tailscale')];
+    // 加 WG：调用方不会调用本函数（protocol!==tailscale）；函数本身对「已有 TS」恒返回 true，故由调用侧分流保证放行。
+    expect(tailscaleSlotTaken(servers)).toBe(true); // slot 占用为真，但仅 TS 新增才会被拦
+  });
+
+  it('协议大小写不敏感（Tailscale / TAILSCALE 均识别）', () => {
+    expect(tailscaleSlotTaken([node('t1', 'Tailscale')])).toBe(true);
+    expect(tailscaleSlotTaken([node('t1', 'TAILSCALE')], 't1')).toBe(false);
+  });
+
+  it('已有 2 个 WARP/WG 再加 WARP/WG → 不受限（WG 多节点合法，非 TS）', () => {
+    const servers = [node('w1', 'wireguard'), node('w2', 'wireguard')];
+    expect(tailscaleSlotTaken(servers)).toBe(false);
   });
 });

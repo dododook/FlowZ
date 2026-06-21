@@ -827,6 +827,7 @@
     "saveSuccessDesc": "Server {{name}} has been saved",
     "saveFail": "Failed to save",
     "saveFailDesc": "An error occurred while saving the server",
+    "tailscaleSingleOnly": "Only one Tailscale node per device. All accounts share the same address range, so a second one just shadows the first. Remove the existing one to switch accounts.",
     "remarks": "Name",
     "remarksDesc": "Set a recognizable name for the server",
     "remarksPlaceholder": "e.g., Hong Kong Node",
