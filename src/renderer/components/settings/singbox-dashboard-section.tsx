@@ -33,6 +33,22 @@ export function SingboxDashboardSection() {
     api.app.openSingboxDashboard().catch(() => toast.error(t('common.saveFailed')));
   };
 
+  // 复制连接信息（dashboard #55）：URL=管理 API 地址 + secret=clashApiSecret，经 IPC 从 main 现取（secret 不长驻渲染端 store）。
+  // 供手动在其它面板/工具填后端用，与内窗口一键直连互为补充。
+  const copyConnection = async () => {
+    try {
+      const info = await api.app.getSingboxDashboardConnection();
+      if (!info.ok) {
+        toast.error(t('settings.advanced.dashboardCopyUnavailable'));
+        return;
+      }
+      await navigator.clipboard.writeText(`URL=${info.apiUrl}\nsecret=${info.secret}`);
+      toast.success(t('settings.advanced.dashboardCopied'));
+    } catch {
+      toast.error(t('common.saveFailed'));
+    }
+  };
+
   return (
     <>
       <SettingsRow heading label={t('settings.advanced.singboxDashboard')} />
@@ -44,14 +60,24 @@ export function SingboxDashboardSection() {
         <Switch checked={enabled} onCheckedChange={handleToggle} />
       </SettingsRow>
       {enabled && (
-        <SettingsRow
-          label={t('settings.advanced.openDashboard')}
-          description={t('settings.advanced.dashboardNeedsNetwork')}
-        >
-          <Button variant="outline" size="sm" disabled={!running} onClick={openDashboard}>
-            {t('settings.advanced.openDashboard')}
-          </Button>
-        </SettingsRow>
+        <>
+          <SettingsRow
+            label={t('settings.advanced.openDashboard')}
+            description={t('settings.advanced.dashboardNeedsNetwork')}
+          >
+            <Button variant="outline" size="sm" disabled={!running} onClick={openDashboard}>
+              {t('settings.advanced.openDashboard')}
+            </Button>
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.advanced.dashboardCopyConnection')}
+            description={t('settings.advanced.dashboardCopyConnectionDesc')}
+          >
+            <Button variant="outline" size="sm" disabled={!running} onClick={copyConnection}>
+              {t('settings.advanced.dashboardCopyConnection')}
+            </Button>
+          </SettingsRow>
+        </>
       )}
     </>
   );

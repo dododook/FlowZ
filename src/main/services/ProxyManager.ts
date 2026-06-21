@@ -73,6 +73,7 @@ import {
   getSingBoxPidPath,
   getCachePath,
   getCustomRulesDir,
+  getSingboxDashboardOverrideDir,
 } from '../utils/paths';
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
@@ -151,6 +152,9 @@ export interface IProxyManager {
   isStartedViaHelper(): boolean;
   // api service（sing-box 1.14 management api）运行期监听端口；「打开官方面板」IPC 据此构造 /dashboard/ URL（0=未启动）。
   getTailscaleApiPort(): number;
+  // dashboard #55：面板连接信息（运行期 api 端口 + clash secret），供「内窗口直连」预写 localStorage 与「复制连接信息」用。
+  // secret 取自 main config（不长驻渲染端 store）；代理未运行 → { ok: false }。
+  getDashboardConnectionInfo(): { ok: boolean; url: string; apiUrl: string; secret: string };
   // 运行期管理 API 客户端（sing-box 1.14 gRPC）：供 StatsService 经此订阅 Status/Connections 流；未启动核时为 null。
   getApiClient(): SingBoxApiClient | null;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
@@ -1467,6 +1471,26 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
+   * dashboard #55：面板连接信息（运行期 api 端口构造 URL + clash secret）。
+   * - url：内窗口加载地址 `http://127.0.0.1:<port>/dashboard/`（核 serve 内置/覆盖面板处）。
+   * - apiUrl：面板要连的管理 API 地址 `http://127.0.0.1:<port>`（写入面板 localStorage 的 server.url / 复制信息用）。
+   * - secret：clashApiSecret（注入 api service 的 Bearer，面板每个 RPC 须带）。取自 currentConfig，**不长驻渲染端 store**。
+   * 代理未运行（端口=0）→ { ok: false }（UI 仅运行中 enable 入口）。
+   */
+  getDashboardConnectionInfo(): { ok: boolean; url: string; apiUrl: string; secret: string } {
+    const port = this.tailscaleApiPort;
+    if (!this.getStatus().running || !port) {
+      return { ok: false, url: '', apiUrl: '', secret: '' };
+    }
+    return {
+      ok: true,
+      url: `http://127.0.0.1:${port}/dashboard/`,
+      apiUrl: `http://127.0.0.1:${port}`,
+      secret: this.currentConfig?.clashApiSecret || '',
+    };
+  }
+
+  /**
    * 运行期管理 API 客户端（sing-box 1.14 gRPC）。StatsService 经此订阅 Status/Connections 流（取代 clash_api 轮询）。
    * 随主核生命周期：startInternal 内核起后创建（this.tailscaleApiClient），stop() 置 null。未启动核时返回 null
    * → StatsService 据此判定不开流（核未就绪）。
@@ -2104,10 +2128,15 @@ done
           secret: config.clashApiSecret || undefined,
         },
       ];
-      // sing-box 官方面板（opt-in 逃生舱）：仅开关 on 时注入 dashboard.enabled → 核首次联网拉 sing-box-dashboard
-      // 资源并于本 api service 的 /dashboard/ serve。关闭时不注入 → 核默认不出网拉 dashboard 资源。同一 service，不重复注入。
+      // sing-box 官方面板（opt-in 逃生舱）：仅开关 on 时注入 dashboard，于本 api service 的 /dashboard/ serve。
+      // 关闭时不注入 → 核默认不出网拉 dashboard 资源。同一 service，不重复注入。
+      // dashboard #55：path 指向「运行时下载覆盖 > 随包内置」目录 → 核 serve 本地文件、零联网下载、打开即时离线可用；
+      //   两者皆无（异常打包且未下载）→ path 省略，核回落联网下载兜底（保旧行为，不 brick）。
       if (config.singboxDashboard) {
-        singboxConfig.services[0].dashboard = { enabled: true };
+        const serveDir = resourceManager.resolveDashboardServeDir(getSingboxDashboardOverrideDir());
+        singboxConfig.services[0].dashboard = serveDir
+          ? { enabled: true, path: serveDir }
+          : { enabled: true };
       }
     }
 

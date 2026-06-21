@@ -74,6 +74,9 @@ local.config.*
 # NaiveProxy 核心库（由 npm run fetch:cronet 下载，打包时随 resources 打入；体积大不入库）
 resources/*/libcronet.*
 
+# sing-box 官方面板静态资源（由 npm run fetch:dashboard 下载 gh-pages 构建，打包时随 resources 打入；构建产物不入库，CI 现拉现打）
+resources/dashboard/
+
 # 提权 helper 二进制（macOS com.flowz.helper / Windows com.flowz.helper.exe，由 npm run build:helper 交叉编译；构建产物不入库，CI 现编现打）
 resources/*/com.flowz.helper
 resources/*/com.flowz.helper.exe

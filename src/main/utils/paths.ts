@@ -186,3 +186,14 @@ export function getCustomRulesDir(): string {
 export function getLogsPath(): string {
   return path.join(getUserDataPath(), 'logs');
 }
+
+/**
+ * sing-box 官方面板「运行时下载覆盖」目录（<userData>/dashboard）。
+ *
+ * 资源策略（见 dashboard #55）：面板默认走**随包内置**（resources/dashboard，打开即时、离线可用、根治慢启动）；
+ * 此目录是**可选覆盖**——「刷新面板资源」下载新版到此处后，serve 优先用它（有下载版用下载版，否则回落内置）。
+ * 与内置 geo 的 <userData>/rules、用户 .srs 的 rule-resources 分目录，便于独立清扫/重置。
+ */
+export function getSingboxDashboardOverrideDir(): string {
+  return path.join(getUserDataPath(), 'dashboard');
+}

@@ -931,11 +931,18 @@ export const appApi = {
     return ipcClient.invoke(IPC_CHANNELS.APP_UNINSTALL_ALL);
   },
   /**
-   * 打开 sing-box 官方面板：main 用运行期 api service 端口构造 /dashboard/ URL + 系统浏览器打开。
-   * 代理未运行 → 返回 { ok: false }（UI 仅在开关 on 且运行中才 enable 按钮）。
+   * 打开 sing-box 官方面板（dashboard #55）：main 开应用内窗口加载运行期 /dashboard/，并经 preload 预写 localStorage
+   * 一键直连（免手填后端）。代理未运行 → 返回 { ok: false }（UI 仅在开关 on 且运行中才 enable 按钮）。
    */
   async openSingboxDashboard(): Promise<{ ok: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD);
+  },
+  /**
+   * dashboard #55：取面板连接信息（apiUrl + secret）供「复制连接信息」按钮。secret 取自 main config，不长驻渲染端 store。
+   * 代理未运行 → { ok: false }。
+   */
+  async getSingboxDashboardConnection(): Promise<{ ok: boolean; apiUrl: string; secret: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.GET_SINGBOX_DASHBOARD_CONNECTION);
   },
   /**
    * P5 Phase2：打开远端实例的 /dashboard/（main 据 instanceId 取配置推 URL + 系统浏览器打开）。

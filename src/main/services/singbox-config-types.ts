@@ -349,9 +349,12 @@ export interface SingBoxApiService {
   listen: string;
   listen_port: number;
   secret?: string;
-  // sing-box 1.14 官方面板（opt-in）：enabled 时核首次联网拉 sing-box-dashboard 资源、于 listen_port 的 /dashboard/ serve。
+  // sing-box 1.14 官方面板（opt-in）：enabled 时于 listen_port 的 /dashboard/ serve。
   // 仅 config.singboxDashboard 开时注入 → 关闭时核绝不出网拉资源（默认不出网）。
-  dashboard?: { enabled: boolean };
+  // path（dashboard #55）：指向**随包内置/运行时下载覆盖**目录 → 核「serving user-provided files，auto-update disabled」，
+  //   零联网下载、打开即时、离线可用（实证 1.14-alpha.32：dashboard:{enabled,path} → /dashboard/ HTTP 200 本地 serve）。
+  //   省略 path 时核回落联网下载（异常打包/无内置时的兜底）。external_ui 等字段属 experimental.clash_api，非本 service。
+  dashboard?: { enabled: boolean; path?: string };
 }
 
 export interface SingBoxConfig {
