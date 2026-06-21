@@ -1,7 +1,7 @@
 /**
  * StatsService「流式门控」单测（§3-B：clash_api 轮询迁 sing-box 1.14 管理 API gRPC 流后）。覆盖：
  *  1) 窗口可见性谓词（isWindowVisible）：无可见窗口时收到流帧仍更新内部快照，但跳过 broadcast（onUpdate/onConnections）。
- *  2) 连接流订阅跟随 started（代理运行即订阅，不再 gate by watcher）；watcher 计数仅作渲染端引用记录、增减不订阅/退订；退订只在 stop。
+ *  2) 连接流订阅跟随 started（代理运行即订阅，不再 gate by watcher）；退订只在 stop。
  *  3) Status 帧字段映射（uplink→uploadSpeed / connectionsIn+Out→activeConnections 等，speed 由 server 直给）。
  *  4) Connections 事件流维护（reset 清空 / NEW 加 / UPDATE 累加 delta / CLOSED 删）→ trim 映射广播。
  * 经 mock SingBoxApiClient 捕获 subscribeStatus/subscribeConnections 的回调，测试同步 push 流帧驱动（无 fake timer）。
@@ -15,7 +15,7 @@ import type {
 } from '../singbox-api-client';
 
 /**
- * mock SingBoxApiClient：捕获订阅回调供测试 push 流帧；记录订阅/退订次数（验 watcher 门控）。
+ * mock SingBoxApiClient：捕获订阅回调供测试 push 流帧；记录订阅/退订次数（验订阅跟随 started）。
  * subscribe* 返回 stop 句柄；调用后回调置 null + statusStopCount/connStopCount++。
  */
 function makeMockClient() {
@@ -118,7 +118,7 @@ describe('StatsService 流式门控（gRPC streams）', () => {
   });
 
   describe('Status 帧字段映射', () => {
-    it('uplink→uploadSpeed / downlink→downloadSpeed / totals / connectionsIn+Out→activeConnections', () => {
+    it('uplink→uploadSpeed / downlink→downloadSpeed / totals（activeConnections 改由 Connections 流维护）', () => {
       const { service, onUpdate, mock } = setup({ withVisible: true, visible: true });
       service.start();
       mock.pushStatus(STATUS);
@@ -129,7 +129,23 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(s.downloadSpeed).toBe(1500);
       expect(s.totalUpload).toBe(1000);
       expect(s.totalDownload).toBe(2000);
-      expect(s.activeConnections).toBe(5); // connectionsIn(3)+connectionsOut(2)
+      // activeConnections 不再取 Status 的 connectionsIn/Out（核 1.14 实测不填）→ 无连接帧时为 0；真值见下方用例。
+      expect(s.activeConnections).toBe(0);
+    });
+
+    it('activeConnections 取自 Connections 流 connMap.size（非 Status 的 connectionsIn/Out=5）', () => {
+      const { service, onUpdate, mock } = setup({ withVisible: true, visible: true });
+      service.start();
+      mock.pushConn({
+        reset: true,
+        events: [
+          { type: 'NEW', id: 'conn-1', connection: RAW_CONN },
+          { type: 'NEW', id: 'conn-2', connection: { ...RAW_CONN, id: 'conn-2' } },
+        ],
+      });
+      mock.pushStatus(STATUS); // Status onUpdate 广播 snapshot，其 activeConnections 取自 connMap.size
+      const last = onUpdate.mock.calls[onUpdate.mock.calls.length - 1][0];
+      expect(last.activeConnections).toBe(2);
     });
   });
 
@@ -140,62 +156,43 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       mock.pushStatus(STATUS);
 
       expect(onUpdate).not.toHaveBeenCalled(); // 跳过广播
-      // 快照仍更新（可见后下一帧即广播最新）
-      expect(service.getSnapshot().activeConnections).toBe(5);
+      // 快照仍更新（可见后下一帧即广播最新）；activeConnections 不再来自 Status，此处只验总量。
       expect(service.getSnapshot().totalUpload).toBe(1000);
     });
 
     it('不可见时连接事件帧维护 map 但不广播 onConnections', () => {
       const { service, onConnections, mock } = setup({ withVisible: true, visible: false });
       service.start();
-      service.addConnectionsWatcher();
       mock.pushConn({ reset: true, events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] });
 
       expect(onConnections).not.toHaveBeenCalled(); // 跳过广播
-      expect(service.getConnectionsSnapshot().connections).toHaveLength(1); // map 仍维护
+      // 不可见时只维护 connMap、跳过列表物化（省全量重建）；map 仍有该连接，可见后下一帧即物化推送。
+      expect((service as any).connMap.size).toBe(1);
     });
   });
 
-  describe('连接 watcher 门控（订阅 Connections 流）', () => {
-    it('start 即订阅 Connections 流（跟随 started，不依赖 watcher）', () => {
+  describe('连接流订阅跟随 started（订阅 Connections 流）', () => {
+    it('start 即订阅 Connections 流（跟随 started）', () => {
       const { service, mock } = setup();
       service.start();
       expect(mock.calls.subscribeConnections).toBe(1);
     });
 
-    it('watcher 增减不订阅/退订连接流（订阅跟随 started）；退订只在 stop', () => {
+    it('start 幂等：重复 start 不重复订阅 Connections', () => {
+      const { service, mock } = setup();
+      service.start();
+      service.start();
+      expect(mock.calls.subscribeConnections).toBe(1);
+    });
+
+    it('退订只在 stop（运行期连接流一直开着）', () => {
       const { service, mock } = setup();
       service.start();
       expect(mock.calls.subscribeConnections).toBe(1); // start 即订阅
       expect(mock.hasConnCb()).toBe(true);
-      service.addConnectionsWatcher();
-      expect(mock.calls.subscribeConnections).toBe(1); // 幂等，不重订
-
-      service.removeConnectionsWatcher();
-      expect(mock.calls.connStop).toBe(0); // 不再随 watcher 归 0 退订
-      expect(mock.hasConnCb()).toBe(true);
+      expect(mock.calls.connStop).toBe(0); // 运行期不退订
       service.stop();
       expect(mock.calls.connStop).toBe(1); // 仅 stop 退订
-    });
-
-    it('多 watcher 增减不影响连接流订阅（已跟随 started）', () => {
-      const { service, mock } = setup();
-      service.start(); // start 即订阅
-      service.addConnectionsWatcher();
-      service.addConnectionsWatcher();
-      expect(mock.calls.subscribeConnections).toBe(1); // 仍仅 start 那一次
-
-      service.removeConnectionsWatcher();
-      service.removeConnectionsWatcher(); // 归 0 也不退订
-      expect(mock.calls.connStop).toBe(0);
-    });
-
-    it('start 前 add watcher：start 时一并订阅 Connections 流（重启后仍 mount 场景）', () => {
-      const { service, mock } = setup();
-      service.addConnectionsWatcher(); // 未 start，仅计数
-      expect(mock.calls.subscribeConnections).toBe(0);
-      service.start();
-      expect(mock.calls.subscribeConnections).toBe(1);
     });
   });
 
@@ -203,7 +200,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
     it('reset+NEW 全量建表 → trim 映射广播（字段裁剪正确）', () => {
       const { service, onConnections, mock } = setup({ withVisible: true, visible: true });
       service.start();
-      service.addConnectionsWatcher();
       mock.pushConn({ reset: true, events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] });
 
       expect(onConnections).toHaveBeenCalledTimes(1);
@@ -223,7 +219,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
     it('CLOSED 删除连接', () => {
       const { service, onConnections, mock } = setup({ withVisible: true, visible: true });
       service.start();
-      service.addConnectionsWatcher();
       mock.pushConn({ events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] });
       expect(service.getConnectionsSnapshot().connections).toHaveLength(1);
 
@@ -236,7 +231,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
     it('UPDATE 累加 delta 到既有条目 totals（实测 UPDATE 无 connection、仅带 delta）', () => {
       const { service, onConnections, mock } = setup({ withVisible: true, visible: true });
       service.start();
-      service.addConnectionsWatcher();
       mock.pushConn({ events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] }); // totals 12345/67890
       mock.pushConn({
         events: [{ type: 'UPDATE', id: 'conn-1', uplinkDelta: '1000', downlinkDelta: '2000' }],
@@ -250,7 +244,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
     it('UPDATE 先于 NEW（漏收 NEW）：带 connection 时兜底补建条目', () => {
       const { service, mock } = setup({ withVisible: true, visible: true });
       service.start();
-      service.addConnectionsWatcher();
       mock.pushConn({ events: [{ type: 'UPDATE', id: 'conn-1', connection: RAW_CONN }] });
       expect(service.getConnectionsSnapshot().connections).toHaveLength(1);
     });
@@ -258,7 +251,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
     it('reset=true 清空旧表后按本帧 events 重建', () => {
       const { service, mock } = setup({ withVisible: true, visible: true });
       service.start();
-      service.addConnectionsWatcher();
       mock.pushConn({ events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }] });
       mock.pushConn({
         reset: true,
@@ -267,16 +259,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       const conns = service.getConnectionsSnapshot().connections;
       expect(conns).toHaveLength(1);
       expect(conns[0].id).toBe('conn-2');
-    });
-  });
-
-  describe('计数钳制（removeConnectionsWatcher）', () => {
-    it('计数为 0 时 remove 后仍为 0（不变负）', () => {
-      const { service } = setup();
-      service.start();
-      service.removeConnectionsWatcher();
-      service.removeConnectionsWatcher();
-      expect((service as any).connectionsWatchers).toBe(0);
     });
   });
 
@@ -353,34 +335,23 @@ describe('StatsService 流式门控（gRPC streams）', () => {
 
       newMock.pushStatus(STATUS); // 新 client 推帧
       expect(onUpdate).toHaveBeenCalledTimes(1);
-      expect(onUpdate.mock.calls[0][0].activeConnections).toBe(5);
+      // Status 帧已在新 client 上广播（验 Status-owned 字段；activeConnections 改由 Connections 流维护）
+      expect(onUpdate.mock.calls[0][0].uploadSpeed).toBe(500);
     });
 
-    it('resubscribe 保 connectionsWatchers 引用计数：watcher>0 时一并重订阅 Connections 到新 client', () => {
+    it('resubscribe 始终重订阅 Connections 到新 client（跟随 started）', () => {
       const { service, ref, swap } = setupSwitchable();
       service.start();
-      service.addConnectionsWatcher(); // watcher=1，订阅旧 Connections
       const oldMock = ref.mock;
-      expect(oldMock.calls.subscribeConnections).toBe(1);
+      expect(oldMock.calls.subscribeConnections).toBe(1); // start 即订阅旧 Connections
 
       swap();
       const newMock = ref.mock;
       service.resubscribe();
 
-      // 计数不变（仍为 1），故 Connections 也重订阅到新 client
-      expect((service as any).connectionsWatchers).toBe(1);
       expect(oldMock.calls.connStop).toBe(1); // 旧 Connections 退订
-      expect(newMock.calls.subscribeConnections).toBe(1); // 新 Connections 订阅
-    });
-
-    it('resubscribe 始终重订阅 Connections（跟随 started，不依赖 watcher）', () => {
-      const { service, ref, swap } = setupSwitchable();
-      service.start();
-      swap();
-      const newMock = ref.mock;
-      service.resubscribe();
       expect(newMock.calls.subscribeStatus).toBe(1);
-      expect(newMock.calls.subscribeConnections).toBe(1);
+      expect(newMock.calls.subscribeConnections).toBe(1); // 新 Connections 订阅
     });
 
     it('resubscribe 作首次启动（started=false）等效 start：订阅 Status', () => {
@@ -397,14 +368,13 @@ describe('StatsService 流式门控（gRPC streams）', () => {
         visible: true,
       });
       service.start();
-      service.addConnectionsWatcher();
       // 先灌入非零状态（速率/总量/连接数 + 一条连接）
       ref.mock.pushStatus(STATUS);
       ref.mock.pushConn({
         reset: true,
         events: [{ type: 'NEW', id: 'conn-1', connection: RAW_CONN }],
       });
-      expect(service.getSnapshot().activeConnections).toBe(5);
+      expect(service.getSnapshot().activeConnections).toBe(1); // = connMap.size（一条连接），非 Status 的 connectionsIn/Out
       expect(service.getConnectionsSnapshot().connections).toHaveLength(1);
 
       onUpdate.mockClear();
@@ -438,9 +408,8 @@ describe('StatsService 流式门控（gRPC streams）', () => {
         visible: false,
       });
       service.start();
-      service.addConnectionsWatcher();
       ref.mock.pushStatus(STATUS); // 灌非零快照（不可见→pushStatus 不广播，但更新快照）
-      expect(service.getSnapshot().activeConnections).toBe(5);
+      expect(service.getSnapshot().totalUpload).toBe(1000); // 非零快照（activeConnections 改由 Connections 流，无连接帧时为 0）
 
       onUpdate.mockClear();
       onConnections.mockClear();
@@ -462,7 +431,6 @@ describe('StatsService 流式门控（gRPC streams）', () => {
         visible: true,
       });
       service.start();
-      service.addConnectionsWatcher();
       ref.mock.pushStatus(STATUS);
 
       onUpdate.mockClear();

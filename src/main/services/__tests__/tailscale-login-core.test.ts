@@ -14,7 +14,11 @@ jest.mock('../../utils/paths', () => ({
   getUserDataPath: () => FAKE_USER_DATA,
 }));
 
-import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from '../tailscale-login-core';
+import {
+  buildTailscaleLoginConfig,
+  buildTailscaleStatusProbeConfig,
+  tailscaleEndpointInRunningCore,
+} from '../tailscale-login-core';
 import type { ServerConfig, UserConfig } from '../../../shared/types';
 
 function tsServer(over: Partial<ServerConfig> = {}): ServerConfig {
@@ -113,6 +117,84 @@ describe('buildTailscaleLoginConfig', () => {
     const cfg = buildTailscaleLoginConfig(tsServer(), { port: 1234, secret: '' });
     expect(cfg.services?.[0]).toEqual({ type: 'api', listen: '127.0.0.1', listen_port: 1234 });
     expect(cfg.services?.[0].secret).toBeUndefined();
+  });
+});
+
+describe('buildTailscaleStatusProbeConfig（多节点 status-only 探针）', () => {
+  it('无 inbound：只含 log / endpoints / outbounds / services', () => {
+    const cfg = buildTailscaleStatusProbeConfig([tsServer()], { port: 1, secret: 's' });
+    expect(Object.keys(cfg).sort()).toEqual(['endpoints', 'log', 'outbounds', 'services']);
+    expect((cfg as unknown as Record<string, unknown>).inbounds).toBeUndefined();
+    expect((cfg as unknown as Record<string, unknown>).route).toBeUndefined();
+  });
+
+  it('log.level=info + timestamp:true（强制）', () => {
+    const cfg = buildTailscaleStatusProbeConfig([tsServer()], { port: 1, secret: 's' });
+    expect(cfg.log).toEqual({ level: 'info', timestamp: true });
+  });
+
+  it('多节点：每个 TS 节点一个 endpoint（type=tailscale、tag=name、state_directory=<userData>/tailscale/<id>）', () => {
+    const cfg = buildTailscaleStatusProbeConfig(
+      [tsServer({ id: 'a', name: 'node-a' }), tsServer({ id: 'b', name: 'node-b' })],
+      { port: 9, secret: 'x' }
+    );
+    expect(cfg.endpoints).toHaveLength(2);
+    expect(cfg.endpoints.map((e) => e.tag)).toEqual(['node-a', 'node-b']);
+    expect(cfg.endpoints.every((e) => e.type === 'tailscale')).toBe(true);
+    expect(cfg.endpoints[0].state_directory).toBe(path.join(FAKE_USER_DATA, 'tailscale', 'a'));
+    expect(cfg.endpoints[1].state_directory).toBe(path.join(FAKE_USER_DATA, 'tailscale', 'b'));
+  });
+
+  it('direct outbound', () => {
+    const cfg = buildTailscaleStatusProbeConfig([tsServer()], { port: 1, secret: 's' });
+    expect(cfg.outbounds).toEqual([{ type: 'direct', tag: 'direct' }]);
+  });
+
+  it('恒注入管理 api service（type=api、listen=127.0.0.1、独立端口 + 随机 secret）', () => {
+    const cfg = buildTailscaleStatusProbeConfig([tsServer()], { port: 60001, secret: 'rnd' });
+    expect(cfg.services).toEqual([
+      { type: 'api', listen: '127.0.0.1', listen_port: 60001, secret: 'rnd' },
+    ]);
+  });
+
+  it('secret 为空串 → secret 字段省略', () => {
+    const cfg = buildTailscaleStatusProbeConfig([tsServer()], { port: 1, secret: '' });
+    expect(cfg.services?.[0]).toEqual({ type: 'api', listen: '127.0.0.1', listen_port: 1 });
+  });
+
+  it('auth_key 永不出现（即便节点配了 authKey）— 探针不承载认证', () => {
+    const cfg = buildTailscaleStatusProbeConfig(
+      [tsServer({ tailscaleSettings: { authKey: 'tskey-probe-secret' } })],
+      { port: 1, secret: 's' }
+    );
+    expect(cfg.endpoints[0].auth_key).toBeUndefined();
+    expect(JSON.stringify(cfg)).not.toContain('tskey-probe-secret');
+    expect(JSON.stringify(cfg)).not.toContain('auth_key');
+  });
+
+  it('透传 controlUrl / hostname / ephemeral（有值才带）', () => {
+    const cfg = buildTailscaleStatusProbeConfig(
+      [
+        tsServer({
+          tailscaleSettings: {
+            controlUrl: 'https://headscale.example.com',
+            hostname: 'dev',
+            ephemeral: true,
+          },
+        }),
+      ],
+      { port: 1, secret: 's' }
+    );
+    const ep = cfg.endpoints[0];
+    expect(ep.control_url).toBe('https://headscale.example.com');
+    expect(ep.hostname).toBe('dev');
+    expect(ep.ephemeral).toBe(true);
+  });
+
+  it('空数组 → endpoints 空（services 仍在，无可探节点）', () => {
+    const cfg = buildTailscaleStatusProbeConfig([], { port: 1, secret: 's' });
+    expect(cfg.endpoints).toEqual([]);
+    expect(cfg.services).toHaveLength(1);
   });
 });
 

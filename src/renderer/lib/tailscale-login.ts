@@ -13,6 +13,23 @@ import { toast } from 'sonner';
 import i18n from '../i18n';
 import { api } from '@/ipc';
 import type { ServerConfig } from '@/bridge/types';
+import { openExternal } from '../bridge/api-wrapper';
+import { safeHttpUrl } from '../../shared/url';
+
+/**
+ * 「需登录」角标点击的统一动作（卡片 / 列表行共用，避免两处各写 URL 取值 + 兜底逻辑）。
+ * - 有缓存 AUTH_URL（store.tailscaleAuthUrls[serverId]，always-emit 全量入表）：safeHttpUrl 限定 http(s)
+ *   杜绝危险 scheme 后 openExternal 直开登录页（与 use-native-events 的 tsLoginAction 同款）。
+ * - 无合法 URL（未 emit / 已被登录成功清掉 / 非法 scheme）：回落 runTailscaleLogin 触发核重发 URL + 自动开浏览器。
+ */
+export function openTailscaleLogin(server: ServerConfig, authUrl: string | undefined): void {
+  const safeUrl = authUrl ? safeHttpUrl(authUrl) : undefined;
+  if (safeUrl) {
+    void openExternal(safeUrl);
+    return;
+  }
+  void runTailscaleLogin(server);
+}
 
 export async function runTailscaleLogin(server: ServerConfig): Promise<void> {
   try {

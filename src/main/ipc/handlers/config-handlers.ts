@@ -11,6 +11,7 @@ import { ConfigManager } from '../../services/ConfigManager';
 import { ipcEventEmitter } from '../ipc-events';
 import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
 import { stripRemoteSecrets, mergeRemoteSecrets } from '../../services/remote-instance-secrets';
+import { clearSingboxDashboardCache } from './helper-handlers';
 
 /**
  * 注册配置管理相关的 IPC 处理器
@@ -39,6 +40,15 @@ export function registerConfigHandlers(configManager: ConfigManager): void {
       // currentConfig 必已非 null；且渲染端须先 CONFIG_GET 拿到 config 才能构造并保存，不会先于 load 触发保存。
       const priorRemote = configManager.get<UserConfig['remoteInstances']>('remoteInstances');
       config = mergeRemoteSecrets(config, { remoteInstances: priorRemote } as UserConfig);
+
+      // 检测面板 download_url 覆盖变更：改了 → 删本地缓存目录，使核下次启动（CONFIG_CHANGED→switchMode 重启）
+      // 因目录为空从新 URL 重拉资源。空白归一为 undefined 再比，避免 ''↔undefined 误判变更。在 saveConfig 前取旧值。
+      const priorDashUrl = configManager.get<string>('singboxDashboardUrl')?.trim() || undefined;
+      const nextDashUrl = config.singboxDashboardUrl?.trim() || undefined;
+      if (priorDashUrl !== nextDashUrl) {
+        clearSingboxDashboardCache();
+      }
+
       await configManager.saveConfig(config);
 
       // 同步主题到原生系统

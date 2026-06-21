@@ -37,6 +37,7 @@ export const IPC_CHANNELS = {
   TAILSCALE_LOGIN: 'tailscale:login', // 按需瞬态登录核：拉起登录专用 sing-box 取交互登录 URL（Phase 2）
   TAILSCALE_LOGIN_CANCEL: 'tailscale:loginCancel', // 取消某节点在飞的瞬态登录核（用户手动取消）
   TAILSCALE_LOGOUT: 'tailscale:logout', // 退出登录：清该节点 state 目录（持久会话）；保留节点配置/authKey
+  PROBE_TAILSCALE_STATUSES: 'tailscale:probeStatuses', // 多节点 status-only 探针：主核未运行时拉瞬态核读 STATUS，驱动各 TS 节点真实登录态（不开登录 URL）
 
   // 订阅管理
   SUBSCRIPTION_ADD: 'subscription:add',
@@ -76,8 +77,6 @@ export const IPC_CHANNELS = {
   CONNECTIONS_GET: 'connections:get',
   CONNECTIONS_CLOSE: 'connections:close', // 关单条连接（main 经 9090 DELETE /connections/{id}）
   CONNECTIONS_CLOSE_ALL: 'connections:closeAll', // 关全部连接（main 经 9090 DELETE /connections，触发 ResetNetwork）
-  CONNECTIONS_WATCH: 'connections:watch', // 连接页 mount：watcher 引用计数 +1，main 开始裁剪+推送连接快照
-  CONNECTIONS_UNWATCH: 'connections:unwatch', // 连接页 unmount：watcher 引用计数 -1，归 0 后 main 停止裁剪+推送
 
   // 出口 IP 信息（本地直连出口 / 代理出口）
   IP_INFO_GET: 'ipinfo:get',
@@ -111,6 +110,8 @@ export const IPC_CHANNELS = {
   // 打开 sing-box 官方面板：main 用运行期 tailscaleApiPort（api service 监听口）构造 /dashboard/ URL + shell.openExternal。
   // 渲染端构造不出 startInternal 解析的动态端口，故必须经此 IPC。
   OPEN_SINGBOX_DASHBOARD: 'app:openSingboxDashboard',
+  // 刷新 sing-box 官方面板资源：清本地缓存目录（<userData>/singbox-dashboard），使核下次启动重拉新 zip。供 UI 手动刷新。
+  REFRESH_SINGBOX_DASHBOARD: 'app:refreshSingboxDashboard',
   // P5 Phase2：打开远端实例的 /dashboard/（shell.openExternal）。渲染端给 instanceId，main 据 config 取该实例
   // dashboardUrl 或按 host/port+tls 推 URL（https/http）。secret 不进 URL（dashboard 首屏自行填）。
   OPEN_REMOTE_DASHBOARD: 'app:openRemoteDashboard',

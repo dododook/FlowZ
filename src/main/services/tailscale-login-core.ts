@@ -78,6 +78,50 @@ export function buildTailscaleLoginConfig(
 }
 
 /**
+ * 生成「多节点 status-only 探针」专用 config：含传入**所有** Tailscale 节点的 endpoint（state_directory 复用
+ * tailscale-state，与主核/登录核一致）+ 一个 direct outbound + 一个管理 api service（STATUS 流）。
+ *
+ * 与 buildTailscaleLoginConfig 同形（无 inbound/route、零提权、log.level:info）但**多节点**：用于「代理关时也显真实
+ * 登录态」——主核未运行时无 STATUS 流，已登录的 Tailscale 节点会被误显「需登录」。探针拉一个含全部 TS endpoint 的
+ * 瞬态核，订阅 STATUS（backendState=Running/Starting → loggedIn=true）驱动各节点真实登录态，秒回即拆核。
+ *
+ * 与登录核的关键区别：**纯查询态**——只为读 STATUS，不开浏览器、不解析 AUTH_URL、不弹登录 toast（调用方 status-only）。
+ * auth_key 同样**永不写入**（探针不承载认证，已认证节点的 valid state 会秒回 Running 验真，无 key 节点回 NeedsLogin
+ * 仅记 loggedIn=false 不弹 URL）。endpoint.tag = server.name（与主核/handleTailscaleStatus 反查口径一致）。
+ *
+ * @param servers 待探测的 Tailscale 节点（调用方已按 protocol==='tailscale' 过滤；空数组 → endpoints 空）
+ * @param api 管理 api service 入参（独立空闲端口 + 随机 secret，使探针核暴露 SubscribeTailscaleStatus）
+ */
+export function buildTailscaleStatusProbeConfig(
+  servers: ServerConfig[],
+  api: TailscaleLoginApiService
+): TailscaleLoginConfig {
+  const endpoints: Array<Record<string, unknown>> = servers.map((server) => {
+    const ts = server.tailscaleSettings || {};
+    const endpoint: Record<string, unknown> = {
+      type: 'tailscale',
+      tag: server.name,
+      state_directory: tailscaleStateDir(server.id),
+    };
+    // auth_key 故意不写入（同 buildTailscaleLoginConfig）：探针只读 STATUS，不承载认证。
+    const controlUrl = ts.controlUrl?.trim();
+    if (controlUrl) endpoint.control_url = controlUrl;
+    const hostname = ts.hostname?.trim();
+    if (hostname) endpoint.hostname = hostname;
+    if (ts.ephemeral === true) endpoint.ephemeral = true;
+    return endpoint;
+  });
+  return {
+    log: { level: 'info', timestamp: true },
+    endpoints,
+    outbounds: [{ type: 'direct', tag: 'direct' }],
+    services: [
+      { type: 'api', listen: '127.0.0.1', listen_port: api.port, secret: api.secret || undefined },
+    ],
+  };
+}
+
+/**
  * 双写防护判定（关键正确性）：该节点的 tailscale endpoint **是否已在运行中的主核里**。
  *
  * 两个 sing-box 进程同时写同一 state_directory（tailscaled.state 等）会冲突 → 若主核已带该 endpoint，

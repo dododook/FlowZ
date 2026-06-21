@@ -18,7 +18,7 @@ import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
 import { validateTlsSpoof } from '../../shared/tls-spoof';
 import { isIpLiteral } from '../../shared/dns';
-import { tailscaleStateDir, tailscaleStateExists } from './tailscale-state';
+import { tailscaleStateDir } from './tailscale-state';
 import {
   effectiveCustomRules,
   effectiveAppRules,
@@ -628,8 +628,8 @@ export function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingB
   const adv = (ts.advertiseRoutes || []).map((c) => c.trim()).filter(Boolean);
   if (adv.length) ep.advertise_routes = adv;
   // P4a 新字段（全可选；sing-box check 实证 1.14-alpha.32）：
-  //  advertise_tags：ACL 标签数组（按标签授权 tailnet）；空清单不下发。
-  //  sshServer：true → ssh_server:true（badoption bool 形式，等价 {enabled:true}）；节点跑 Tailscale SSH。
+  //  advertise_tags（Since 1.12.0）：ACL 标签数组（按标签授权 tailnet）；空清单不下发。
+  //  sshServer（ssh_server，Since 1.13.0）：true → ssh_server:true（badoption bool 形式，等价 {enabled:true}）；节点跑 Tailscale SSH。
   //  relayServerPort：>0 → relay_server_port（peer relay 入站中继监听端口）。
   const advTags = (ts.advertiseTags || []).map((tg) => tg.trim()).filter(Boolean);
   if (advTags.length) ep.advertise_tags = advTags;
@@ -785,19 +785,14 @@ export function buildOutbounds(
         }
         continue;
       }
-      // Tailscale：endpoint（账号制 mesh）。always-emit 门控——有持久会话（authKey 或 state 目录非空）的节点
-      // 常驻主核，使其登录态由管理 API STATUS 流【持续】报告（与是否当前出口无关，根治「非出口的已登录节点恒显
-      // 需登录」）；且已在 selector/nodeTags 里 → 切换为 PUT 热切换、无需重生成 config 重启。无持久会话且非选中
-      // → 跳过（显「需登录」，避免未登录节点登录 URL 刷屏）；选中节点即便无会话也发射（触发交互登录 URL 流）。
-      // 关键：stateExists 仅决定「是否运行该 endpoint」；登录态(loggedIn)真值仍只由 STATUS 流（Running/Starting
-      // && !expired）给，不复用 stateExists 为登录判据 → 不重蹈 #132（state 存在 ≠ 已认证、可能过期）误判。
+      // Tailscale：endpoint（账号制 mesh）。always-emit（与 WireGuard 一致，无门控）——每个配置的 TS 节点恒发射进
+      // 主核：登录态由管理 API STATUS 流逐节点【持续】报告（需登录的显「需登录」角标，用户点角标按需登录解决，
+      // 无需「选中才发射」）；全部在 selector/nodeTags 里 → 切换走 PUT 热切换不重启（对齐 WG）。未登录 endpoint 核
+      // 不 FATAL（tsnet 等待授权）；主核 AUTH_URL 全量上报渲染端入 store（per-node），自动 toast 仅当前出口、非
+      // 出口看角标按需点开（详见 detectTailscaleAuthUrl + 渲染端登录态）。登录态(loggedIn)真值只由 STATUS 流
+      // （Running/Starting && !expired）给，不复用 state 目录为判据 → 不重蹈 #132。
       if (server.protocol.toLowerCase() === 'tailscale') {
         const ts = server.tailscaleSettings;
-        const hasSession = !!ts?.authKey?.trim() || tailscaleStateExists(server.id);
-        if (server.id !== selectedServer?.id && !hasSession) {
-          deps.log('info', `Tailscale 节点「${server.name}」无持久会话(需登录)且非选中，已跳过`);
-          continue;
-        }
         try {
           pendingEndpoints.push(buildTailscaleEndpoint(server, tag));
           nodeTags.push(tag);

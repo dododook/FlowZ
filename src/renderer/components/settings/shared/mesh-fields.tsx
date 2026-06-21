@@ -32,11 +32,11 @@ export function MeshOptionsSection<TFieldValues extends FieldValues>({
     : isTs
       ? t(
           'servers.tsAllowInternetDesc',
-          'When off, this node never acts as a full-tunnel exit (the exit node below is ignored); it only reaches the tailnet and routed subnets.'
+          'On: all internet traffic egresses via the tailnet — but you must pick an exit node below for it to actually leave; Off: only the tailnet and routed subnets are reachable (no full tunnel).'
         )
       : t(
           'servers.allowInternetDesc',
-          'When off, this node only routes the subnets listed below (e.g. peer LAN); it will not carry your default outbound traffic.'
+          'On: all internet traffic egresses via this WireGuard node (this node is the exit); Off: only routes the subnets below (e.g. peer LAN), no default outbound.'
         );
 
   const alwaysRouteTooltip = isTs
@@ -54,7 +54,7 @@ export function MeshOptionsSection<TFieldValues extends FieldValues>({
       <SwitchField
         control={control}
         name={'allowInternet' as FieldPath<TFieldValues>}
-        label={t('servers.allowInternet', 'Allow internet access')}
+        label={t('servers.allowInternet', 'Route internet via this node (full tunnel)')}
         tooltip={allowInternetTooltip}
         disabled={reverseMesh}
         checkedOverride={reverseMesh ? false : undefined}
@@ -68,7 +68,7 @@ export function MeshOptionsSection<TFieldValues extends FieldValues>({
       <SwitchField
         control={control}
         name={'reverseMesh' as FieldPath<TFieldValues>}
-        label={t('servers.reverseMesh', 'Reverse mesh (be reachable)')}
+        label={t('servers.reverseMesh', 'Allow inbound access (kernel interface)')}
         tooltip={
           isTs
             ? t(

@@ -14,6 +14,19 @@ import { system32 } from '../../utils/win-system32';
 import { registerIpcHandler } from '../ipc-handler';
 import type { IPrivilegedHelper } from '../../services/IPrivilegedHelper';
 import type { IProxyManager } from '../../services/ProxyManager';
+import { getSingboxDashboardDir } from '../../utils/paths';
+
+/**
+ * 清 sing-box 官方面板资源缓存目录（dashboard.path）。删后核下次启动因目录为空 → 从 download_url 重拉新 zip。
+ * 改 singboxDashboardUrl（saveConfig 检测）或「刷新面板资源」IPC 调此。recursive+force：不存在不报错。
+ */
+export function clearSingboxDashboardCache(): void {
+  try {
+    fs.rmSync(getSingboxDashboardDir(), { recursive: true, force: true });
+  } catch {
+    // 删缓存失败不致命：核启动若目录仍非空只是沿用旧资源，下次仍可重试清理。
+  }
+}
 
 export function registerHelperHandlers(
   helperManager: IPrivilegedHelper,
@@ -45,11 +58,19 @@ export function registerHelperHandlers(
   // 渲染端构造不出 startInternal 解析的动态端口，故经此 IPC。代理未运行（端口=0）→ 不打开（dashboard 仅运行中可用），
   // UI 侧亦在「开关 on 且运行中」才 enable 按钮。复用 shell.openExternal 收口（与 SHELL_OPEN_EXTERNAL 同径）。
   registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD, async () => {
-    const port = proxyManager.getTailscaleApiPort();
-    if (!proxyManager.getStatus().running || !port) {
+    // URL 带管理 API 连接参数（hostname/port/secret）→ dashboard 自动导入预填 + 连接，免手填（像 clash dashboard）。
+    const url = proxyManager.getSingboxDashboardUrl();
+    if (!url) {
       return { ok: false };
     }
-    await shell.openExternal(`http://127.0.0.1:${port}/dashboard/`);
+    await shell.openExternal(url);
+    return { ok: true };
+  });
+
+  // 刷新 sing-box 官方面板资源：清本地缓存目录 → 核下次启动（或下次配置变更触发 switchMode 重启）重拉新 zip。
+  // 不在此触发重启（保「不打断连接」语义）：UI 提示用户重连/下次启动生效。删目录幂等，不存在不报错。
+  registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.REFRESH_SINGBOX_DASHBOARD, async () => {
+    clearSingboxDashboardCache();
     return { ok: true };
   });
 

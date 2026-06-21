@@ -214,9 +214,6 @@ export function ConnectionsTable() {
   // 数据：挂载 CONNECTIONS_GET 回填 + 订阅 EVENT_CONNECTIONS_UPDATED。暂停时冻结（不更新表 + 不推进速率基准）。
   useEffect(() => {
     let mounted = true;
-    // P1：通知 main「连接页已打开」→ 仅此时主进程才裁剪 + 推送连接快照（watcher 引用计数 +1）。
-    // fire-and-forget：失败不影响订阅（main 无 watcher 时退化为不推送，空态由 proxyRunning gate 兜底）。
-    void api.connections.watch().catch(() => {});
     const apply = (snap: ConnectionsSnapshot) => {
       if (pausedRef.current) return; // 本地冻结：保留当前帧
       const { speeds: s, next } = computeConnSpeeds(snap.connections, rateRef.current, snap.at);
@@ -238,8 +235,6 @@ export function ConnectionsTable() {
     return () => {
       mounted = false;
       unsub();
-      // P1：连接页关闭 → watcher 引用计数 -1，归 0 后 main 停止裁剪 + 推送（省「没盯连接页」稳态无效工作）。
-      void api.connections.unwatch().catch(() => {});
     };
   }, []);
 

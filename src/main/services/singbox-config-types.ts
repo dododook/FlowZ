@@ -349,9 +349,13 @@ export interface SingBoxApiService {
   listen: string;
   listen_port: number;
   secret?: string;
-  // sing-box 1.14 官方面板（opt-in）：enabled 时核首次联网拉 sing-box-dashboard 资源、于 listen_port 的 /dashboard/ serve。
-  // 仅 config.singboxDashboard 开时注入 → 关闭时核绝不出网拉资源（默认不出网）。
-  dashboard?: { enabled: boolean };
+  // sing-box 1.14 官方面板（opt-in）。仅 config.singboxDashboard 开时注入；关闭时整块不下发 → 核绝不出网拉资源（默认不出网）。
+  // 1.14 api service 的 dashboard：path 缺省 = 工作目录的 dashboard 子目录；目录为空即会**自动**从内置默认 download_url
+  // 拉取并存 .etag（并非「不给 download_url 就 404」）。FlowZ 显式给 path（<userData>/singbox-dashboard）+ download_url
+  // （经 ghProxy 的官方 zip），是为**国内可达性**（默认 GitHub URL 国内常拉不到 → 这才是 /dashboard/ 404 的真因）
+  // + 受控的缓存目录与清理，而非「不给就 404」。
+  // update_interval 不下发 → auto-update 关（核仅在 path 目录为空时拉一次，之后不自动更新）。
+  dashboard?: { enabled: boolean; path?: string; download_url?: string };
 }
 
 export interface SingBoxConfig {

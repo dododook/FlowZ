@@ -84,15 +84,6 @@ export function registerProxyHandlers(
     return { ok: true };
   });
 
-  // 连接页订阅/退订（P1 watcher 引用计数）：仅连接页打开时主进程才裁剪+推送连接快照，
-  // 「代理连着但没盯连接页」稳态下省掉全量裁剪与大包广播。fire-and-forget（渲染端不关心返回值）。
-  registerIpcHandler<void, void>(IPC_CHANNELS.CONNECTIONS_WATCH, async () => {
-    statsService?.addConnectionsWatcher();
-  });
-  registerIpcHandler<void, void>(IPC_CHANNELS.CONNECTIONS_UNWATCH, async () => {
-    statsService?.removeConnectionsWatcher();
-  });
-
   // 启动代理
   registerIpcHandler<UserConfig, void>(
     IPC_CHANNELS.PROXY_START,
@@ -171,6 +162,15 @@ export function registerProxyHandlers(
     async (_event: IpcMainInvokeEvent, args) => {
       if (!args?.serverId) throw new Error('serverId required');
       return proxyManager.tailscaleLogout(args.serverId);
+    }
+  );
+
+  // 多节点 status-only 探针：主核未运行时拉瞬态核读 STATUS，驱动各 TS 节点真实登录态（不开登录 URL/不弹 toast）。
+  // 门控在主进程内部（主核运行中/无 TS 节点/已在飞 → no-op）；登录态经 EVENT_TAILSCALE_STATUS 异步驱动渲染端。
+  registerIpcHandler<void, void>(
+    IPC_CHANNELS.PROBE_TAILSCALE_STATUSES,
+    async (_event: IpcMainInvokeEvent) => {
+      await proxyManager.probeTailscaleLoginStates();
     }
   );
 }

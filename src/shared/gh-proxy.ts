@@ -9,6 +9,13 @@ export const GH_PROXY_PRESETS = [
   'https://cdn.gh-proxy.org/',
 ] as const;
 
+/**
+ * sing-box 官方面板资源默认 download_url（zip）。sing-box 文档 service/api dashboard.download_url 缺省值。
+ * 用户可在设置里用 singboxDashboardUrl 覆盖；下发时经 ghProxyPrefix 镜像加速包裹（github.com 域命中加速）。
+ */
+export const DEFAULT_SINGBOX_DASHBOARD_URL =
+  'https://github.com/SagerNet/sing-box-dashboard/archive/refs/heads/gh-pages.zip';
+
 // 主机名（可带端口）校验：标签 1-63、不以连字符首尾、TLD 2-63 字母、总长合理、可选端口
 export const GH_PROXY_HOST_RE =
   /^(?=.{4,253}(?::\d{1,5})?$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}(:\d{1,5})?$/;

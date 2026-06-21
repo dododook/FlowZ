@@ -111,12 +111,14 @@ export class IpInfoService {
   }
 
   /**
-   * 代理启动瞬间立即置「获取中」(loading=true) 并广播：由调用方在 running 翻转的同刻调用，消除「running 已 true
-   * 但探测尚未开始（启动后延迟 refresh）」窗口内代理出口闪「代理出口暂不可用」。不清旧 proxy 值（切节点时旧 IP
-   * 仍显示到新值到达；启动时 proxy 本为 null → 直接显「获取中」骨架）。随后的 refresh/refreshProxy 接力真正探测。
+   * 代理启动/切节点瞬间立即置「检测中」(loading=true) 并【清旧 proxy 出口值】，由调用方在 running 翻转 / 切节点同刻调用。
+   * 清旧值（修出口陈旧根因）：旧 proxy 值是【上一个节点/上一会话】的出口，切节点或重连后保留即误导（实测：切到
+   * Tailscale 仍显上一个 hk01 香港 IP）。清为 null + loading → 网络卡显「检测中」(#53)；随后 refresh/refreshProxy 探到
+   * 真值显新 IP、探测失败显「暂不可用」，绝不残留旧节点 IP。本地出口(direct)不动（切节点不变）。
+   * 注：仅 start/switch 路径调本方法；TTL/手动刷新不调它 → 同节点瞬态抖动仍由 doRefresh 保留旧值（不受影响）。
    */
   markProxyConnecting(): void {
-    this.snapshot = { ...this.snapshot, loading: true };
+    this.snapshot = { ...this.snapshot, proxy: null, loading: true };
     this.onUpdate(this.getSnapshot());
   }
 
@@ -179,7 +181,9 @@ export class IpInfoService {
     const p = await this.withRetry(() => this.queryViaProxy(ports.proxy));
     this.snapshot = {
       ...this.snapshot,
-      proxy: p ?? this.snapshot.proxy, // 失败保留旧值
+      // 切节点专用路径：探测失败清旧值(null)而非保留——旧值是【上一个节点】的出口，切节点后保留即误导
+      //（如切到没真出网的 TS 节点仍显旧节点 IP）。重试耗尽仍失败 = 新出口确无 → 显「暂不可用」才正确。
+      proxy: p ?? null,
       updatedAt: Date.now(),
       loading: false,
       error: p ? undefined : 'fetch_failed',
@@ -206,8 +210,10 @@ export class IpInfoService {
       ]);
       if (d) direct = d;
       else failed = true;
+      // proxy 探测失败【保留旧值】仅标记失败（黄点）：doRefresh 也服务同节点手动刷新/TTL 过期，瞬态网络抖动
+      // 不应清掉有效旧 IP（review MED）。切节点的清旧值由 doRefreshProxy（切节点专用路径）负责，不在此泛化。
       if (p) proxy = p;
-      else failed = true; // 保留旧 proxy 值，仅标记失败（黄点提示）
+      else failed = true;
     } else if (running) {
       // 核心在跑但探针端口分配失败：不能裸 fetch——TUN 下裸 fetch 会被捕获走代理出口，误标为本地出口。
       // 保留旧 direct + 旧 proxy，仅标记失败。

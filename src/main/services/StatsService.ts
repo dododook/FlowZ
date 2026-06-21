@@ -104,7 +104,7 @@ export function trimConnection(c: SingBoxConnection): ConnectionEntry {
 export class StatsService {
   // Status 流 stop 句柄（常开，仅核运行期）。null=未订阅。
   private statusStop: (() => void) | null = null;
-  // Connections 流 stop 句柄（仅 connectionsWatchers>0 时订阅）。null=未订阅。
+  // Connections 流 stop 句柄（订阅跟随 started）。null=未订阅。
   private connectionsStop: (() => void) | null = null;
   private snapshot: TrafficStats = {
     uploadSpeed: 0,
@@ -117,10 +117,6 @@ export class StatsService {
   private connMap = new Map<string, SingBoxConnection>();
   private connections: ConnectionEntry[] = [];
   private started = false;
-  // P1：连接页 watcher 引用计数（连接页 mount→+1 / unmount→-1，经 CONNECTIONS_WATCH/UNWATCH IPC）。
-  // 仅 >0 时才订阅 Connections 流（0→1 订阅、→0 退订）——「代理连着但没盯连接页」最常见稳态下不开连接事件流。
-  // 计数泄漏（渲染端硬崩漏 unwatch）fail-safe：流继续开着 = 仅多一条订阅，不破功能。
-  private connectionsWatchers = 0;
 
   /**
    * @param onUpdate 每次拿到新 Status 时回调（广播给渲染端）
@@ -151,8 +147,7 @@ export class StatsService {
    * emit('stopped') → 不调本服务 stop()）下 `started` 仍为 true → start() 幂等闸门直接 return → 旧 statusStop
    * 句柄仍绑死旧 client / 旧 api 端口（端口每次启动可能重解析变化），旧流即便自愈也连不回新核 → Status 流
    * （首页速率/总量/连接数）显示停滞。本方法无视幂等闸门：先停现有流句柄（旧句柄 cancel 旧 client 的流），
-   * 再按新 getApiClient() 重订阅 Status（始终）+ Connections（仅 watcher>0 时），即时切到新 client。
-   * connectionsWatchers 引用计数语义不变（仅据其值决定是否重订阅 Connections，不增减计数）。
+   * 再按新 getApiClient() 重订阅 Status（始终）+ Connections（跟随 started），即时切到新 client。
    * 同时满足首次启动（started=false）：置位 started 后等效于 start()，故 'started' 监听器统一调用本方法即可。
    */
   resubscribe(): void {
@@ -175,7 +170,7 @@ export class StatsService {
     this.onUpdate({ ...this.snapshot });
     this.onConnections?.({ connections: [], at: Date.now() });
     this.subscribeStatusStream();
-    this.subscribeConnectionsStream(); // 跟随 started（见 start 注释），不再 gate by watcher
+    this.subscribeConnectionsStream(); // 跟随 started（见 start 注释）
   }
 
   stop(): void {
@@ -201,30 +196,6 @@ export class StatsService {
 
   getConnectionsSnapshot(): ConnectionsSnapshot {
     return { connections: this.connections, at: Date.now() };
-  }
-
-  /** 连接页订阅：引用计数 +1。0→1 时（且服务已 start）开 Connections 流，连接页 mount 后即推数据。 */
-  addConnectionsWatcher(): void {
-    this.connectionsWatchers++;
-    if (this.connectionsWatchers === 1 && this.started) {
-      this.subscribeConnectionsStream();
-    }
-  }
-
-  /** 连接页退订：引用计数 -1（钳制 ≥0）。连接流订阅已改为跟随 started，不再随 watcher 归 0 退订
-   *  （否则关连接页会误停首页拓扑的流）；退订只在 stop()。 */
-  removeConnectionsWatcher(): void {
-    if (this.connectionsWatchers > 0) this.connectionsWatchers--;
-  }
-
-  /**
-   * 渲染端重载/重建时归零引用计数（N-2）：watcher 计数依赖连接页 mount/unmount 配对发 WATCH/UNWATCH，
-   * 渲染进程硬崩 / 整页 reload 会漏发 UNWATCH → 计数只增不减泄漏 → 连接流永久开着（fail-safe，仅多一订阅）。
-   * 挂渲染端 did-start-loading 调用：页面将重建，旧 watcher 全作废，清零 + 退订；重建后连接页会重新 WATCH。
-   */
-  resetConnectionsWatchers(): void {
-    this.connectionsWatchers = 0;
-    // 不再退订连接流：订阅跟随 started，渲染端 reload 后主核流照常运行、新页面重订阅 onUpdated 即收广播。
   }
 
   /** 流 stop 句柄安全调用（吞异常）并清空：两条流退订同构，单一真值复用。返回 null 供调用方回写句柄字段。 */
@@ -258,8 +229,8 @@ export class StatsService {
     this.snapshot.downloadSpeed = num(status?.downlink) ?? 0;
     this.snapshot.totalUpload = num(status?.uplinkTotal) ?? 0;
     this.snapshot.totalDownload = num(status?.downlinkTotal) ?? 0;
-    this.snapshot.activeConnections =
-      (num(status?.connectionsIn) ?? 0) + (num(status?.connectionsOut) ?? 0);
+    // activeConnections 不取 Status 的 connectionsIn/Out——sing-box 1.14 SubscribeStatus 实测不填这俩（真机首页
+    // 恒 0 而连接信息页正常）；改由 Connections 流的 connMap.size 维护（见 onConnectionEvents），此处只更速率/总量。
     if (this.isWindowVisible && !this.isWindowVisible()) return; // 无 UI 消费者 → 跳过广播
     this.onUpdate({ ...this.snapshot });
   }
@@ -320,8 +291,13 @@ export class StatsService {
           break;
       }
     }
+    // 活动连接数由本流的 connMap.size 维护（Status 的 connectionsIn/Out 核不填 → 首页恒 0 的根因）；在可见性
+    // 短路前更新，使下一次 Status onUpdate 广播到的计数恒为真实活跃连接数。
+    this.snapshot.activeConnections = this.connMap.size;
+    // 不可见（无 UI 消费者）→ 只维护 connMap、跳过列表物化 + 广播（省每秒对全部连接的全量重建 + splitHostPort，
+    // 结果本就被可见性门控丢弃）；可见后下一帧即物化推送。
+    if (this.isWindowVisible && !this.isWindowVisible()) return;
     this.connections = Array.from(this.connMap.values()).map(trimConnection);
-    if (this.isWindowVisible && !this.isWindowVisible()) return; // 无 UI 消费者 → 跳过广播
     this.onConnections?.({ connections: this.connections, at: Date.now() });
   }
 }

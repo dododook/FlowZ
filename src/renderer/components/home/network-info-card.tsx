@@ -142,8 +142,17 @@ export function NetworkInfoCard() {
     void api.ipInfo.get(true);
   };
 
-  // IP 单元格主值
-  const renderIpValue = (info: IpInfo | null, emptyText: string) => {
+  // IP 单元格主值。detecting=true（仅代理出口切节点重测窗口）→ 优先显「检测中…」，
+  // 覆盖为防闪保留的旧 IP（markProxyConnecting 保留旧 proxy 值，直接显旧 IP 会误导成新节点出口）。
+  const renderIpValue = (info: IpInfo | null, emptyText: string, detecting = false) => {
+    if (detecting) {
+      return (
+        <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+          <RotateCw className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          {t('home.detecting')}
+        </span>
+      );
+    }
     if (masked && info)
       return <span className="min-w-0 break-all font-mono text-sm font-semibold">{MASKED_IP}</span>;
     if (info) {
@@ -175,6 +184,9 @@ export function NetworkInfoCard() {
 
   const directInfo = ipInfo?.direct ?? null;
   const proxyInfo = running ? (ipInfo?.proxy ?? null) : null;
+  // 切节点重测窗口：loading=true 时代理出口显「检测中…」而非为防闪保留的旧 IP（避免误导成新节点出口）。
+  // 仅 running 时有意义；本地出口(direct)不受此影响。
+  const proxyDetecting = running && loading;
   // 最终态（重试耗尽仍无值）友好提示，不再用刺眼的「获取失败」：运行中→代理出口暂不可用；未运行→未连接。
   const proxyEmpty = running ? t('home.ipProxyUnavailable') : t('home.ipNotConnected');
 
@@ -255,11 +267,11 @@ export function NetworkInfoCard() {
           <div className="min-w-0 space-y-1">
             <p className="text-xs text-muted-foreground">{t('home.proxyExit')}</p>
             <div className="flex min-w-0 items-start gap-1.5">
-              <Flag cc={masked ? undefined : proxyInfo?.countryCode} />
-              {renderIpValue(proxyInfo, proxyEmpty)}
+              <Flag cc={masked || proxyDetecting ? undefined : proxyInfo?.countryCode} />
+              {renderIpValue(proxyInfo, proxyEmpty, proxyDetecting)}
             </div>
             <p className="truncate text-[11px] text-muted-foreground/70">
-              {renderIpSub(proxyInfo, '')}
+              {proxyDetecting ? '' : renderIpSub(proxyInfo, '')}
             </p>
           </div>
         </div>

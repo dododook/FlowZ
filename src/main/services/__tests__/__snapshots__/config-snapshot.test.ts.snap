@@ -7838,7 +7838,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "network": [
             "icmp",
           ],
-          "outbound": "proxy-selector",
+          "outbound": "direct",
         },
         {
           "action": "reject",

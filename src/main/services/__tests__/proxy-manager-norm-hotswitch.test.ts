@@ -490,3 +490,80 @@ describe('ProxyManager.planRuleHotSwitch', () => {
     expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'tagB' }]);
   });
 });
+
+// ============================================================================
+// 三、planHotSwitch 全局切换 route 投影 guard（选中节点 route 依赖翻转 → 重启，非 PUT）
+//    回归覆盖：ICMP 改静态 direct 后，删原 ICMP guard 暴露的「final/geo 黑洞」+「force-route engaged 失配」。
+// ============================================================================
+
+describe('ProxyManager.planHotSwitch 全局 route 投影 guard', () => {
+  const FT = 'wg-full';
+  const FT2 = 'wg-full-2';
+  const OM = 'wg-offmesh';
+  const ONLYSUB = 'wg-onlysub';
+
+  function wg(
+    id: string,
+    opts: { allowInternet?: boolean; allowedIPs?: string[]; alwaysRouteSubnets?: boolean }
+  ): ServerConfig {
+    return {
+      id,
+      name: id,
+      protocol: 'wireguard',
+      wireguardSettings: {
+        allowInternet: opts.allowInternet,
+        allowedIPs: opts.allowedIPs ?? ['10.9.0.0/24'],
+        alwaysRouteSubnets: opts.alwaysRouteSubnets,
+      },
+    } as unknown as ServerConfig;
+  }
+  const ss = (): ServerConfig =>
+    ({ id: 'ss', name: 'ss', protocol: 'shadowsocks', address: '1.1.1.1', port: 8388 }) as any;
+
+  function cfg(serverList: ServerConfig[], selectedServerId: string): UserConfig {
+    return {
+      ...makeConfig({ customRules: [], selectedServerId }),
+      servers: serverList,
+    } as UserConfig;
+  }
+  function setup(svc: any, serverList: ServerConfig[]) {
+    svc.currentIdToTagMap = new Map(serverList.map((s) => [s.id, `tag-${s.id}`]));
+  }
+
+  it('全隧道 endpoint → off-mesh endpoint：fallsBackToDirect 翻转 → kind:none（重启，防 final 黑洞）', () => {
+    const svc = makeSvc();
+    const list = [wg(FT, { allowInternet: true }), wg(OM, { allowInternet: false })];
+    setup(svc, list);
+    svc.currentConfig = cfg(list, FT);
+    expect(svc.planHotSwitch(cfg(list, OM)).kind).toBe('none');
+  });
+
+  it('off-mesh endpoint → 普通代理：fallsBackToDirect 翻转（补旧 ICMP guard 漏的缺口）→ kind:none', () => {
+    const svc = makeSvc();
+    const list = [wg(OM, { allowInternet: false }), ss()];
+    setup(svc, list);
+    svc.currentConfig = cfg(list, OM);
+    expect(svc.planHotSwitch(cfg(list, 'ss')).kind).toBe('none');
+  });
+
+  it('全隧道 endpoint → 另一全隧道 endpoint：同侧不翻转 → kind:global（PUT 热切换）', () => {
+    const svc = makeSvc();
+    const list = [wg(FT, { allowInternet: true }), wg(FT2, { allowInternet: true })];
+    setup(svc, list);
+    svc.currentConfig = cfg(list, FT);
+    const plan = svc.planHotSwitch(cfg(list, FT2));
+    expect(plan.kind).toBe('global');
+    expect(plan.puts).toContainEqual({ selectorTag: 'proxy-selector', memberTag: `tag-${FT2}` });
+  });
+
+  it('切到 alwaysRouteSubnets=false 的 endpoint（force-route 段随选中翻转）→ kind:none', () => {
+    const svc = makeSvc();
+    const list = [
+      wg(FT, { allowInternet: true }),
+      wg(ONLYSUB, { allowInternet: true, alwaysRouteSubnets: false, allowedIPs: ['10.5.0.0/24'] }),
+    ];
+    setup(svc, list);
+    svc.currentConfig = cfg(list, FT);
+    expect(svc.planHotSwitch(cfg(list, ONLYSUB)).kind).toBe('none');
+  });
+});

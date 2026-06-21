@@ -288,6 +288,9 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                       />
                     </FormControl>
                     <FormDescription>{t('servers.tsExitNodeDesc')}</FormDescription>
+                    <p className="text-xs text-muted-foreground">
+                      {t('servers.tsExitNodeControlHint')}
+                    </p>
                     {(reverseMesh || !allowInternet) && (
                       <p className="text-sm text-amber-600 dark:text-amber-500">
                         {reverseMesh
@@ -299,6 +302,14 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                               'servers.tsAllowInternetOffHint',
                               'Internet access off: exit node ignored; this node only reaches the tailnet / routed subnets.'
                             )}
+                      </p>
+                    )}
+                    {allowInternet && !reverseMesh && !exitNodeValue?.trim() && (
+                      <p className="text-sm text-amber-600 dark:text-amber-500">
+                        {t(
+                          'servers.tsFullTunnelNoExitWarn',
+                          'Full-tunnel is on but no exit node selected — Tailscale needs an exit node to egress, otherwise internet traffic is black-holed. Set the exit node above.'
+                        )}
                       </p>
                     )}
                     <FormMessage />
@@ -419,6 +430,9 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                         'Subnets this node makes reachable to the tailnet (subnet router). Comma-separated.'
                       )}
                     </FormDescription>
+                    <p className="text-xs text-muted-foreground">
+                      {t('servers.tsAdvertiseRoutesControlHint')}
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -452,6 +466,9 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                         'ACL tags this node advertises to the tailnet (tag:*). Comma-separated.'
                       )}
                     </FormDescription>
+                    <p className="text-xs text-muted-foreground">
+                      {t('servers.tsAdvertiseTagsControlHint')}
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -485,6 +502,11 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                   'servers.tsSshServerDesc',
                   'Run a Tailscale SSH server on this node (tailnet:22, access governed by ACLs).'
                 )}
+                hint={
+                  <p className="text-xs text-muted-foreground">
+                    {t('servers.tsSshServerControlHint')}
+                  </p>
+                }
               />
             </FieldSpan>
             {/* P4b tailnet 按名解析并入「高级」：accept_search_domain + preferred_by 强联动，与 doh.pub/google

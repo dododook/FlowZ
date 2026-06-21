@@ -281,16 +281,23 @@ describe('Q1 Windows takeover：消除 type:local 死循环（dns-local 改路�
     expect(merged?.server).toBe('dns-local');
   });
 
-  it('Win+TUN 但接管开关关(takeoverSystemDns:false)：winLoopRisk=false → 保持原合并 dns-local 规则（A 开关门控生效）', () => {
+  it('Win+TUN+接管开关关(takeoverSystemDns:false)：T2 解耦后 winLoopRisk 恒=true → 银行/内网/captive→dns-domestic（死环与开关无关，不再合并 dns-local）', () => {
     setPlatform('win32');
     const offConfig = {
       ...tunFx.config,
       dnsConfig: { ...tunFx.config.dnsConfig, takeoverSystemDns: false },
     } as AnyCfg;
     const cfg = new ProxyManager().generateSingBoxConfig(offConfig) as AnyCfg;
-    const merged = ruleBy(cfg, (r) => sfx(r).includes('.lan') && sfx(r).includes('.icbc.com.cn'));
-    expect(merged?.server).toBe('dns-local'); // 关接管 → 不改路由（系统 DNS 未被接管，dns-local=真实 LAN，无环）
-    expect((cfg.dns.servers as AnyCfg[]).some((s) => s.tag === 'dns-lan')).toBe(false);
+    // T2：死环源于 Win strict_route+type:local 本身、与 takeoverSystemDns 无关 → 关接管也照防环（与 takeover 态一致）。
+    expect(bankRule(cfg)?.server).toBe('dns-domestic');
+    expect(lanRule(cfg)?.server).toBe('dns-domestic');
+    expect(captiveRule(cfg)?.server).toBe('dns-domestic');
+    expect(localRule(cfg)?.server).toBe('dns-local');
+    // 不再有把银行域名喂 dns-local 的合并规则（svchost→8.8.8.8→hijack→dns-local 死环防护恒生效）
+    const bankToLocal = dnsRules(cfg).some(
+      (r) => r.server === 'dns-local' && sfx(r).includes('.icbc.com.cn')
+    );
+    expect(bankToLocal).toBe(false);
   });
 });
 

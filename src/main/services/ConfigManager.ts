@@ -637,6 +637,17 @@ export class ConfigManager implements IConfigManager {
       this.log('warn', 'singboxDashboard must be a boolean; resetting to default (disabled)');
       delete config.singboxDashboard;
     }
+    // singboxDashboardUrl：可选 download_url 覆盖。非字符串或空白一律删除（回落内置默认 URL）；sanitize 而非 throw。
+    if (config.singboxDashboardUrl !== undefined) {
+      if (
+        typeof config.singboxDashboardUrl !== 'string' ||
+        config.singboxDashboardUrl.trim() === ''
+      ) {
+        delete config.singboxDashboardUrl;
+      } else {
+        config.singboxDashboardUrl = config.singboxDashboardUrl.trim();
+      }
+    }
     // remoteInstances（P5 Phase2 远程实例）：非法/缺必填字段的实例整条丢弃（sanitize 而非 throw——
     // 同 appRoutingEnabled 标准，throw 在 loadConfig 路径会触发默认配置覆盖落盘致用户节点/订阅/规则全丢）。
     // 必填：id/name 非空字符串、host 非空字符串、port 为 1..65535 整数。tls/secret/dashboardUrl 容错（按类型剔除非法子字段）。

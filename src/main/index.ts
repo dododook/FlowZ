@@ -678,12 +678,6 @@ async function createWindow(forceShow = false) {
     logManager.addLog('error', `Window failed to load: ${errorDescription} (${errorCode})`, 'Main');
   });
 
-  // 渲染端重载/重建（reload / 渲染进程崩溃恢复）→ 归零连接页 watcher 引用计数（N-2）：旧 watcher 随页面销毁
-  // 全作废、其 UNWATCH 可能漏发，清零防计数泄漏致稳态省裁剪优化失效；重建后连接页重新 WATCH 自然恢复。
-  mainWindow.webContents.on('did-start-loading', () => {
-    statsService?.resetConnectionsWatchers();
-  });
-
   // macOS：隐藏到托盘时摘 Dock 图标（仅驻留菜单栏，不占 Dock / Cmd-Tab），重新显示时恢复。
   // 经 activation policy 状态机（见 hideDockIfMenubarOnly/restoreDockPresence），覆盖所有显隐路径。
   if (process.platform === 'darwin') {
@@ -1218,11 +1212,8 @@ if (gotTheLock) {
       // 出口 IP：start 瞬间即置「获取中」，消除「running 已 true 但下方延迟 1.5s 刷新尚未开始」窗口内
       // 代理出口闪「代理出口暂不可用」。随后的延迟 refresh(true) 接力真正探测（带重试）。
       ipInfoService?.markProxyConnecting();
-      // resubscribe（非 start）：崩溃自动重启换了新 api client，但 handleProcessExit 直接 return 不经
-      // emit('stopped') → 未调 statsService.stop() → started 仍 true → start() 幂等闸门会 return 不重订阅 →
-      // Status 流句柄仍指向死 client 冻结（E-1）。resubscribe 无视幂等闸门，强制把 Status（及 watcher>0 的
-      // Connections）流重订阅到当前 api client；首次启动（started=false）下与 start() 等效，统一调用即可。
-      statsService?.resubscribe();
+      // stats 订阅【不】在此发起：emit('started') 早于 ProxyManager 创建 api client（startInternal 末尾）约 0.5s，
+      // 此刻 getApiClient()=null、subscribe* 早退（首页 stats 全 0 根因）。改挂 'api-client-ready'（见下）。
       subscriptionScheduler?.onProxyStarted(); // 代理就绪 → 补跑因 viaProxy 跳过的启动订阅更新
       try {
         await coreUpdateService.recordSuccessfulVersion();
@@ -1237,9 +1228,20 @@ if (gotTheLock) {
       setTimeout(() => void ipInfoService?.refresh(true), 1500);
     });
 
+    // 修复（首页 stats 全 0 根因）：Status/Connections 订阅必须等 api client 就绪。emit('started')（runStartWithRetry
+    // 内）早于 ProxyManager 创建 api client（startInternal 末尾）约 0.5s → 那时 getApiClient()=null、subscribe* 早退、
+    // 订阅从未发起、且无二次重订。改挂 'api-client-ready'（client .start() 后发；崩溃自动重启亦走 startInternal 同
+    // 路径到此 → 覆盖 E-1）：此刻 getApiClient() 非空、resubscribe 真正订上 Status/Connections 流。
+    proxyManager.on('api-client-ready', () => statsService?.resubscribe());
+
     // 节点热切换成功（clash_api PUT 已生效）→ 只重测代理出口（本地出口不因切节点变）。
     // 由 main 在热切换出口触发，避免渲染端猜时机导致探针先于切换落地而测到旧节点。
-    proxyManager.on('node-hot-switched', () => void ipInfoService?.refreshProxy());
+    // markProxyConnecting 先行（修出口陈旧）：立即清旧节点出口 IP + 置「检测中」，闭合 refreshProxy 入队到真正探测之间
+    // 的窗口（否则该窗口持续显上一节点 IP，如切到 Tailscale 仍显旧 hk01）。
+    proxyManager.on('node-hot-switched', () => {
+      ipInfoService?.markProxyConnecting();
+      void ipInfoService?.refreshProxy();
+    });
 
     proxyManager.on('stopped', async () => {
       statsService?.stop();

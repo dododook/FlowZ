@@ -254,7 +254,7 @@ const icmpRule = (rc: any): any =>
 const hasProtocolIcmp = (rc: any): boolean =>
   (rc.rules || []).some((r: any) => r.protocol === 'icmp');
 
-describe('buildRouteConfig — ICMP 路由（跟随 final 出口）', () => {
+describe('buildRouteConfig — ICMP 路由（恒 direct，静态不随出口）', () => {
   it('① 无任何 protocol:icmp 规则（死规则已删）', () => {
     const n = proxyNode();
     const rc = buildRouteConfig(cfg([n], { proxyMode: 'smart' }), idMap([n]), deps([]));
@@ -290,21 +290,21 @@ describe('buildRouteConfig — ICMP 路由（跟随 final 出口）', () => {
     expect(r.outbound).toBe('direct');
   });
 
-  it('③d 选中 WG 全隧道节点 → network:icmp → userExitTag(proxy-selector)', () => {
+  it('③d 选中 WG 全隧道节点 → network:icmp → direct（ICMP 恒直连，不再经出口）', () => {
     const wg = wgNode('w1', 'WG', ['10.8.0.0/24']); // allowInternet 缺省=on，非 system → 承载 0/0
     const rc = buildRouteConfig(cfg([wg], { proxyMode: 'smart' }), idMap([wg]), deps([wgEp('WG')]));
     const r = icmpRule(rc);
     expect(r).toBeDefined();
     expect(r.action).toBe('route');
-    expect(r.outbound).toBe('proxy-selector');
+    expect(r.outbound).toBe('direct');
   });
 
-  it('③e 选中 Tailscale 全隧道节点 → network:icmp → userExitTag(proxy-selector)', () => {
+  it('③e 选中 Tailscale 全隧道节点 → network:icmp → direct（ICMP 恒直连，不再经出口）', () => {
     const ts = tsNode('t1', 'TS'); // allowInternet 缺省=on，非 system → 承载 0/0
     const rc = buildRouteConfig(cfg([ts], { proxyMode: 'smart' }), idMap([ts]), deps([tsEp('TS')]));
     const r = icmpRule(rc);
     expect(r).toBeDefined();
-    expect(r.outbound).toBe('proxy-selector');
+    expect(r.outbound).toBe('direct');
   });
 
   it('④ mesh force-route 仍在、且排在 network:icmp 兜底之前', () => {

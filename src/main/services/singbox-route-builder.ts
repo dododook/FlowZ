@@ -15,7 +15,6 @@ import {
   endpointForcedRouteCidrs,
   meshForcedRouteCidrs,
   meshSelectedExitFallsBackToDirect,
-  selectedExitRoutesIcmpViaProxy,
   shouldForceRouteSubnets,
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
@@ -606,14 +605,12 @@ export function buildRouteConfig(
   }
 
   // ICMP 兜底（sing-box network:icmp 匹配，1.14 恒支持）：放在 mesh force-route(块 0c) + bypass-LAN 之后，
-  // 故组网具体段经其 endpoint、局域网私网段直连先匹配，本条只兜底其余（外网）ICMP。
-  //   · final 出口为 WG/Tailscale 全隧道节点（isEndpoint 且非 direct 模式）→ 经其出口 userExitTag：
-  //     endpoint 出站能转 ICMP，与 0/0 全隧道一致、防 ping 泄露真实 IP。
-  //   · 普通代理（转不了 ICMP）/ specific-only mesh(userExitTag 已= 'direct' 经 D4/D7 兜底)/ direct 模式 → 直连。
-  // ICMP→代理出口 ⟺ selectedExitRoutesIcmpViaProxy（单一真值，与 ProxyManager 热切换跨边界判定同源）。
-  // 硬切 1.14 后无版本门（旧 <1.13 不发射分支已随 §5 守卫恒 ≥1.14 收敛，与 :352 U盾同口径）。
-  const icmpOutbound = selectedExitRoutesIcmpViaProxy(config) ? userExitTag : 'direct';
-  rules.push({ network: ['icmp'], action: 'route', outbound: icmpOutbound });
+  // 组网具体段/局域网私网段先被匹配（网段规则 network-agnostic，已含 ICMP→经 endpoint/直连），本条只兜底
+  // 其余（外网）ICMP，**恒走 direct（静态、不依赖选中节点）**：ICMP 规则永不随切换翻转 → 全隧道 endpoint
+  // ↔ 普通代理也能 PUT 热切换不重启（已去除 selectedExitRoutesIcmpViaProxy 跨边界 guard）。代价：选全隧道
+  // 出口时外网 ping/traceroute 走直连（不反映出口、暴露本地路径）——ping 仅诊断、实际 TCP/UDP 仍走出口，影响
+  // 可忽略；mesh/tailnet 段 ICMP 仍经 endpoint（上方强路由保留）。
+  rules.push({ network: ['icmp'], action: 'route', outbound: 'direct' });
 
   // 【QUIC 阻断】：放在自定义规则和应用分流之后，确保用户的 direct/proxy 规则优先级更高
   // 这样游戏设为直连时，进程名匹配在前，游戏的 UDP 流量不会被误拒。

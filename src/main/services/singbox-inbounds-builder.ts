@@ -174,6 +174,13 @@ export function buildInbounds(
         : userStack;
 
     const autoRoute = config.tunConfig?.autoRoute ?? true;
+    // 刻意不设 sing-box 1.14 inbound 的 dns_mode → 内核取默认 `hijack`（= native + 端口 53 拦截）。不显式 pin 的理由：
+    //  · macOS 命令行/独立二进制形态下 `native` 是 no-op（sing-tun darwin TUN 不设系统 per-interface DNS；上游 #4183
+    //    以 not_planned 关闭、明确不为 CLI 实现——见 docs/design/dns-native-p2a.md NO-GO 评估）。真正的 :53 捕获靠
+    //    route 层 {port:53→hijack-dns} 规则（singbox-route-builder），macOS 系统 DNS 由 SystemDnsManager 指向 off-link
+    //    8.8.8.8 使其进 TUN 被捕获——故 inbound dns_mode 对 macOS 冗余、对 Win/Linux 与默认 hijack 一致。
+    //  · 不 pin "hijack" 字面量避免 alpha 枚举/默认演进时漂移成 check FATAL（route 层 hijack-dns 才是捕获的单一真值）。
+    //    升核时复核 sing-tun tun_darwin.go 是否新增 darwin native DNS（grep networksetup|scutil|SetDNS|DNSMode）。
     const tunInbound: SingBoxInbound = {
       type: 'tun',
       tag: 'tun-in',

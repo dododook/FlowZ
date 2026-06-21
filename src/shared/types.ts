@@ -475,6 +475,11 @@ export interface UserConfig {
   // 不随包静态文件，关时核绝不出网拉资源。非 boolean 一律 sanitize 删除（同 appRoutingEnabled 标准，不回填默认）。
   singboxDashboard?: boolean;
 
+  // sing-box 官方面板资源 download_url 覆盖（可选）：空/未设 = 用内置默认（SagerNet/sing-box-dashboard gh-pages.zip）。
+  // 下发前经 ghProxyPrefix 镜像加速包裹；改此值 → saveConfig 检测变更后删本地缓存目录，使核下次启动重拉新资源。
+  // 暴露给用户作安全阀：默认 URL 失效时可手动改。空白字符串/非字符串一律 sanitize 删除（回落默认）。
+  singboxDashboardUrl?: string;
+
   // sing-box 1.14 远程实例控制（P5 Phase2）：FlowZ 当客户端连远端核的管理 API（增删改 + 打开远端面板）。
   // secret 反向可读存于 config.json（0o600）但 CONFIG_GET 经 sanitize 不下发明文给渲染端（详见 RemoteInstance 注释）。
   // 非法/缺字段实例在 validateConfig 整条丢弃（sanitize 而非 throw，避免污染配置致 loadConfig 全丢）。

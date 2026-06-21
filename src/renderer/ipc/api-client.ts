@@ -158,6 +158,7 @@ export const proxyApi = {
       authURL?: string;
       tailscaleIPs: string[];
       expired: boolean;
+      probe?: boolean;
     }) => void
   ): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, listener);
@@ -312,6 +313,14 @@ export const serverApi = {
    */
   async tailscaleLogout(serverId: string): Promise<{ runningNeedsRestart: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_LOGOUT, { serverId });
+  },
+
+  /**
+   * 多节点 status-only 探针：代理关时拉瞬态核读各 Tailscale 节点真实登录态（驱动「检测中→已登录/需登录」角标）。
+   * 不开登录 URL、不弹 toast。门控在主进程（主核运行中/无 TS 节点/已在飞 → no-op）；结果经 EVENT_TAILSCALE_STATUS 推回。
+   */
+  async probeTailscaleStatuses(): Promise<void> {
+    return ipcClient.invoke(IPC_CHANNELS.PROBE_TAILSCALE_STATUSES);
   },
 
   /**
@@ -486,14 +495,6 @@ export const connectionsApi = {
   },
   onUpdated(listener: (snap: ConnectionsSnapshot) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_CONNECTIONS_UPDATED, listener);
-  },
-  /** 连接页 mount 时订阅：通知 main 开始裁剪+推送连接快照（watcher 引用计数 +1）。fire-and-forget。 */
-  async watch(): Promise<void> {
-    return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_WATCH);
-  },
-  /** 连接页 unmount 时退订：watcher 引用计数 -1，归 0 后 main 停止裁剪+推送。fire-and-forget。 */
-  async unwatch(): Promise<void> {
-    return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_UNWATCH);
   },
   /** 关单条连接（main 经 9090 DELETE /connections/{id}；渲染端无 secret）。 */
   async close(id: string): Promise<{ ok: boolean }> {
@@ -936,6 +937,12 @@ export const appApi = {
    */
   async openSingboxDashboard(): Promise<{ ok: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD);
+  },
+  /**
+   * 刷新 sing-box 官方面板资源：main 清本地缓存目录 → 核下次启动重拉新 zip。供设置页手动刷新。
+   */
+  async refreshSingboxDashboard(): Promise<{ ok: boolean }> {
+    return ipcClient.invoke(IPC_CHANNELS.REFRESH_SINGBOX_DASHBOARD);
   },
   /**
    * P5 Phase2：打开远端实例的 /dashboard/（main 据 instanceId 取配置推 URL + 系统浏览器打开）。
