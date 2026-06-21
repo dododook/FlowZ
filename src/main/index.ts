@@ -1251,9 +1251,15 @@ if (gotTheLock) {
     // 由 main 在热切换出口触发，避免渲染端猜时机导致探针先于切换落地而测到旧节点。
     // markProxyConnecting 先行（修出口陈旧）：立即清旧节点出口 IP + 置「检测中」，闭合 refreshProxy 入队到真正探测之间
     // 的窗口（否则该窗口持续显上一节点 IP，如切到 Tailscale 仍显旧 hk01）。
-    proxyManager.on('node-hot-switched', () => {
+    // accountBased（payload）：切到账号制（TS）节点时隧道未就绪即耗尽常规预算会闪「暂不可用」→ 改走宽退避
+    // refreshProxyPostConnect（与 'started' 首连路径同治）；IP 类节点即起即通仍走常规 refreshProxy。
+    proxyManager.on('node-hot-switched', (accountBased?: boolean) => {
       ipInfoService?.markProxyConnecting();
-      void ipInfoService?.refreshProxy();
+      if (accountBased) {
+        void ipInfoService?.refreshProxyPostConnect();
+      } else {
+        void ipInfoService?.refreshProxy();
+      }
     });
 
     proxyManager.on('stopped', async () => {

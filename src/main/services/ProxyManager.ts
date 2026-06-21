@@ -396,6 +396,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.lifecycleGeneration++;
     // 新启动接管 → 清掉任何陈旧的 supersede-崩溃补发标记（防上一会话遗留的标记误触发补发，M-2′-G1 防陈旧）。
     this.crashWhileSuperseded = false;
+    // 新会话从干净状态开始：清 TS「选中节点已 Running」去重标记。stop() 断 tailscaleApiClient 后不再有 STATUS 帧
+    // 推「非 Running」来清此标记，残留的 Running 标记会让重连同一 TS 节点时新 STATUS 首帧 Running 被去重命中、
+    // 'tailscale-selected-running' 不发射 → 事件驱动出口 re-probe 丢失（退避仍兜底但失去「隧道就绪即抢先出口」）。
+    // 与 handleTailscaleStatus 的清除逻辑不冲突：那是运行期掉线/切节点时清，此处只补会话起点的重置。
+    this.lastTsSelectedRunningId = null;
     // 本次启动是否交互式（非交互=崩溃自动重启）：供 startSingBoxProcess 决定 helper 不可用时是否裸弹 osascript。
     this.startInteractive = options.interactive !== false;
     // 真正 start 即作废未决的去抖重启（崩溃自动重启直走 start、不经 stop，避免窗口内 crash 后被二次拉起）
@@ -1223,8 +1228,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         // 全局节点热切换出口（覆盖渲染端/托盘/自动换节点三条切节点路径）→ 通知重测代理出口 IP。
         // 纯规则目标热切换（kind=rules）不切换全局出口 IP，不发 node-hot-switched（避免无谓重测）。
         // 注意：所有切节点路径必须经 switchMode，否则代理 IP 会陈旧至手动刷新。
+        // payload accountBased：切换后目标是否账号制（TS）节点。监听方据此选退避预算——TS 隧道（DERP/peer 握手、
+        // 路由下发）需几秒才就绪，走常规预算（2×1000ms）会耗尽闪「暂不可用」，应改宽退避 refreshProxyPostConnect；
+        // IP 类节点即起即通、不需宽退避。currentConfig 此刻已对账到 newConfig（上面刚赋值），反查即目标节点。
         if (plan.kind === 'global' || plan.kind === 'both') {
-          this.emit('node-hot-switched');
+          const target = this.currentConfig?.servers.find(
+            (s) => s.id === this.currentConfig?.selectedServerId
+          );
+          this.emit('node-hot-switched', isAccountBasedProtocol(target?.protocol));
         }
         return;
       }
