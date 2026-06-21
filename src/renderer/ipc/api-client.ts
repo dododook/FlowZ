@@ -945,23 +945,16 @@ export const appApi = {
     return ipcClient.invoke(IPC_CHANNELS.REFRESH_SINGBOX_DASHBOARD);
   },
   /**
-   * dashboard #55：取面板连接信息（apiUrl + secret）供「复制连接信息」按钮。secret 取自 main config，不长驻渲染端 store。
-   * 代理未运行 → { ok: false }。
+   * dashboard #55：取面板连接信息（url=面板 URL + apiUrl + secret）供「复制连接信息」按钮与面板 URL 显示。
+   * secret 取自 main config，不长驻渲染端 store。代理未运行 → { ok: false }。
    */
-  async getSingboxDashboardConnection(): Promise<{ ok: boolean; apiUrl: string; secret: string }> {
+  async getSingboxDashboardConnection(): Promise<{
+    ok: boolean;
+    url: string;
+    apiUrl: string;
+    secret: string;
+  }> {
     return ipcClient.invoke(IPC_CHANNELS.GET_SINGBOX_DASHBOARD_CONNECTION);
-  },
-  /**
-   * P5 Phase2：打开远端实例的 /dashboard/（main 据 instanceId 取配置推 URL + 系统浏览器打开）。
-   */
-  async openRemoteDashboard(instanceId: string): Promise<{ ok: boolean; error?: string }> {
-    return ipcClient.invoke(IPC_CHANNELS.OPEN_REMOTE_DASHBOARD, { instanceId });
-  },
-  /**
-   * P5 Phase2：远端实例连通测试（main 用 TLS+Bearer 客户端 probe 一次，secret 取自 main config，不经渲染端）。
-   */
-  async testRemoteInstance(instanceId: string): Promise<{ ok: boolean; error?: string }> {
-    return ipcClient.invoke(IPC_CHANNELS.TEST_REMOTE_INSTANCE, { instanceId });
   },
 };
 

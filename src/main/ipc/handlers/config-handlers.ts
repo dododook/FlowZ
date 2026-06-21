@@ -10,7 +10,6 @@ import { registerIpcHandler } from '../ipc-handler';
 import { ConfigManager } from '../../services/ConfigManager';
 import { ipcEventEmitter } from '../ipc-events';
 import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
-import { stripRemoteSecrets, mergeRemoteSecrets } from '../../services/remote-instance-secrets';
 import { clearSingboxDashboardCache } from './helper-handlers';
 
 /**
@@ -23,8 +22,7 @@ export function registerConfigHandlers(configManager: ConfigManager): void {
     async (_event: IpcMainInvokeEvent) => {
       const cfg = await configManager.loadConfig();
       // F29：绝不向渲染端下发隐私密码（迁移前的残留明文也一并剥除；哈希本就不在 config 内）
-      // P5 Phase2：远程实例 secret 同样不下发明文，剥成 hasSecret 占位（渲染端只写不读）。
-      return stripRemoteSecrets({ ...cfg, privacyPassword: undefined });
+      return { ...cfg, privacyPassword: undefined };
     }
   );
 
@@ -32,15 +30,6 @@ export function registerConfigHandlers(configManager: ConfigManager): void {
   registerIpcHandler<UserConfig, void>(
     IPC_CHANNELS.CONFIG_SAVE,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
-      // P5 Phase2：渲染端持有的 config 已被 stripRemoteSecrets 剥过 secret（仅 hasSecret 占位）；保存前按 id 合并回
-      // 内存已存的 secret（渲染端未给新值 → 沿用旧值，防被清零），并剔除 hasSecret 占位字段。
-      // A-2 安全性：configManager.get 在 currentConfig===null 时返 undefined（不 lazy-load），priorRemote 缺失会致
-      // 已存 secret 合不回 → 静默清零。此路径不可达：主进程 whenReady 先 await loadConfig()（恒填 currentConfig，
-      // 内部 catch 兜默认配置绝不留 null），再 registerConfigHandlers 注册本 CONFIG_SAVE handler——handler 存在时
-      // currentConfig 必已非 null；且渲染端须先 CONFIG_GET 拿到 config 才能构造并保存，不会先于 load 触发保存。
-      const priorRemote = configManager.get<UserConfig['remoteInstances']>('remoteInstances');
-      config = mergeRemoteSecrets(config, { remoteInstances: priorRemote } as UserConfig);
-
       // 检测面板 download_url 覆盖变更：改了 → 删本地缓存目录，使核下次启动（CONFIG_CHANGED→switchMode 重启）
       // 因目录为空从新 URL 重拉资源。空白归一为 undefined 再比，避免 ''↔undefined 误判变更。在 saveConfig 前取旧值。
       const priorDashUrl = configManager.get<string>('singboxDashboardUrl')?.trim() || undefined;

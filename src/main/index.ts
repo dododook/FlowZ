@@ -30,7 +30,6 @@ import {
   registerBackupHandlers,
   registerDiagnosticHandlers,
   registerHelperHandlers,
-  registerRemoteInstanceHandlers,
   registerIpInfoHandlers,
   registerSystemHandlers,
   registerRuleResourceHandlers,
@@ -1309,9 +1308,6 @@ if (gotTheLock) {
 
     // 注册提权 helper 处理器（macOS 免提权启停）
     registerHelperHandlers(helperManager, proxyManager);
-
-    // 注册远程实例处理器（P5 Phase2：打开远端 dashboard + 连通测试）
-    registerRemoteInstanceHandlers(configManager);
 
     // 同步自启动状态
     const autoStartManager = createAutoStartManager();

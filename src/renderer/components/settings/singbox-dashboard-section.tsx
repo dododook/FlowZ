@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useAppStore } from '@/store/app-store';
@@ -18,10 +19,32 @@ export function SingboxDashboardSection() {
   const connectionStatus = useAppStore((s) => s.connectionStatus);
   const { t } = useTranslation();
 
-  if (!config) return null;
-
-  const enabled = config.singboxDashboard === true;
+  const enabled = config?.singboxDashboard === true;
   const running = connectionStatus?.proxyCore?.running === true;
+
+  // 面板 URL（形如 http://127.0.0.1:<动态端口>/dashboard/）：仅运行 + 面板开关 on 时从 main 拉一次（端口动态，渲染端构造不出）。
+  // 复用 GET_SINGBOX_DASHBOARD_CONNECTION 的 url 字段——不含 secret，安全可显，供用户手动在浏览器打开。
+  const [dashboardUrl, setDashboardUrl] = useState('');
+  useEffect(() => {
+    if (!enabled || !running) {
+      setDashboardUrl('');
+      return;
+    }
+    let cancelled = false;
+    api.app
+      .getSingboxDashboardConnection()
+      .then((info) => {
+        if (!cancelled) setDashboardUrl(info.ok ? info.url : '');
+      })
+      .catch(() => {
+        if (!cancelled) setDashboardUrl('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, running]);
+
+  if (!config) return null;
 
   const handleToggle = (value: boolean) => {
     saveConfig({ ...config, singboxDashboard: value }).catch(() =>
@@ -68,6 +91,25 @@ export function SingboxDashboardSection() {
             <Button variant="outline" size="sm" disabled={!running} onClick={openDashboard}>
               {t('settings.advanced.openDashboard')}
             </Button>
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.advanced.dashboardAddress')}
+            description={t('settings.advanced.dashboardAddressDesc')}
+          >
+            {running && dashboardUrl ? (
+              <button
+                type="button"
+                onClick={() => api.system.openExternal(dashboardUrl).catch(() => undefined)}
+                title={dashboardUrl}
+                className="max-w-[18rem] select-text truncate font-mono text-xs text-primary hover:underline"
+              >
+                {dashboardUrl}
+              </button>
+            ) : (
+              <span className="font-mono text-xs text-muted-foreground">
+                {t('settings.advanced.dashboardAddressUnavailable')}
+              </span>
+            )}
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.dashboardCopyConnection')}

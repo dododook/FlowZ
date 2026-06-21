@@ -114,12 +114,6 @@ export const IPC_CHANNELS = {
   REFRESH_SINGBOX_DASHBOARD: 'app:refreshSingboxDashboard',
   // dashboard #55：取面板连接信息（URL + secret）供「复制连接信息」按钮。secret 取自 main config，不长驻渲染端 store。
   GET_SINGBOX_DASHBOARD_CONNECTION: 'app:getSingboxDashboardConnection',
-  // P5 Phase2：打开远端实例的 /dashboard/（shell.openExternal）。渲染端给 instanceId，main 据 config 取该实例
-  // dashboardUrl 或按 host/port+tls 推 URL（https/http）。secret 不进 URL（dashboard 首屏自行填）。
-  OPEN_REMOTE_DASHBOARD: 'app:openRemoteDashboard',
-  // P5 Phase2：远端实例连通测试。渲染端给 instanceId，main 用 SingBoxApiClient（TLS+Bearer）发一次轻量 unary 探活，
-  // 返回 { ok, error? }。secret 取自 config（不经渲染端往返）。
-  TEST_REMOTE_INSTANCE: 'app:testRemoteInstance',
 
   // 更新事件 (主进程 -> 渲染进程)
   EVENT_UPDATE_PROGRESS: 'update:progress',

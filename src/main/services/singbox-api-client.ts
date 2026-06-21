@@ -11,11 +11,11 @@
  * metadata `authorization: "Bearer <secret>"`（缺失/不符 → Unauthenticated）。本客户端经 call credentials 把 Bearer
  * 注入到所有 unary + stream 调用；secret 为空时退化为不带 metadata（免认证，本地调试/旧核）。
  *
- * 端点（Phase 2 已落地）：构造参数 endpoint = { host, port, tls? }。本地实例仍 h2c（createInsecure）；远程实例经
+ * 端点：构造参数 endpoint = { host, port, tls? }。本地端点（不带 tls）走 h2c（createInsecure）；带 tls 的端点经
  * TLS——channel credentials 换 createSsl（带可选 CA / skip-verify），Bearer 仍走 per-call metadata（h2c/TLS 一致，不变）。
  * TLS 行为对照 @grpc/grpc-js：createSsl(rootCerts?, ...) —— rootCerts=undefined 用系统默认 CA 链验证；传 CA Buffer
  * 用自定义 CA（自签证书场景）；skipVerify 走 checkServerIdentity no-op + 自签 CA 注入（grpc-js 无「全跳过校验」开关，
- * 见 channelCredentials 实现说明）。远程 createSsl 的具体 CA/skip-verify wire 行为须真机对真实 1.14 核（TLS+secret）验。
+ * 见 channelCredentials 实现说明）。
  */
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
@@ -199,7 +199,7 @@ export interface SingBoxConnectionEvents {
 }
 
 /**
- * 管理 API 端点。本地实例 = { host:'127.0.0.1', port } 不带 tls（h2c）；远程实例带 tls 走 TLS（Phase 2）。
+ * 管理 API 端点。本地端点 = { host:'127.0.0.1', port } 不带 tls（h2c）；带 tls 的端点走 TLS。
  * tls.ca：自签证书的 PEM CA（Buffer/字符串均可，留空用系统默认 CA 链）；tls.skipVerify：跳过证书校验（不安全，仅
  * 自签且无 CA 的便利档，UI 警示）。secret 不在端点里——它是 Bearer per-call metadata（见 authMetadata），h2c/TLS 一致。
  */

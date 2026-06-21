@@ -17,7 +17,6 @@ export * from './subscription-handlers';
 export * from './backup-handlers';
 export * from './diagnostic-handlers';
 export * from './helper-handlers';
-export * from './remote-instance-handlers';
 export * from './ipinfo-handlers';
 export * from './system-handlers';
 export * from './rule-resource-handlers';
