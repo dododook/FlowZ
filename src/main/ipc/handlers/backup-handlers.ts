@@ -7,6 +7,7 @@ import { IpcMainInvokeEvent, dialog, app } from 'electron';
 import * as fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { UserConfig } from '../../../shared/types';
+import { isEndpointProtocol } from '../../../shared/endpoint-routes';
 import { registerIpcHandler } from '../ipc-handler';
 import { ConfigManager } from '../../services/ConfigManager';
 import type { RuleResourceManager } from '../../services/RuleResourceManager';
@@ -25,6 +26,7 @@ export interface BackupFileFormat {
 export interface BackupInfo {
   serverCount: number;
   manualServerCount: number;
+  meshServerCount: number;
   subscriptionCount: number;
   ruleCount: number;
   ruleSetCount: number;
@@ -148,7 +150,12 @@ export function registerBackupHandlers(
         // 计算恢复后的摘要
         const info: BackupInfo = {
           serverCount: restoredConfig.servers?.length ?? 0,
-          manualServerCount: (restoredConfig.servers ?? []).filter((s) => !s.subscriptionId).length,
+          manualServerCount: (restoredConfig.servers ?? []).filter(
+            (s) => !s.subscriptionId && !isEndpointProtocol(s.protocol)
+          ).length,
+          meshServerCount: (restoredConfig.servers ?? []).filter(
+            (s) => !s.subscriptionId && isEndpointProtocol(s.protocol)
+          ).length,
           subscriptionCount: restoredConfig.subscriptions?.length ?? 0,
           ruleCount: restoredConfig.customRules?.length ?? 0,
           ruleSetCount: restoredConfig.customRuleSets?.length ?? 0,
@@ -171,7 +178,12 @@ export function registerBackupHandlers(
       const config = await configManager.loadConfig();
       return {
         serverCount: config.servers?.length ?? 0,
-        manualServerCount: (config.servers ?? []).filter((s) => !s.subscriptionId).length,
+        manualServerCount: (config.servers ?? []).filter(
+          (s) => !s.subscriptionId && !isEndpointProtocol(s.protocol)
+        ).length,
+        meshServerCount: (config.servers ?? []).filter(
+          (s) => !s.subscriptionId && isEndpointProtocol(s.protocol)
+        ).length,
         subscriptionCount: config.subscriptions?.length ?? 0,
         ruleCount: config.customRules?.length ?? 0,
         ruleSetCount: config.customRuleSets?.length ?? 0,

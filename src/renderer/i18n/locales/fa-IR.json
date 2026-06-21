@@ -568,6 +568,7 @@
         "importing": "در حال ورود...",
         "lastExport": "آخرین خروجی",
         "manualNodes": "نودهای دستی",
+        "meshNodes": "نودهای شبکه",
         "subscriptions": "اشتراک‌ها",
         "subNodes": "{{count}} نود شامل می‌شود",
         "rules": "قوانین سفارشی",

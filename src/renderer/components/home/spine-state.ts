@@ -34,12 +34,21 @@ export interface SpineVisual {
  * 降级时 leg1（你→出口）仍为 flow、仅 leg2 转 fault：核心在跑即隧道已建；末段琥珀（warning，非 destructive）
  * 是「出口可达性存疑/连接质量降级」的保守提示，不强断言外网确定不可达。
  */
-export function deriveSpineVisual(running: boolean, degraded: boolean): SpineVisual {
+export function deriveSpineVisual(
+  running: boolean,
+  degraded: boolean,
+  proxyConfirmed = true
+): SpineVisual {
   if (!running) {
     return { youDotLit: false, leg1: 'idle', leg2: 'idle', internet: 'muted' };
   }
   if (degraded) {
     return { youDotLit: true, leg1: 'flow', leg2: 'fault', internet: 'warning' };
+  }
+  // 探测中：核已起、你→出口段(leg1)已通，但代理出口 IP 尚未探到（reachability 未确认）→ leg2/Internet 暂不染绿，
+  // 避免「检测中就显示 Internet 已通」的误导（陈先生 2026-06-21）。出口 IP 落定后转全绿。
+  if (!proxyConfirmed) {
+    return { youDotLit: true, leg1: 'flow', leg2: 'idle', internet: 'muted' };
   }
   return { youDotLit: true, leg1: 'flow', leg2: 'flow', internet: 'success' };
 }

@@ -857,6 +857,7 @@ export const subscriptionApi = {
 export interface BackupInfo {
   serverCount: number;
   manualServerCount: number;
+  meshServerCount: number;
   subscriptionCount: number;
   ruleCount: number;
   ruleSetCount: number;

@@ -5,6 +5,7 @@ import {
   Download,
   Upload,
   Server,
+  Network,
   Rss,
   ListFilter,
   Shield,
@@ -171,7 +172,7 @@ export function BackupRestoreSection() {
       <div className="flex items-start justify-between rounded-lg border bg-muted/40 px-4 py-3 gap-4">
         {hasData ? (
           <div className="flex flex-wrap gap-x-6 gap-y-2 min-w-0">
-            {/* Manual servers */}
+            {/* Manual servers (non-mesh) */}
             <div className="flex items-center gap-2">
               <Server className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
               <span className="text-sm text-muted-foreground">
@@ -181,6 +182,19 @@ export function BackupRestoreSection() {
                 {backupInfo?.manualServerCount ?? 0}
               </Badge>
             </div>
+
+            {/* Mesh servers (WireGuard / Tailscale) —— 与手动节点分开统计 */}
+            {(backupInfo?.meshServerCount ?? 0) > 0 && (
+              <div className="flex items-center gap-2">
+                <Network className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                <span className="text-sm text-muted-foreground">
+                  {t('settings.advanced.backup.meshNodes')}
+                </span>
+                <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                  {backupInfo?.meshServerCount ?? 0}
+                </Badge>
+              </div>
+            )}
 
             {/* Subscriptions */}
             <div className="flex items-center gap-2">
@@ -195,7 +209,10 @@ export function BackupRestoreSection() {
                 <span className="text-xs text-muted-foreground">
                   (
                   {t('settings.advanced.backup.subNodes', {
-                    count: totalNodes - (backupInfo?.manualServerCount ?? 0),
+                    count:
+                      totalNodes -
+                      (backupInfo?.manualServerCount ?? 0) -
+                      (backupInfo?.meshServerCount ?? 0),
                   })}
                   )
                 </span>

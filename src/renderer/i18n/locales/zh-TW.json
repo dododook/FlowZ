@@ -568,6 +568,7 @@
         "importing": "匯入中...",
         "lastExport": "上次匯出",
         "manualNodes": "手動節點",
+        "meshNodes": "組網節點",
         "subscriptions": "訂閱來源",
         "subNodes": "含 {{count}} 個節點",
         "rules": "自訂規則",

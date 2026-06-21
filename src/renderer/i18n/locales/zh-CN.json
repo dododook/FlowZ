@@ -568,6 +568,7 @@
         "importing": "导入中...",
         "lastExport": "上次导出",
         "manualNodes": "手动节点",
+        "meshNodes": "组网节点",
         "subscriptions": "订阅源",
         "subNodes": "含 {{count}} 个节点",
         "rules": "自定义规则",

@@ -36,4 +36,17 @@ describe('deriveSpineVisual — 导流脊三态矩阵', () => {
       internet: 'warning',
     });
   });
+
+  it('探测中：核已起但代理出口未确认（proxyConfirmed=false）→ leg1 flow、leg2 idle、Internet muted（不误显已通）', () => {
+    expect(deriveSpineVisual(true, false, false)).toEqual({
+      youDotLit: true,
+      leg1: 'flow',
+      leg2: 'idle',
+      internet: 'muted',
+    });
+  });
+
+  it('proxyConfirmed 缺省=true，与显式 true 等价（向后兼容旧 2 参调用）', () => {
+    expect(deriveSpineVisual(true, false, true)).toEqual(deriveSpineVisual(true, false));
+  });
 });

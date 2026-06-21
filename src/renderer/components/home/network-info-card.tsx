@@ -108,7 +108,9 @@ export function NetworkInfoCard() {
   // error 是「本地+代理出口」探测的并集(IpInfoService.doRefresh),故末段琥珀是「出口探测降级」的保守提示,
   // 非「外网确定不可达」;proxy 探测失败会保留旧 IP 值,故只能靠 error 判降级,不能靠 proxy 是否为空。
   const degraded = running && !!ipInfo?.error && !loading;
-  const spine = deriveSpineVisual(running, degraded);
+  // 探测中（核已起但代理出口 IP 未探到）→ proxyConfirmed=false，使 leg2/Internet 暂不染绿（修「检测中即显 Internet 已通」误导）。
+  const proxyConfirmed = running && !!ipInfo?.proxy;
+  const spine = deriveSpineVisual(running, degraded, proxyConfirmed);
   // 端点色档→class。健康连通末端低强度 success(读作「已抵达」;高饱和绿仍留给流光+出口节点);降级转 warning;离线 muted。
   const internetColor =
     spine.internet === 'warning'

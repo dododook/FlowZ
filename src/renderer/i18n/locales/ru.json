@@ -568,6 +568,7 @@
         "importing": "Импорт...",
         "lastExport": "Последний экспорт",
         "manualNodes": "Ручные узлы",
+        "meshNodes": "Mesh-узлы",
         "subscriptions": "Подписки",
         "subNodes": "Включено {{count}} узлов",
         "rules": "Свои правила",

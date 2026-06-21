@@ -568,6 +568,7 @@
         "importing": "Importing...",
         "lastExport": "Last exported",
         "manualNodes": "Manual Nodes",
+        "meshNodes": "Mesh Nodes",
         "subscriptions": "Subscriptions",
         "subNodes": "{{count}} nodes included",
         "rules": "Custom Rules",
