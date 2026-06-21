@@ -47,6 +47,12 @@ export interface ISystemDnsManager {
   setDns(): Promise<void>;
   /** 停止/切模式 → 还原原始 DNS（marker 在才动手由调用方门控）。 */
   restoreDns(): Promise<void>;
+  /**
+   * 热插重灌：接管激活中（marker 在）时，把「启动后新出现 / 仍未受控」的网络服务也接管为受控 IP。
+   * 幂等（已受控跳过）+ best-effort（单服务失败不阻断其余、绝不抛）+ 防自指（不覆盖既有 marker 的真实原始、
+   * 不把受控 IP 误存成原始）。Win/Linux 无 marker → 自然 no-op，无需 override。
+   */
+  reconcileDns(): Promise<void>;
   /** 同步还原（关机/退出等紧急场景，读 marker 跨会话还原）。 */
   restoreDnsSync(): void;
   /** 是否存在「DNS 由 FlowZ 接管」marker（终态清理门控用）。 */
@@ -237,6 +243,58 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
         this.clearMarker();
       }
     }
+  }
+
+  /**
+   * 热插重灌：接管激活中（marker 在）时，把「启动后新出现 / 仍未受控」的网络服务也接管为受控 IP。
+   * 不变量：① 仅 marker 在才动手（接管未激活时绝不写系统）；② 先写 marker 再 apply（崩溃留 intent 据此还原）；
+   * ③ 只 apply 未受控服务（已受控跳过 → 幂等）；④ best-effort 逐服务，单服务失败不阻断其余、绝不抛；
+   * ⑤ 防自指 + 不覆盖已消失服务的 original（mergedOriginal 以既有 marker.original 为底，仅并入新捕获的真实原始）。
+   */
+  async reconcileDns(): Promise<void> {
+    // 守卫：受控 IP 在 bootstrap-direct → fail-closed 不接管（与 setDns 同口径，纵深防御一次）。
+    if (!isControlledDnsIpValid(this.controlledIp)) return;
+    // marker 不在 = 接管未激活（或 Win/Linux 永不写 marker）→ 绝不擅自接管，直接返回。
+    const marker = SystemDnsBase.readMarker();
+    if (!marker) return;
+
+    let targets: string[];
+    try {
+      targets = await this.listTargets();
+    } catch {
+      return;
+    }
+    if (targets.length === 0) return;
+
+    // 读各服务当前 DNS（best-effort，读失败按 [] 处理）。
+    const current: Record<string, string[]> = {};
+    for (const t of targets) {
+      current[t] = await this.readDns(t).catch(() => []);
+    }
+
+    // 以既有 marker.original 为底，并入当前各服务的「应保存原始」（防自指：已受控的回退既有真实原始）。
+    // 展开顺序保证既有 original 里已消失服务的记录保留（computeOriginalToSave 只覆盖 current 里出现的服务）。
+    const mergedOriginal = {
+      ...marker.original,
+      ...computeOriginalToSave(current, this.controlledIp, marker.original),
+    };
+
+    const isControlled = (ips: string[]) => ips.length === 1 && ips[0] === this.controlledIp;
+    const toApply = targets.filter((t) => !isControlled(current[t]));
+    if (toApply.length === 0) return; // 全部已受控 → 幂等 no-op（不写 marker、不动系统）。
+
+    // 先写 marker（含合并后的真实原始）再 apply：apply 期间崩溃也留 intent，下次启动据此精确还原。
+    this.originalDns = mergedOriginal;
+    this.writeMarker(mergedOriginal);
+
+    for (const t of toApply) {
+      try {
+        await this.applyDns(t, [this.controlledIp]);
+      } catch (e) {
+        this.log('warn', `重灌服务 "${t}" DNS 失败: ${e}`);
+      }
+    }
+    this.log('info', `DNS 重灌：${toApply.length} 个未受控服务接管为 ${this.controlledIp}`);
   }
 
   /**
