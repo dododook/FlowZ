@@ -16,8 +16,14 @@
 
 // 本文件经 tsconfig.main.json（lib=ES2020，无 DOM）编译，但运行在渲染/页面上下文。经 globalThis 取 localStorage 形状，
 // 避免 `declare const window`（与 base tsconfig 的 DOM lib window 冲突）。运行时 globalThis 即页面 window，同源 localStorage 可写。
-const ls = (globalThis as { localStorage?: { setItem(key: string, value: string): void } })
-  .localStorage;
+const ls = (
+  globalThis as {
+    localStorage?: {
+      getItem(key: string): string | null;
+      setItem(key: string, value: string): void;
+    };
+  }
+).localStorage;
 
 const ARG_PREFIX = '--flowz-dashboard-server=';
 
@@ -27,10 +33,16 @@ try {
     const payload = JSON.parse(arg.slice(ARG_PREFIX.length)) as {
       servers?: unknown;
       legacy?: unknown;
+      language?: string;
     };
     // 权威存储键（面板实际数据源）+ 旧版迁移键兜底。各自 stringify（localStorage 值须为 string）。
     if (payload.servers) ls.setItem('sing-box-dashboard.servers', JSON.stringify(payload.servers));
     if (payload.legacy) ls.setItem('sing-box-dashboard.server', JSON.stringify(payload.legacy));
+    // 面板语言：仅首开（用户未手选过）写入，对齐 FlowZ 语言——否则 Electron 窗口 navigator.languages=en 致中文系统显英文。
+    // 已存在即跳过（不覆盖用户在面板里的手动选择）。值为面板合法码（en/zh-Hans/zh-Hant/fa/ru）。
+    if (payload.language && !ls.getItem('sing-box-dashboard.language')) {
+      ls.setItem('sing-box-dashboard.language', payload.language);
+    }
   }
 } catch {
   // 写失败（隐私/无痕策略禁 localStorage 等）不阻断面板加载：面板回落自身「添加后端」表单，用户可手填（复制按钮兜底）。

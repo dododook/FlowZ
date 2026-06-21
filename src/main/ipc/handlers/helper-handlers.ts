@@ -78,12 +78,25 @@ export function registerHelperHandlers(
     //    极旧版面板。url 用 host:port（无协议前缀），与面板 g() 归一化（去尾斜杠 + 去 http:// 前缀）后存量格式一致。
     const serverId = crypto.randomUUID();
     const bareUrl = info.apiUrl.replace(/^https?:\/\//, '');
+    // 面板语言：随 FlowZ 系统 locale 映射到面板合法码（源码实证 xl=[en/zh-Hans/zh-Hant/fa/ru]），preload 首开写入。
+    // 面板默认按 navigator.languages 自检，但 Electron 窗口该值常为 en → 中文系统也显英文；故主动对齐（映射逻辑同面板 El()）。
+    const loc = app.getLocale().toLowerCase();
+    const dashLang = loc.startsWith('zh')
+      ? /hant|tw|hk|mo/.test(loc)
+        ? 'zh-Hant'
+        : 'zh-Hans'
+      : loc.startsWith('fa')
+        ? 'fa'
+        : loc.startsWith('ru')
+          ? 'ru'
+          : 'en';
     const serverPayload = JSON.stringify({
       servers: {
         servers: [{ id: serverId, name: '', url: bareUrl, secret: info.secret }],
         activeId: serverId,
       },
       legacy: { url: bareUrl, secret: info.secret },
+      language: dashLang,
     });
 
     dashboardWindow = new BrowserWindow({
