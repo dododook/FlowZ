@@ -66,11 +66,9 @@ export function ServerActions({
         />
       </Button>
 
-      {!testable ? (
-        <span className="text-xs font-medium me-1 px-1.5 py-0.5 rounded text-muted-foreground">
-          {t('servers.speedTestNotApplicable')}
-        </span>
-      ) : latencyMap[server.id] !== undefined ? (
+      {/* 不可测节点不再渲染「不适用」文本占位（上方禁用 ⚡ 的 title tooltip 已表意）——避免挤压卡片名致截断。
+          仅可测且有结果时显延迟角标。 */}
+      {testable && latencyMap[server.id] !== undefined ? (
         <span
           className={`text-xs font-medium me-1 px-1.5 py-0.5 rounded ${getLatencyColor(latencyMap[server.id])} ${getLatencyBg(latencyMap[server.id])}`}
         >

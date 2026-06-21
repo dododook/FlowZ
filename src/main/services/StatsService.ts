@@ -140,9 +140,10 @@ export class StatsService {
     if (this.started) return;
     this.started = true;
     this.subscribeStatusStream();
-    // 停核→重启时连接页可能仍 mount 着（connectionsWatchers>0，无 0→1 跃迁不经 addConnectionsWatcher）：
-    // 与 mount 对齐逻辑一致，重启后若仍有 watcher 立即重订阅连接流。
-    if (this.connectionsWatchers > 0) this.subscribeConnectionsStream();
+    // 连接流订阅【跟随 started】（代理运行即订阅），不再依赖渲染端 watcher 计数到达时机——挂载期 watch IPC 与
+    // resubscribe/started 的时序竞态曾致「启动后拓扑不自动刷新、需先点连接信息」。广播仍由窗口可见性门控
+    // （onConnectionEvents 内 isWindowVisible）省无 UI 开销；watcher 计数仅作渲染端引用记录，不再 gate 订阅。
+    this.subscribeConnectionsStream();
   }
 
   /**
@@ -174,7 +175,7 @@ export class StatsService {
     this.onUpdate({ ...this.snapshot });
     this.onConnections?.({ connections: [], at: Date.now() });
     this.subscribeStatusStream();
-    if (this.connectionsWatchers > 0) this.subscribeConnectionsStream();
+    this.subscribeConnectionsStream(); // 跟随 started（见 start 注释），不再 gate by watcher
   }
 
   stop(): void {
@@ -210,12 +211,10 @@ export class StatsService {
     }
   }
 
-  /** 连接页退订：引用计数 -1（钳制 ≥0，防 over-unwatch）。归 0 后退订 Connections 流（停流、清缓存）。 */
+  /** 连接页退订：引用计数 -1（钳制 ≥0）。连接流订阅已改为跟随 started，不再随 watcher 归 0 退订
+   *  （否则关连接页会误停首页拓扑的流）；退订只在 stop()。 */
   removeConnectionsWatcher(): void {
     if (this.connectionsWatchers > 0) this.connectionsWatchers--;
-    if (this.connectionsWatchers === 0) {
-      this.unsubscribeConnectionsStream();
-    }
   }
 
   /**
@@ -225,7 +224,7 @@ export class StatsService {
    */
   resetConnectionsWatchers(): void {
     this.connectionsWatchers = 0;
-    this.unsubscribeConnectionsStream();
+    // 不再退订连接流：订阅跟随 started，渲染端 reload 后主核流照常运行、新页面重订阅 onUpdated 即收广播。
   }
 
   /** 流 stop 句柄安全调用（吞异常）并清空：两条流退订同构，单一真值复用。返回 null 供调用方回写句柄字段。 */

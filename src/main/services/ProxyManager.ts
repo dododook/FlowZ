@@ -4965,6 +4965,16 @@ exit 0
     const server = this.currentConfig?.servers.find(
       (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === nodeName
     );
+    // always-emit 下非出口的过期/未认证 TS 节点也会从主核打印登录 URL；其「需登录」态已由 STATUS 流驱动节点角标，
+    // 此处仅对【当前出口】节点弹「打开登录页」toast，避免多组网节点登录 URL 同时刷屏（非出口节点看角标、点角标主动登录）。
+    if (server && server.id !== this.currentConfig?.selectedServerId) {
+      this.logToManager(
+        'info',
+        `Tailscale 节点「${nodeName}」需要登录（非当前出口，见节点角标）`,
+        'sing-box'
+      );
+      return;
+    }
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
       nodeName,
       url,

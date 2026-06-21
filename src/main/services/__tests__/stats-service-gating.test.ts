@@ -1,7 +1,7 @@
 /**
  * StatsService「流式门控」单测（§3-B：clash_api 轮询迁 sing-box 1.14 管理 API gRPC 流后）。覆盖：
  *  1) 窗口可见性谓词（isWindowVisible）：无可见窗口时收到流帧仍更新内部快照，但跳过 broadcast（onUpdate/onConnections）。
- *  2) 连接页 watcher 引用计数：仅 connectionsWatchers>0 时才订阅 Connections 流（0→1 订阅、→0 退订 stop）。
+ *  2) 连接流订阅跟随 started（代理运行即订阅，不再 gate by watcher）；watcher 计数仅作渲染端引用记录、增减不订阅/退订；退订只在 stop。
  *  3) Status 帧字段映射（uplink→uploadSpeed / connectionsIn+Out→activeConnections 等，speed 由 server 直给）。
  *  4) Connections 事件流维护（reset 清空 / NEW 加 / UPDATE 累加 delta / CLOSED 删）→ trim 映射广播。
  * 经 mock SingBoxApiClient 捕获 subscribeStatus/subscribeConnections 的回调，测试同步 push 流帧驱动（无 fake timer）。
@@ -157,35 +157,37 @@ describe('StatsService 流式门控（gRPC streams）', () => {
   });
 
   describe('连接 watcher 门控（订阅 Connections 流）', () => {
-    it('start 后无 watcher：不订阅 Connections 流', () => {
+    it('start 即订阅 Connections 流（跟随 started，不依赖 watcher）', () => {
       const { service, mock } = setup();
       service.start();
-      expect(mock.calls.subscribeConnections).toBe(0);
+      expect(mock.calls.subscribeConnections).toBe(1);
     });
 
-    it('addConnectionsWatcher 0→1：订阅 Connections 流；→0：退订 stop', () => {
+    it('watcher 增减不订阅/退订连接流（订阅跟随 started）；退订只在 stop', () => {
       const { service, mock } = setup();
       service.start();
-      service.addConnectionsWatcher();
-      expect(mock.calls.subscribeConnections).toBe(1);
+      expect(mock.calls.subscribeConnections).toBe(1); // start 即订阅
       expect(mock.hasConnCb()).toBe(true);
+      service.addConnectionsWatcher();
+      expect(mock.calls.subscribeConnections).toBe(1); // 幂等，不重订
 
       service.removeConnectionsWatcher();
-      expect(mock.calls.connStop).toBe(1);
-      expect(mock.hasConnCb()).toBe(false);
+      expect(mock.calls.connStop).toBe(0); // 不再随 watcher 归 0 退订
+      expect(mock.hasConnCb()).toBe(true);
+      service.stop();
+      expect(mock.calls.connStop).toBe(1); // 仅 stop 退订
     });
 
-    it('多 watcher：仅首个订阅、仅末个退订（引用计数）', () => {
+    it('多 watcher 增减不影响连接流订阅（已跟随 started）', () => {
       const { service, mock } = setup();
-      service.start();
-      service.addConnectionsWatcher(); // 0→1 订阅
-      service.addConnectionsWatcher(); // 1→2 不重订
-      expect(mock.calls.subscribeConnections).toBe(1);
+      service.start(); // start 即订阅
+      service.addConnectionsWatcher();
+      service.addConnectionsWatcher();
+      expect(mock.calls.subscribeConnections).toBe(1); // 仍仅 start 那一次
 
-      service.removeConnectionsWatcher(); // 2→1 不退订
+      service.removeConnectionsWatcher();
+      service.removeConnectionsWatcher(); // 归 0 也不退订
       expect(mock.calls.connStop).toBe(0);
-      service.removeConnectionsWatcher(); // 1→0 退订
-      expect(mock.calls.connStop).toBe(1);
     });
 
     it('start 前 add watcher：start 时一并订阅 Connections 流（重启后仍 mount 场景）', () => {
@@ -371,14 +373,14 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(newMock.calls.subscribeConnections).toBe(1); // 新 Connections 订阅
     });
 
-    it('resubscribe 在 watcher=0 时不订阅 Connections（仅 Status）', () => {
+    it('resubscribe 始终重订阅 Connections（跟随 started，不依赖 watcher）', () => {
       const { service, ref, swap } = setupSwitchable();
       service.start();
       swap();
       const newMock = ref.mock;
       service.resubscribe();
       expect(newMock.calls.subscribeStatus).toBe(1);
-      expect(newMock.calls.subscribeConnections).toBe(0);
+      expect(newMock.calls.subscribeConnections).toBe(1);
     });
 
     it('resubscribe 作首次启动（started=false）等效 start：订阅 Status', () => {

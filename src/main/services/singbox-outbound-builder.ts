@@ -18,7 +18,7 @@ import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
 import { validateTlsSpoof } from '../../shared/tls-spoof';
 import { isIpLiteral } from '../../shared/dns';
-import { tailscaleStateDir } from './tailscale-state';
+import { tailscaleStateDir, tailscaleStateExists } from './tailscale-state';
 import {
   effectiveCustomRules,
   effectiveAppRules,
@@ -785,15 +785,17 @@ export function buildOutbounds(
         }
         continue;
       }
-      // Tailscale：endpoint（账号制 mesh）。就绪门控——非选中且无 authKey 不发射，避免拖慢启动 +
-      // 多个未登录节点登录 URL 刷屏；选中节点即便未就绪也发射（触发交互登录 URL 流）。
-      // 1.14：剥离 stateExists（state 目录存在性误判未认证为已登录，是 #132 根因）；持久会话节点的「就绪」
-      // 不再据磁盘 state 推断，登录态统一由 api STATUS 流驱动（force-route 反应式留真机，本轮不做 always-emit）。
+      // Tailscale：endpoint（账号制 mesh）。always-emit 门控——有持久会话（authKey 或 state 目录非空）的节点
+      // 常驻主核，使其登录态由管理 API STATUS 流【持续】报告（与是否当前出口无关，根治「非出口的已登录节点恒显
+      // 需登录」）；且已在 selector/nodeTags 里 → 切换为 PUT 热切换、无需重生成 config 重启。无持久会话且非选中
+      // → 跳过（显「需登录」，避免未登录节点登录 URL 刷屏）；选中节点即便无会话也发射（触发交互登录 URL 流）。
+      // 关键：stateExists 仅决定「是否运行该 endpoint」；登录态(loggedIn)真值仍只由 STATUS 流（Running/Starting
+      // && !expired）给，不复用 stateExists 为登录判据 → 不重蹈 #132（state 存在 ≠ 已认证、可能过期）误判。
       if (server.protocol.toLowerCase() === 'tailscale') {
         const ts = server.tailscaleSettings;
-        const ready = !!ts?.authKey?.trim();
-        if (server.id !== selectedServer?.id && !ready) {
-          deps.log('info', `Tailscale 节点「${server.name}」未就绪(需登录)且非选中，已跳过`);
+        const hasSession = !!ts?.authKey?.trim() || tailscaleStateExists(server.id);
+        if (server.id !== selectedServer?.id && !hasSession) {
+          deps.log('info', `Tailscale 节点「${server.name}」无持久会话(需登录)且非选中，已跳过`);
           continue;
         }
         try {
