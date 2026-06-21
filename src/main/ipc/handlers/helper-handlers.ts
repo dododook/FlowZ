@@ -95,7 +95,11 @@ export function registerHelperHandlers(
       autoHideMenuBar: true,
       webPreferences: {
         // 面板专用 preload：经 additionalArguments 拿 server payload，在页面脚本前于同源写 localStorage。
-        preload: path.join(__dirname, 'dashboard-preload.js'),
+        // dashboard-preload.ts 在 src/main/ 顶层 → 编到 dist/main/main/dashboard-preload.js；而本文件在
+        // dist/main/main/ipc/handlers/ → __dirname 深两级，故上跳两级锚定。原 path.join(__dirname,'dashboard-preload.js')
+        // 解析到不存在的 ipc/handlers/dashboard-preload.js → preload 静默不加载 → localStorage 未预写 → 面板空表单
+        // （dashboard #55 自动连真机回归根因；asar 内实层级实证）。
+        preload: path.join(__dirname, '..', '..', 'dashboard-preload.js'),
         // 本窗口仅加载本地 127.0.0.1 受信面板，关 contextIsolation 让 preload 直写页面同源 localStorage；零 Node 暴露（preload 不挂 API）。
         contextIsolation: false,
         nodeIntegration: false,
