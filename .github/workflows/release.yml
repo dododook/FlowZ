@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
           cache: 'npm'
 
       # 提权 helper 二进制不入库（.gitignore），由 build:helper 现编现打：mac(helper/) + win(helper-win/)。
@@ -68,17 +68,28 @@ jobs:
       - name: Create DMG (macOS, arm64 + x64)
         if: matrix.platform == 'mac'
         run: |
-          # electron-builder.json mac.target.arch = [arm64, x64] → 两个架构的 .app 都已构建
-          # （dist-package/mac-arm64 + dist-package/mac-x64，各自含对应架构的提权 helper）。
-          # 此处对两者分别 ad-hoc deep 签名 + 打 DMG，使 Intel Mac 用户也有发布包（不止 Apple Silicon）。
+          # electron-builder.json mac.target.arch = [arm64, x64] → 两个架构的 .app 都已构建，但
+          # 多架构下 electron-builder 会把其中一个架构放进【无后缀】的 dist-package/mac/
+          # （v4.1.0 实测：x64 落 dist-package/mac、arm64 落 dist-package/mac-arm64），各自含对应架构的提权 helper。
+          # 故此处按 arch 后缀目录优先、回退无后缀目录，并用 lipo 校验确属目标架构；缺则【报错失败】（不再静默跳过，
+          # 避免 v4.1.0 那样绿灯却漏发 mac-x64 包）。
           VERSION=${GITHUB_REF#refs/tags/v}
           for ARCH in arm64 x64; do
-            APP_PATH="dist-package/mac-${ARCH}/FlowZ.app"
             DMG_PATH="dist-package/FlowZ-${VERSION}-mac-${ARCH}.dmg"
-            if [ ! -d "$APP_PATH" ]; then
-              echo "::warning::$APP_PATH 不存在，跳过 ${ARCH} DMG"
-              continue
+            case "$ARCH" in arm64) WANT=arm64 ;; x64) WANT=x86_64 ;; esac
+            APP_PATH=""
+            for CAND in "dist-package/mac-${ARCH}/FlowZ.app" "dist-package/mac/FlowZ.app"; do
+              [ -d "$CAND" ] || continue
+              EXE=$(ls "$CAND"/Contents/MacOS/* 2>/dev/null | head -1)
+              if [ -n "$EXE" ] && lipo -archs "$EXE" 2>/dev/null | tr ' ' '\n' | grep -qx "$WANT"; then
+                APP_PATH="$CAND"; break
+              fi
+            done
+            if [ -z "$APP_PATH" ]; then
+              echo "::error::找不到 ${ARCH}(${WANT}) 架构的 FlowZ.app（查了 dist-package/mac-${ARCH}/ 与 dist-package/mac/）——发布将缺 mac-${ARCH} 包，请检查 package:mac 的 electron-builder --${ARCH} 产出。"
+              exit 1
             fi
+            echo "Using ${ARCH} app bundle: $APP_PATH"
             echo "Ad-hoc deep signing ${ARCH} app bundle (fix Team ID mismatch)..."
             codesign --force --deep --sign - "$APP_PATH"
 
