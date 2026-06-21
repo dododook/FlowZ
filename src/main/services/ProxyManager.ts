@@ -608,6 +608,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       await this.deletePidFile();
     }
 
+    // 4.9 libcronet 启动前自愈（对称化）：linux/win 起内核前确保 cronet 在核心同目录、且与内置 bundle 大小一致
+    //     （缺失/0 字节/截断/版本错位 → 从内置重拷）。覆盖 Windows 常规启动不补的盲区（Linux 既有 ensureWritableCore
+    //     内的 beside 保留，此处对其幂等）；mac 静态编入 cronet，ensureCronetReadyForLaunch 内部跳过。热路径仅 stat。
+    await this.ensureCronetReadyForLaunch();
+
     // 5. 启动 sing-box 进程
     await retry(() => this.startSingBoxProcess(), {
       maxRetries: 2,
@@ -5702,5 +5707,25 @@ exit 0
    */
   private getSingBoxPath(): string {
     return resourceManager.getSingBoxPath();
+  }
+
+  /**
+   * 起内核前的 libcronet 自愈钩子（对称化 §4.3）：linux/win 对核心实际加载目录（dirname(getSingBoxPath())）
+   * 调 ensureCronetHealthy（strong=false 热路径，仅 size 快筛），确保 cronet 缺失/损坏在启动前从内置 bundle 恢复。
+   * macOS 跳过（cronet 静态编入 sing-box，无独立库）。best-effort：自愈失败仅告警不阻断启动——naive 不可用时
+   * sing-box 会自报 cronet 错误并由现有降级兜底（跳过 naive 节点 + 可读报错），其它协议节点不受影响。
+   */
+  private async ensureCronetReadyForLaunch(): Promise<void> {
+    if (process.platform !== 'linux' && process.platform !== 'win32') return;
+    const loadDir = path.dirname(this.getSingBoxPath());
+    const r = await resourceManager.ensureCronetHealthy(loadDir);
+    if (r.action === 'restored') {
+      this.logToManager('info', `启动前 libcronet 自愈：已从内置恢复到 ${loadDir}`);
+    } else if (r.action === 'failed') {
+      this.logToManager(
+        'warn',
+        `启动前 libcronet 自愈失败：${r.reason ?? ''}（naive 节点可能不可用）`
+      );
+    }
   }
 }

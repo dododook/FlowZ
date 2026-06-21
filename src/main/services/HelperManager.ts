@@ -20,6 +20,7 @@ import type { IPrivilegedHelper, HelperStartResult } from './IPrivilegedHelper';
 import type { ILogManager } from './LogManager';
 import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
+import { sha256File } from '../../shared/file-hash';
 
 // .btm(NSKeyedArchiver) 结构化解析：plist 原为 electron-builder 间接依赖，已提升为直接 dependency 确保打包入 asar。
 // 解析输入是本机 root 写的 plutil xml1（可信源），无类型定义故 require + 最小类型注解（与本类内既有 require 风格一致）。
@@ -371,19 +372,13 @@ export class HelperManager implements IPrivilegedHelper {
   async installCore(srcDir: string): Promise<{ ok: boolean; error?: string }> {
     try {
       const path = require('path') as typeof import('path');
-      const hash = this.sha256File(path.join(srcDir, 'sing-box'));
+      const hash = sha256File(path.join(srcDir, 'sing-box'));
       const resp = await this.sendCommand(['install-core', srcDir, hash], 30_000);
       if (resp.startsWith('OK')) return { ok: true };
       return { ok: false, error: resp };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
-  }
-
-  private sha256File(p: string): string {
-    const crypto = require('crypto') as typeof import('crypto');
-    const fs = require('fs') as typeof import('fs');
-    return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
   }
 
   // ── socket 客户端（行协议：token\n cmd\n [args...]）────────────────────────
