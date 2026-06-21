@@ -1225,8 +1225,20 @@ if (gotTheLock) {
 
       await applyMainSessionProxy();
 
-      // 代理就绪后延迟刷新出口 IP（等 selector / 探针 inbound 起来）
-      setTimeout(() => void ipInfoService?.refresh(true), 1500);
+      // 代理就绪后延迟刷新出口 IP（等 selector / 探针 inbound 起来）。direct 走常规 refresh(true)；
+      // proxy 出口改走 refreshProxyPostConnect（首连专用更宽退避，覆盖 TS/组网首连隧道未就绪的几秒窗口，
+      // 全程转圈不闪「暂不可用」）。隧道一就绪由下方 'tailscale-selected-running' 事件链式 refreshProxy 抢先出真值。
+      setTimeout(() => {
+        void ipInfoService?.refresh(true);
+        void ipInfoService?.refreshProxyPostConnect();
+      }, 1500);
+    });
+
+    // item 1 事件驱动出口 re-probe：选中的账号制（TS）节点隧道翻 Running（就绪）→ 立即重测代理出口，
+    // 不等首连退避耗尽。ProxyManager 在 STATUS 流上升沿去重发射，故此处无需再防抖；refreshProxy 经 enqueue
+    // 链式排到在途首探之后，隧道一就绪即取到真出口 IP（消除「转圈直到退避耗尽」的长盲等）。
+    proxyManager.on('tailscale-selected-running', () => {
+      void ipInfoService?.refreshProxy();
     });
 
     // 修复（首页 stats 全 0 根因）：Status/Connections 订阅必须等 api client 就绪。emit('started')（runStartWithRetry

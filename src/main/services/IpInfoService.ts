@@ -25,6 +25,12 @@ const REQ_TIMEOUT_MS = 5000; // 单个探测请求超时上限（httpText）—�
 const MAX_PROBE_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 1000;
 
+// 首连（post-connect）专用更宽退避：TS/组网节点首连时隧道（DERP/peer 握手、路由下发）需数秒才就绪，
+// 常规 2 轮 ×1s 在隧道起来前就耗尽 → 闪「代理出口暂不可用」。仅 refreshProxyPostConnect 路径用此预算，
+// 全程 loading=true（界面持续转圈），重试耗尽才落 error；手动刷新 / 切节点 / 常规 TTL 探测不受影响。
+const POST_CONNECT_MAX_PROBE_ATTEMPTS = 4;
+const POST_CONNECT_RETRY_DELAY_MS = 4000;
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface ProbeEndpoint {
@@ -95,15 +101,26 @@ export class IpInfoService {
   // 探针重试上限 / 间隔（默认取模块常量；可经构造选项注入，供单测设 maxAttempts=1/delay=0 还原单次行为）。
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
+  // 首连专用更宽预算（仅 refreshProxyPostConnect 用）：覆盖 TS/组网首连隧道未就绪的几秒窗口。
+  private readonly postConnectMaxAttempts: number;
+  private readonly postConnectRetryDelayMs: number;
 
   constructor(
     private readonly getProbePorts: () => { direct: number; proxy: number } | null,
     private readonly isRunning: () => boolean,
     private readonly onUpdate: (snap: IpInfoSnapshot) => void,
-    options?: { maxAttempts?: number; retryDelayMs?: number }
+    options?: {
+      maxAttempts?: number;
+      retryDelayMs?: number;
+      postConnectMaxAttempts?: number;
+      postConnectRetryDelayMs?: number;
+    }
   ) {
     this.maxAttempts = options?.maxAttempts ?? MAX_PROBE_ATTEMPTS;
     this.retryDelayMs = options?.retryDelayMs ?? RETRY_DELAY_MS;
+    this.postConnectMaxAttempts =
+      options?.postConnectMaxAttempts ?? POST_CONNECT_MAX_PROBE_ATTEMPTS;
+    this.postConnectRetryDelayMs = options?.postConnectRetryDelayMs ?? POST_CONNECT_RETRY_DELAY_MS;
   }
 
   getSnapshot(): IpInfoSnapshot {
@@ -158,18 +175,36 @@ export class IpInfoService {
     return this.getSnapshot();
   }
 
-  /** 探测重试：成功即返回；失败按 RETRY_DELAY_MS 间隔重试至 MAX_PROBE_ATTEMPTS 上限；全失败返 null。
-   *  期间不改 loading（调用方保持 loading=true → 界面持续「获取中」），避免启动初期隧道未就绪时闪失败。 */
-  private async withRetry<T>(fn: () => Promise<T | null>): Promise<T | null> {
-    for (let i = 0; i < this.maxAttempts; i++) {
+  /**
+   * 首连专用代理出口探测（post-connect 兜底）：用更宽的 postConnect 退避预算（默认 4 轮 ×4s）重试，
+   * 覆盖 TS/组网首连时隧道（DERP/peer 握手、路由下发）需几秒才就绪的窗口——全程 loading=true（界面持续
+   * 转圈），重试耗尽才落 error（暂不可用）。仅 proxyManager 'started' 后的首探走此路径；常规手动刷新 /
+   * 切节点 / TTL 探测仍走 refreshProxy（常规预算），不被拖累。事件驱动 re-probe（隧道一就绪即触发的
+   * refreshProxy）会经 enqueue 链式排到本次首探之后，隧道就绪后第一时间出真值。
+   */
+  async refreshProxyPostConnect(): Promise<IpInfoSnapshot> {
+    await this.enqueue(() => this.doRefreshProxy(true));
+    return this.getSnapshot();
+  }
+
+  /** 探测重试：成功即返回；失败按 retryDelayMs 间隔重试至 attempts 上限；全失败返 null。
+   *  期间不改 loading（调用方保持 loading=true → 界面持续「获取中」），避免启动初期隧道未就绪时闪失败。
+   *  attempts/retryDelayMs 缺省取常规预算；post-connect 首探显式传更宽预算（不影响常规/并发刷新路径）。 */
+  private async withRetry<T>(
+    fn: () => Promise<T | null>,
+    attempts: number = this.maxAttempts,
+    retryDelayMs: number = this.retryDelayMs
+  ): Promise<T | null> {
+    for (let i = 0; i < attempts; i++) {
       const r = await fn();
       if (r) return r;
-      if (i < this.maxAttempts - 1) await delay(this.retryDelayMs);
+      if (i < attempts - 1) await delay(retryDelayMs);
     }
     return null;
   }
 
-  private async doRefreshProxy(): Promise<void> {
+  /** postConnect=true：首连专用更宽退避（仅探代理出口）；否则常规预算。 */
+  private async doRefreshProxy(postConnect = false): Promise<void> {
     const ports = this.getProbePorts();
     if (!this.isRunning() || !ports) {
       this.snapshot = { ...this.snapshot, proxy: null, updatedAt: Date.now(), loading: false };
@@ -178,7 +213,11 @@ export class IpInfoService {
     }
     this.snapshot = { ...this.snapshot, loading: true };
     this.onUpdate(this.getSnapshot());
-    const p = await this.withRetry(() => this.queryViaProxy(ports.proxy));
+    const p = await this.withRetry(
+      () => this.queryViaProxy(ports.proxy),
+      postConnect ? this.postConnectMaxAttempts : this.maxAttempts,
+      postConnect ? this.postConnectRetryDelayMs : this.retryDelayMs
+    );
     this.snapshot = {
       ...this.snapshot,
       // 切节点专用路径：探测失败清旧值(null)而非保留——旧值是【上一个节点】的出口，切节点后保留即误导

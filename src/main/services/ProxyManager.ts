@@ -55,6 +55,7 @@ import {
 import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
 import {
   isEndpointProtocol,
+  isAccountBasedProtocol,
   isSpeedTestable,
   meshSelectedExitFallsBackToDirect,
   meshAlwaysRoutesSubnets,
@@ -166,11 +167,23 @@ export interface IProxyManager {
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
   getResolvedNodeIps(): string[];
   on(
-    event: 'started' | 'stopped' | 'error' | 'node-hot-switched' | 'api-client-ready',
+    event:
+      | 'started'
+      | 'stopped'
+      | 'error'
+      | 'node-hot-switched'
+      | 'api-client-ready'
+      | 'tailscale-selected-running',
     listener: (...args: any[]) => void
   ): void;
   off(
-    event: 'started' | 'stopped' | 'error' | 'node-hot-switched' | 'api-client-ready',
+    event:
+      | 'started'
+      | 'stopped'
+      | 'error'
+      | 'node-hot-switched'
+      | 'api-client-ready'
+      | 'tailscale-selected-running',
     listener: (...args: any[]) => void
   ): void;
   getCoreVersion(force?: boolean): Promise<string>;
@@ -206,6 +219,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private lastResolvedHosts: Map<string, string> = new Map();
   // 杀核前「静默 StatsService」回调（停其到管理 API 的 Status/Connections gRPC 流）：核将死，提前 cancel 流避免 RST 噪音。
   private quiesceStats: (() => void) | null = null;
+  // 事件驱动出口 re-probe 去重（item 1）：记上次因「选中 TS 节点 STATUS 翻 Running」已发过 re-probe 的 serverId。
+  // STATUS 流持续推帧，仅 Running 上升沿（首次见该选中节点 Running）发一次 'tailscale-selected-running'，避免每帧触发。
+  // 切到别的节点 / 节点掉出 Running（停止/掉线）即清空，使下次重新 Running 能再发（覆盖重连）。
+  private lastTsSelectedRunningId: string | null = null;
   // P2a：启用代理 / 切接管模式（两者均经 startInternal）后延迟一次「连接 flush」的延时器。stop()/再次 start 时清。
   private connectionFlushTimer: ReturnType<typeof setTimeout> | null = null;
   // 平台提权服务（T16：原提权脚本生成 / 文件权限 / 提权复制等纯函数迁出，经 setPrivilegeService 注入；
@@ -827,12 +844,20 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // selector 校正回 config.selectedServerId，让 FlowZ 配置成单一真值、压过缓存。**必须在 client 创建后调**
       // （reassertSelectorSelection 的 `if(!client)break` 在 client=null 直接放弃不重试）——原在 client 前调用致首启
       // cache 与 config 不一致时「选 X 实际走上次出口」(出口混乱)。best-effort（不阻塞启动成功）。
-      void this.reassertSelectorSelection(config);
+      // 时序修（E）：flush 链到 reassert 完成后。reassert（≤3s，管理 API 慢时）若晚于独立的 scheduleConnectionFlush
+      // （内部 1500ms），flush 的 CloseAllConnections 会按 cache_file 旧 selector 重连 → 出口混乱在窄窗复现。改为
+      // .finally() 串接：reassert 把 selector 校正回 config 后才安排 flush，使 flush 的重连走的是正确出口。
+      // reassert 仍 best-effort、不阻塞 start（链在 void promise 上，scheduleConnectionFlush 自身另有 1500ms 延时 +
+      // 世代 token 守卫，被 stop/重启接管即放弃）。flush 绝不丢：reassert 成功或异常 finally 都会安排。
+      void this.reassertSelectorSelection(config).finally(() =>
+        this.scheduleConnectionFlush(config)
+      );
+    } else {
+      // 无管理 API（版本 <1.14）：无 reassert 可链，直接安排 flush（与原行为一致）。
+      // P2a：启用代理 / 切接管模式后延迟一次连接 flush（见 scheduleConnectionFlush）——RST 泄漏成真实 IP 的旧连接
+      // 逼其重连重解析（经 FakeIP 走代理），不重启内核；node 热切换不经 startInternal、由 interrupt 开关另管。
+      this.scheduleConnectionFlush(config);
     }
-
-    // P2a：启用代理 / 切接管模式后延迟一次连接 flush（见 scheduleConnectionFlush）——RST 泄漏成真实 IP 的旧连接
-    // 逼其重连重解析（经 FakeIP 走代理），不重启内核；node 热切换不经 startInternal、由 interrupt 开关另管。
-    this.scheduleConnectionFlush(config);
   }
 
   /**
@@ -5437,12 +5462,32 @@ exit 0
    * 推 EVENT_TAILSCALE_STATUS 驱动渲染端登录态。取代 1.13 stateExists/stdout 启发式。
    */
   private handleTailscaleStatus(endpoints: TailscaleEndpointStatus[]): void {
+    const selectedId = this.currentConfig?.selectedServerId;
+    let selectedRunning = false;
     for (const ep of endpoints) {
       const server = this.currentConfig?.servers.find(
         (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === ep.endpointTag
       );
       if (!server) continue;
       this.emitTailscaleStatus(server.id, ep);
+      // item 1 事件驱动出口 re-probe：选中节点是账号制 TS 且其隧道 STATUS 翻 Running（DERP/peer 握手完成、
+      // 路由已下发=隧道就绪）→ 立即触发一次代理出口 re-probe（不等满退避）。仅选中节点、仅 Running 上升沿
+      // （lastTsSelectedRunningId 去重，STATUS 持续推帧不会每帧触发）。Starting/NeedsLogin 不算就绪、不触发。
+      if (
+        server.id === selectedId &&
+        isAccountBasedProtocol(server.protocol) &&
+        ep.backendState === 'Running'
+      ) {
+        selectedRunning = true;
+        if (this.lastTsSelectedRunningId !== server.id) {
+          this.lastTsSelectedRunningId = server.id;
+          this.emit('tailscale-selected-running');
+        }
+      }
+    }
+    // 选中 TS 节点本帧不在 Running（掉线/停止/切到别的节点）→ 清去重标记，使下次重新 Running 能再发（覆盖重连）。
+    if (!selectedRunning && this.lastTsSelectedRunningId !== null) {
+      this.lastTsSelectedRunningId = null;
     }
   }
 

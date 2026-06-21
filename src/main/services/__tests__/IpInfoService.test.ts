@@ -265,13 +265,21 @@ describe('IpInfoService 传输层', () => {
     running?: boolean;
     maxAttempts?: number;
     retryDelayMs?: number;
+    postConnectMaxAttempts?: number;
+    postConnectRetryDelayMs?: number;
   }) {
     const snapshots: IpInfoSnapshot[] = [];
     const svc = new IpInfoService(
       () => (opts?.ports === undefined ? { direct: 18080, proxy: 18081 } : opts.ports),
       () => opts?.running ?? true,
       (s) => snapshots.push(s),
-      { maxAttempts: opts?.maxAttempts ?? 1, retryDelayMs: opts?.retryDelayMs ?? 0 }
+      {
+        maxAttempts: opts?.maxAttempts ?? 1,
+        retryDelayMs: opts?.retryDelayMs ?? 0,
+        // post-connect 预算默认与常规分开（首连专用更宽退避）；用例显式传，delay 取 0 免实时间等待。
+        postConnectMaxAttempts: opts?.postConnectMaxAttempts ?? 1,
+        postConnectRetryDelayMs: opts?.postConnectRetryDelayMs ?? 0,
+      }
     );
     return { svc, snapshots };
   }
@@ -479,5 +487,46 @@ describe('IpInfoService 传输层', () => {
     svc.markProxyConnecting();
     expect(svc.getSnapshot().loading).toBe(true); // 同步置「获取中」
     expect(snapshots[snapshots.length - 1].loading).toBe(true); // 已广播给渲染端
+  });
+
+  // --- 首连 post-connect 更宽退避（item 1：TS/组网首连隧道未就绪兜底）-----------
+
+  it('refreshProxyPostConnect：用 postConnect 预算重试（首连隧道几秒后就绪 → 取到真出口，不闪「暂不可用」）', async () => {
+    // 常规 maxAttempts=1（单次即放弃）；postConnect 预算 4 轮 → 隧道在第 4 轮才就绪也能取到。
+    const { svc, snapshots } = makeService({
+      maxAttempts: 1,
+      postConnectMaxAttempts: 4,
+      postConnectRetryDelayMs: 0,
+    });
+    // 前 3 轮（每轮 PROXY_CHAIN 3 端点全 503=隧道未就绪）= 9 个 503，第 4 轮首跳 trace 成功。
+    responders = [...Array.from({ length: 9 }, () => respondStatus(503)), respondOk(TRACE_OK)];
+    const snap = await svc.refreshProxyPostConnect();
+    expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // 隧道就绪后取到
+    expect(snap.error).toBeUndefined(); // 不落 error（界面不闪「暂不可用」）
+    expect(snapshots.some((s) => s.loading === true)).toBe(true); // 全程「检测中」转圈
+  });
+
+  it('refreshProxyPostConnect：宽预算耗尽仍失败 → proxy 空 + error（隧道终未就绪才放弃）', async () => {
+    const { svc } = makeService({ postConnectMaxAttempts: 2, postConnectRetryDelayMs: 0 });
+    // 两轮各 3 端点全失败（6 个 503）→ 重试耗尽。
+    responders = Array.from({ length: 6 }, () => respondStatus(503));
+    const snap = await svc.refreshProxyPostConnect();
+    expect(snap.proxy).toBeNull();
+    expect(snap.error).toBe('fetch_failed');
+  });
+
+  it('常规 refreshProxy 不受 postConnect 宽预算影响（仍用 maxAttempts，不拖累手动刷新/切节点）', async () => {
+    // postConnect 给 4 轮，但常规 refreshProxy 用 maxAttempts=1 → 单次失败即放弃（不会多探）。
+    const { svc } = makeService({
+      maxAttempts: 1,
+      postConnectMaxAttempts: 4,
+      postConnectRetryDelayMs: 0,
+    });
+    // 仅给 1 轮 PROXY_CHAIN 的 3 个 503；若误用宽预算会要求更多 responder（队列空=null responder）。
+    responders = [respondStatus(503), respondStatus(503), respondStatus(503)];
+    const snap = await svc.refreshProxy();
+    expect(snap.proxy).toBeNull();
+    expect(snap.error).toBe('fetch_failed');
+    expect(calls.length).toBe(3); // 只探了 1 轮（3 端点），未走宽预算的多轮重试
   });
 });

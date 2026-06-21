@@ -310,6 +310,13 @@ export class ConfigManager implements IConfigManager {
     delete config.httpPort;
     delete config.socksPort;
 
+    // 远程实例 feature 已移除（UserConfig 类型已删 remoteInstances/activeInstanceId）→ 彻底清除旧版升级用户
+    // config.json 里的死字段残留。删除而非脱敏：feature 不存在，留着只会让明文 Bearer secret（remoteInstances[].secret）
+    // 既继续写盘、又随 CONFIG_GET 内联回退（`{...cfg}`）下发渲染端，破坏「远程 secret 明文永不出主进程」不变量。
+    // 经 saveConfig→validateConfig（loadConfig 与持久化两路径都过此）一次性清，下次落盘即不再写回。类型已无故 cast。
+    delete (config as unknown as Record<string, unknown>).remoteInstances;
+    delete (config as unknown as Record<string, unknown>).activeInstanceId;
+
     // 控制端口（clash_api external_controller）：未设(>0) → 默认 9090（DEFAULT_CONTROL_PORT）。可改以解端口冲突死局。
     // 防自撞：与本地端口同口则回退（9090，仍同则取 9091），杜绝 clash_api 与 mixed inbound 撞口致 sing-box FATAL。
     // 作用域：此 guard 护持久化/loadConfig 路径（saveConfig 亦经 validateConfig）。运行时 start() 收到的是渲染端
