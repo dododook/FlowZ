@@ -494,9 +494,15 @@ export class ResourceManager {
    */
   private async atomicCopy(src: string, dst: string): Promise<void> {
     const tmp = `${dst}.tmp`;
-    await fs.copyFile(src, tmp);
-    await fs.chmod(tmp, 0o755);
-    await fs.rename(tmp, dst);
+    try {
+      await fs.copyFile(src, tmp);
+      await fs.chmod(tmp, 0o755);
+      await fs.rename(tmp, dst);
+    } catch (e) {
+      // chmod/rename 失败（如 Windows AV 持 .tmp 扫描锁）→ 清理半残 .tmp 防跨重启累积，再抛给调用方降级。
+      await fs.unlink(tmp).catch(() => {});
+      throw e;
+    }
   }
 
   /**

@@ -726,7 +726,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         const heal = await resourceManager.ensureCronetHealthy(loadDir, { strong: true });
         if (heal.action === 'restored') {
           this.logToManager('info', `libcronet 已从内置恢复，重启内核一次...`);
-          await runStartWithRetry(); // 仍失败则抛出，由 start() 终态收口（不再二次自愈）
+          try {
+            await runStartWithRetry();
+          } catch (e) {
+            // 重拷成功但重启仍失败（库与核版本不匹配等）→ 计失败数（否则诊断「触发但最终失败」漏计），抛出由 start() 收口。
+            this.cronetHealFailedCount++;
+            throw e;
+          }
         } else {
           // 未恢复（拷贝失败/无内置库）→ 计失败数 + 抛原错误（含 cronet 文案，UI 引导改协议/查权限）。
           this.cronetHealFailedCount++;
@@ -5158,6 +5164,9 @@ exit 0
     // includeAuthURL=false：瞬态核登录 URL 由 stdout AUTH_URL 单点承载（自动开浏览器 + toast），STATUS 不重复带 URL。
     this.emitTailscaleStatus(server.id, ep, false);
     // 本节点已认证（Running）→ state 已落盘，杀瞬态核（finalize 会停 apiClient + 清理）。
+    // 在 STATUS 流回调栈内调 killTailscaleLogin 安全：它只发 SIGTERM（异步），apiClient.stop() 由 proc 'exit'
+    // 的 finalize 在后续 tick 触发，不在本回调栈内同步 cancel 正派发的 stream；即便同步，SubscribeTailscaleStatus
+    // 'data' 的 `if(this.stopped)return` 守卫也挡住重入。
     if (ep.backendState === 'Running') {
       this.killTailscaleLogin(server.id);
     }
@@ -5636,10 +5645,11 @@ exit 0
    */
   private isCronetLibError(message: string): boolean {
     const m = message.toLowerCase();
+    // 收紧：去掉裸 `not found`（否则用户自建名含 "cronet" 的 selector 报 `dependency[cronet] not found`
+    // 会被误判为缺库 → 虚触发一次 strong 重拷+重启）。仅匹配 libcronet 真实缺库消息。
     return (
       m.includes('cronet') &&
       (m.includes('library not found') ||
-        m.includes('not found') ||
         m.includes('libcronet') ||
         m.includes('executable directory'))
     );

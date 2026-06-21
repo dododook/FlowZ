@@ -54,6 +54,8 @@ describe('T2 isCronetLibError / classifyCoreError — cronet 缺库识别', () =
     expect(isCronet('dns lookup failed')).toBe(false);
     expect(isCronet('bind: address already in use')).toBe(false);
     expect(isCronet('library not found')).toBe(false); // 无 cronet 关键字 → 不命中
+    // B 收紧：去裸 `not found` 后，名含 cronet 的 selector 报 dependency 错误不再误判为缺库（防虚触发自愈）。
+    expect(isCronet('dependency[cronet] not found')).toBe(false);
   });
 
   it('classifyCoreError → CRONET_LIB_MISSING（优先于其它分支，不撞 connection refused 等）', () => {

@@ -145,8 +145,8 @@ describe('ensureCronetHealthy — 缺失/损坏自愈（linux/win 对称）', ()
         );
       });
 
-      it('atomicCopy rename 失败（EACCES）→ failed + 告警，不抛', async () => {
-        const { coreDir } = seedBundle(platform, 'BUNDLED-CRONET-12345');
+      it('atomicCopy rename 失败（EACCES）→ failed + 告警，不抛，且清理半残 .tmp', async () => {
+        const { coreDir, libName } = seedBundle(platform, 'BUNDLED-CRONET-12345');
         const logs: Array<{ level: string; msg: string }> = [];
         rm.setLogManager({
           addLog: (level: string, msg: string) => logs.push({ level, msg }),
@@ -162,6 +162,8 @@ describe('ensureCronetHealthy — 缺失/损坏自愈（linux/win 对称）', ()
         expect(res.action).toBe('failed');
         expect(res.reason).toMatch(/EACCES/);
         expect(logs.some((l) => l.level === 'warn' && /自愈失败/.test(l.msg))).toBe(true);
+        // C 修复：copyFile 已建 .tmp、rename 失败 → catch 清理 .tmp（防跨重启累积）。
+        expect(fsSync.existsSync(path.join(coreDir, `${libName}.tmp`))).toBe(false);
         spy.mockRestore();
       });
     });
