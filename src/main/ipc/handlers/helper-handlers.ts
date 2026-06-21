@@ -3,8 +3,9 @@
  * 状态查询 + 安装/卸载（安装/卸载会弹一次 osascript 管理员授权框）。
  */
 
-import { IpcMainInvokeEvent, app, shell } from 'electron';
+import { BrowserWindow, IpcMainInvokeEvent, app, shell } from 'electron';
 import { spawn } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -27,6 +28,9 @@ export function clearSingboxDashboardCache(): void {
     // 删缓存失败不致命：核启动若目录仍非空只是沿用旧资源，下次仍可重试清理。
   }
 }
+
+// sing-box 官方面板内窗口单例（dashboard #55）：再次「打开面板」时聚焦复用而非重复开窗；closed 时置 null。
+let dashboardWindow: BrowserWindow | null = null;
 
 export function registerHelperHandlers(
   helperManager: IPrivilegedHelper,
@@ -54,16 +58,74 @@ export function registerHelperHandlers(
     }
   );
 
-  // 打开 sing-box 官方面板：用运行期 tailscaleApiPort（api service 监听口）构造 /dashboard/ URL + 系统浏览器打开。
-  // 渲染端构造不出 startInternal 解析的动态端口，故经此 IPC。代理未运行（端口=0）→ 不打开（dashboard 仅运行中可用），
-  // UI 侧亦在「开关 on 且运行中」才 enable 按钮。复用 shell.openExternal 收口（与 SHELL_OPEN_EXTERNAL 同径）。
+  // 打开 sing-box 官方面板（dashboard #55）：开**应用内 BrowserWindow** 加载运行期 /dashboard/（核 serve 内置/覆盖面板处），
+  // 并经面板专用 preload 在 document-start 预写 localStorage `sing-box-dashboard.server`（一键直连，免手填后端）。
+  // 真机实证：面板只读该 localStorage 键、不读 URL 参数，故 payload 必须经 preload 在面板 JS 读 localStorage 前写好。
+  // 代理未运行（端口=0）→ 不打开（dashboard 仅运行中可用）；UI 侧亦在「开关 on 且运行中」才 enable 按钮。
   registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD, async () => {
-    // URL 带管理 API 连接参数（hostname/port/secret）→ dashboard 自动导入预填 + 连接，免手填（像 clash dashboard）。
-    const url = proxyManager.getSingboxDashboardUrl();
-    if (!url) {
-      return { ok: false };
+    const info = proxyManager.getDashboardConnectionInfo();
+    if (!info.ok) return { ok: false };
+
+    // 已有面板窗口 → 聚焦复用（避免重复开窗）。
+    if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+      dashboardWindow.focus();
+      return { ok: true };
     }
-    await shell.openExternal(url);
+
+    // 预写面板 localStorage（面板源码实证 index-*.js）：
+    //  - 权威存储键 `sing-box-dashboard.servers`：{servers:[{id,name,url,secret}],activeId}（面板渲染/连接的实际数据源）。
+    //  - 旧版迁移键 `sing-box-dashboard.server`：扁平 {url,secret}（面板读一次即 removeItem 并并入 servers 存储）——兜底
+    //    极旧版面板。url 用 host:port（无协议前缀），与面板 g() 归一化（去尾斜杠 + 去 http:// 前缀）后存量格式一致。
+    const serverId = crypto.randomUUID();
+    const bareUrl = info.apiUrl.replace(/^https?:\/\//, '');
+    const serverPayload = JSON.stringify({
+      servers: {
+        servers: [{ id: serverId, name: '', url: bareUrl, secret: info.secret }],
+        activeId: serverId,
+      },
+      legacy: { url: bareUrl, secret: info.secret },
+    });
+
+    dashboardWindow = new BrowserWindow({
+      width: 1100,
+      height: 760,
+      minWidth: 800,
+      minHeight: 600,
+      title: 'sing-box Dashboard',
+      autoHideMenuBar: true,
+      webPreferences: {
+        // 面板专用 preload：经 additionalArguments 拿 server payload，在页面脚本前于同源写 localStorage。
+        preload: path.join(__dirname, 'dashboard-preload.js'),
+        // 本窗口仅加载本地 127.0.0.1 受信面板，关 contextIsolation 让 preload 直写页面同源 localStorage；零 Node 暴露（preload 不挂 API）。
+        contextIsolation: false,
+        nodeIntegration: false,
+        sandbox: false,
+        additionalArguments: [`--flowz-dashboard-server=${serverPayload}`],
+      },
+    });
+    if (process.platform !== 'darwin') dashboardWindow.setMenu(null);
+    dashboardWindow.once('closed', () => {
+      dashboardWindow = null;
+    });
+
+    // 安全闸（H1）：本窗口 contextIsolation 关 + 加载第三方面板代码，必须锁死导航边界——否则面板内任意链接/重定向/
+    // window.open 可把本窗口（或继承同 webPreferences 的子窗口）导航到远端源，泄漏已写入 localStorage 的 secret。
+    //  - setWindowOpenHandler：拒绝一切子窗口；http(s) 外链改走系统浏览器（绝不在带这套 prefs 的窗口里开）。
+    //  - will-navigate：只允许停留在本地 api service 源（http://127.0.0.1:<port>），跨源导航一律拦下。
+    const localOrigin = info.apiUrl; // http://127.0.0.1:<port>（无尾斜杠）
+    const wc = dashboardWindow.webContents;
+    wc.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    wc.on('will-navigate', (event, url) => {
+      if (!url.startsWith(`${localOrigin}/`)) {
+        event.preventDefault();
+        if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+      }
+    });
+
+    await dashboardWindow.loadURL(info.url);
     return { ok: true };
   });
 
@@ -73,6 +135,15 @@ export function registerHelperHandlers(
     clearSingboxDashboardCache();
     return { ok: true };
   });
+
+  // dashboard #55：取面板连接信息（URL + secret）供「复制连接信息」按钮。secret 取自 main config，不长驻渲染端 store。
+  registerIpcHandler<void, { ok: boolean; apiUrl: string; secret: string }>(
+    IPC_CHANNELS.GET_SINGBOX_DASHBOARD_CONNECTION,
+    async () => {
+      const info = proxyManager.getDashboardConnectionInfo();
+      return { ok: info.ok, apiUrl: info.apiUrl, secret: info.secret };
+    }
+  );
 
   // 完全卸载 FlowZ：清 helper + 受保护目录（root，弹一次密码框）+ 用户配置 + 应用本体（移废纸篓），然后退出。
   registerIpcHandler<void, { ok: boolean; error?: string }>(

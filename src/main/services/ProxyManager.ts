@@ -79,13 +79,8 @@ import {
   getSingBoxPidPath,
   getCachePath,
   getCustomRulesDir,
-  getSingboxDashboardDir,
+  getSingboxDashboardOverrideDir,
 } from '../utils/paths';
-import {
-  applyGhProxy,
-  normalizeGhProxyPrefix,
-  DEFAULT_SINGBOX_DASHBOARD_URL,
-} from '../../shared/gh-proxy';
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
 import coreManifest from '../../shared/core-manifest.json';
@@ -163,8 +158,9 @@ export interface IProxyManager {
   isStartedViaHelper(): boolean;
   // api service（sing-box 1.14 management api）运行期监听端口；「打开官方面板」IPC 据此构造 /dashboard/ URL（0=未启动）。
   getTailscaleApiPort(): number;
-  // 「打开官方面板」URL（含 hostname/port/secret 连接参数，dashboard 自动导入预填+连接）；未运行/无端口 → null。
-  getSingboxDashboardUrl(): string | null;
+  // dashboard #55：面板连接信息（运行期 api 端口 + clash secret），供「内窗口直连」预写 localStorage 与「复制连接信息」用。
+  // secret 取自 main config（不长驻渲染端 store）；代理未运行 → { ok: false }。
+  getDashboardConnectionInfo(): { ok: boolean; url: string; apiUrl: string; secret: string };
   // 运行期管理 API 客户端（sing-box 1.14 gRPC）：供 StatsService 经此订阅 Status/Connections 流；未启动核时为 null。
   getApiClient(): SingBoxApiClient | null;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
@@ -1499,14 +1495,23 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 「打开官方面板」URL。注：bundled sing-box dashboard **只读 localStorage(sing-box-dashboard.server)、不读任何 URL
-   * query/hash 参数**（真机反编 index-*.js 实证：hostname/port/secret/url 拼参一律无效、仍弹空设置页）→ 故不带参数避免
-   * 误导。自动连需主进程在 dashboard 加载前预写 localStorage（须 in-app BrowserWindow，见 #55）。未运行/无端口 → null。
+   * dashboard #55：面板连接信息（运行期 api 端口构造 URL + clash secret）。
+   * - url：内窗口加载地址 `http://127.0.0.1:<port>/dashboard/`（核 serve 内置/覆盖面板处）。
+   * - apiUrl：面板要连的管理 API 地址 `http://127.0.0.1:<port>`（写入面板 localStorage 的 server.url / 复制信息用）。
+   * - secret：clashApiSecret（注入 api service 的 Bearer，面板每个 RPC 须带）。取自 currentConfig，**不长驻渲染端 store**。
+   * 代理未运行（端口=0）→ { ok: false }（UI 仅运行中 enable 入口）。
    */
-  getSingboxDashboardUrl(): string | null {
+  getDashboardConnectionInfo(): { ok: boolean; url: string; apiUrl: string; secret: string } {
     const port = this.tailscaleApiPort;
-    if (!this.getStatus().running || !port) return null;
-    return `http://127.0.0.1:${port}/dashboard/`;
+    if (!this.getStatus().running || !port) {
+      return { ok: false, url: '', apiUrl: '', secret: '' };
+    }
+    return {
+      ok: true,
+      url: `http://127.0.0.1:${port}/dashboard/`,
+      apiUrl: `http://127.0.0.1:${port}`,
+      secret: this.currentConfig?.clashApiSecret || '',
+    };
   }
 
   /**
@@ -2147,19 +2152,15 @@ done
           secret: config.clashApiSecret || undefined,
         },
       ];
-      // sing-box 官方面板（opt-in 逃生舱）：仅开关 on 时注入 dashboard 块。必须给 path + download_url，核才会在
-      // path 目录为空时首次联网拉 zip 解压并于本 api service 的 /dashboard/ serve（仅 enabled:true 不给 url → 404）。
-      // download_url 取用户覆盖（singboxDashboardUrl）或内置默认，经 ghProxyPrefix 镜像加速包裹（与规则资源下载同口径）。
-      // 不下发 update_interval → auto-update 关（核仅在目录为空时拉一次，之后不自动更新）。关闭时整块不下发 → 核不出网。
+      // sing-box 官方面板（opt-in 逃生舱）：仅开关 on 时注入 dashboard，于本 api service 的 /dashboard/ serve。
+      // 关闭时不注入 → 核默认不出网拉 dashboard 资源。同一 service，不重复注入。
+      // dashboard #55：path 指向「运行时下载覆盖 > 随包内置」目录 → 核 serve 本地文件、零联网下载、打开即时离线可用；
+      //   两者皆无（异常打包且未下载）→ path 省略，核回落联网下载兜底（保旧行为，不 brick）。
       if (config.singboxDashboard) {
-        const rawPrefix = config.ghProxyPrefix;
-        const ghPrefix = rawPrefix ? (normalizeGhProxyPrefix(rawPrefix) ?? undefined) : undefined;
-        const baseUrl = config.singboxDashboardUrl?.trim() || DEFAULT_SINGBOX_DASHBOARD_URL;
-        singboxConfig.services[0].dashboard = {
-          enabled: true,
-          path: getSingboxDashboardDir(),
-          download_url: applyGhProxy(ghPrefix, baseUrl),
-        };
+        const serveDir = resourceManager.resolveDashboardServeDir(getSingboxDashboardOverrideDir());
+        singboxConfig.services[0].dashboard = serveDir
+          ? { enabled: true, path: serveDir }
+          : { enabled: true };
       }
     }
 

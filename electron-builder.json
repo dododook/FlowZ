@@ -51,6 +51,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/dashboard",
+        "to": "dashboard",
+        "filter": [
+          "**/*"
+        ]
       }
     ]
   },
@@ -97,6 +104,13 @@
       {
         "from": "resources/data",
         "to": "data",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/dashboard",
+        "to": "dashboard",
         "filter": [
           "**/*"
         ]
@@ -151,6 +165,13 @@
       {
         "from": "resources/data",
         "to": "data",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "resources/dashboard",
+        "to": "dashboard",
         "filter": [
           "**/*"
         ]

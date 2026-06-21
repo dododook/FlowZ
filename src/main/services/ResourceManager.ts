@@ -182,6 +182,39 @@ export class ResourceManager {
   }
 
   /**
+   * sing-box 官方面板**随包内置**目录（SagerNet/sing-box-dashboard 的 gh-pages 构建，scripts/fetch-dashboard.mjs 拉取）。
+   * 生产：<resources>/dashboard；开发：<cwd>/resources/dashboard。electron-builder extraResources 直拷到 resources/dashboard。
+   * sing-box services[].dashboard.path 指向它（或运行时下载覆盖目录）→ 核直接 serve 本地、零联网下载、打开即时（dashboard #55）。
+   */
+  getBundledDashboardDir(): string {
+    return path.join(this.getResourcesBaseDir(), 'dashboard');
+  }
+
+  /** 内置面板是否就绪（含 index.html）：异常打包/未跑 fetch:dashboard 时可能缺失 → serve 决策据此回落（不注入 path 则核走联网下载兜底）。 */
+  hasBundledDashboard(): boolean {
+    try {
+      return require('fs').existsSync(path.join(this.getBundledDashboardDir(), 'index.html'));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 解析面板「实际 serve 目录」：**运行时下载覆盖优先**（overrideDir 含 index.html）→ 否则随包内置目录。
+   * 返回 null = 两者皆无（异常打包且未下载）→ 调用方不注入 dashboard.path，由 sing-box 联网下载兜底（保旧行为不 brick）。
+   * 纯路径决策（仅 existsSync 探测），无副作用；与内置 geo 的「下载优先、内置兜底」语义对齐。
+   */
+  resolveDashboardServeDir(overrideDir: string): string | null {
+    const fsSync = require('fs');
+    try {
+      if (fsSync.existsSync(path.join(overrideDir, 'index.html'))) return overrideDir;
+    } catch {
+      /* fall through to bundled */
+    }
+    return this.hasBundledDashboard() ? this.getBundledDashboardDir() : null;
+  }
+
+  /**
    * 获取 GeoIP 数据文件路径
    */
   getGeoIPPath(): string {

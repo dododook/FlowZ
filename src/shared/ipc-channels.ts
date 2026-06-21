@@ -107,11 +107,13 @@ export const IPC_CHANNELS = {
 
   // Shell 操作
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
-  // 打开 sing-box 官方面板：main 用运行期 tailscaleApiPort（api service 监听口）构造 /dashboard/ URL + shell.openExternal。
-  // 渲染端构造不出 startInternal 解析的动态端口，故必须经此 IPC。
+  // 打开 sing-box 官方面板（dashboard #55）：main 开**应用内 BrowserWindow** 加载运行期 /dashboard/，并经面板专用 preload
+  // 在 document-start 预写 localStorage `sing-box-dashboard.server`（一键直连，免手填后端）。渲染端构造不出动态端口故经此 IPC。
   OPEN_SINGBOX_DASHBOARD: 'app:openSingboxDashboard',
   // 刷新 sing-box 官方面板资源：清本地缓存目录（<userData>/singbox-dashboard），使核下次启动重拉新 zip。供 UI 手动刷新。
   REFRESH_SINGBOX_DASHBOARD: 'app:refreshSingboxDashboard',
+  // dashboard #55：取面板连接信息（URL + secret）供「复制连接信息」按钮。secret 取自 main config，不长驻渲染端 store。
+  GET_SINGBOX_DASHBOARD_CONNECTION: 'app:getSingboxDashboardConnection',
   // P5 Phase2：打开远端实例的 /dashboard/（shell.openExternal）。渲染端给 instanceId，main 据 config 取该实例
   // dashboardUrl 或按 host/port+tls 推 URL（https/http）。secret 不进 URL（dashboard 首屏自行填）。
   OPEN_REMOTE_DASHBOARD: 'app:openRemoteDashboard',
