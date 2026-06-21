@@ -1015,7 +1015,7 @@
     "tsLoginNeededDesc": "在瀏覽器中完成 Tailscale 授權後即可入網（僅首次，之後免登入）。",
     "tsOpenLogin": "開啟登入頁",
     "tsLoginOk": "Tailscale 節點「{{name}}」已登入",
-    "tsLoginAction": "登入",
+    "tsLoginAction": "未登入",
     "tsLoginClickHint": "點擊登入",
     "tsLoginChecking": "檢測中",
     "tsLoginNow": "立即登入",

@@ -1015,7 +1015,7 @@
     "tsLoginNeededDesc": "Complete Tailscale authentication in your browser to join (first time only).",
     "tsOpenLogin": "Open login page",
     "tsLoginOk": "Tailscale node \"{{name}}\" logged in",
-    "tsLoginAction": "Log in",
+    "tsLoginAction": "Not logged in",
     "tsLoginClickHint": "Click to log in",
     "tsLoginChecking": "Checking",
     "tsLoginNow": "Log in now",

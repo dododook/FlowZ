@@ -1015,7 +1015,7 @@
     "tsLoginNeededDesc": "Завершите аутентификацию Tailscale в браузере, чтобы присоединиться (только в первый раз).",
     "tsOpenLogin": "Открыть страницу входа",
     "tsLoginOk": "Узел Tailscale «{{name}}» вошёл в систему",
-    "tsLoginAction": "Вход",
+    "tsLoginAction": "Не авторизован",
     "tsLoginClickHint": "Нажмите, чтобы войти",
     "tsLoginChecking": "Проверка",
     "tsLoginNow": "Войти сейчас",

@@ -1058,7 +1058,7 @@
       "minIdleSession": "حداقل نشست‌های بی‌کار",
       "minIdleSessionDesc": "حداقل تعداد نشست‌های بی‌کاری که باز نگه داشته شوند. پیش‌فرض 0."
     },
-    "tsLoginAction": "ورود",
+    "tsLoginAction": "وارد نشده",
     "tsLoginClickHint": "برای ورود کلیک کنید",
     "tsLoginChecking": "در حال بررسی",
     "tsLoginAlready": "گره Tailscale «{{name}}» قبلاً وارد شده است",
