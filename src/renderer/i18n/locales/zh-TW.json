@@ -821,6 +821,7 @@
     "saveSuccessDesc": "伺服器 {{name}} 已儲存",
     "saveFail": "儲存失敗",
     "saveFailDesc": "儲存伺服器時發生錯誤",
+    "tailscaleSingleOnly": "Tailscale 一台裝置只能加一個——所有帳號共用同一段網路位址，多個會互相頂掉。要換帳號，先刪掉現有的那個。",
     "remarks": "備註名稱",
     "remarksDesc": "為伺服器設定一個易於識別的名稱",
     "remarksPlaceholder": "例如：香港節點",

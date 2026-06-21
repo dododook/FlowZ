@@ -461,6 +461,28 @@ export class ConfigManager implements IConfigManager {
       );
     }
 
+    // Tailscale 单节点硬限兜底归一：同设备所有 TS 账号共用同一段 tailnet 地址，多个会互相顶掉，全局只许一个。
+    // UI 主拦截点（use-server-actions）已从源头挡住，正常配置不触发；此处仅对「已是非法多 TS 状态」（旁路
+    // config:save / 损坏备份导入 / 手改配置）归一：保留第一个、丢弃其余。沿用 sanitize 不 throw 惯例——绝不连累
+    // 整份配置回落默认（loadConfig catch 会用默认覆盖落盘致节点/订阅/规则全丢，与上方 CIDR/规则容错同标准）。
+    let firstTailscaleSeen = false;
+    let droppedTailscale = 0;
+    config.servers = config.servers.filter((s) => {
+      if (s.protocol?.toLowerCase() !== 'tailscale') return true;
+      if (!firstTailscaleSeen) {
+        firstTailscaleSeen = true;
+        return true;
+      }
+      droppedTailscale++;
+      return false;
+    });
+    if (droppedTailscale > 0) {
+      this.log(
+        'warn',
+        `[ConfigManager] Tailscale 单节点硬限：丢弃 ${droppedTailscale} 个多余 Tailscale 节点（保留第一个）`
+      );
+    }
+
     // 验证 selectedServerId（'__direct__' 哨兵=全局直连，非真实节点，豁免存在性校验，见 shared/direct-selection）
     if (config.selectedServerId !== null && !isDirectSelection(config.selectedServerId)) {
       if (typeof config.selectedServerId !== 'string') {

@@ -15,6 +15,7 @@ import {
 } from '@/bridge/api-wrapper';
 import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
 import { buildSavedServers, buildClonedServer, type NewServerData } from './server-mutations';
+import { tailscaleSlotTaken } from '../../shared/endpoint-routes';
 
 export function useServerActions() {
   const { t } = useTranslation();
@@ -52,6 +53,15 @@ export function useServerActions() {
   const saveServer = async (serverData: NewServerData, editingServer: ServerConfig | undefined) => {
     try {
       if (!config) throw new Error(t('errors.configNotLoaded'));
+      // Tailscale 单节点硬限：新增（非编辑）一个 TS 节点但已存在另一个 → 拦下不写。
+      // editingServer?.id 排除自身，编辑现有 TS 节点放行。
+      if (
+        serverData.protocol?.toLowerCase() === 'tailscale' &&
+        tailscaleSlotTaken(servers, editingServer?.id)
+      ) {
+        toast.error(t('servers.tailscaleSingleOnly'));
+        return;
+      }
       const now = new Date().toISOString();
       const updatedServers = buildSavedServers(
         servers,
@@ -77,6 +87,11 @@ export function useServerActions() {
   // 克隆节点到自建列表：生成脱离订阅的持久副本（订阅节点的本地自定义需用此方式保留）
   const cloneServer = async (server: ServerConfig) => {
     if (!config) return;
+    // Tailscale 单节点硬限：克隆恒产出新增第二节点，克隆 TS 必撞限（含克隆源自身）→ 拦下，否则克隆绕过闸门。
+    if (server.protocol?.toLowerCase() === 'tailscale' && tailscaleSlotTaken(servers)) {
+      toast.error(t('servers.tailscaleSingleOnly'));
+      return;
+    }
     try {
       const now = new Date().toISOString();
       const cloned = buildClonedServer(

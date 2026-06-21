@@ -11,6 +11,16 @@ export function isAccountBasedProtocol(protocol: string | undefined): boolean {
   return protocol?.toLowerCase() === 'tailscale';
 }
 
+/**
+ * Tailscale 单节点硬限：已存在一个 Tailscale 节点时该「槽位」即被占用。
+ * 同一设备的所有 Tailscale 账号共用同一段网络地址（100.64.0.0/10 tailnet），多个会互相顶掉，故全局只许一个。
+ * editingId 排除自身——编辑现有 TS 节点不算「再加一个」，必须放行。
+ * 纯函数（仅看协议字段）：UI 主拦截点（use-server-actions）+ ConfigManager 兜底归一共用，可离线单测。
+ */
+export function tailscaleSlotTaken(servers: ServerConfig[], editingId?: string): boolean {
+  return servers.some((s) => s.protocol?.toLowerCase() === 'tailscale' && s.id !== editingId);
+}
+
 /** 全网段（catch-all / 全隧道）：IPv4 0.0.0.0/0 + IPv6 ::/0。单一真值——force-route 剥离、allowInternet=on
  * 注入 peer.allowed_ips、表单显示/录入剥离 均复用此清单，杜绝多处字面量漂移。 */
 export const FULL_TUNNEL_CIDRS = ['0.0.0.0/0', '::/0'] as const;
