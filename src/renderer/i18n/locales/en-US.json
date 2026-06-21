@@ -1114,7 +1114,11 @@
     "tlsSpoofDescFull": "Anti-censorship: before the real TLS handshake, send a fake ClientHello using a decoy (whitelisted) SNI to trick SNI-blocking middleboxes into letting the connection through. Limits: needs elevated privileges (Linux CAP_NET_RAW+NET_ADMIN / macOS root / Windows Administrator), not supported on ARM64, the decoy SNI must be a domain (not an IP literal) and must differ from the real server name.",
     "tlsSpoofArchUnsupported": "TLS spoof is not supported on ARM64 (the core implements it only on amd64).",
     "tlsSpoofSni": "Spoof SNI",
-    "tlsSpoofSniDesc": "Decoy domain used in the forged ClientHello (e.g. a whitelisted site). Must be a domain (not an IP) and must differ from the real server name; leave empty to disable spoof."
+    "tlsSpoofSniDesc": "Decoy domain used in the forged ClientHello (e.g. a whitelisted site). Must be a domain (not an IP) and must differ from the real server name; leave empty to disable spoof.",
+    "meshInfoIntranetIp": "Intranet IP",
+    "meshInfoRoutes": "Routes",
+    "meshInfoNotAssigned": "Not assigned yet",
+    "meshInfoNoRoutes": "None"
   },
   "rules": {
     "ruleColumn": "Rule",

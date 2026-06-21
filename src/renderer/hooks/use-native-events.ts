@@ -276,8 +276,11 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
 
 function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   // sing-box 1.14 管理 API 真实态（取代 1.13 stateExists/stdout 启发式）：loggedIn（Running||Starting）即时驱动
-  // 「需登录」角标。backendState/authURL 仅本地驱动登录 toast（不入 store）；内网 IP/过期待 P1 卡片展示时再接。
+  // 「需登录」角标；tailscaleIPs（self.tailscaleIPs）入 store 供节点卡「组网信息」popover 展示内网 IP。
+  // backendState/authURL 仅本地驱动登录 toast（不入 store）。
   useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
+  // 内网 IP 在探针短路前就存（探针/非探针事件都带 self.tailscaleIPs，组网卡 popover 据此显示）。
+  useAppStore.getState().setTailscaleIps(data.serverId, data.tailscaleIPs || []);
   // 探针来源（status-only）：首条 STATUS 到达 → 探针有结果，关「检测中」态（各节点 loggedIn 已分别更新、角标据此收敛）。
   // 探针**不弹登录 toast**——它是代理关时的后台静默查询、非用户主动登录；NeedsLogin 节点只记 loggedIn=false。
   if (data.probe) {
