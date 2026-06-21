@@ -243,6 +243,10 @@ export interface SingBoxWireGuardPeer {
 export interface SingBoxEndpoint {
   type: string;
   tag: string;
+  // Dial Fields（endpoint 顶层继承）：sing-box 1.14 起，server 用域名的 endpoint 需 dial 级 domain_resolver
+  // （或 route.default_domain_resolver），否则域名解析无确定上游。WG peer.address 为域名时显式下发，
+  // 与 buildProxyOutbound 的 outbound.domain_resolver 同口径（IP server 不需 DNS 解析，故不下发）。
+  domain_resolver?: string;
   // WireGuard
   system?: boolean;
   mtu?: number;

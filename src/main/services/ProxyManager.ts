@@ -2268,7 +2268,10 @@ done
       // WireGuard：endpoint（非 outbound）。SpeedTestService 据 type 放入测速临时配置的 endpoints[]。
       // 此处用 isEndpointProtocol 单一真值（tailscale 已上方 return null 排除，剩余 endpoint 协议即 wireguard）。
       if (isEndpointProtocol(server.protocol)) {
-        return buildWireGuardEndpoint(server, tag);
+        // #58：测速 WG endpoint 的域名 server（如 WARP）需 dial 级 domain_resolver——与下方普通协议同传
+        // 'dns-direct'（对齐测速临时配置的 route.default_domain_resolver: 'dns-direct'，223.5.5.5 UDP）。
+        // 缺它则 1.14 域名拨号无确定解析上游 → 测速超时（IP-server 节点不受影响，isIpLiteral 内部跳过下发）。
+        return buildWireGuardEndpoint(server, tag, 'dns-direct');
       }
       const map = new Map<string, string>([[server.id, tag]]);
       const ob = buildProxyOutbound(server, map, 'dns-direct');
