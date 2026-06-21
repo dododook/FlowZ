@@ -12,11 +12,11 @@ describe('parseSpeedTestUrl（测速 URL 解析）', () => {
     const r = parseSpeedTestUrl(DEFAULT_SPEED_TEST_URL);
     expect(r).toEqual({
       https: false,
-      host: 'www.gstatic.com',
+      host: 'cp.cloudflare.com',
       port: 80,
       path: '/generate_204',
-      hostHeader: 'www.gstatic.com',
-      absoluteUri: 'http://www.gstatic.com/generate_204',
+      hostHeader: 'cp.cloudflare.com',
+      absoluteUri: 'http://cp.cloudflare.com/generate_204',
     });
   });
 
@@ -71,19 +71,18 @@ describe('parseSpeedTestUrl（测速 URL 解析）', () => {
 
 describe('resolveSpeedTestTarget（非法回落默认）', () => {
   it('undefined → 默认 generate_204', () => {
-    expect(resolveSpeedTestTarget(undefined).host).toBe('www.gstatic.com');
+    expect(resolveSpeedTestTarget(undefined).host).toBe('cp.cloudflare.com');
     expect(resolveSpeedTestTarget(undefined).path).toBe('/generate_204');
   });
 
   it('非法 → 默认', () => {
-    expect(resolveSpeedTestTarget('garbage').host).toBe('www.gstatic.com');
+    expect(resolveSpeedTestTarget('garbage').host).toBe('cp.cloudflare.com');
     expect(resolveSpeedTestTarget('').https).toBe(false);
   });
 
   it('合法 https → 用该端点（不回落）', () => {
-    expect(resolveSpeedTestTarget('https://cp.cloudflare.com/generate_204').https).toBe(true);
-    expect(resolveSpeedTestTarget('https://cp.cloudflare.com/generate_204').host).toBe(
-      'cp.cloudflare.com'
-    );
+    // host 用非默认值（example.com），使「命中传入端点」与「回落默认 cp.cloudflare.com」可区分。
+    expect(resolveSpeedTestTarget('https://example.com/generate_204').https).toBe(true);
+    expect(resolveSpeedTestTarget('https://example.com/generate_204').host).toBe('example.com');
   });
 });

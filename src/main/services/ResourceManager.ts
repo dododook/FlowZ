@@ -190,13 +190,18 @@ export class ResourceManager {
     return path.join(this.getResourcesBaseDir(), 'dashboard');
   }
 
-  /** 内置面板是否就绪（含 index.html）：异常打包/未跑 fetch:dashboard 时可能缺失 → serve 决策据此回落（不注入 path 则核走联网下载兜底）。 */
-  hasBundledDashboard(): boolean {
+  /** 目录是否含 index.html（同步存在性探测，异常→false）。面板「就绪」判定的单一口径。 */
+  private hasIndex(dir: string): boolean {
     try {
-      return require('fs').existsSync(path.join(this.getBundledDashboardDir(), 'index.html'));
+      return require('fs').existsSync(path.join(dir, 'index.html'));
     } catch {
       return false;
     }
+  }
+
+  /** 内置面板是否就绪（含 index.html）：异常打包/未跑 fetch:dashboard 时可能缺失 → serve 决策据此回落（不注入 path 则核走联网下载兜底）。 */
+  hasBundledDashboard(): boolean {
+    return this.hasIndex(this.getBundledDashboardDir());
   }
 
   /**
@@ -205,13 +210,9 @@ export class ResourceManager {
    * 纯路径决策（仅 existsSync 探测），无副作用；与内置 geo 的「下载优先、内置兜底」语义对齐。
    */
   resolveDashboardServeDir(overrideDir: string): string | null {
-    const fsSync = require('fs');
-    try {
-      if (fsSync.existsSync(path.join(overrideDir, 'index.html'))) return overrideDir;
-    } catch {
-      /* fall through to bundled */
-    }
-    return this.hasBundledDashboard() ? this.getBundledDashboardDir() : null;
+    if (this.hasIndex(overrideDir)) return overrideDir;
+    const bundled = this.getBundledDashboardDir();
+    return this.hasIndex(bundled) ? bundled : null;
   }
 
   /**

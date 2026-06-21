@@ -2,12 +2,16 @@
  * 节点测速目标 URL 解析（纯函数，主进程 SpeedTestService + 单测共用；不经网络）。
  *
  * 测速经临时 sing-box 的各节点 HTTP 代理出站、CONNECT 隧道上发两次 GET 量 warm TTFB（mihomo `unified-delay` 等价）。
- * 默认 generate_204（204 空响应、可立即复用连接）。用户可自配（如 cp.cloudflare.com/generate_204 或自建端点），
+ * 默认 generate_204（204 空响应、可立即复用连接）。用户可自配（如 gstatic/自建端点），
  * HTTP/HTTPS 同走 CONNECT 隧道（https 目标先在隧道上 TLS 握手）。非法/非 http(s)/无 host → 调用方回落默认。
  */
 
-/** 默认测速端点：Google generate_204（与 mihomo/clash/NekoBox 默认 urltest 同款）。 */
-export const DEFAULT_SPEED_TEST_URL = 'http://www.gstatic.com/generate_204';
+/**
+ * 默认测速端点：cp.cloudflare.com generate_204（全球任播、无国内 CDN 镜像，对 WARP/海外/国内出口一致可达）。
+ * 不用 gstatic：www.gstatic.com 有国内 CDN 镜像，AliDNS(223.5.5.5) 等国内 DNS 会解析到国内镜像 IP（如 180.163.150.162），
+ * WARP 等海外全隧道出口连不上该国内 IP → 测速恒超时（Mac 真机实证：换 cp.cloudflare 后 WARP 多节点秒通 204）。
+ */
+export const DEFAULT_SPEED_TEST_URL = 'http://cp.cloudflare.com/generate_204';
 
 export interface SpeedTestTarget {
   https: boolean;

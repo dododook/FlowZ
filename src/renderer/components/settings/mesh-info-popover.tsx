@@ -9,17 +9,19 @@
 import { useTranslation } from 'react-i18next';
 import { Info } from 'lucide-react';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
-import { isEndpointProtocol } from '../../../shared/endpoint-routes';
+import { isAccountBasedProtocol, isEndpointProtocol } from '../../../shared/endpoint-routes';
 import { useAppStore } from '../../store/app-store';
 import type { ServerConfigWithId } from './server-list-helpers';
 
-/** 组网节点的内网 IP（Tailscale 取 STATUS 流的 tailnet IP；WireGuard 取 localAddress）。 */
-function meshIntranetIps(
-  server: ServerConfigWithId,
-  tailscaleIps: Record<string, string[]>
-): string[] {
-  if (server.protocol?.toLowerCase() === 'tailscale') {
-    return tailscaleIps[server.id] || [];
+// 精确订阅 tailscaleIps[server.id] 时的稳定空数组：模块级常量避免 selector 内联 `?? []` 每帧生成新数组、
+// 破坏 zustand 引用相等而触发无谓重渲染。
+const EMPTY: string[] = [];
+
+/** 组网节点的内网 IP（Tailscale 取传入的 STATUS 流 tailnet IP；WireGuard 取 localAddress）。 */
+function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string[]): string[] {
+  // Tailscale = 账号制协议（唯一），其内网 IP 来自 api STATUS 流（store.tailscaleIps[id]）。
+  if (isAccountBasedProtocol(server.protocol)) {
+    return tailscaleIps;
   }
   // wireguard（含 WARP）：本地隧道地址即内网 IP
   return server.wireguardSettings?.localAddress || [];
@@ -27,7 +29,7 @@ function meshIntranetIps(
 
 /** 组网节点的路由段（Tailscale = accept/advertise routes；WireGuard = peer.allowed_ips）。 */
 function meshRoutes(server: ServerConfigWithId): string[] {
-  if (server.protocol?.toLowerCase() === 'tailscale') {
+  if (isAccountBasedProtocol(server.protocol)) {
     const ts = server.tailscaleSettings;
     // accept routes（routes）+ advertise routes（本机对外广告）并集去重；纯展示，与 force-route 计算解耦。
     return Array.from(new Set([...(ts?.routes || []), ...(ts?.advertiseRoutes || [])]));
@@ -37,7 +39,8 @@ function meshRoutes(server: ServerConfigWithId): string[] {
 
 export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
   const { t } = useTranslation();
-  const tailscaleIps = useAppStore((s) => s.tailscaleIps);
+  // 精确订阅本节点 IP：任一节点 IP 更新不波及其余卡片（整表订阅会全卡片重渲染）。EMPTY 模块级常量保引用稳定。
+  const tailscaleIps = useAppStore((s) => s.tailscaleIps[server.id] ?? EMPTY);
   // 非组网协议（vless 等）不显此 icon。
   if (!isEndpointProtocol(server.protocol)) return null;
 

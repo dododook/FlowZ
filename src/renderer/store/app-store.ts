@@ -431,7 +431,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // 单条覆盖：EVENT_TAILSCALE_STATUS 即时更新该节点内网 IP（self.tailscaleIPs，纯单点写无并发竞态）。
   setTailscaleIps: (serverId, ips) => {
-    set((s) => ({ tailscaleIps: { ...s.tailscaleIps, [serverId]: ips } }));
+    // IP 列表未变则不重建表（STATUS 多帧同 IP 反复 emit 时省整表浅拷贝 + 无谓订阅者重渲染）。对齐
+    // setTailscaleAuthUrl/setTailscaleStatusProbing 的去重模式（join(' ') 序列比对，逐位等价即视为未变）。
+    set((s) =>
+      s.tailscaleIps[serverId]?.join(' ') === ips.join(' ')
+        ? {}
+        : { tailscaleIps: { ...s.tailscaleIps, [serverId]: ips } }
+    );
   },
 
   // Server Management Actions

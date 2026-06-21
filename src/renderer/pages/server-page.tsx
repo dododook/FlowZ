@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, RefreshCw, Rss, Server, Network, ChevronDown, Link, Zap } from 'lucide-react';
-import { isEndpointProtocol } from '../../shared/endpoint-routes';
+import { isAccountBasedProtocol, isEndpointProtocol } from '../../shared/endpoint-routes';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import {
   AlertDialog,
@@ -97,7 +97,7 @@ export function ServerPage() {
       : selectedGroupKey;
 
   // 组网 Tab 是否有 Tailscale 节点（探针只对 TS 节点有意义；WG/WARP 不参与登录态）。
-  const hasTailscaleMeshNode = meshServers.some((s) => s.protocol?.toLowerCase() === 'tailscale');
+  const hasTailscaleMeshNode = meshServers.some((s) => isAccountBasedProtocol(s.protocol));
 
   // 「代理关时也显真实登录态」：组网 Tab 激活 + 代理关 + 有 TS 节点 → 拉 status-only 探针读各节点真实登录态
   // （驱动「检测中→已登录/需登录」角标，修「代理关 → 无 STATUS → 已登录节点误显需登录」）。代理在跑时主核 STATUS

@@ -16,6 +16,7 @@ import { registerIpcHandler } from '../ipc-handler';
 import type { IPrivilegedHelper } from '../../services/IPrivilegedHelper';
 import type { IProxyManager } from '../../services/ProxyManager';
 import { getSingboxDashboardDir } from '../../utils/paths';
+import { mapElectronLocaleToDashboardLang } from '../../utils/dashboard-locale';
 
 /**
  * 清 sing-box 官方面板资源缓存目录（dashboard.path）。删后核下次启动因目录为空 → 从 download_url 重拉新 zip。
@@ -80,16 +81,7 @@ export function registerHelperHandlers(
     const bareUrl = info.apiUrl.replace(/^https?:\/\//, '');
     // 面板语言：随 FlowZ 系统 locale 映射到面板合法码（源码实证 xl=[en/zh-Hans/zh-Hant/fa/ru]），preload 首开写入。
     // 面板默认按 navigator.languages 自检，但 Electron 窗口该值常为 en → 中文系统也显英文；故主动对齐（映射逻辑同面板 El()）。
-    const loc = app.getLocale().toLowerCase();
-    const dashLang = loc.startsWith('zh')
-      ? /hant|tw|hk|mo/.test(loc)
-        ? 'zh-Hant'
-        : 'zh-Hans'
-      : loc.startsWith('fa')
-        ? 'fa'
-        : loc.startsWith('ru')
-          ? 'ru'
-          : 'en';
+    const dashLang = mapElectronLocaleToDashboardLang(app.getLocale());
     const serverPayload = JSON.stringify({
       servers: {
         servers: [{ id: serverId, name: '', url: bareUrl, secret: info.secret }],
@@ -108,11 +100,11 @@ export function registerHelperHandlers(
       autoHideMenuBar: true,
       webPreferences: {
         // 面板专用 preload：经 additionalArguments 拿 server payload，在页面脚本前于同源写 localStorage。
-        // dashboard-preload.ts 在 src/main/ 顶层 → 编到 dist/main/main/dashboard-preload.js；而本文件在
-        // dist/main/main/ipc/handlers/ → __dirname 深两级，故上跳两级锚定。原 path.join(__dirname,'dashboard-preload.js')
-        // 解析到不存在的 ipc/handlers/dashboard-preload.js → preload 静默不加载 → localStorage 未预写 → 面板空表单
-        // （dashboard #55 自动连真机回归根因；asar 内实层级实证）。
-        preload: path.join(__dirname, '..', '..', 'dashboard-preload.js'),
+        // dashboard-preload.ts 在 src/main/ 顶层（rootDir=src/outDir=dist/main）→ 编到 dist/main/main/dashboard-preload.js。
+        // 锚 app.getAppPath()（dev=项目根、打包=app.asar 根）+ 固定相对路径，比从本文件 __dirname 上跳目录稳——
+        // 后者随本 handler 文件迁移层级即失配（曾因上跳级数不符解析到不存在路径 → preload 静默不加载 → localStorage
+        // 未预写 → 面板空表单，dashboard #55 自动连真机回归根因）。
+        preload: path.join(app.getAppPath(), 'dist/main/main/dashboard-preload.js'),
         // 本窗口仅加载本地 127.0.0.1 受信面板，关 contextIsolation 让 preload 直写页面同源 localStorage；零 Node 暴露（preload 不挂 API）。
         contextIsolation: false,
         nodeIntegration: false,
