@@ -12,7 +12,8 @@ import { APP_USER_AGENT } from '../../shared/constants';
 import { getUserDataPath } from '../utils/paths';
 import { system32 } from '../utils/win-system32';
 import { compareSemver } from '../../shared/version';
-import { ghMirrorUrl } from '../../shared/gh-proxy';
+import { ghMirrorUrl, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
+import type { UserConfig } from '../../shared/types';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { findSuitableUpdateAsset } from './update-asset';
@@ -41,6 +42,9 @@ export class UpdateService {
   };
   private skippedVersion: string | null = null;
   private cleanupCallback: (() => Promise<void>) | null = null;
+  // #60：注入配置读取器（仅用于读 ghProxyPrefix 下载镜像前缀），构造后注入。未配置→null（直连，旧行为）。
+  // 与 CoreUpdateService.configProvider / CoreDownloader 同口径——App 自更新与内核/资源下载共用同一 gh 加速前缀。
+  private configProvider: (() => Promise<UserConfig | null>) | null = null;
 
   constructor(logManager: LogManager) {
     this.logManager = logManager;
@@ -53,6 +57,22 @@ export class UpdateService {
    */
   setCleanupCallback(callback: () => Promise<void>): void {
     this.cleanupCallback = callback;
+  }
+
+  /** #60：注入配置读取器（读 ghProxyPrefix）。仿 CoreUpdateService.setConfigProvider，构造后由 index.ts 注入。 */
+  setConfigProvider(provider: () => Promise<UserConfig | null>): void {
+    this.configProvider = provider;
+  }
+
+  /** 读用户配置的 GitHub 加速前缀（规范化）。未配置/读失败 → undefined（直连兜底，不抛）。 */
+  private async resolveGhPrefix(): Promise<string | undefined> {
+    try {
+      const cfg = this.configProvider ? await this.configProvider() : null;
+      const raw = cfg?.ghProxyPrefix;
+      return raw ? (normalizeGhProxyPrefix(raw) ?? undefined) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   setMainWindow(window: BrowserWindow | null): void {
@@ -749,6 +769,9 @@ export class UpdateService {
       onProgress: (downloadedBytes: number, totalSize: number) => void;
     }
   ): Promise<void> {
+    // #60：先解析用户 ghProxyPrefix（async），供 handleError 兜底镜像拼接用——与 CoreDownloader.downloadFile 同口径
+    // （在 Promise executor 外 await 配置，闭包内用解析后的同步值）。未配置 → undefined（ghMirrorUrl 回落内置 preset[0]）。
+    const ghPrefix = await this.resolveGhPrefix();
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(destPath);
       let downloadedBytes = 0;
@@ -780,7 +803,8 @@ export class UpdateService {
             'UpdateService'
           );
           cb.onMirror();
-          const mirrorUrl = ghMirrorUrl(url);
+          // #60：兜底镜像优先用用户配置的 ghProxyPrefix（应用内核/资源下载同一加速前缀），缺失才回落内置 preset[0]。
+          const mirrorUrl = ghMirrorUrl(url, ghPrefix);
           this.downloadWithHardening(mirrorUrl, destPath, totalSize, true, cb)
             .then(resolve)
             .catch(reject);

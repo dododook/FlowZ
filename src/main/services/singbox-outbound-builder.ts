@@ -61,8 +61,20 @@ export function prunedSelectorDefault(
   return tag?.startsWith('rule-sel-') ? 'proxy-selector' : remainingOutbounds[0];
 }
 
-/** WireGuard endpoint 构造（sing-box 1.11+ 顶层 endpoints[]）。config-gen 与测速共用。 */
-export function buildWireGuardEndpoint(server: ServerConfig, tag: string): SingBoxEndpoint {
+/**
+ * WireGuard endpoint 构造（sing-box 1.11+ 顶层 endpoints[]）。config-gen 与测速共用。
+ *
+ * #58：peer.address 为【域名】时（如 WARP engage.cloudflareclient.com）必须给 endpoint 顶层 dial 级
+ * domain_resolver，否则 sing-box 1.14 起域名无确定解析上游 → 拨号解析失败/超时（实测：WARP 测速超时，
+ * Dalutone IP-server 正常）。与 buildProxyOutbound 的 outbound.domain_resolver 同口径。调用方传解析器
+ * tag（config-gen：getNodeResolverTag(config,'dial')；测速：'dns-direct'）。
+ * IP 字面量 server 不需 DNS 解析 → 不下发该字段（保持配置精简，且 IP 路径本就不受影响）。
+ */
+export function buildWireGuardEndpoint(
+  server: ServerConfig,
+  tag: string,
+  domainResolverTag?: string
+): SingBoxEndpoint {
   const s = server.wireguardSettings;
   if (!s || !s.privateKey || !s.peerPublicKey || !s.localAddress?.length) {
     throw new Error('WireGuard 配置缺少 privateKey/peerPublicKey/localAddress');
@@ -75,9 +87,14 @@ export function buildWireGuardEndpoint(server: ServerConfig, tag: string): SingB
       'WireGuard 节点无可路由网段（关外网 或 system 内核接口 且无具体段）：空 allowed_ips 会致 sing-box FATAL'
     );
   }
+  // 域名 server 才需 domain_resolver（IP 字面量直拨、无需解析）。endpoint 级显式优于仅靠
+  // route.default_domain_resolver——后者的「单 DNS server 时可省略」豁免更脆弱，且 1.14 deprecation 走向是
+  // 域名 dial 必须显式 resolver。peer 级 domain_resolver 内核不接受（实测 FATAL unknown field），故放 endpoint 顶层。
+  const needsResolver = !!domainResolverTag && !isIpLiteral(server.address);
   return {
     type: 'wireguard',
     tag,
+    ...(needsResolver ? { domain_resolver: domainResolverTag } : {}),
     // Phase 2：reverseMesh=true → system:true（真内核 WG 接口，反向可达）；缺省 false=userspace gVisor。
     // 此时 allowed_ips 已由 wireguardPeerAllowedIps 收为 specific-only（结论A）。system:true 需 helper 提权，
     // 由连接闸门/校验确保仅 helper 活跃时该节点 reverseMesh 才成立（见 server-completeness）。
@@ -766,7 +783,10 @@ export function buildOutbounds(
           continue;
         }
         try {
-          pendingEndpoints.push(buildWireGuardEndpoint(server, tag));
+          // #58：域名 server 的 WG endpoint 需 dial 级 domain_resolver，与普通协议同档（getNodeResolverTag dial）。
+          pendingEndpoints.push(
+            buildWireGuardEndpoint(server, tag, getNodeResolverTag(config, 'dial'))
+          );
           nodeTags.push(tag);
           // 不承载全隧道但有具体段（关外网 或 Phase2 system 内核接口）：节点可用、仅承载列表网段（不当默认
           // 出网）。warn 进诊断报告，便于排查「选它却不出网」。

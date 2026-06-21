@@ -161,6 +161,31 @@ describe('buildWireGuardEndpoint', () => {
       )
     ).toThrow(/allowed/i);
   });
+
+  // #58：域名 server 的 WG endpoint 需 dial 级 domain_resolver（1.14 域名拨号无确定解析上游 → WARP 测速超时）。
+  it('域名 server + domainResolverTag → endpoint 顶层 emit domain_resolver', () => {
+    const ep = buildWireGuardEndpoint(wgServer(), 'WG', 'dns-direct');
+    expect(ep.domain_resolver).toBe('dns-direct');
+  });
+
+  it('不传 domainResolverTag → 不下发 domain_resolver（保持旧行为 / 主配置依赖 route 默认）', () => {
+    const ep = buildWireGuardEndpoint(wgServer(), 'WG');
+    expect(ep.domain_resolver).toBeUndefined();
+  });
+
+  it('IPv4 字面量 server + domainResolverTag → 不下发 domain_resolver（IP 直拨无需 DNS 解析）', () => {
+    const ep = buildWireGuardEndpoint(wgServer({ address: '162.159.192.1' }), 'WG', 'dns-direct');
+    expect(ep.domain_resolver).toBeUndefined();
+  });
+
+  it('IPv6 字面量 server + domainResolverTag → 不下发 domain_resolver', () => {
+    const ep = buildWireGuardEndpoint(
+      wgServer({ address: '2606:4700:d0::a29f:c001' }),
+      'WG',
+      'dns-direct'
+    );
+    expect(ep.domain_resolver).toBeUndefined();
+  });
 });
 
 describe('isNodeUsable', () => {

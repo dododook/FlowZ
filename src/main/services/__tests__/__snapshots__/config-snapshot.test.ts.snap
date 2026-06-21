@@ -7478,6 +7478,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "address": [
           "10.0.0.2/32",
         ],
+        "domain_resolver": "dns-bootstrap",
         "mtu": 1408,
         "peers": [
           {
