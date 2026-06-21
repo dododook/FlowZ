@@ -3,7 +3,7 @@
  * 负责 sing-box 进程的生命周期管理和配置生成
  */
 
-import { BrowserWindow, Notification, shell } from 'electron';
+import { BrowserWindow, Notification, shell, powerMonitor } from 'electron';
 import { spawn, ChildProcess } from 'child_process';
 import { system32, powershellPath } from '../utils/win-system32';
 import * as fs from 'fs/promises';
@@ -25,6 +25,7 @@ import type { IPrivilegedHelper } from './IPrivilegedHelper';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
+import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
@@ -232,6 +233,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private clearingSystemProxy = false;
   // ensureSystemDnsRestored 单飞：与系统代理同终态多路并发，防重复 restore。
   private clearingSystemDns = false;
+  // macOS DNS 接管「热插重灌」watcher：setDns 成功后起、stop/终态还原时停（仅 darwin，与 setDns 真接管同口径）。
+  // 长驻 route -n monitor 探链路变化 + powerMonitor resume → 去抖调 reconcileDns 补接管新出现/换网未受控的服务。
+  private dnsInterfaceWatcher: DnsInterfaceWatcher | null = null;
   // 「主动停止/重启中」：stop() 期间置位，令 ensureSystemProxyCleared 跳过——避免重启 stop 腿清掉系统代理后
   // 又被 start() reconcile 设回的并发竞态（C1）。真·外部死亡时为 false → 信号死分支照常清理。
   private stopping = false;
@@ -817,8 +821,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     try {
       if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
         await this.systemDnsManager?.setDns();
+        // 接管成功 → 起热插重灌 watcher（探链路变化/唤醒 → 去抖 reconcile 补接管换网/新服务）。仅 darwin 真起，
+        // best-effort：起失败不阻断 TUN 启动（watcher 失效 ≠ 接管失效，已接管服务仍受控）。
+        this.startDnsInterfaceWatcher();
       } else {
-        // 非 TUN / 用户关掉接管开关 → 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
+        // 非 TUN / 用户关掉接管开关 → 停 watcher（若在）+ 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
+        this.stopDnsInterfaceWatcher();
         await this.ensureSystemDnsRestored();
       }
     } catch (e) {
@@ -951,6 +959,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       clearTimeout(this.connectionFlushTimer);
       this.connectionFlushTimer = null;
     }
+    // 停 DNS 接口 watcher（停止/切模式/重启 stop 腿统一入口）：杀 route monitor 子进程 + 反注册 resume + 取消在飞去抖。
+    // 切模式重启时这里先停，紧随的 start() 会按新模式重判是否重起（TUN→重起 / 其它→保持停），零打架。best-effort 不抛。
+    this.stopDnsInterfaceWatcher();
     // 用户意图优先：取消可能在退避窗口内待发的自动重启（崩溃后进程已死、refs 均 null 会触发下面的早退，
     // 但 attemptAutoRestart 仍在退避中——退避期 isRestarting=true，故这里能拦下，M3）。
     // 条件置位（含 isRestarting）：避免 start() 启动窗口内（已过复位点、refs 尚未就绪、isRestarting=false）
@@ -4713,6 +4724,10 @@ exit 0
    */
   async ensureSystemDnsRestored(): Promise<void> {
     if (this.clearingSystemDns) return; // 单飞：多路终态并发只还原一次
+    // 还原 = DNS 接管即将/已终态 → 顺带停 watcher（覆盖崩溃/外部死亡/giveUp 这些不经 stop() 的终态点，经
+    // ensureSystemProxyCleared → 本方法收口）。幂等：watcher 不在则 no-op。放 marker 判定之前——即便已无 marker
+    // 也确保 watcher 停掉（避免接管已失效但 watcher 仍空转探链路）。
+    this.stopDnsInterfaceWatcher();
     const mgr = this.systemDnsManager;
     if (!mgr) return;
     // 仅当 DNS 确由 FlowZ 接管（marker 在）才动手 → 不误改用户自配/系统默认 DNS
@@ -4728,6 +4743,58 @@ exit 0
       );
     } finally {
       this.clearingSystemDns = false;
+    }
+  }
+
+  /**
+   * 起 macOS DNS 接管「热插重灌」watcher（薄接线）：仅 darwin 起（与 setDns 真接管同口径；Win/Linux no-op）。
+   * 长驻 route -n monitor + powerMonitor resume → 命中去抖 → 经门控（shouldReconcileDns）判定后调 reconcileDns()。
+   * 幂等（DnsInterfaceWatcher.start 内部 started 守卫）。best-effort：构造/起失败仅 warn，绝不抛、不阻断 TUN 启动。
+   */
+  private startDnsInterfaceWatcher(): void {
+    if (process.platform !== 'darwin') return; // 仅 macOS 接管系统 DNS → 仅此平台需热插重灌 watcher。
+    if (this.dnsInterfaceWatcher) return; // 幂等：已在跑则 no-op（重复 setDns 不重起）。
+    const mgr = this.systemDnsManager;
+    if (!mgr) return;
+    try {
+      this.dnsInterfaceWatcher = new DnsInterfaceWatcher({
+        // route -n monitor：长驻打印内核路由表变更事件（接口 up/down、地址增删、默认路由切换）。
+        spawnRouteMonitor: () =>
+          spawn('route', ['-n', 'monitor'], { stdio: ['ignore', 'pipe', 'ignore'] }),
+        powerMonitor,
+        // 去抖后的统一 reconcile 入口：门控镜像 setDns（仅 TUN + 未关接管 + marker 在才动手），否则跳过。
+        onTrigger: async () => {
+          if (!shouldReconcileDns(this.currentConfig, mgr.hasMarker())) return;
+          await mgr.reconcileDns();
+        },
+        debounceMs: 1500, // 1.5s：合并插坞站/换网的 RTM_ burst（设计建议 1–2s）。
+        schedule: (fn, ms) => setTimeout(fn, ms),
+        clearSchedule: (h) => clearTimeout(h),
+        onWarn: (level, message) => this.logToManager(level, message),
+      });
+      this.dnsInterfaceWatcher.start();
+      this.logToManager('info', 'DNS 接口 watcher 已启动（热插/换网/唤醒 → 重灌系统 DNS 接管）');
+    } catch (e) {
+      this.dnsInterfaceWatcher = null;
+      this.logToManager(
+        'warn',
+        `启动 DNS 接口 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+  }
+
+  /** 停 DNS 接口 watcher（杀 route monitor 子进程 + 反注册 resume + 取消在飞去抖）。幂等、best-effort 不抛。 */
+  private stopDnsInterfaceWatcher(): void {
+    if (!this.dnsInterfaceWatcher) return;
+    try {
+      this.dnsInterfaceWatcher.stop();
+    } catch (e) {
+      this.logToManager(
+        'warn',
+        `停止 DNS 接口 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
+      );
+    } finally {
+      this.dnsInterfaceWatcher = null;
     }
   }
 
