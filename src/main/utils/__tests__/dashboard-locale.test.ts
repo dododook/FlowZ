@@ -20,6 +20,19 @@ describe('mapElectronLocaleToDashboardLang', () => {
     expect(mapElectronLocaleToDashboardLang('zh-SG')).toBe('zh-Hans');
   });
 
+  it('脚本优先：hans 脚本压过 tw/hk/mo 地区码，mo 裸子串不误判繁体', () => {
+    // 澳门简体：显式 hans 脚本 → zh-Hans（不被地区码 mo 抢判繁体）。
+    expect(mapElectronLocaleToDashboardLang('zh-Hans-MO')).toBe('zh-Hans');
+    // 私有扩展 promo 含子串 mo，但非锚定地区段 + 有 hans 脚本 → zh-Hans。
+    expect(mapElectronLocaleToDashboardLang('zh-hans-x-promo')).toBe('zh-Hans');
+  });
+
+  it('地区码锚定段边界判繁体：zh-MO/zh-TW → zh-Hant', () => {
+    expect(mapElectronLocaleToDashboardLang('zh-Hant-TW')).toBe('zh-Hant');
+    expect(mapElectronLocaleToDashboardLang('zh-MO')).toBe('zh-Hant');
+    expect(mapElectronLocaleToDashboardLang('zh-TW')).toBe('zh-Hant');
+  });
+
   it('fa → fa', () => {
     expect(mapElectronLocaleToDashboardLang('fa')).toBe('fa');
     expect(mapElectronLocaleToDashboardLang('fa-IR')).toBe('fa');

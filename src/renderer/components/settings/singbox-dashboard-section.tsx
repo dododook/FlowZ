@@ -17,7 +17,7 @@ export function SingboxDashboardSection() {
   const config = useAppStore((s) => s.config);
   const saveConfig = useAppStore((s) => s.saveConfig);
   const connectionStatus = useAppStore((s) => s.connectionStatus);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const enabled = config?.singboxDashboard === true;
   const running = connectionStatus?.proxyCore?.running === true;
@@ -53,7 +53,9 @@ export function SingboxDashboardSection() {
   };
 
   const openDashboard = () => {
-    api.app.openSingboxDashboard().catch(() => toast.error(t('common.saveFailed')));
+    // 传渲染端实际 UI 语言（i18n.language，如 zh-CN/zh-TW），main 据此对齐内窗口面板语言；
+    // 不能用 app.getLocale()（拿的是 Electron app bundle locale，FlowZ.app 未声明 zh → 恒 en，与 UI 语言脱钩）。
+    api.app.openSingboxDashboard(i18n.language).catch(() => toast.error(t('common.saveFailed')));
   };
 
   // 复制连接信息（dashboard #55）：URL=管理 API 地址 + secret=clashApiSecret，经 IPC 从 main 现取（secret 不长驻渲染端 store）。

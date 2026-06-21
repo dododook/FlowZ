@@ -935,8 +935,9 @@ export const appApi = {
    * 打开 sing-box 官方面板（dashboard #55）：main 开应用内窗口加载运行期 /dashboard/，并经 preload 预写 localStorage
    * 一键直连（免手填后端）。代理未运行 → 返回 { ok: false }（UI 仅在开关 on 且运行中才 enable 按钮）。
    */
-  async openSingboxDashboard(): Promise<{ ok: boolean }> {
-    return ipcClient.invoke(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD);
+  async openSingboxDashboard(locale?: string): Promise<{ ok: boolean }> {
+    // locale=渲染端 UI 语言（i18n.language），透传给 main 对齐面板语言；省略时 main 兜底 app.getLocale()。
+    return ipcClient.invoke(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD, locale);
   },
   /**
    * 刷新 sing-box 官方面板资源：main 清本地缓存目录 → 核下次启动重拉新 zip。供设置页手动刷新。

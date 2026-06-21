@@ -63,80 +63,84 @@ export function registerHelperHandlers(
   // 并经面板专用 preload 在 document-start 预写 localStorage `sing-box-dashboard.server`（一键直连，免手填后端）。
   // 真机实证：面板只读该 localStorage 键、不读 URL 参数，故 payload 必须经 preload 在面板 JS 读 localStorage 前写好。
   // 代理未运行（端口=0）→ 不打开（dashboard 仅运行中可用）；UI 侧亦在「开关 on 且运行中」才 enable 按钮。
-  registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD, async () => {
-    const info = proxyManager.getDashboardConnectionInfo();
-    if (!info.ok) return { ok: false };
+  registerIpcHandler<string | undefined, { ok: boolean }>(
+    IPC_CHANNELS.OPEN_SINGBOX_DASHBOARD,
+    async (_event, locale) => {
+      const info = proxyManager.getDashboardConnectionInfo();
+      if (!info.ok) return { ok: false };
 
-    // 已有面板窗口 → 聚焦复用（避免重复开窗）。
-    if (dashboardWindow && !dashboardWindow.isDestroyed()) {
-      dashboardWindow.focus();
+      // 已有面板窗口 → 聚焦复用（避免重复开窗）。
+      if (dashboardWindow && !dashboardWindow.isDestroyed()) {
+        dashboardWindow.focus();
+        return { ok: true };
+      }
+
+      // 预写面板 localStorage（面板源码实证 index-*.js）：
+      //  - 权威存储键 `sing-box-dashboard.servers`：{servers:[{id,name,url,secret}],activeId}（面板渲染/连接的实际数据源）。
+      //  - 旧版迁移键 `sing-box-dashboard.server`：扁平 {url,secret}（面板读一次即 removeItem 并并入 servers 存储）——兜底
+      //    极旧版面板。url 用 host:port（无协议前缀），与面板 g() 归一化（去尾斜杠 + 去 http:// 前缀）后存量格式一致。
+      const serverId = crypto.randomUUID();
+      const bareUrl = info.apiUrl.replace(/^https?:\/\//, '');
+      // 面板语言：优先用渲染端传入的 UI 语言（i18n.language），映射到面板合法码（源码实证 xl=[en/zh-Hans/zh-Hant/fa/ru]），preload 首开写入。
+      // app.getLocale() 仅作兜底——它返回 Electron app bundle locale（FlowZ.app 未声明 zh → 恒 en），与 FlowZ UI 实际语言脱钩，
+      // 单用它会让中文 UI 的内窗口面板仍显英文。映射逻辑同面板 El()，前缀匹配可正确处理 zh-CN/zh-TW/fa-IR 等。
+      const dashLang = mapElectronLocaleToDashboardLang(locale || app.getLocale());
+      const serverPayload = JSON.stringify({
+        servers: {
+          servers: [{ id: serverId, name: '', url: bareUrl, secret: info.secret }],
+          activeId: serverId,
+        },
+        legacy: { url: bareUrl, secret: info.secret },
+        language: dashLang,
+      });
+
+      dashboardWindow = new BrowserWindow({
+        width: 1100,
+        height: 760,
+        minWidth: 800,
+        minHeight: 600,
+        title: 'sing-box Dashboard',
+        autoHideMenuBar: true,
+        webPreferences: {
+          // 面板专用 preload：经 additionalArguments 拿 server payload，在页面脚本前于同源写 localStorage。
+          // dashboard-preload.ts 在 src/main/ 顶层（rootDir=src/outDir=dist/main）→ 编到 dist/main/main/dashboard-preload.js。
+          // 锚 app.getAppPath()（dev=项目根、打包=app.asar 根）+ 固定相对路径，比从本文件 __dirname 上跳目录稳——
+          // 后者随本 handler 文件迁移层级即失配（曾因上跳级数不符解析到不存在路径 → preload 静默不加载 → localStorage
+          // 未预写 → 面板空表单，dashboard #55 自动连真机回归根因）。
+          preload: path.join(app.getAppPath(), 'dist/main/main/dashboard-preload.js'),
+          // 本窗口仅加载本地 127.0.0.1 受信面板，关 contextIsolation 让 preload 直写页面同源 localStorage；零 Node 暴露（preload 不挂 API）。
+          contextIsolation: false,
+          nodeIntegration: false,
+          sandbox: false,
+          additionalArguments: [`--flowz-dashboard-server=${serverPayload}`],
+        },
+      });
+      if (process.platform !== 'darwin') dashboardWindow.setMenu(null);
+      dashboardWindow.once('closed', () => {
+        dashboardWindow = null;
+      });
+
+      // 安全闸（H1）：本窗口 contextIsolation 关 + 加载第三方面板代码，必须锁死导航边界——否则面板内任意链接/重定向/
+      // window.open 可把本窗口（或继承同 webPreferences 的子窗口）导航到远端源，泄漏已写入 localStorage 的 secret。
+      //  - setWindowOpenHandler：拒绝一切子窗口；http(s) 外链改走系统浏览器（绝不在带这套 prefs 的窗口里开）。
+      //  - will-navigate：只允许停留在本地 api service 源（http://127.0.0.1:<port>），跨源导航一律拦下。
+      const localOrigin = info.apiUrl; // http://127.0.0.1:<port>（无尾斜杠）
+      const wc = dashboardWindow.webContents;
+      wc.setWindowOpenHandler(({ url }) => {
+        if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+        return { action: 'deny' };
+      });
+      wc.on('will-navigate', (event, url) => {
+        if (!url.startsWith(`${localOrigin}/`)) {
+          event.preventDefault();
+          if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+        }
+      });
+
+      await dashboardWindow.loadURL(info.url);
       return { ok: true };
     }
-
-    // 预写面板 localStorage（面板源码实证 index-*.js）：
-    //  - 权威存储键 `sing-box-dashboard.servers`：{servers:[{id,name,url,secret}],activeId}（面板渲染/连接的实际数据源）。
-    //  - 旧版迁移键 `sing-box-dashboard.server`：扁平 {url,secret}（面板读一次即 removeItem 并并入 servers 存储）——兜底
-    //    极旧版面板。url 用 host:port（无协议前缀），与面板 g() 归一化（去尾斜杠 + 去 http:// 前缀）后存量格式一致。
-    const serverId = crypto.randomUUID();
-    const bareUrl = info.apiUrl.replace(/^https?:\/\//, '');
-    // 面板语言：随 FlowZ 系统 locale 映射到面板合法码（源码实证 xl=[en/zh-Hans/zh-Hant/fa/ru]），preload 首开写入。
-    // 面板默认按 navigator.languages 自检，但 Electron 窗口该值常为 en → 中文系统也显英文；故主动对齐（映射逻辑同面板 El()）。
-    const dashLang = mapElectronLocaleToDashboardLang(app.getLocale());
-    const serverPayload = JSON.stringify({
-      servers: {
-        servers: [{ id: serverId, name: '', url: bareUrl, secret: info.secret }],
-        activeId: serverId,
-      },
-      legacy: { url: bareUrl, secret: info.secret },
-      language: dashLang,
-    });
-
-    dashboardWindow = new BrowserWindow({
-      width: 1100,
-      height: 760,
-      minWidth: 800,
-      minHeight: 600,
-      title: 'sing-box Dashboard',
-      autoHideMenuBar: true,
-      webPreferences: {
-        // 面板专用 preload：经 additionalArguments 拿 server payload，在页面脚本前于同源写 localStorage。
-        // dashboard-preload.ts 在 src/main/ 顶层（rootDir=src/outDir=dist/main）→ 编到 dist/main/main/dashboard-preload.js。
-        // 锚 app.getAppPath()（dev=项目根、打包=app.asar 根）+ 固定相对路径，比从本文件 __dirname 上跳目录稳——
-        // 后者随本 handler 文件迁移层级即失配（曾因上跳级数不符解析到不存在路径 → preload 静默不加载 → localStorage
-        // 未预写 → 面板空表单，dashboard #55 自动连真机回归根因）。
-        preload: path.join(app.getAppPath(), 'dist/main/main/dashboard-preload.js'),
-        // 本窗口仅加载本地 127.0.0.1 受信面板，关 contextIsolation 让 preload 直写页面同源 localStorage；零 Node 暴露（preload 不挂 API）。
-        contextIsolation: false,
-        nodeIntegration: false,
-        sandbox: false,
-        additionalArguments: [`--flowz-dashboard-server=${serverPayload}`],
-      },
-    });
-    if (process.platform !== 'darwin') dashboardWindow.setMenu(null);
-    dashboardWindow.once('closed', () => {
-      dashboardWindow = null;
-    });
-
-    // 安全闸（H1）：本窗口 contextIsolation 关 + 加载第三方面板代码，必须锁死导航边界——否则面板内任意链接/重定向/
-    // window.open 可把本窗口（或继承同 webPreferences 的子窗口）导航到远端源，泄漏已写入 localStorage 的 secret。
-    //  - setWindowOpenHandler：拒绝一切子窗口；http(s) 外链改走系统浏览器（绝不在带这套 prefs 的窗口里开）。
-    //  - will-navigate：只允许停留在本地 api service 源（http://127.0.0.1:<port>），跨源导航一律拦下。
-    const localOrigin = info.apiUrl; // http://127.0.0.1:<port>（无尾斜杠）
-    const wc = dashboardWindow.webContents;
-    wc.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-      return { action: 'deny' };
-    });
-    wc.on('will-navigate', (event, url) => {
-      if (!url.startsWith(`${localOrigin}/`)) {
-        event.preventDefault();
-        if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
-      }
-    });
-
-    await dashboardWindow.loadURL(info.url);
-    return { ok: true };
-  });
+  );
 
   // 刷新 sing-box 官方面板资源：清本地缓存目录 → 核下次启动（或下次配置变更触发 switchMode 重启）重拉新 zip。
   // 不在此触发重启（保「不打断连接」语义）：UI 提示用户重连/下次启动生效。删目录幂等，不存在不报错。
@@ -145,12 +149,13 @@ export function registerHelperHandlers(
     return { ok: true };
   });
 
-  // dashboard #55：取面板连接信息（URL + secret）供「复制连接信息」按钮。secret 取自 main config，不长驻渲染端 store。
-  registerIpcHandler<void, { ok: boolean; apiUrl: string; secret: string }>(
+  // dashboard #55：取面板连接信息（url=面板 URL + apiUrl + secret）供「复制连接信息」按钮与面板 URL 显示。
+  // url 字段不可漏：渲染端 singbox-dashboard-section 据 info.url 显示可点的面板地址，缺失则恒回落「未运行」文案。
+  registerIpcHandler<void, { ok: boolean; url: string; apiUrl: string; secret: string }>(
     IPC_CHANNELS.GET_SINGBOX_DASHBOARD_CONNECTION,
     async () => {
       const info = proxyManager.getDashboardConnectionInfo();
-      return { ok: info.ok, apiUrl: info.apiUrl, secret: info.secret };
+      return { ok: info.ok, url: info.url, apiUrl: info.apiUrl, secret: info.secret };
     }
   );
 

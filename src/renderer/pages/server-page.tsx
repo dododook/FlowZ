@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { ServerList } from '@/components/settings/server-list';
@@ -103,6 +103,15 @@ export function ServerPage() {
   // （驱动「检测中→已登录/需登录」角标，修「代理关 → 无 STATUS → 已登录节点误显需登录」）。代理在跑时主核 STATUS
   // 本就有，不触发。ref 节流：同一「代理态 × 是否有 TS 节点」条件只触发一次，避免切 Tab/重渲染反复拉核（主进程
   // 亦单飞兜底）。代理态翻转（关→开→关）会让指纹变化、允许下次代理关时重新探测。
+  // 探针指纹：含组网成员标识（排序后的 server id 拼接），而非仅数量——否则「删一节点同时增一节点」数量不变会漏探。
+  const meshFingerprint = useMemo(
+    () =>
+      meshServers
+        .map((s) => s.id)
+        .sort()
+        .join(','),
+    [meshServers]
+  );
   const probeFingerprintRef = useRef<string>('');
   const probeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -119,7 +128,7 @@ export function ServerPage() {
       setTailscaleStatusProbing(false);
       return;
     }
-    const fingerprint = `mesh:${meshServers.length}`;
+    const fingerprint = `mesh:${meshFingerprint}`;
     if (probeFingerprintRef.current === fingerprint) return;
     probeFingerprintRef.current = fingerprint;
     setTailscaleStatusProbing(true);
@@ -136,13 +145,9 @@ export function ServerPage() {
       clearProbeTimeout();
       setTailscaleStatusProbing(false);
     });
-  }, [
-    activeTab,
-    proxyRunning,
-    hasTailscaleMeshNode,
-    meshServers.length,
-    setTailscaleStatusProbing,
-  ]);
+    // 卸载/依赖变更时清未 fire 的 13s 兜底 timeout（否则组件已卸载，timer 仍 fire setTailscaleStatusProbing → 对已卸载组件 set）。
+    return () => clearProbeTimeout();
+  }, [activeTab, proxyRunning, hasTailscaleMeshNode, meshFingerprint, setTailscaleStatusProbing]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
