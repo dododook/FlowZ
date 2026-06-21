@@ -83,6 +83,10 @@ interface AppState {
   // 仅 Tailscale 节点入表；EVENT_TAILSCALE_STATUS 到达时由 setTailscaleLoginState 更新。
   tailscaleLoginStates: Record<string, boolean>;
 
+  // Tailscale 节点内网 IP（serverId → tailnet IP 列表，100.x/fd7a:…）。1.14 api STATUS 流（self.tailscaleIPs）
+  // 实时携带，由 setTailscaleIps 写入；供节点卡片「组网信息」popover 展示内网 IP，消「要登录控制台才看得到」黑盒。
+  tailscaleIps: Record<string, string[]>;
+
   // Privacy Protection Mode
   isPrivacyMode: boolean;
 
@@ -120,6 +124,8 @@ interface AppState {
   refreshStatistics: () => Promise<void>;
   // Tailscale 登录态单条覆盖（loggedIn=Running||Starting），由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleLoginState: (serverId: string, loggedIn: boolean) => void;
+  // Tailscale 内网 IP 单条覆盖（self.tailscaleIPs），由 EVENT_TAILSCALE_STATUS 驱动。
+  setTailscaleIps: (serverId: string, ips: string[]) => void;
 
   // Server Management Actions
   deleteServer: (serverId: string) => Promise<void>;
@@ -151,6 +157,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   latencyMap: {},
   invalidNodes: {},
   tailscaleLoginStates: {},
+  tailscaleIps: {},
   isPrivacyMode: false,
   helperStatus: null,
   availableAppUpdate: null,
@@ -383,6 +390,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 1.14 api STATUS 是单一真值（无整表刷新 / 无乐观代际防覆盖：无并发整表覆盖竞态，纯单点写）。
   setTailscaleLoginState: (serverId, loggedIn) => {
     set((s) => ({ tailscaleLoginStates: { ...s.tailscaleLoginStates, [serverId]: loggedIn } }));
+  },
+
+  // 单条覆盖：EVENT_TAILSCALE_STATUS 即时更新该节点内网 IP（self.tailscaleIPs，纯单点写无并发竞态）。
+  setTailscaleIps: (serverId, ips) => {
+    set((s) => ({ tailscaleIps: { ...s.tailscaleIps, [serverId]: ips } }));
   },
 
   // Server Management Actions

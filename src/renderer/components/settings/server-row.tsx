@@ -10,6 +10,8 @@ import { isAccountBasedProtocol } from '../../../shared/endpoint-routes';
 import type { InvalidNodeInfo } from '../../../shared/types';
 import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { ServerActions } from './server-actions';
+import { SpeedBadge } from './speed-badge';
+import { MeshInfoPopover } from './mesh-info-popover';
 import {
   getCountryCode,
   getTransportLabel,
@@ -177,14 +179,24 @@ export function ServerRow({
             </Badge>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {endpointLabel(server)}
-          {!isAccountBasedProtocol(server.protocol) &&
-            server.protocol?.toLowerCase() !== 'custom' &&
-            getTransportLabel(server) !== 'tcp' && (
-              <span className="ms-2">{getTransportLabel(server)}</span>
-            )}
-        </p>
+        {/* 底部信息行（端点/传输）+ 测速结果（右，#59）。组网节点前缀 ⓘ 弹内网IP/路由（#61）。
+            用 div 而非 p：内含 HoverCard 触发器 <button>，p 内嵌 button 是非法嵌套。 */}
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
+          <span className="inline-flex items-center gap-1 min-w-0 truncate">
+            <MeshInfoPopover server={server} />
+            <span className="truncate">
+              {endpointLabel(server)}
+              {!isAccountBasedProtocol(server.protocol) &&
+                server.protocol?.toLowerCase() !== 'custom' &&
+                getTransportLabel(server) !== 'tcp' && (
+                  <span className="ms-2">{getTransportLabel(server)}</span>
+                )}
+            </span>
+          </span>
+          <span className="relative z-10 shrink-0">
+            <SpeedBadge server={server} latencyMap={actions.latencyMap} />
+          </span>
+        </div>
       </div>
 
       {/* 延迟 + 操作 */}

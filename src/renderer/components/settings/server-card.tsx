@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next';
 import type { InvalidNodeInfo } from '../../../shared/types';
 import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { ServerActions } from './server-actions';
+import { SpeedBadge } from './speed-badge';
+import { MeshInfoPopover } from './mesh-info-popover';
 import {
   getCountryCode,
   getTransportLabel,
@@ -170,21 +172,26 @@ export function ServerCard({
         </div>
       </CardHeader>
       <CardContent className="pt-0 pb-3">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {server.protocol?.toLowerCase() === 'shadowsocks' ? (
-            <span>
-              {t('servers.encryption')}: {server.shadowsocksSettings?.method || 'N/A'}
-            </span>
-          ) : (
-            <>
+        {/* 传输/加密信息行（左）+ 测速结果（右下角，#59）。组网节点在「传输:」前加 ⓘ 弹内网IP/路由（#61）。 */}
+        <div className="flex items-end justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {server.protocol?.toLowerCase() === 'shadowsocks' ? (
               <span>
-                {t('servers.transport')}: {getTransportLabel(server)}
+                {t('servers.encryption')}: {server.shadowsocksSettings?.method || 'N/A'}
               </span>
-              <span>
-                {t('servers.encryption')}: {server.security || 'none'}
-              </span>
-            </>
-          )}
+            ) : (
+              <>
+                <span className="inline-flex items-center gap-1">
+                  <MeshInfoPopover server={server} />
+                  {t('servers.transport')}: {getTransportLabel(server)}
+                </span>
+                <span>
+                  {t('servers.encryption')}: {server.security || 'none'}
+                </span>
+              </>
+            )}
+          </div>
+          <SpeedBadge server={server} latencyMap={actions.latencyMap} />
         </div>
       </CardContent>
     </Card>

@@ -1100,7 +1100,11 @@
     "tlsSpoofDescFull": "抗審查：真 TLS 握手前先發一份偽造 ClientHello（用誘餌白名單 SNI），誘使 SNI 阻斷中間盒放行連線。限界：需提權（Linux CAP_NET_RAW+NET_ADMIN / macOS root / Windows 管理員）、ARM64 不支援、誘餌 SNI 須為網域（非 IP 字面量）且必須不同於真 server_name。",
     "tlsSpoofArchUnsupported": "ARM64 不支援 TLS 偽造（核心僅在 amd64 實作）。",
     "tlsSpoofSni": "誘餌 SNI",
-    "tlsSpoofSniDesc": "偽造 ClientHello 中使用的誘餌網域（如某白名單站點）。須為網域（非 IP）且必須不同於真 server_name；留空則不啟用偽造。"
+    "tlsSpoofSniDesc": "偽造 ClientHello 中使用的誘餌網域（如某白名單站點）。須為網域（非 IP）且必須不同於真 server_name；留空則不啟用偽造。",
+    "meshInfoIntranetIp": "內網 IP",
+    "meshInfoRoutes": "路由",
+    "meshInfoNotAssigned": "尚未分配",
+    "meshInfoNoRoutes": "無"
   },
   "rules": {
     "ruleColumn": "規則",

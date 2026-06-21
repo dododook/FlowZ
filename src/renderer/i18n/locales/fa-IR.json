@@ -1100,7 +1100,11 @@
     "tlsSpoofDescFull": "ضدسانسور: پیش از دست‌دهی واقعی TLS، یک ClientHello جعلی با SNI طعمه (فهرست‌سفید) فرستاده می‌شود تا میان‌جعبه‌های مسدودکنندهٔ SNI اتصال را عبور دهند. محدودیت‌ها: نیازمند دسترسی بالا (Linux CAP_NET_RAW+NET_ADMIN / macOS root / Windows Administrator)، روی ARM64 پشتیبانی نمی‌شود، SNI طعمه باید دامنه باشد (نه IP خام) و باید با server_name واقعی متفاوت باشد.",
     "tlsSpoofArchUnsupported": "جعل TLS روی ARM64 پشتیبانی نمی‌شود (هسته آن را فقط روی amd64 پیاده‌سازی کرده است).",
     "tlsSpoofSni": "SNI طعمه",
-    "tlsSpoofSniDesc": "دامنهٔ طعمه که در ClientHello جعلی استفاده می‌شود (مثلاً یک سایت فهرست‌سفید). باید دامنه باشد (نه IP) و با server_name واقعی متفاوت باشد؛ برای غیرفعال‌کردن جعل خالی بگذارید."
+    "tlsSpoofSniDesc": "دامنهٔ طعمه که در ClientHello جعلی استفاده می‌شود (مثلاً یک سایت فهرست‌سفید). باید دامنه باشد (نه IP) و با server_name واقعی متفاوت باشد؛ برای غیرفعال‌کردن جعل خالی بگذارید.",
+    "meshInfoIntranetIp": "IP داخلی",
+    "meshInfoRoutes": "مسیرها",
+    "meshInfoNotAssigned": "هنوز اختصاص نیافته",
+    "meshInfoNoRoutes": "هیچ‌کدام"
   },
   "rules": {
     "ruleColumn": "قانون",

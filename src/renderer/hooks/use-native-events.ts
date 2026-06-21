@@ -255,8 +255,10 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
 
 function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   // sing-box 1.14 管理 API 真实态（取代 1.13 stateExists/stdout 启发式）：loggedIn（Running||Starting）即时驱动
-  // 「需登录」角标。backendState/authURL 仅本地驱动登录 toast（不入 store）；内网 IP/过期待 P1 卡片展示时再接。
+  // 「需登录」角标；tailscaleIPs（self.tailscaleIPs）入 store 供节点卡「组网信息」popover 展示内网 IP。
+  // backendState/authURL 仅本地驱动登录 toast（不入 store）。
   useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
+  useAppStore.getState().setTailscaleIps(data.serverId, data.tailscaleIPs || []);
   // NeedsLogin 且核给出 authURL → 登录 toast（与瞬态核 AUTH_URL 共用 showTsLoginToast，固定 id 供翻 Running 时
   // dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
   if (data.backendState === 'NeedsLogin' && data.authURL) {

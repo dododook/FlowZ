@@ -20,8 +20,6 @@ import { useTranslation } from 'react-i18next';
 import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import {
   hasShareLink,
-  getLatencyColor,
-  getLatencyBg,
   type ServerConfigWithId,
   type ServerActionsContext,
 } from './server-list-helpers';
@@ -37,7 +35,6 @@ export function ServerActions({
   stopPropagation = true,
   testingServerIds,
   isTestingSpeed,
-  latencyMap,
   onSingleSpeedTest,
   onCopyShareUrl,
   onCloneServer,
@@ -65,18 +62,7 @@ export function ServerActions({
           className={`h-3.5 w-3.5 ${testingServerIds.has(server.id) ? 'animate-pulse text-primary fill-primary/20' : ''}`}
         />
       </Button>
-
-      {!testable ? (
-        <span className="text-xs font-medium me-1 px-1.5 py-0.5 rounded text-muted-foreground">
-          {t('servers.speedTestNotApplicable')}
-        </span>
-      ) : latencyMap[server.id] !== undefined ? (
-        <span
-          className={`text-xs font-medium me-1 px-1.5 py-0.5 rounded ${getLatencyColor(latencyMap[server.id])} ${getLatencyBg(latencyMap[server.id])}`}
-        >
-          {latencyMap[server.id] === -1 ? t('servers.timeout') : `${latencyMap[server.id]} ms`}
-        </span>
-      ) : null}
+      {/* 测速结果（延迟/超时/N/A）已移到卡片右下角传输行的 <SpeedBadge>（#59：避免内联在名称行挤折叠节点名）。 */}
       {/* 无分享链接的协议(ProtocolParser.generateUrl 无对应分支)隐藏复制按钮 */}
       {hasShareLink(server.protocol) && (
         <Button
