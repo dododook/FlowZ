@@ -161,6 +161,12 @@ describe('buildCustomRules — legacy customRuleSets 告警', () => {
 // P3a：route action TLS spoof（sing-box 1.14 tls_spoof/tls_spoof_method）。规则携带成对 spoof SNI + 方法时，
 // applyRuleAction 在非 block 规则上挂 tls_spoof/tls_spoof_method。门控：arch(非 ARM64)+方法合法+域名 SNI。
 describe('buildCustomRules — route TLS spoof（P3a 抗审查）', () => {
+  // CI 修复：spoof 门控读 process.arch；正向用例统一 mock x64（macOS CI runner = arm64 否则误失败），
+  // 下方 ARM64 负向用例体内自 mock arm64 再还原。
+  const REAL_ARCH = process.arch;
+  beforeAll(() => Object.defineProperty(process, 'arch', { value: 'x64', configurable: true }));
+  afterAll(() => Object.defineProperty(process, 'arch', { value: REAL_ARCH, configurable: true }));
+
   it('proxy 规则 + 域名 spoof + 合法方法 → tls_spoof/tls_spoof_method 下发', () => {
     const deps = mkDeps();
     const { rules } = buildCustomRules(

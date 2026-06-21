@@ -707,6 +707,11 @@ describe('buildTailscaleEndpoint — P4a 新字段', () => {
 // 五重门控：arch(非 ARM64) + 协议(TCP-TLS) + 诱饵 SNI 非空 + 非 IP 字面量 + 不同于真 server_name + 方法合法。
 // 本机 process.arch=x64（支持），ARM64 路径单独 mock process.arch 验证。
 describe('buildProxyOutbound — TLS spoof（P3a 抗审查）', () => {
+  // CI 修复：spoof 门控读 process.arch（ARM64 不支持，内核仅 amd64 实现）。正向用例统一 mock x64，使其与 CI runner
+  // 实际 arch 无关（macOS runner = arm64，否则正向用例误判失败）；下方 ARM64 负向用例在体内自 mock arm64 再还原。
+  const REAL_ARCH = process.arch;
+  beforeAll(() => Object.defineProperty(process, 'arch', { value: 'x64', configurable: true }));
+  afterAll(() => Object.defineProperty(process, 'arch', { value: REAL_ARCH, configurable: true }));
   const tags = new Map<string, string>();
   const node = (over: Partial<ServerConfig>): ServerConfig =>
     ({ id: 'n', name: 'N', address: 'node.example.com', port: 443, ...over }) as ServerConfig;

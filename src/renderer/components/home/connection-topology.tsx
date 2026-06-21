@@ -49,6 +49,10 @@ export function ConnectionTopology() {
   // 必须注册 watcher（CONNECTIONS_WATCH）：main poller 仅在 connectionsWatchers>0 时才裁剪+推送连接列表（StatsService
   // 效率门控）；首页拓扑此前只 get()+onUpdated() 不注册 → watcher 恒 0 → poller 不喂 → 需先开「连接」页才有数据。
   // 与 connections-table 同款 watch/unwatch，使首页拓扑独立实时（不依赖连接页打开）。
+  // 依赖 proxyRunning：连接流仅核运行时可用。挂载期（核未起）的 watch 不形成有效订阅（StatsService started=false →
+  // addConnectionsWatcher 不开流）；代理启动后须再 watch 一次才触发 0→1 订阅。故 effect 随 proxyRunning 重跑——
+  // 代理起来时 unwatch→watch 的 0→1 跃迁（此时 started=true）触发 subscribeConnectionsStream，等价「打开连接信息」
+  // 那次订阅但自动化。修「启动代理后拓扑不自动刷新、需先点一次连接信息」（陈先生 2026-06-21）。
   useEffect(() => {
     let mounted = true;
     void api.connections.watch().catch(() => {});
@@ -72,7 +76,7 @@ export function ConnectionTopology() {
       unsub();
       void api.connections.unwatch().catch(() => {});
     };
-  }, []);
+  }, [proxyRunning]);
 
   const { nodes, links } = useMemo(
     () => computeTopologyLayout(connections, width, t),
