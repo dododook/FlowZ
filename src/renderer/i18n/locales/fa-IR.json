@@ -767,7 +767,7 @@
     "speedTestDone": "تست سرعت کامل شد",
     "speedTesting": "در حال تست...",
     "speedTestFail": "تست تأخیر ناموفق بود",
-    "speedTestNotApplicable": "ندارد",
+    "speedTestNotApplicable": "قابل تست نیست",
     "noTestableNodes": "هیچ گرهی برای تست وجود ندارد",
     "shareUrlCopied": "پیوند اشتراک کپی شد",
     "shareUrlFail": "تولید پیوند اشتراک ناموفق بود",

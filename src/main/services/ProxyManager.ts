@@ -806,11 +806,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       );
     }
 
-    // H3 修复：sing-box 的 cache_file 会持久化 selector 的 clash_api 选择，重启后缓存会覆盖 config
-    // 的 default。故启动后用 clash_api 把 selector 校正回 config.selectedServerId，让 FlowZ 配置成为
-    // 单一真值、压过缓存。best-effort（不阻塞启动成功）。
-    void this.reassertSelectorSelection(config);
-
     // sing-box 1.14 管理 API：核起后连 api service 订阅 Tailscale 状态（断线重连，随主核生命周期）。
     if (this.hasManagementApi()) {
       this.tailscaleApiClient?.stop();
@@ -827,6 +822,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // Status/Connections 订阅从未发起、且无 client 就绪后的二次重订。此处 client 已就绪（崩溃自动重启亦走 startInternal
       // 同路径到此），再发一事件让 index.ts 补一次 resubscribe，使订阅在 client 真正可用后发起。
       this.emit('api-client-ready');
+
+      // H3 修复：sing-box 的 cache_file 持久化 selector 旧选择、重启后覆盖 config default。故启动后用管理 API 把
+      // selector 校正回 config.selectedServerId，让 FlowZ 配置成单一真值、压过缓存。**必须在 client 创建后调**
+      // （reassertSelectorSelection 的 `if(!client)break` 在 client=null 直接放弃不重试）——原在 client 前调用致首启
+      // cache 与 config 不一致时「选 X 实际走上次出口」(出口混乱)。best-effort（不阻塞启动成功）。
+      void this.reassertSelectorSelection(config);
     }
 
     // P2a：启用代理 / 切接管模式后延迟一次连接 flush（见 scheduleConnectionFlush）——RST 泄漏成真实 IP 的旧连接

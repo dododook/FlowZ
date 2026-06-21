@@ -767,7 +767,7 @@
     "speedTestDone": "Тест скорости завершён",
     "speedTesting": "Тестирование...",
     "speedTestFail": "Тест задержки не удался",
-    "speedTestNotApplicable": "Н/Д",
+    "speedTestNotApplicable": "Тест недоступен",
     "noTestableNodes": "Нет узлов для теста",
     "shareUrlCopied": "Ссылка для обмена скопирована",
     "shareUrlFail": "Не удалось создать ссылку для обмена",

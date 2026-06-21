@@ -767,7 +767,7 @@
     "speedTestDone": "测速完成",
     "speedTesting": "测速中...",
     "speedTestFail": "测速失败",
-    "speedTestNotApplicable": "不适用",
+    "speedTestNotApplicable": "不支持测速",
     "noTestableNodes": "无可测节点",
     "shareUrlCopied": "分享链接已复制",
     "shareUrlFail": "生成分享链接失败",
