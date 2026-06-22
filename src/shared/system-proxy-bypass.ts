@@ -4,6 +4,8 @@
  * 机制（保存原列表→开启写入→关闭还原）由 SystemProxyManager 负责，对齐 Clash 系。可单测、无 electron 依赖。
  */
 
+import { dedupe, dedupeTrim } from './collections';
+
 /**
  * 默认 bypass 清单（业内聚合清单，含私网/保留段 + Apple 连通性 + 国内会被代理打断的 App/网银）。
  * 用户可在设置里编辑（逗号分隔）；缺省取此。注：非 ClashX 出厂 9 条原版，是社区聚合的「业内」广覆盖清单。
@@ -109,11 +111,6 @@ export function ipv4CidrToWindowsPatterns(cidr: string): string[] {
   return [];
 }
 
-/** 对条目数组做 trim + 去重，纯函数（mac/linux 共用）。 */
-function dedupeTrim(list: string[]): string[] {
-  return Array.from(new Set(list.map((s) => s.trim()).filter(Boolean)));
-}
-
 /**
  * macOS networksetup -setproxybypassdomains 参数（接受 CIDR(v4/v6) + 域名 + *.通配，原样下发）。
  */
@@ -139,7 +136,7 @@ export function formatBypassForWindows(list: string[]): string {
     }
   }
   if (!out.includes('<local>')) out.push('<local>');
-  return Array.from(new Set(out)).join(';');
+  return dedupe(out).join(';');
 }
 
 /** Linux gsettings ignore-hosts 数组（接受 CIDR + 域名，原样去重）。 */

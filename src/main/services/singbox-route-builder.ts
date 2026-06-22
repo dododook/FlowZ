@@ -10,7 +10,7 @@
 
 import * as path from 'path';
 import type { UserConfig } from '../../shared/types';
-import { BOOTSTRAP_DIRECT_DNS_IPS } from '../../shared/dns';
+import { BOOTSTRAP_DIRECT_DNS_IPS, DOH_UPSTREAM_IPS } from '../../shared/dns';
 import {
   endpointForcedRouteCidrs,
   meshForcedRouteCidrs,
@@ -20,6 +20,7 @@ import {
   meshForceRoutedServers,
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
+import { dedupe } from '../../shared/collections';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
 import {
   effectiveRegionRouting,
@@ -225,7 +226,7 @@ export function buildRouteConfig(
         ? [hostToExcludeCidr(deps.lanResolverForDns)].filter((c): c is string => c !== null)
         : []),
     ],
-    port: Array.from(new Set([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])])),
+    port: dedupe([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])]),
     action: 'route',
     outbound: 'direct',
   });
@@ -627,8 +628,8 @@ export function buildRouteConfig(
   });
 
   rules.push({
-    // #57：1.12.12.12（DNSPod IP-DoH，节点域名解析器 DNSPod 档）与 223.5.5.5 同列直连放行
-    ip_cidr: ['223.5.5.5/32', '1.12.12.12/32'],
+    // DoH 上游 IP（223.5.5.5 AliDNS + 1.12.12.12 DNSPod #57）直连放行，派生自单一真值 DOH_UPSTREAM_IPS。
+    ip_cidr: DOH_UPSTREAM_IPS.map((ip) => `${ip}/32`),
     port: [53, 443],
     action: 'route',
     outbound: 'direct',

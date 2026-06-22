@@ -8,6 +8,7 @@
 import * as path from 'path';
 import type { UserConfig } from '../../shared/types';
 import { parseDnsServerSpec, type ParsedDnsServer } from '../../shared/dns';
+import { dedupe } from '../../shared/collections';
 import { ruleConditions } from '../../shared/rules';
 import { normalizeNeighborDomain, isSourceDeviceMatchSupported } from '../../shared/neighbor';
 import { effectiveRegionRouting, REGION_LOCAL_GEO } from '../../shared/region-routing';
@@ -293,7 +294,7 @@ export function buildDnsConfig(
   if (domestic.isDomain) bootstrapDomains.push(domestic.server);
   if (foreign.isDomain) bootstrapDomains.push(foreign.server);
   dnsRules.push({
-    domain: Array.from(new Set(bootstrapDomains)),
+    domain: dedupe(bootstrapDomains),
     server: 'dns-bootstrap-udp',
   } as SingBoxDnsRule);
 

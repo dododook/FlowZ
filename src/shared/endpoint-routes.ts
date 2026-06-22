@@ -1,4 +1,5 @@
 import type { ServerConfig, Protocol, UserConfig } from './types';
+import { dedupe, dedupeTrim } from './collections';
 
 /** sing-box endpoint 协议（顶层 endpoints[]、非 outbound）：WireGuard / Tailscale。单一真值，杜绝多处枚举漂移。 */
 export const ENDPOINT_PROTOCOLS: readonly Protocol[] = ['wireguard', 'tailscale'];
@@ -57,7 +58,7 @@ export function endpointForcedRouteCidrs(server: ServerConfig): string[] {
   } else {
     return [];
   }
-  return Array.from(new Set(raw.map((c) => c.trim()).filter(Boolean)));
+  return dedupeTrim(raw);
 }
 
 /**
@@ -189,7 +190,7 @@ export function wireguardPeerAllowedIps(server: ServerConfig): string[] | null {
     return specific.length > 0 ? specific : null;
   }
   if (meshAllowsInternet(server)) {
-    return Array.from(new Set([...specific, ...FULL_TUNNEL_CIDRS]));
+    return dedupe([...specific, ...FULL_TUNNEL_CIDRS]);
   }
   return specific.length > 0 ? specific : null;
 }
@@ -232,7 +233,7 @@ export function meshSelectedExitFallsBackToDirect(config: UserConfig): boolean {
  * main 的 config-gen warn + renderer 的内联 hint/列表角标。用全量 servers（非仅 emitted）以覆盖潜在重叠。
  */
 export function meshForcedRouteCidrs(servers: ServerConfig[]): string[] {
-  return Array.from(new Set(servers.flatMap((s) => endpointForcedRouteCidrs(s))));
+  return dedupe(servers.flatMap((s) => endpointForcedRouteCidrs(s)));
 }
 
 /**

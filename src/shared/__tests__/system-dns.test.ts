@@ -1,4 +1,11 @@
-import { BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP, isBootstrapDirectDnsIp } from '../dns';
+import {
+  BOOTSTRAP_DIRECT_DNS_IPS,
+  CONTROLLED_TUN_DNS_IP,
+  DOH_UPSTREAM_IPS,
+  DOH_ALIDNS_IP,
+  DOH_DNSPOD_IP,
+  isBootstrapDirectDnsIp,
+} from '../dns';
 import {
   controlledTunDnsIp,
   isControlledDnsIpValid,
@@ -46,6 +53,15 @@ describe('受控 DNS IP 选择守卫（核心不变量）', () => {
   it('isBootstrapDirectDnsIp trim 空白后比较', () => {
     expect(isBootstrapDirectDnsIp(' 223.5.5.5 ')).toBe(true);
     expect(isBootstrapDirectDnsIp('8.8.8.8')).toBe(false);
+  });
+
+  // 单一真值不变量（#9）：DoH 上游 IP 必须 ∈ bootstrap-direct 列表，否则其 :443 DoH 不被直连放行 / 不进 TUN
+  // exclude → 命中 TUN CIDR 回流死循环。锁死「新增或更换 DoH 上游 IP 时必须同步进 BOOTSTRAP_DIRECT_DNS_IPS」。
+  it('DOH_UPSTREAM_IPS ⊆ BOOTSTRAP_DIRECT_DNS_IPS（换上游 IP 不漏 exclude/直连放行）', () => {
+    expect(DOH_UPSTREAM_IPS).toEqual([DOH_ALIDNS_IP, DOH_DNSPOD_IP]);
+    for (const ip of DOH_UPSTREAM_IPS) {
+      expect(isBootstrapDirectDnsIp(ip)).toBe(true);
+    }
   });
 });
 

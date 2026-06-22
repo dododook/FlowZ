@@ -5,6 +5,7 @@
  */
 
 import { CONTROLLED_TUN_DNS_IP, isBootstrapDirectDnsIp } from './dns';
+import { dedupe } from './collections';
 
 /**
  * 系统 DNS marker：记录「DNS 由 FlowZ 接管」+ 接管前每个网络服务/接口的原始 DNS（[] = DHCP/自动）。
@@ -77,7 +78,7 @@ export function winSetDnsCommands(netshExe: string, iface: string, ips: string[]
 export function parseWinShowDnsServers(stdout: string): string[] {
   if (!/Statically Configured DNS Servers|静态配置的 DNS 服务器/i.test(stdout)) return [];
   const ips = stdout.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [];
-  return Array.from(new Set(ips));
+  return dedupe(ips);
 }
 
 /**

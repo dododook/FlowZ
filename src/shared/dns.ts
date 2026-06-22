@@ -1,16 +1,27 @@
 import { isIpv4 } from './ip';
 
 /**
+ * 节点域名解析器（#57 resolve-ahead）实际启用的 IP-DoH 上游 IP：AliDNS 223.5.5.5 + DNSPod 1.12.12.12。
+ * 单一真值——node-domain-resolver 的 DoH URL、route 直连放行、Windows TUN route_exclude 全派生自此，
+ * 杜绝「新增/更换 DoH 上游 IP，却漏同步到 exclude → 该上游连接命中 TUN CIDR 回流死循环」（#57 类回环）。
+ * 不变量：这两个 IP【必须】∈ BOOTSTRAP_DIRECT_DNS_IPS（单测护栏断言），否则其 :443 DoH 不被直连放行。
+ */
+export const DOH_ALIDNS_IP = '223.5.5.5';
+export const DOH_DNSPOD_IP = '1.12.12.12';
+export const DOH_UPSTREAM_IPS: readonly string[] = [DOH_ALIDNS_IP, DOH_DNSPOD_IP];
+
+/**
  * sing-box route 在 hijack-dns 之前「直连放行」的国内 bootstrap DNS IP（:53/:443）。单一真值：
  *   - generateRouteConfig 的引导直连规则（C 段）引用，保证核心 DNS 自举不被 hijack 成 FakeIP；
  *   - SystemDnsManager 受控 DNS IP 的选择守卫引用——受控 IP 绝不能落在此列表，否则其 :53 查询被该
- *     直连规则放行、逃逸 hijack-dns，DNS 接管失效（见 docs/design/dns-ipv6-takeover.md）。
- * 含 1.12.12.12（#57 DNSPod IP-DoH 档，与 223.5.5.5 同列直连）。
+ *     直连规则放行、逃逸 hijack-dns，DNS 接管失效（见 docs/design/dns-ipv6-takeover.md）；
+ *   - singbox-inbounds-builder 的 Windows TUN route_exclude 引用（防 WFP 进程匹配失效时回流死循环）。
+ * 含 DoH 上游 IP（DOH_UPSTREAM_IPS：223.5.5.5 + 1.12.12.12）+ AliDNS 备 + DNSPod/114 公共 DNS。
  */
 export const BOOTSTRAP_DIRECT_DNS_IPS: readonly string[] = [
-  '223.5.5.5',
+  DOH_ALIDNS_IP, // 223.5.5.5（AliDNS IP-DoH 上游）
   '223.6.6.6',
-  '1.12.12.12',
+  DOH_DNSPOD_IP, // 1.12.12.12（DNSPod IP-DoH 上游，#57）
   '119.29.29.29',
   '119.28.28.28',
   '114.114.114.114',

@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Info } from 'lucide-react';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { isAccountBasedProtocol, isEndpointProtocol } from '../../../shared/endpoint-routes';
+import { dedupe } from '../../../shared/collections';
 import { useAppStore } from '../../store/app-store';
 import type { ServerConfigWithId } from './server-list-helpers';
 
@@ -32,7 +33,7 @@ function meshRoutes(server: ServerConfigWithId): string[] {
   if (isAccountBasedProtocol(server.protocol)) {
     const ts = server.tailscaleSettings;
     // accept routes（routes）+ advertise routes（本机对外广告）并集去重；纯展示，与 force-route 计算解耦。
-    return Array.from(new Set([...(ts?.routes || []), ...(ts?.advertiseRoutes || [])]));
+    return dedupe([...(ts?.routes || []), ...(ts?.advertiseRoutes || [])]);
   }
   return server.wireguardSettings?.allowedIPs || [];
 }
