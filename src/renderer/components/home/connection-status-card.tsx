@@ -94,7 +94,7 @@ export function ConnectionStatusCard() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setServerPageAction('import');
+                    setServerPageAction('add-sub');
                     setCurrentView('server');
                   }}
                   className="flex items-center gap-2"

@@ -183,8 +183,9 @@ export function ServerPage() {
       setEditingServer(undefined);
       setIsDialogOpen(true);
       setServerPageAction(null);
-    } else if (serverPageAction === 'import') {
-      setIsImportDialogOpen(true);
+    } else if (serverPageAction === 'add-sub') {
+      setEditingSub(undefined);
+      setIsSubDialogOpen(true);
       setServerPageAction(null);
     }
   }, [serverPageAction, setServerPageAction]);

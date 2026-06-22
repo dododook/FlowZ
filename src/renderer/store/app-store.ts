@@ -50,8 +50,8 @@ interface ConnectionStatus {
 interface AppState {
   // UI State
   currentView: string;
-  // 首页空状态跳服务器页时的意图：'add-server' 唤起 ServerConfigDialog，'import' 唤起 ImportUrlDialog，null 为无意图
-  serverPageAction: 'add-server' | 'import' | null;
+  // 首页空状态跳服务器页时的意图：'add-server' 唤起 ServerConfigDialog，'add-sub' 唤起订阅对话框（SubscriptionDialog），null 为无意图
+  serverPageAction: 'add-server' | 'add-sub' | null;
   // 设置页子节（general/about/...）。提升到 store，供非设置页组件（如 naive 横幅「去更新」）跨页导航到指定节
   settingsSection: string;
   // F27：进入设置页前的来源视图，设置页「返回」按钮的导航目标（默认 home）
@@ -112,7 +112,7 @@ interface AppState {
 
   // Actions
   setCurrentView: (view: string) => void;
-  setServerPageAction: (action: 'add-server' | 'import' | null) => void;
+  setServerPageAction: (action: 'add-server' | 'add-sub' | null) => void;
   setSettingsSection: (section: string) => void;
   setLatencyMap: (
     map: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)
