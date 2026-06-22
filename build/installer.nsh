@@ -38,5 +38,14 @@
       nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '$SYSDIR\WindowsPowerShell\v1.0\powershell.exe' -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','$PLUGINSDIR\flowz-helper-uninstall.ps1'"`
       Pop $R7 ; 退出码（丢弃；用户取消 UAC 时非 0，best-effort 不阻断卸载）
     ${EndIf}
+
+    ; U6：真卸载清理用户数据（config/订阅/rule-resources/rules/logs/core_update/core-backup/core-version）。
+    ; 背景：deleteAppDataOnUninstall:false + 旧钩子只清 ProgramData → 整个 %APPDATA%\flowz 无人删，
+    ; 用户数据与「更新下载的内核（core_update）+ 核备份（core-backup）」全残留（控制面板卸载不净）。
+    ; $APPDATA\flowz = app.getPath('userData')（Windows appName 小写 flowz）；roaming 属当前用户，
+    ; perMachine:false 卸载器以普通用户身份即可删，无需 UAC（与上面 ProgramData/服务清理的提权路径解耦）。
+    ; 仅真卸载执行（位于 ${ifNot} ${isUpdated} 块内）——app 更新走 isUpdated 分支、不会误删用户数据。
+    DetailPrint "清理用户数据 $APPDATA\flowz ..."
+    RMDir /r "$APPDATA\flowz"
   ${endif}
 !macroend
