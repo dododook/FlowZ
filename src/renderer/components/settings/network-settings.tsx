@@ -371,8 +371,16 @@ export function NetworkSettings() {
             </SettingsRow>
             <SettingsRow
               label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
-              description={t('settings.advanced.takeoverSystemDnsDesc')}
-              tooltip={t('settings.advanced.takeoverSystemDnsDescFull')}
+              description={t(
+                isMac
+                  ? 'settings.advanced.takeoverSystemDnsDesc'
+                  : 'settings.advanced.takeoverSystemDnsDescOther'
+              )}
+              tooltip={t(
+                isMac
+                  ? 'settings.advanced.takeoverSystemDnsDescFull'
+                  : 'settings.advanced.takeoverSystemDnsDescFullOther'
+              )}
             >
               <Switch
                 checked={config.dnsConfig?.takeoverSystemDns !== false}
