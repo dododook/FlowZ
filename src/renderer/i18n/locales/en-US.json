@@ -264,6 +264,7 @@
     "switchError": "Error occurred when switching server",
     "noServerConfig": "No server configured",
     "addServer": "Add Server",
+    "addSubscription": "Add Subscription",
     "selectServerHint": "Select a server to enable proxy",
     "protocol": "Protocol",
     "address": "Address",

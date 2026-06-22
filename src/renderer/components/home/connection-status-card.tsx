@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ServerSelectGroups } from '@/components/settings/server-select-groups';
 import { useAppStore } from '@/store/app-store';
-import { Plus, AlertTriangle } from 'lucide-react';
+import { Plus, Rss, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { deriveConnectionStatus } from './connection-status';
@@ -18,6 +18,7 @@ export function ConnectionStatusCard() {
   const proxyPhase = useAppStore((state) => state.proxyPhase);
   const saveConfig = useAppStore((state) => state.saveConfig);
   const setCurrentView = useAppStore((state) => state.setCurrentView);
+  const setServerPageAction = useAppStore((s) => s.setServerPageAction);
 
   const servers = config?.servers || [];
   const selectedServerId = config?.selectedServerId;
@@ -42,10 +43,6 @@ export function ConnectionStatusCard() {
         description: error instanceof Error ? error.message : t('home.switchError'),
       });
     }
-  };
-
-  const handleGoToServers = () => {
-    setCurrentView('server');
   };
 
   const statusInfo = deriveConnectionStatus(
@@ -80,15 +77,30 @@ export function ConnectionStatusCard() {
           <div className="space-y-3">
             <div className="p-4 border border-dashed border-muted-foreground/25 rounded-lg text-center">
               <p className="text-sm text-muted-foreground mb-3">{t('home.noServerConfig')}</p>
-              <div className="flex justify-center">
+              <div className="flex justify-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleGoToServers}
+                  onClick={() => {
+                    setServerPageAction('add-server');
+                    setCurrentView('server');
+                  }}
                   className="flex items-center gap-2"
                 >
                   <Plus className="h-4 w-4" />
                   {t('home.addServer')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setServerPageAction('import');
+                    setCurrentView('server');
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Rss className="h-4 w-4" />
+                  {t('home.addSubscription')}
                 </Button>
               </div>
             </div>

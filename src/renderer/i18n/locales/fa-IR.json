@@ -264,6 +264,7 @@
     "switchError": "هنگام تعویض سرور خطا رخ داد",
     "noServerConfig": "هیچ سروری پیکربندی نشده",
     "addServer": "افزودن سرور",
+    "addSubscription": "افزودن اشتراک",
     "selectServerHint": "برای فعال‌سازی پروکسی یک سرور انتخاب کنید",
     "protocol": "پروتکل",
     "address": "آدرس",

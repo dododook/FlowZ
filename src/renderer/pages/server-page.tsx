@@ -39,6 +39,8 @@ type ServerConfigWithId = ServerConfig;
 export function ServerPage() {
   const { t, i18n } = useTranslation();
   const config = useAppStore((state) => state.config);
+  const serverPageAction = useAppStore((s) => s.serverPageAction);
+  const setServerPageAction = useAppStore((s) => s.setServerPageAction);
   // 「代理关时也显真实 Tailscale 登录态」触发输入：代理关 + 有组网节点 → 拉 status-only 探针读各 TS 节点登录态。
   const proxyRunning = useAppStore((state) => state.connectionStatus?.proxyCore.running ?? false);
   const setTailscaleStatusProbing = useAppStore((state) => state.setTailscaleStatusProbing);
@@ -174,6 +176,18 @@ export function ServerPage() {
     setEditingServer(undefined);
     setIsDialogOpen(true);
   };
+
+  // 消费首页空状态跳服务器页时的意图：自动唤起对应对话框
+  useEffect(() => {
+    if (serverPageAction === 'add-server') {
+      setEditingServer(undefined);
+      setIsDialogOpen(true);
+      setServerPageAction(null);
+    } else if (serverPageAction === 'import') {
+      setIsImportDialogOpen(true);
+      setServerPageAction(null);
+    }
+  }, [serverPageAction, setServerPageAction]);
 
   const handleEditServer = (server: ServerConfigWithId) => {
     setEditingServer(server);

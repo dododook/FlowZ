@@ -264,6 +264,7 @@
     "switchError": "切换服务器时发生错误",
     "noServerConfig": "暂无服务器配置",
     "addServer": "添加服务器",
+    "addSubscription": "添加订阅",
     "selectServerHint": "请选择服务器以启用代理",
     "protocol": "协议",
     "address": "地址",
