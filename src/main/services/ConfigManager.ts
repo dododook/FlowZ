@@ -860,6 +860,7 @@ export class ConfigManager implements IConfigManager {
         foreignDns: 'https://dns.google/dns-query',
         enableFakeIp: true, // 新装默认开（usesFakeIp 已统一为纯看开关；存量经 migrateFakeIpToggle 一次性迁移）
         fakeIpToggleMigrated: true, // 新装无需迁移：直接落 effective 默认，标记防 migrate 再改写
+        takeoverSystemDns: true, // TUN 模式接管系统 DNS 默认开（缺省本已 ?? true 视为开，此处显式声明）
       },
 
       customRuleSets: [], // 默认空
@@ -869,6 +870,8 @@ export class ConfigManager implements IConfigManager {
       ruleResourceAutoUpdate: true, // 规则资源自动更新默认开启（老配置 undefined 亦视为开启，见 scheduler/UI 读取端）
       ruleResourceUpdateIntervalHours: 12, // 自动更新间隔默认 12h
       fakeIpFilter: true, // fake-ip-filter 默认清单默认开启（NTP/STUN/Captive 走真实解析；老配置 undefined 亦视为开）
+      blockQuic: true, // 阻断 QUIC(UDP443) 默认开（reject 逼浏览器回退 TCP，防 QUIC 绕过分流/泄漏）
+      singboxDashboard: true, // sing-box 1.14 官方面板默认开（services dashboard 本地 serve，零联网拉取）
       speedTestUrl: DEFAULT_SPEED_TEST_URL, // 节点测速端点默认 generate_204（用户可在设置·网络改）
 
       mixedPort: 7890, // mixed-only canonical 本地端口（同口 HTTP+SOCKS）；新装默认对齐业内 7890（存量经迁移沿用原 httpPort）。
