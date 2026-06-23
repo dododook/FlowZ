@@ -401,8 +401,11 @@ export class ResourceManager {
     const sourcePath = path.join(platformDir, 'sing-box');
 
     if (await this.fileExists(sourcePath)) {
-      await fs.copyFile(sourcePath, targetPath);
-      await fs.chmod(targetPath, 0o755); // 赋予可执行权限
+      // 原子替换（写 targetPath.tmp → chmod 0o755 → rename），非原地 copyFile 覆盖：force 重播种时 targetPath
+      // 可能正被运行中的 sing-box 执行，原地 O_TRUNC 打开会 ETXTBSY（text file busy）致覆盖失败、旧核残留
+      //（issue #150）。rename 只把旧 inode unlink（在用进程继续持有旧 inode 不受影响），文件名指向全新核 →
+      // 根除 ETXTBSY。与 ensureCronetHealthy 的 libcronet 写盘同款原子语义。
+      await this.atomicCopy(sourcePath, targetPath);
     }
 
     // naive 节点需要 libcronet 与 sing-box 同目录（purego 加载），随核心一并放过去

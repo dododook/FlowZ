@@ -62,7 +62,11 @@ import {
   meshAlwaysRoutesSubnets,
   endpointForcedRouteCidrs,
 } from '../../shared/endpoint-routes';
-import { classifyCoreBuild, decideCoreOverride } from '../../shared/core-build';
+import {
+  classifyCoreBuild,
+  decideCoreOverride,
+  classifyReseedResult,
+} from '../../shared/core-build';
 import { retry } from '../utils/retry';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
@@ -305,6 +309,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private probeProxyPort: number | null = null;
   private configPath: string;
   private singboxPath: string;
+  // `sing-box version` 探测串行链（issue #150）：所有版本探测（启动检测/换核重读/CoreUpdate 检查/关于页）汇流
+  // 此处串行排队，确保任一时刻至多一个 version 子进程 execve 内核二进制——缩小与启动期换核写盘并发执行的 race 窗口。
+  private versionProbeChain: Promise<unknown> = Promise.resolve();
   private logManager: ILogManager | null = null;
   // 隐私模式 provider（index 注入 getPrivacyMode）：隐私开 → sing-box 日志级别抬到 ≥warn，不记访问域名/SNI。
   private privacyProvider: () => boolean = () => false;
@@ -470,10 +477,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       const coreKind = classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`);
       const { reseed, warn } = decideCoreOverride(coreKind, this.coreVersion, bundledCore);
       if (reseed) {
+        const before = this.coreVersion;
         this.logToManager(
           'info',
-          `官方内核 ${this.coreVersion} 旧于随包基线 ${bundledCore}，用随包核替换...`
+          `官方内核 ${before} 旧于随包基线 ${bundledCore}，用随包核替换...`
         );
+        let reseedError = '';
         try {
           // §5 两平台统一经 ensureWritableCore(true)：linux force 覆盖可写核；darwin 经注入的 helper installCore
           // 重播种随包核到受保护目录（root-only，helper 上方 maybePromptHelperGate 已引导在位）。临时目录复制 +
@@ -484,10 +493,23 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             installCore: (seedDir) => (this.helperManager as HelperManager).installCore(seedDir),
           });
         } catch (e) {
-          this.logToManager('warn', `随包内核刷新失败: ${(e as Error)?.message ?? e}`);
+          reseedError = (e as Error)?.message ?? String(e);
         }
-        this.coreVersion = await this.getCoreVersion(true);
-        this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
+        // 诚实校验（issue #150 + review F1）：重读活二进制确认换核「真的」生效。用 getCoreVersionLine(true)
+        // ——其探测失败返回 ''、**不回落随包基线**；绝不用 getCoreVersion（探测失败会回落 bundledCoreVersion，
+        // 把「重读失败」伪装成「换核成功」→ 闸门误放行、带旧核硬跑退回死循环）。探测失败/版本未达基线 → 保守
+        // 保留换核前旧版本、判未生效，由下方版本闸门明确终止（而非谎报成功）。
+        const lineAfter = await this.getCoreVersionLine(true);
+        const { version, applied } = classifyReseedResult(lineAfter, before, bundledCore);
+        this.coreVersion = version;
+        if (applied) {
+          this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
+        } else {
+          this.logToManager(
+            'warn',
+            `随包内核刷新未生效（仍为 ${this.coreVersion}，期望 ≥ ${bundledCore}）${reseedError ? `：${reseedError}` : ''}；请退出代理后在「设置 · 内核 · 重置到出厂」手动切回随包核`
+          );
+        }
       }
       if (warn) {
         this.logToManager(
@@ -1685,8 +1707,22 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     }
   }
 
-  /** spawn `sing-box version` 取原始第一行（含 fork 后缀，不截 X.Y.Z）。失败抛出，由调用方按各自缓存策略处理。 */
+  /**
+   * spawn `sing-box version` 取原始第一行（含 fork 后缀，不截 X.Y.Z）。失败抛出，由调用方按各自缓存策略处理。
+   * 串行化（issue #150）：所有版本探测排到 versionProbeChain，确保任一时刻至多一个 version 子进程 execve 内核
+   * 二进制——并发探测会同时占用二进制，与启动期换核写盘并发执行放大 race（旧实现 + 原地 copyFile 即 ETXTBSY）。
+   * 链只承载排序、不传播失败（catch→undefined），避免一次探测失败卡死后续所有探测；调用方仍拿到 run 的真实结果/异常。
+   */
   private async spawnCoreVersionFirstLine(): Promise<string> {
+    const run = this.versionProbeChain
+      .catch(() => undefined)
+      .then(() => this.doSpawnCoreVersionFirstLine());
+    this.versionProbeChain = run.catch(() => undefined);
+    return run;
+  }
+
+  /** 实际 spawn `sing-box version`（不含串行排队）；仅供 spawnCoreVersionFirstLine 经 versionProbeChain 调用。 */
+  private async doSpawnCoreVersionFirstLine(): Promise<string> {
     const execAsync = require('util').promisify(require('child_process').exec);
     const { stdout } = await execAsync(`"${this.singboxPath}" version`);
     return String(stdout).split('\n')[0]?.trim() || '';

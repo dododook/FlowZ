@@ -70,3 +70,39 @@ export function decideCoreOverride(
   // fork / unknown：尊重用户选择，绝不覆盖；≤ 基线时提醒兼容风险（含同版 fork——后缀分支可能缺新特性）。
   return { reseed: false, warn: cmp <= 0 };
 }
+
+/**
+ * reseed（随包核替换）是否「真的」生效（纯函数）：换核后重读活二进制版本 ≥ 随包基线即判生效。
+ * 旧核被运行中 sing-box 进程占用（Linux ETXTBSY）/ 写盘失败时版本不变（仍 < 基线）→ 判未生效，
+ * 调用方据此诚实上报失败、绝不谎报「刷新成功」（issue #150）。
+ * @param versionAfter   换核后重读的活二进制版本（X.Y.Z[-suffix]）
+ * @param bundledVersion 随包(内置)核版本 = 基线（reseed 成功后活核应 == 该版本）
+ */
+export function reseedApplied(versionAfter: string, bundledVersion: string): boolean {
+  return compareSemver(versionAfter, bundledVersion) >= 0;
+}
+
+/**
+ * 判定 reseed 结果（纯函数，issue #150 review F1）：换核后取活二进制版本行 + 换核前版本 + 基线，
+ * 给出「应记录的当前版本」与「是否真生效」。
+ *
+ * 关键：lineAfter 必须来自**探测失败置空**的读法（如 getCoreVersionLine，失败返回 ''），**绝不**用
+ * 探测失败会回落随包基线的读法（getCoreVersion）——否则「重读 spawn 失败」会被回落值伪装成「换核成功」，
+ * 令版本闸门误放行、带旧核硬跑退回死循环。
+ *  - lineAfter 解析不出版本（探测失败/脏行）→ 保守保留换核前旧版本 `before`、判未生效（诚实失败）。
+ *  - 解析出版本 → 该版本即当前版本，是否生效 = reseedApplied(版本, 基线)。
+ *
+ * @param lineAfter      换核后 `sing-box version` 原始第一行（探测失败为 ''）
+ * @param before         换核前活核版本（reseed 仅在官方 < 基线时触发，故必为真实可解析旧版本）
+ * @param bundledVersion 随包(内置)核版本 = 基线
+ */
+export function classifyReseedResult(
+  lineAfter: string,
+  before: string,
+  bundledVersion: string
+): { version: string; applied: boolean } {
+  const versionAfter = extractVersionToken(lineAfter);
+  // 须解析出形如 X.Y… 的真实版本 token；空（探测失败）/ 非数字开头（脏行、如裸 'sing-box'）→ 保守保留旧版本、判未生效。
+  if (!versionAfter || !/^\d/.test(versionAfter)) return { version: before, applied: false };
+  return { version: versionAfter, applied: reseedApplied(versionAfter, bundledVersion) };
+}

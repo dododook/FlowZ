@@ -4,7 +4,13 @@
  * 样本：官方基线（1.13.13 实测）+ 官方预发布/dev + fork 后缀（reF1nd/nekolsd，源码确证）+ 边界（官方跨版本不误报）。
  */
 
-import { classifyCoreBuild, decideCoreOverride, extractVersionToken } from '../core-build';
+import {
+  classifyCoreBuild,
+  decideCoreOverride,
+  extractVersionToken,
+  reseedApplied,
+  classifyReseedResult,
+} from '../core-build';
 
 describe('extractVersionToken', () => {
   it('从完整 version 行提取 token', () => {
@@ -96,5 +102,61 @@ describe('decideCoreOverride — 核覆盖决策（官方/fork/unknown × </=/> 
   it('unknown → 同 fork：绝不重播种；≤ 内置 → 警告', () => {
     expect(decideCoreOverride('unknown', '1.13.0', B)).toEqual({ reseed: false, warn: true });
     expect(decideCoreOverride('unknown', '1.15.0', B)).toEqual({ reseed: false, warn: false });
+  });
+});
+
+describe('reseedApplied — reseed 是否真生效（诚实失败判据，issue #150）', () => {
+  const B = '1.14.0-alpha.33'; // 随包(内置)基线
+
+  it('换核失败：版本仍 < 基线（旧核被占用 ETXTBSY 未替换）→ 未生效', () => {
+    // issue #150 实况：基线 1.14.0-alpha.33，活核仍 1.13.13 → 绝不能判成功
+    expect(reseedApplied('1.13.13', B)).toBe(false);
+    expect(reseedApplied('1.14.0-alpha.30', B)).toBe(false);
+  });
+
+  it('换核成功：版本 == 基线 → 生效', () => {
+    expect(reseedApplied(B, B)).toBe(true);
+  });
+
+  it('版本 > 基线（已是更新核）→ 视为生效', () => {
+    expect(reseedApplied('1.14.0', B)).toBe(true); // release > 同版 prerelease
+    expect(reseedApplied('1.15.0', B)).toBe(true);
+  });
+});
+
+describe('classifyReseedResult — reseed 校验（含 F1：探测失败不得伪装成功）', () => {
+  const B = '1.14.0-alpha.33'; // 随包(内置)基线
+  const BEFORE = '1.13.13'; // 换核前旧官方核
+
+  it('F1 核心：换核后重读探测失败（lineAfter=空）→ 保守保留旧版本、判未生效', () => {
+    // 绝不能因探测失败而回落基线 → 否则版本闸门误放行、带旧核硬跑退回死循环
+    expect(classifyReseedResult('', BEFORE, B)).toEqual({ version: BEFORE, applied: false });
+    expect(classifyReseedResult('   ', BEFORE, B)).toEqual({ version: BEFORE, applied: false });
+    expect(classifyReseedResult('sing-box', BEFORE, B)).toEqual({
+      version: BEFORE,
+      applied: false,
+    });
+  });
+
+  it('换核成功：lineAfter 报随包基线版本 → 判生效、记录新版本', () => {
+    expect(classifyReseedResult('sing-box version 1.14.0-alpha.33 (go1.25)', BEFORE, B)).toEqual({
+      version: '1.14.0-alpha.33',
+      applied: true,
+    });
+  });
+
+  it('换核未生效：旧核仍可跑、lineAfter 报旧版本 → 判未生效、记录旧版本（仍 < 基线）', () => {
+    // issue #150 主路径：ETXTBSY 只阻写不阻执行，重读拿到真实旧 1.13.13
+    expect(classifyReseedResult('sing-box version 1.13.13', BEFORE, B)).toEqual({
+      version: BEFORE,
+      applied: false,
+    });
+  });
+
+  it('换核后已是更新官方核（> 基线）→ 判生效', () => {
+    expect(classifyReseedResult('sing-box version 1.14.0', BEFORE, B)).toEqual({
+      version: '1.14.0',
+      applied: true,
+    });
   });
 });
