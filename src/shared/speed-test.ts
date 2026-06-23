@@ -7,11 +7,16 @@
  */
 
 /**
- * 默认测速端点：cp.cloudflare.com generate_204（全球任播、无国内 CDN 镜像，对 WARP/海外/国内出口一致可达）。
- * 不用 gstatic：www.gstatic.com 有国内 CDN 镜像，AliDNS(223.5.5.5) 等国内 DNS 会解析到国内镜像 IP（如 180.163.150.162），
- * WARP 等海外全隧道出口连不上该国内 IP → 测速恒超时（Mac 真机实证：换 cp.cloudflare 后 WARP 多节点秒通 204）。
+ * 默认测速端点：www.gstatic.com generate_204（204 空响应，连接可立即复用）。
+ *
+ * 为何不用 cp.cloudflare.com（曾用，issue #154）：CF-Workers / 优选IP 节点（FlowZ 用户里占大头）对 cp.cloudflare
+ * 这个 Cloudflare 自家端点测速会失败——reporter 实证「把测速地址换成非 CF 端点即恢复正常」。
+ * 为何 gstatic 的国内 CDN 镜像在此不成问题：测速目标域名由【每个被测节点的出口】远程解析，**不经本机 AliDNS**
+ * （localhost 实验确证 sing-box 把域名 ATYP=domain 透传给出站，见 docs/design/speedtest-remote-resolve-154.md）——
+ * 故各节点拿到本区域 IP，目标是否任播 / 有无国内镜像均与测速无关，海外出口绝不会被钉到国内镜像 IP。
+ * 端点选择由此从「必须任播的脆弱依赖」降级为「次要、用户可在设置自配」。
  */
-export const DEFAULT_SPEED_TEST_URL = 'http://cp.cloudflare.com/generate_204';
+export const DEFAULT_SPEED_TEST_URL = 'http://www.gstatic.com/generate_204';
 
 export interface SpeedTestTarget {
   https: boolean;
@@ -57,4 +62,24 @@ export function parseSpeedTestUrl(raw: string | undefined | null): SpeedTestTarg
  */
 export function resolveSpeedTestTarget(raw?: string | null): SpeedTestTarget {
   return parseSpeedTestUrl(raw) ?? DEFAULT_TARGET;
+}
+
+/**
+ * 从 HTTP 响应（含状态行 `HTTP/1.1 204 ...`）解析状态码（纯函数，issue #154 ③ 校验响应码）。
+ * 入参应从第二次响应的 `HTTP/` 状态行起算的缓冲；解析不出 → null（调用方按「无法判定」处理）。
+ */
+export function parseHttpStatusCode(responseHead: string): number | null {
+  if (!responseHead) return null;
+  const m = responseHead.match(/^HTTP\/\d(?:\.\d)?\s+(\d{3})\b/i);
+  if (!m) return null;
+  const code = Number(m[1]);
+  return Number.isInteger(code) && code >= 100 && code <= 599 ? code : null;
+}
+
+/**
+ * 测速目标响应是否「可接受为成功」：仅 2xx（含 generate_204 的 204 / 自配端点的 200）。
+ * 非 2xx（3xx 重定向 / 4xx 如 cp.cloudflare 经 CF-Workers 的 403 / 5xx）判失败——堵住「错误页被当成功记 TTFB」。
+ */
+export function isAcceptableSpeedTestStatus(code: number): boolean {
+  return code >= 200 && code <= 299;
 }

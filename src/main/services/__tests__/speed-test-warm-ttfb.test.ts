@@ -84,6 +84,8 @@ interface MockOpts {
   closeAfterFirst?: boolean;
   /** 第一次响应头之后再补发的残余字节（独立 chunk，模拟分片/CDN 多次 write）；不应被当作第二次首字节计时。 */
   firstTrailer?: string;
+  /** 无 body 时的响应状态码（默认 204）；用于 ③ 校验响应码用例（如 403 模拟目标拒绝）。两次响应同此码。 */
+  status?: number;
 }
 
 interface MockProxy {
@@ -121,7 +123,7 @@ function serveOrigin(stream: net.Socket | tls.TLSSocket, opts: MockOpts): void {
             stream.write(
               body
                 ? `HTTP/1.1 200 OK\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`
-                : 'HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n'
+                : `HTTP/1.1 ${opts.status ?? 204} X\r\nContent-Length: 0\r\n\r\n`
             );
           }
           if (isFirst && opts.firstTrailer) {
@@ -196,10 +198,17 @@ type Measurable = {
     proxyPort: number,
     timeout: number,
     target: ReturnType<typeof resolveSpeedTestTarget>
-  ): Promise<number | null>;
+  ): Promise<{ latency: number | null; reason?: string }>;
 };
 
 const svc = new SpeedTestService(mockLog) as unknown as Measurable;
+
+/** 计时用例只关心 latency：解包 .latency，保留既有断言不变。 */
+const measureLatency = (
+  port: number,
+  timeout: number,
+  target: ReturnType<typeof resolveSpeedTestTarget>
+) => svc.measureViaTunnel(port, timeout, target).then((r) => r.latency);
 
 const HTTP_TARGET = resolveSpeedTestTarget('http://speedtest.local/generate_204');
 const HTTPS_TARGET = resolveSpeedTestTarget('https://speedtest.local/generate_204');
@@ -209,7 +218,7 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
     // connect 100 + first 250 → 若误计冷启动会是 ~350+；只计第二次应 ≈60。
     const proxy = await startMockProxy({ connectDelay: 100, firstDelay: 250, secondDelay: 60 });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 8000, HTTP_TARGET);
+      const latency = await measureLatency(proxy.port, 8000, HTTP_TARGET);
       expect(latency).not.toBeNull();
       expect(latency!).toBeGreaterThanOrEqual(40); // 确在量第二次（secondDelay=60）
       expect(latency!).toBeLessThan(200); // 远低于 connect(100)+first(250)，证明握手/暖身不计入
@@ -226,7 +235,7 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
       tls: true,
     });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 8000, HTTPS_TARGET);
+      const latency = await measureLatency(proxy.port, 8000, HTTPS_TARGET);
       expect(latency).not.toBeNull();
       expect(latency!).toBeGreaterThanOrEqual(40);
       expect(latency!).toBeLessThan(200); // TLS 握手 + connect + first 均排除
@@ -244,7 +253,7 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
       firstTrailer: 'X-Leftover: stray-bytes-without-header-end\r\n',
     });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 8000, HTTP_TARGET);
+      const latency = await measureLatency(proxy.port, 8000, HTTP_TARGET);
       expect(latency).not.toBeNull();
       expect(latency!).toBeGreaterThanOrEqual(50); // ≈secondDelay(100)，证明残余未被计为第二次
       expect(latency!).toBeLessThan(260);
@@ -262,7 +271,7 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
       firstBody: 'part-a\r\n\r\npart-b',
     });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 8000, HTTP_TARGET);
+      const latency = await measureLatency(proxy.port, 8000, HTTP_TARGET);
       expect(latency).not.toBeNull();
       expect(latency!).toBeGreaterThanOrEqual(50); // ≈secondDelay(100)，证明第一次 body 残余未被计入
       expect(latency!).toBeLessThan(260);
@@ -281,7 +290,7 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
       splitFirstHeaderBody: true,
     });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 8000, HTTP_TARGET);
+      const latency = await measureLatency(proxy.port, 8000, HTTP_TARGET);
       expect(latency).not.toBeNull();
       expect(latency!).toBeGreaterThanOrEqual(50); // ≈secondDelay(100)，证明后到的 body 残余未被计为第二次
       expect(latency!).toBeLessThan(260);
@@ -290,33 +299,49 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
     }
   });
 
-  it('CONNECT 非 200（代理不可达）→ null', async () => {
+  it('CONNECT 非 200（代理不可达）→ null + reason connect-*（③）', async () => {
     const proxy = await startMockProxy({ failConnect: true });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 500, HTTP_TARGET);
+      const { latency, reason } = await svc.measureViaTunnel(proxy.port, 500, HTTP_TARGET);
       expect(latency).toBeNull();
+      // Node 对 CONNECT 非 2xx 视版本走 'connect'(带 statusCode→connect-502) 或 'response'(→connect-downgraded)
+      expect(reason).toMatch(/^connect-/);
     } finally {
       await proxy.close();
     }
   });
 
-  it('对端在第二次前关闭（不支持 keep-alive）→ null（不挂起）', async () => {
+  it('对端在第二次前关闭（不支持 keep-alive）→ null + reason early-close（③）', async () => {
     const proxy = await startMockProxy({ firstDelay: 10, closeAfterFirst: true });
     try {
-      const latency = await svc.measureViaTunnel(proxy.port, 500, HTTP_TARGET);
+      const { latency, reason } = await svc.measureViaTunnel(proxy.port, 500, HTTP_TARGET);
       expect(latency).toBeNull();
+      expect(reason).toBe('early-close');
     } finally {
       await proxy.close();
     }
   });
 
-  it('整体超时（请求迟迟不响应）→ null', async () => {
+  it('整体超时（请求迟迟不响应）→ null + reason timeout（③）', async () => {
     const proxy = await startMockProxy({ firstDelay: 5000 }); // 远超下方 timeout
     try {
       const start = Date.now();
-      const latency = await svc.measureViaTunnel(proxy.port, 200, HTTP_TARGET);
+      const { latency, reason } = await svc.measureViaTunnel(proxy.port, 200, HTTP_TARGET);
       expect(latency).toBeNull();
+      expect(reason).toBe('timeout');
       expect(Date.now() - start).toBeLessThan(1500); // 在总超时附近返回，不等 5s
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it('目标返回非 2xx（如 CF-Workers 撞 cp.cloudflare 的 403）→ null + reason http-403（③ 校验响应码）', async () => {
+    // 隧道建立、两次响应均收齐，但状态码 403 → 不再当成功记 TTFB，判失败并带 http-403。
+    const proxy = await startMockProxy({ firstDelay: 5, secondDelay: 5, status: 403 });
+    try {
+      const { latency, reason } = await svc.measureViaTunnel(proxy.port, 2000, HTTP_TARGET);
+      expect(latency).toBeNull();
+      expect(reason).toBe('http-403');
     } finally {
       await proxy.close();
     }

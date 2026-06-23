@@ -18,7 +18,12 @@ import type { ServerConfig } from '../../shared/types';
 import type { LogManager } from './LogManager';
 import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
-import { resolveSpeedTestTarget, type SpeedTestTarget } from '../../shared/speed-test';
+import {
+  resolveSpeedTestTarget,
+  parseHttpStatusCode,
+  isAcceptableSpeedTestStatus,
+  type SpeedTestTarget,
+} from '../../shared/speed-test';
 import { isEndpointProtocol, isSpeedTestable } from '../../shared/endpoint-routes';
 import { normalizeDuration } from '../../shared/duration';
 
@@ -242,6 +247,19 @@ export class SpeedTestService {
       if (latency !== null) ok++;
       onProgress?.(tested, ok, total);
     };
+    // issue #154 ③：失败原因计数（reason→次数）+ 末尾分布日志，把「为何全超时」从玄学变可定位
+    //（http-403=目标拒绝/查测速地址、connect-timeout=连不上、unusable=naive 缺库、core-not-ready=临时核没起）。
+    const failReasons = new Map<string, number>();
+    const noteFail = (reason: string) =>
+      failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
+    const logFailDist = () => {
+      if (failReasons.size === 0) return;
+      const dist = [...failReasons.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([r, n]) => `${r}×${n}`)
+        .join('，');
+      this.logManager.addLog('info', `测速失败原因分布：${dist}`, 'SpeedTest');
+    };
     let singboxProcess: ChildProcess | null = null;
     let configFilePath: string | null = null;
 
@@ -255,10 +273,14 @@ export class SpeedTestService {
       if (ob) usable.push({ server: s, tag, outbound: ob });
       else {
         results.set(s.id, null);
+        noteFail('unusable'); // naive 缺 libcronet / 构造异常 → 不可测节点
         report(s.id, null);
       }
     }
-    if (usable.length === 0) return results;
+    if (usable.length === 0) {
+      logFailDist();
+      return results;
+    }
 
     // 解析测速端点（一次，预热+正式共用）；非法 testUrl 经 resolveSpeedTestTarget 回落默认 generate_204。
     const target = resolveSpeedTestTarget(testUrl);
@@ -312,6 +334,7 @@ export class SpeedTestService {
         );
         for (const u of usable) {
           results.set(u.server.id, null);
+          noteFail('core-not-ready'); // 临时 sing-box 未就绪：整批不可测
           report(u.server.id, null);
         }
         return results;
@@ -324,12 +347,13 @@ export class SpeedTestService {
       //    每测完一个节点立即回调 onResult（UI 流式显示），不等队列。
       await this.runWithLimit(usable, SpeedTestService.PROXY_TEST_CONCURRENCY, async (u) => {
         const port = serverPortMap.get(u.server.id)!;
-        const latency = await this.measureViaTunnel(
+        const { latency, reason } = await this.measureViaTunnel(
           port,
           SpeedTestService.MEASURE_TIMEOUT_MS,
           target
         );
         results.set(u.server.id, latency);
+        if (latency === null) noteFail(reason ?? 'unknown'); // ③ 记失败模式
         report(u.server.id, latency);
       });
     } catch (error) {
@@ -338,10 +362,12 @@ export class SpeedTestService {
       for (const u of usable) {
         if (!results.has(u.server.id)) {
           results.set(u.server.id, null);
+          noteFail('exception');
           report(u.server.id, null);
         }
       }
     } finally {
+      logFailDist(); // ③ 末尾打失败原因分布（normal/not-ready/catch 路径都经 finally）
       // 清理临时进程
       if (singboxProcess && !singboxProcess.killed) {
         singboxProcess.kill('SIGTERM');
@@ -399,10 +425,16 @@ export class SpeedTestService {
     // 必须有 direct 出站（sing-box 启动要求）
     outbounds.push({ type: 'direct', tag: 'direct' });
 
+    // ① 解析不变量（issue #154，localhost 实验确证，见 docs/design/speedtest-remote-resolve-154.md）：
+    //   测速【目标域名】（如 www.gstatic.com）由【每个被测节点的出口】远程解析——sing-box 把域名 ATYP=domain
+    //   透传给代理出站，**不经本机 AliDNS**。dns-direct/default_domain_resolver 仅用于解析【节点 server 地址】
+    //   （域名 server 节点需要；IP-server 节点不触发）。这一不变量使端点选择与「任播/国内镜像/geo 调度」全脱钩
+    //   （故默认得以用非任播的 gstatic），且各节点量到的是自身真实路径、无「解析点≠出口」错配。
+    //   ⚠️ 勿在此引入 sniff / outbound.domain_strategy / 针对目标的本地解析——会把目标解析拉回本机、破坏该不变量。
     const config: Record<string, unknown> = {
       log: { level: 'warn' },
       dns: {
-        // sing-box 1.13+ 要求显式 type；出站 domain_resolver 与 default_domain_resolver 均指向本 tag
+        // sing-box 1.13+ 要求显式 type；仅解析节点 server 地址（见上「解析不变量」），不解析测速目标。
         servers: [{ tag: 'dns-direct', type: 'udp', server: '223.5.5.5', server_port: 53 }],
       },
       inbounds,
@@ -505,23 +537,25 @@ export class SpeedTestService {
     proxyPort: number,
     timeout: number,
     target: SpeedTestTarget
-  ): Promise<number | null> {
+  ): Promise<{ latency: number | null; reason?: string }> {
     return new Promise((resolve) => {
       // 持有所有已建立句柄，finish 时统一 destroy（防 fd/socket 泄漏：大订阅并发 32 时累积）。
       let connectReq: http.ClientRequest | null = null;
       let tunnel: net.Socket | null = null;
       let tlsSock: tls.TLSSocket | null = null;
       let done = false;
-      const finish = (v: number | null) => {
+      // issue #154 ③：latency=null 时带 reason（connect-/http-/tunnel-/timeout 等），供 testServersViaProxy 汇总
+      // 失败原因分布——把「玄学超时」变成可定位（如 http-403=目标拒绝、connect-timeout=连不上）。
+      const finish = (latency: number | null, reason?: string) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
         tlsSock?.destroy();
         tunnel?.destroy();
         connectReq?.destroy();
-        resolve(v);
+        resolve({ latency, reason });
       };
-      const timer = setTimeout(() => finish(null), timeout);
+      const timer = setTimeout(() => finish(null, 'timeout'), timeout);
 
       // CONNECT 始终显式 host:port（标准端口也带，避免非标端口拼接歧义）。
       const connectHost = `${target.host}:${target.port}`;
@@ -533,14 +567,14 @@ export class SpeedTestService {
         headers: { Host: connectHost },
         timeout,
       });
-      connectReq.on('error', () => finish(null));
-      connectReq.on('timeout', () => finish(null));
+      connectReq.on('error', () => finish(null, 'connect-error'));
+      connectReq.on('timeout', () => finish(null, 'connect-timeout'));
       // CONNECT 非 2xx（如 502）实测仍走 'connect'（携带 statusCode），由下方 statusCode 判定兜 null；
       // 'response' 仅兜「代理把 CONNECT 降级成普通 HTTP 响应」的边缘情况，避免挂到总超时。
-      connectReq.on('response', () => finish(null));
+      connectReq.on('response', () => finish(null, 'connect-downgraded'));
       connectReq.on('connect', (res, socket) => {
         if (res.statusCode !== 200) {
-          finish(null); // finish 内统一 destroy socket
+          finish(null, `connect-${res.statusCode}`); // finish 内统一 destroy socket
           return;
         }
         tunnel = socket;
@@ -551,7 +585,7 @@ export class SpeedTestService {
             { socket, servername: target.host, rejectUnauthorized: false },
             () => this.measureWarmRtt(tlsSock!, target, finish)
           );
-          tlsSock.on('error', () => finish(null));
+          tlsSock.on('error', () => finish(null, 'tls-error'));
         } else {
           this.measureWarmRtt(socket, target, finish);
         }
@@ -573,7 +607,7 @@ export class SpeedTestService {
   private measureWarmRtt(
     conn: net.Socket | tls.TLSSocket,
     target: SpeedTestTarget,
-    finish: (v: number | null) => void
+    finish: (latency: number | null, reason?: string) => void
   ): void {
     const HEADER_END = '\r\n\r\n';
     const request =
@@ -602,11 +636,17 @@ export class SpeedTestService {
         // （自配非 204 端点 + header/body 分段时，body 残余会先入清空后的 buf；不从 HTTP/ 起算会把它误当第二次）。
         const sl = buf.indexOf('HTTP/');
         if (sl < 0 || buf.indexOf(HEADER_END, sl) < 0) return; // 第二次状态行/响应头未到齐
-        finish(Date.now() - start); // 收齐第二次响应头 = 不含握手的纯请求往返
+        // issue #154 ③ 校验响应码：非 2xx（如 cp.cloudflare 经 CF-Workers 的 403）判失败，不再把错误页当成功记 TTFB。
+        const code = parseHttpStatusCode(buf.slice(sl));
+        if (code !== null && !isAcceptableSpeedTestStatus(code)) {
+          finish(null, `http-${code}`);
+          return;
+        }
+        finish(Date.now() - start); // 收齐第二次响应头且 2xx = 不含握手的纯请求往返
       }
     });
-    conn.on('error', () => finish(null));
-    conn.on('end', () => finish(null)); // 对端在测完前关闭 → 失败
+    conn.on('error', () => finish(null, 'tunnel-error'));
+    conn.on('end', () => finish(null, 'early-close')); // 对端在测完前关闭 → 失败
     conn.write(request); // 第一次（暖身，丢弃计时）
   }
 
