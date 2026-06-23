@@ -149,6 +149,7 @@ export class NodeDnsRaceServer {
   private port = 0;
   private upstreams: ResolvedUpstreams = { tier1: [], tier2: [], directIps: [] };
   private closing = false;
+  private relistening = false; // 防 watchdog 'error'+'close' 双触发重复 re-listen
   private readonly queryFn: UpstreamQueryFn;
   private readonly totalBudgetMs: number;
   private readonly log: LogFn;
@@ -177,10 +178,11 @@ export class NodeDnsRaceServer {
     this.upstreams = upstreams;
     this.closing = false;
     if (this.socket) return this.port;
-    return this.listen();
+    return this.listen(0); // 首次绑动态口（bind(0) 由 OS 分配空闲口，避免固定口被占冲突）
   }
 
-  private listen(): Promise<number> {
+  // 首次 preferredPort=0（动态分配）；watchdog 重建时传原端口，使内核已烧进 config 的端口在恢复后仍有效。
+  private listen(preferredPort: number): Promise<number> {
     return new Promise<number>((resolve, reject) => {
       const sock = dgram.createSocket('udp4');
       let settled = false;
@@ -194,8 +196,24 @@ export class NodeDnsRaceServer {
         }
         this.onSocketDown();
       });
-      sock.bind(0, '127.0.0.1', () => {
+      // 运行中被动关闭（无 error 的 'close'）也触发 watchdog；主动 stop / 重复触发由 onSocketDown 守卫挡。
+      sock.on('close', () => {
+        if (settled) this.onSocketDown();
+      });
+      sock.bind(preferredPort, '127.0.0.1', () => {
         settled = true;
+        // stop() 在 re-listen 进行中被调（closing=true）→ 别复活这只 socket，否则成孤儿：端口泄漏 +
+        // isRunning() 与 ProxyManager.raceServerPort=0 状态不一致（review 二次：relistening 期 stop 竞态）。
+        // resolve(0) 仅解开 listen promise 防永挂；调用方按 closing/返回值不再使用它。
+        if (this.closing) {
+          try {
+            sock.close();
+          } catch {
+            /* ignore */
+          }
+          resolve(0);
+          return;
+        }
         this.socket = sock;
         this.port = (sock.address() as { port: number }).port;
         this.log('info', `[dns-race] listening 127.0.0.1:${this.port}`);
@@ -204,13 +222,24 @@ export class NodeDnsRaceServer {
     });
   }
 
-  /** watchdog：非主动关闭时 socket 异常 → 重建（fail-open 第二层）。 */
+  /**
+   * watchdog（fail-open 第二层）：非主动关闭时 socket 异常/关闭 → 重建。
+   * 关键：重绑**原端口**（非 bind(0) 换新口）——内核 config 已烧旧端口且不因 socket 重建而重新生成，
+   * 换新口会让内核查死口致节点解析静默失效（review #1）。relistening 守卫防 'error'+'close' 双触发。
+   */
   private onSocketDown(): void {
-    if (this.closing) return;
+    if (this.closing || this.relistening) return;
+    this.relistening = true;
+    const prevPort = this.port; // 复用首次 bind(0) 拿到的端口，对内核透明
     this.socket = null;
-    this.listen().catch((e) =>
-      this.log('error', `[dns-race] re-listen 失败: ${(e as Error).message}`)
-    );
+    this.listen(prevPort)
+      .catch((e) => {
+        this.port = 0; // re-listen 彻底失败 → 清端口，使 getPort()/isRunning() 状态一致（不留无 socket 的死端口）
+        this.log('error', `[dns-race] re-listen 失败: ${(e as Error).message}`);
+      })
+      .finally(() => {
+        this.relistening = false;
+      });
   }
 
   private async handle(msg: Buffer, rinfo: dgram.RemoteInfo): Promise<void> {

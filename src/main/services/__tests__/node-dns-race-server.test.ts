@@ -140,4 +140,30 @@ describe('NodeDnsRaceServer (loopback)', () => {
       server.stop();
     }
   });
+
+  it('watchdog：socket 被动 close → 自动重建且端口不变（review #1）', async () => {
+    server = new NodeDnsRaceServer({
+      queryFn: async (_up, query) => makeResponse(query, 'HIT', '8.8.8.8'),
+    });
+    const port = await server.start(TIER1);
+    // 模拟 socket 被动 close（非主动 stop）→ 'close' 事件触发 watchdog re-listen。
+    (server as unknown as { socket: dgram.Socket }).socket.close();
+    await new Promise((r) => setTimeout(r, 150)); // 等 re-listen 完成
+    expect(server.isRunning()).toBe(true);
+    expect(server.getPort()).toBe(port); // 重绑原端口（对内核透明，已烧进 config 的端口仍有效）
+    const resp = await sendQuery(port, encodeDnsQuery('d.example.com', 0xab));
+    expect(classifyDnsResponse(resp, 1)).toBe('HIT'); // 重建后仍正常服务
+  });
+
+  it('watchdog：stop() 后 socket close 不触发重建（closing 守卫，不留孤儿）', async () => {
+    server = new NodeDnsRaceServer({
+      queryFn: async (_up, query) => makeResponse(query, 'HIT'),
+    });
+    await server.start(TIER1);
+    server.stop(); // closing=true 先于 close()：'close' 事件回调里 onSocketDown 被 closing 守卫挡
+    await new Promise((r) => setTimeout(r, 150)); // 等 'close' 事件可能触发 onSocketDown
+    expect(server.isRunning()).toBe(false); // 不重建
+    expect(server.getPort()).toBe(0);
+    expect((server as unknown as { socket: dgram.Socket | null }).socket).toBeNull();
+  });
 });

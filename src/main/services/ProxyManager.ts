@@ -1730,8 +1730,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   buildPreflightConfigJson(targetVersion: string): string | null {
     if (!this.currentConfig) return null;
     const savedVersion = this.coreVersion;
+    const savedRacePort = this.raceServerPort;
     try {
       this.coreVersion = targetVersion;
+      // preflight 只验「新核能否 check 通过此 config schema」，不应引用 live race server——其端口随新核重启会重分配、
+      // 且 check 不连该 server。临时 raceServerPort=0 强制 race-off，使预检配置不含 dns-node-race（review #6：
+      // 注释曾声称 preflight 恒 race-off，但代理运行时 raceServerPort>0 会让它误带 live race server）。
+      this.raceServerPort = 0;
       const cfg = this.generateSingBoxConfig(this.currentConfig);
       return JSON.stringify(cfg, null, 2);
     } catch (e) {
@@ -1739,6 +1744,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       return null;
     } finally {
       this.coreVersion = savedVersion;
+      this.raceServerPort = savedRacePort;
     }
   }
 

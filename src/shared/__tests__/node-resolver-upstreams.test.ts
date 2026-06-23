@@ -33,14 +33,8 @@ describe('parseCustomUpstream — 强制纯 IP', () => {
       tier: 1,
     });
   });
-  it('IP-DoT(tls) → Tier1 doh + dot:true', () => {
-    expect(parseCustomUpstream({ id: 'c', spec: 'tls://9.9.9.9:853' })).toMatchObject({
-      kind: 'doh',
-      ip: '9.9.9.9',
-      port: 853,
-      dot: true,
-      tier: 1,
-    });
+  it('IP-DoT(tls) → null（DoT 二期未实现，拒绝以免 UI 接受却永远 FAIL，review #2）', () => {
+    expect(parseCustomUpstream({ id: 'c', spec: 'tls://9.9.9.9:853' })).toBeNull();
   });
   it('裸 IP / udp → Tier2 udp', () => {
     expect(parseCustomUpstream({ id: 'c', spec: '8.8.8.8' })).toMatchObject({

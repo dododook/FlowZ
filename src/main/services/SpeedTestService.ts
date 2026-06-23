@@ -638,8 +638,10 @@ export class SpeedTestService {
         if (sl < 0 || buf.indexOf(HEADER_END, sl) < 0) return; // 第二次状态行/响应头未到齐
         // issue #154 ③ 校验响应码：非 2xx（如 cp.cloudflare 经 CF-Workers 的 403）判失败，不再把错误页当成功记 TTFB。
         const code = parseHttpStatusCode(buf.slice(sl));
-        if (code !== null && !isAcceptableSpeedTestStatus(code)) {
-          finish(null, `http-${code}`);
+        // code===null：响应头收齐但状态行无法解析出 3 位码（畸形/非标准）——无法确认 2xx，判失败，
+        // 否则畸形响应会被当成功记 TTFB，软重引入 #154 修复前「错误页当成功」的问题（review #4）。
+        if (code === null || !isAcceptableSpeedTestStatus(code)) {
+          finish(null, code === null ? 'http-unparsable' : `http-${code}`);
           return;
         }
         finish(Date.now() - start); // 收齐第二次响应头且 2xx = 不含握手的纯请求往返

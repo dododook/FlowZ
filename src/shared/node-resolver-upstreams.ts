@@ -51,13 +51,16 @@ export function parseCustomUpstream(
   if (p.type === 'udp') {
     return { id: c.id, kind: 'udp', ip: p.server, port: p.port, tier: 2 };
   }
+  // DoT（tls://）二期未实现：race server queryOneUpstream 对 dot 直接 throw（永远 FAIL）。
+  // 此处拒绝，避免 UI 接受 tls:// 上游、用户以为生效却静默全 FAIL（review #2）。待 DoT 落地后改回 dot: p.type==='tls'。
+  if (p.type === 'tls') return null;
   return {
     id: c.id,
     kind: 'doh',
     ip: p.server,
     port: p.port,
-    path: p.type === 'https' ? p.path || '/dns-query' : undefined,
-    dot: p.type === 'tls',
+    path: p.path || '/dns-query',
+    dot: false,
     tier: 1,
   };
 }

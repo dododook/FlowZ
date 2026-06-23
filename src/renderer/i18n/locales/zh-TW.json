@@ -658,7 +658,6 @@
       "nodeResolverAli": "AliDNS (DoH)",
       "nodeResolverAddCustom": "+ 新增自訂上游",
       "nodeResolverCustomPlaceholder": "223.5.5.5 或 https://223.5.5.5/dns-query",
-      "nodeResolverAdd": "新增",
       "nodeResolverErrDomain": "僅支援純 IP，不支援網域",
       "nodeResolverErrDuplicate": "該上游已存在",
       "nodeResolverSingleLabel": "解析上游",

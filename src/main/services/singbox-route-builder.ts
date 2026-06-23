@@ -87,7 +87,7 @@ export interface RouteConfigDeps {
   onDegraded: () => void;
   // issue #147：本地 race server 的【自定义】上游 IP（内置 ali/dnspod 已在 BOOTSTRAP_DIRECT_DNS_IPS）。
   // TUN 下主进程 race server 对这些 IP 的 DoH/UDP 查询若不直连放行 → 进 TUN → 经代理节点 → 节点解析又回 race server → 回环死锁。
-  // 故在 hijack-dns 之前直连放行（:53/:443/:853）。缺省 [] = race off / 无自定义上游（零变化）。
+  // 故在 hijack-dns 之前直连放行（:53/:443；DoT :853 二期未实现、不放行，见下方 port 注释）。缺省 [] = race off / 无自定义上游（零变化）。
   raceUpstreamIps?: string[];
 }
 
@@ -235,13 +235,10 @@ export function buildRouteConfig(
         .map((ip) => hostToExcludeCidr(ip))
         .filter((c): c is string => c !== null),
     ],
-    // :53=UDP / :443=DoH（恒）；:853=DoT 仅有自定义 race 上游时加（无则保持现状，snapshot 零变化）。
-    port: dedupe([
-      53,
-      443,
-      ...((deps.raceUpstreamIps?.length ?? 0) > 0 ? [853] : []),
-      ...(customDomesticDns ? [customDomesticDns.port] : []),
-    ]),
+    // :53=UDP / :443=DoH（恒）。DoT(:853) 二期未实现——race server queryOneUpstream 不支持 dot、
+    // parseCustomUpstream 已拒 tls://，故无任何 DoT 上游，不为永不工作的协议开无用端口（review #5）。
+    // 待 DoT 落地后再按「上游中确有 dot」精确放行 853，而非按「有自定义上游」的浅条件。
+    port: dedupe([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])]),
     action: 'route',
     outbound: 'direct',
   });

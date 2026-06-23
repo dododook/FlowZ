@@ -546,10 +546,14 @@ async function createWindow(forceShow = false) {
     windowWidth = cfg.windowBounds.width;
     windowHeight = cfg.windowBounds.height;
   }
+  const { nativeTheme } = require('electron');
   if (cfg.uiTheme) {
-    const { nativeTheme } = require('electron');
     nativeTheme.themeSource = cfg.uiTheme;
   }
+  // 初始深浅以 nativeTheme.shouldUseDarkColors 为准（themeSource 已按 uiTheme 设定，'system' 跟随 OS）。
+  // 不能用 cfg.uiTheme==='dark' 字面判：uiTheme='system'+OS 深色会被误判为浅色，致标题栏/背景与内容初始不一致，
+  // 而 onThemeUpdated 仅在 OS 主题「切换」时修正、初始不跑（review #3）。
+  const isDarkInitial = nativeTheme.shouldUseDarkColors;
 
   mainWindow = new BrowserWindow({
     width: windowWidth,
@@ -559,7 +563,7 @@ async function createWindow(forceShow = false) {
     title: 'FlowZ',
     icon: resourceManager.getAppIconPath(),
     show: false, // 先不显示，等待加载完成
-    backgroundColor: isMac ? '#00000000' : cfg.uiTheme === 'dark' ? '#1F252E' : '#E9EEF3',
+    backgroundColor: isMac ? '#00000000' : isDarkInitial ? '#1F252E' : '#E9EEF3',
     transparent: isMac,
     autoHideMenuBar: true, // 自动隐藏菜单栏
     webPreferences: {
@@ -581,7 +585,7 @@ async function createWindow(forceShow = false) {
     // Linux 无覆盖层 API → 不进此分支，默认边框 + 实色底。
     ...(isWindows && {
       titleBarStyle: 'hidden',
-      titleBarOverlay: overlayColors(cfg.uiTheme === 'dark'),
+      titleBarOverlay: overlayColors(isDarkInitial),
       backgroundMaterial: 'mica',
     }),
   });

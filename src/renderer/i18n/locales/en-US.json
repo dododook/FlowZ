@@ -658,7 +658,6 @@
       "nodeResolverAli": "AliDNS (DoH)",
       "nodeResolverAddCustom": "+ Add custom upstream",
       "nodeResolverCustomPlaceholder": "223.5.5.5 or https://223.5.5.5/dns-query",
-      "nodeResolverAdd": "Add",
       "nodeResolverErrDomain": "Only plain IPs are supported, not domains",
       "nodeResolverErrDuplicate": "This upstream already exists",
       "nodeResolverSingleLabel": "Resolve upstream",

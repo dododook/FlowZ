@@ -404,11 +404,12 @@ describe('buildRouteConfig — issue #147 race 上游直连放行（§E.1，防 
         r.ip_cidr.some((c: string) => c.startsWith('223.5.5.5'))
     );
 
-  it('自定义 race 上游 IP → C 段含其 /32 + port 加 853（DoT）', () => {
+  it('自定义 race 上游 IP → C 段含其 /32；port 仅 53/443（DoT 二期未实现，不开 853，review #5）', () => {
     const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([], { raceUpstreamIps: ['1.1.1.1'] }));
     const r = bootstrapRule(rc);
     expect(r.ip_cidr).toContain('1.1.1.1/32');
-    expect(r.port).toEqual(expect.arrayContaining([53, 443, 853]));
+    expect(r.port).toEqual(expect.arrayContaining([53, 443]));
+    expect(r.port).not.toContain(853);
   });
 
   it('无自定义上游（[] / 未传）→ port 不含 853（snapshot 零变化）', () => {
