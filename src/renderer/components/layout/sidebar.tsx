@@ -161,8 +161,19 @@ export function Sidebar({
       {isSettings ? (
         /* ── Settings sub-navigation ── */
         <>
-          {/* Back button */}
-          <div className="px-2 pb-2 app-region-no-drag">
+          {/* Settings sub-nav items */}
+          <nav className="flex-1 app-region-no-drag space-y-[6px] overflow-hidden">
+            {settingsNavItems.map((item) =>
+              renderNavItem(
+                item,
+                () => onSettingsSectionChange(item.id),
+                settingsSection === item.id
+              )
+            )}
+          </nav>
+
+          {/* 返回应用：置底——镜像主导航「设置」置底（同款 pb-4 + space-y-[6px] 无 px，按钮宽度/位置与「设置」对齐）。 */}
+          <div className="pb-4 app-region-no-drag space-y-[6px]">
             <button
               onClick={() => onViewChange(settingsReturnView)}
               title={collapsed ? t('settings.nav.back', '返回应用') : undefined}
@@ -180,17 +191,6 @@ export function Sidebar({
               )}
             </button>
           </div>
-
-          {/* Settings sub-nav items */}
-          <nav className="flex-1 app-region-no-drag space-y-[6px] overflow-hidden">
-            {settingsNavItems.map((item) =>
-              renderNavItem(
-                item,
-                () => onSettingsSectionChange(item.id),
-                settingsSection === item.id
-              )
-            )}
-          </nav>
         </>
       ) : (
         /* ── Main navigation ── */
