@@ -3,6 +3,11 @@ import { Toaster as Sonner } from 'sonner';
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
+// 集成标题栏适配：Windows titleBarOverlay 的最小/最大/关闭按钮在右上 32px 区，top-right toast 用 sonner 默认
+// offset(~24px) 会插进/紧贴关闭按钮 → 下移到 48px（避开 32px 区 + 16px 间隙）。Linux 原生框保险同处理；
+// Mac 红绿灯在左上、top-right 不接缝 → 保持默认 offset。其余边（right）未给沿用 sonner 默认。
+const notMacPlatform = window.electron?.platform !== 'darwin';
+
 const Toaster = ({ richColors, ...props }: ToasterProps) => {
   const { theme } = useTheme();
 
@@ -19,6 +24,7 @@ const Toaster = ({ richColors, ...props }: ToasterProps) => {
       theme={resolvedTheme as 'light' | 'dark'}
       className="toaster group"
       richColors={richColors}
+      offset={notMacPlatform ? { top: '48px' } : undefined}
       toastOptions={{
         classNames: {
           toast:
