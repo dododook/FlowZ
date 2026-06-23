@@ -22,6 +22,7 @@ export function useServerActions() {
   const config = useAppStore((s) => s.config);
   const saveConfig = useAppStore((s) => s.saveConfig);
   const deleteServerStore = useAppStore((s) => s.deleteServer);
+  const deleteServersStore = useAppStore((s) => s.deleteServers);
   const loadConfig = useAppStore((s) => s.loadConfig);
   const [updatingSubId, setUpdatingSubId] = useState<string | null>(null);
 
@@ -30,6 +31,19 @@ export function useServerActions() {
   const deleteServer = async (serverId: string) => {
     try {
       await deleteServerStore(serverId);
+      toast.success(t('servers.deleteSuccess'));
+    } catch (error) {
+      toast.error(t('servers.deleteFail'), {
+        description: error instanceof Error ? error.message : t('servers.deleteFailDesc'),
+      });
+    }
+  };
+
+  // 批量删除（一次后端配置写，避免并发单删竞态致只删 1 个）。订阅节点的过滤在调用方（server-list）完成。
+  const deleteServers = async (serverIds: string[]) => {
+    if (serverIds.length === 0) return;
+    try {
+      await deleteServersStore(serverIds);
       toast.success(t('servers.deleteSuccess'));
     } catch (error) {
       toast.error(t('servers.deleteFail'), {
@@ -153,6 +167,7 @@ export function useServerActions() {
   return {
     updatingSubId,
     deleteServer,
+    deleteServers,
     selectServer,
     saveServer,
     cloneServer,

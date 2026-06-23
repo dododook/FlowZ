@@ -48,6 +48,7 @@ export function ServerPage() {
   const {
     updatingSubId,
     deleteServer: handleDeleteServer,
+    deleteServers: handleDeleteServers,
     selectServer: handleSelectServer,
     cloneServer: handleCloneServer,
     importSuccess: handleImportSuccess,
@@ -334,6 +335,7 @@ export function ServerPage() {
             onAddServer={handleAddServer}
             onEditServer={handleEditServer}
             onDeleteServer={handleDeleteServer}
+            onDeleteServers={handleDeleteServers}
             onCloneServer={handleCloneServer}
             onSelectServer={handleSelectServer}
             onImportClick={() => setIsImportDialogOpen(true)}
@@ -348,6 +350,7 @@ export function ServerPage() {
             onAddServer={handleAddServer}
             onEditServer={handleEditServer}
             onDeleteServer={handleDeleteServer}
+            onDeleteServers={handleDeleteServers}
             onCloneServer={handleCloneServer}
             onSelectServer={handleSelectServer}
             onImportClick={() => setIsImportDialogOpen(true)}
@@ -432,6 +435,7 @@ export function ServerPage() {
                   onAddServer={() => {}}
                   onEditServer={handleEditServer}
                   onDeleteServer={handleDeleteServer}
+                  onDeleteServers={handleDeleteServers}
                   onCloneServer={handleCloneServer}
                   onSelectServer={handleSelectServer}
                   onImportClick={() => setIsImportDialogOpen(true)}

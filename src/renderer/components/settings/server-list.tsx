@@ -153,6 +153,12 @@ export function ServerList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
 
+  // 选中项里「可删除」的（排除订阅节点——删了下次同步会回来，维持不可批删）。
+  // 批量删除按钮的计数 / disabled / 实际删除集合统一以它为准（计数==实际删除）。
+  const deletableSelected = Array.from(selectedIds).filter(
+    (id) => !servers.find((s) => s.id === id)?.subscriptionId
+  );
+
   const handleDelete = (serverId: string) => {
     onDeleteServer(serverId);
     setSelectedIds((prev) => {
@@ -163,10 +169,12 @@ export function ServerList({
   };
 
   const handleBatchDelete = () => {
+    // 只删可删项；优先走一次性批量回调（onDeleteServers），避免逐个 onDeleteServer 并发竞态致只删 1 个。
+    if (deletableSelected.length === 0) return;
     if (onDeleteServers) {
-      onDeleteServers(Array.from(selectedIds));
+      onDeleteServers(deletableSelected);
     } else {
-      selectedIds.forEach((id) => onDeleteServer(id));
+      deletableSelected.forEach((id) => onDeleteServer(id));
     }
     setSelectedIds(new Set());
     setIsSelecting(false);
@@ -255,10 +263,6 @@ export function ServerList({
       setSelectedIds(new Set(filteredServers.map((s) => s.id)));
     }
   };
-
-  const deletableSelected = Array.from(selectedIds).filter(
-    (id) => !servers.find((s) => s.id === id)?.subscriptionId
-  );
 
   // 操作按钮组（ServerCard/ServerRow 透传给 ServerActions）的运行期上下文
   const actions: ServerActionsContext = {

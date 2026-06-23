@@ -291,6 +291,13 @@ export const serverApi = {
   },
 
   /**
+   * 批量删除服务器（一次配置写，避免并发单删竞态）。返回实际删除数。
+   */
+  async deleteBatch(serverIds: string[]): Promise<number> {
+    return ipcClient.invoke(IPC_CHANNELS.SERVER_DELETE_BATCH, { serverIds });
+  },
+
+  /**
    * Phase 2 按需登录：拉起瞬态登录核取交互登录 URL（主进程自动开浏览器 + 系统通知）。
    * started=false 时 reason 说明（alreadyLoggedIn / inMainCore / alreadyRunning），渲染端据此提示。
    */

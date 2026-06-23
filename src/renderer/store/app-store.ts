@@ -145,6 +145,7 @@ interface AppState {
 
   // Server Management Actions
   deleteServer: (serverId: string) => Promise<void>;
+  deleteServers: (serverIds: string[]) => Promise<number>;
 
   // Custom Rules Actions
   addCustomRule: (rule: Rule) => Promise<void>;
@@ -454,6 +455,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().loadConfig();
     } catch (error) {
       console.error('[Store] Exception deleting server:', error);
+      throw error; // 调用点 catch + toast
+    }
+  },
+
+  deleteServers: async (serverIds) => {
+    try {
+      const count = await api.server.deleteBatch(serverIds);
+      await get().loadConfig();
+      return count;
+    } catch (error) {
+      console.error('[Store] Exception batch-deleting servers:', error);
       throw error; // 调用点 catch + toast
     }
   },

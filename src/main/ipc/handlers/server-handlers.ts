@@ -27,6 +27,30 @@ export function registerServerHandlers(
   // WARP 待注销队列（删除带 warpDevice 凭据的节点 → 入队；成功注册后机会式 drain）。
   // 进程内单例：与 startup-tasks 启动 drain 共用同一实例，使串行链（opChain）覆盖全部触发点、杜绝跨实例并发写。
   const warpDeregisterQueue = getWarpDeregisterQueue(logManager);
+
+  // 删除单个服务器后的「非配置副作用」（Tailscale state 清理 + WARP 远端注销入队），单删 / 批删共用。
+  // 抽出复用，保证批量删除不丢这两项副作用（否则 CF 端留孤儿设备、Tailscale 登录目录残留）。
+  const runServerRemovalSideEffects = async (removed: ServerConfig): Promise<void> => {
+    // Tailscale 节点 → 清其持久 state 目录 <userData>/tailscale/<id>（best-effort，不阻断删除）。
+    if (removed?.protocol?.toLowerCase() === 'tailscale') {
+      await fs.rm(tailscaleStateDir(removed.id), { recursive: true, force: true }).catch(() => {});
+    }
+
+    // WARP 节点 → 带自删凭据（warpDevice.token+deviceId）则入待注销队列，后台机会式 drain 远端注销。
+    // 判据=token 存在与否（零误判，不靠端点启发式）：本特性前的旧 WARP 节点无 warpDevice → 跳过入队、
+    // 仅删本地、不报错（注定孤儿、无凭可注销，已接受的历史债）。
+    const warpDevice = removed?.wireguardSettings?.warpDevice;
+    if (warpDevice?.token && warpDevice?.deviceId) {
+      await warpDeregisterQueue
+        .enqueue({
+          deviceId: warpDevice.deviceId,
+          token: warpDevice.token,
+          enqueuedAt: Date.now(),
+        })
+        .catch(() => {}); // 入队失败不阻断删除（本地已删，凭据丢失=退化为旧节点孤儿，可接受）
+    }
+  };
+
   // 解析协议 URL
   registerIpcHandler<{ url: string }, ServerConfig>(
     IPC_CHANNELS.SERVER_PARSE_URL,
@@ -119,27 +143,34 @@ export function registerServerHandlers(
       }
 
       await configManager.saveConfig(config);
+      await runServerRemovalSideEffects(removed);
+    }
+  );
 
-      // Tailscale 节点删除 → 清其持久 state 目录 <userData>/tailscale/<id>（best-effort，不阻断删除）。
-      if (removed?.protocol?.toLowerCase() === 'tailscale') {
-        await fs
-          .rm(tailscaleStateDir(args.serverId), { recursive: true, force: true })
-          .catch(() => {});
+  // 批量删除服务器：一次 loadConfig → 过滤掉全部 ids → 命中选中清 selectedServerId → 一次 saveConfig，
+  // 再逐个跑删除副作用。单次配置写避免「N 个并发单删各读旧配置、末次写覆盖前面」的竞态（净删 1 个）。
+  // 不存在的 id 静默跳过（幂等）。返回实际删除数。
+  registerIpcHandler<{ serverIds: string[] }, number>(
+    IPC_CHANNELS.SERVER_DELETE_BATCH,
+    async (_event: IpcMainInvokeEvent, args: { serverIds: string[] }) => {
+      const idSet = new Set(args.serverIds);
+      const config = await configManager.loadConfig();
+      const removed = config.servers.filter((s) => idSet.has(s.id));
+      if (removed.length === 0) return 0;
+
+      config.servers = config.servers.filter((s) => !idSet.has(s.id));
+
+      // 选中节点在删除集合内（'__direct__' 哨兵不是真实 id，不会命中）→ 清除选中，
+      // 否则 ConfigManager.validateConfig 会因 selectedServerId 指向不存在节点而抛错。
+      if (config.selectedServerId && idSet.has(config.selectedServerId)) {
+        config.selectedServerId = null;
       }
 
-      // WARP 节点删除 → 若带自删凭据（warpDevice.token 存在）则把 {deviceId, token, enqueuedAt} 入待注销队列，
-      // 后台机会式 drain 远端注销（删除恒瞬时、不内联调网络，不阻断）。判据=token 存在与否（零误判，不靠端点启发式）：
-      // 本特性前的旧 WARP 节点无 warpDevice → 跳过入队、仅删本地、不报错（注定孤儿、无凭可注销，已接受的历史债）。
-      const warpDevice = removed?.wireguardSettings?.warpDevice;
-      if (warpDevice?.token && warpDevice?.deviceId) {
-        await warpDeregisterQueue
-          .enqueue({
-            deviceId: warpDevice.deviceId,
-            token: warpDevice.token,
-            enqueuedAt: Date.now(),
-          })
-          .catch(() => {}); // 入队失败不阻断删除（本地已删，凭据丢失=退化为旧节点孤儿，可接受）
+      await configManager.saveConfig(config);
+      for (const r of removed) {
+        await runServerRemovalSideEffects(r);
       }
+      return removed.length;
     }
   );
 
