@@ -5,7 +5,14 @@
  */
 
 import { isIpv4 } from '../../shared/ip';
-import type { UserConfig, ServerConfig, Rule, AppRule, CustomAppPreset } from '../../shared/types';
+import type {
+  UserConfig,
+  ServerConfig,
+  Rule,
+  AppRule,
+  CustomAppPreset,
+  DnsConfig,
+} from '../../shared/types';
 import { parseDnsServerSpec, isIpv6Literal } from '../../shared/dns';
 import { ruleConditions } from '../../shared/rules';
 import { getAppPreset } from '../../shared/app-rules-preset';
@@ -117,29 +124,50 @@ export const hostToExcludeCidr = (host: string): string | null => {
 };
 
 /**
- * #57 节点域名解析器档位 → 实际使用的 DNS server tag。
+ * issue #147：有效「off 单上游 id」——优先新模型 nodeResolverSingle；缺失（未迁移 / 旧单测仅设
+ * deprecated nodeDomainResolver）→ 回退 legacy 档位映射，保证零行为变化。
+ */
+function effectiveSingleResolverId(dns: DnsConfig | undefined): string {
+  if (dns?.nodeResolverSingle) return dns.nodeResolverSingle;
+  const legacy = dns?.nodeDomainResolver ?? 'auto';
+  return legacy === 'dnspod' ? 'dnspod' : legacy === 'system' ? 'system' : 'ali';
+}
+
+/**
+ * 节点域名解析器 → 实际使用的 DNS server tag（#57 起；issue #147 改读新模型 nodeResolverSingle）。
  * 同时供节点 outbound 的 domain_resolver（ctx='dial'）与节点域名 DNS rule1（ctx='rule'）取值，
  * 保证 dial 与 rule1 用同一档（outbound 级统一 tag），不破坏 selector 热切换。
  *
- * 档位（缺省 / 'auto' = 零行为变化，dial 与 rule1 忠实保留各自基线解析器）：
- *  - auto   → dial=dns-bootstrap（AliDNS IP-DoH 223.5.5.5，保 outbound.domain_resolver 现状）；
- *             rule=dns-domestic（doh.pub DoH，保节点域名 DNS rule1 现状）。
+ * issue #147：消费从 deprecated nodeDomainResolver 切到新模型 nodeResolverSingle（off 单上游 id）。
+ * 本步产出与旧档位【完全等价】的内置 tag（零行为变化）；race-on(resolveNodeDomainsAhead) 指 dns-node-race
+ * 的接入随 buildDnsConfig 生成 race server 一并落（设计 §7 / Task#5），此处暂不区分 on/off。
+ *  - ali（默认）→ dial=dns-bootstrap(AliDNS IP-DoH 223.5.5.5) / rule=dns-domestic(doh.pub DoH)。
  *             两路径基线本就不同档，统一会把 rule1 从 doh.pub 悄改成 AliDNS，违反「默认零行为变化」。
- *  - dnspod → dns-node（DNSPod IP-DoH 1.12.12.12）
- *  - system → dns-local（系统 DNS）；但 INV-1：TUN 下 rule ctx 强制 dns-node（IP-DoH）防递归——
+ *  - dnspod   → dns-node（DNSPod IP-DoH 1.12.12.12）
+ *  - system   → dns-local（系统 DNS）；INV-1：TUN 下 rule ctx 强制 dns-node（IP-DoH）防递归——
  *             节点域名查询若落 dns-local，其上游可能再经 TUN 被 hijack-dns 劫持回 DNS rules 形成软死循环。
+ *  - 自定义 id → 自定义 server 生成见 Task#5；当前回退基线 tag（落地中间态）。
  */
+/** issue #147：本地 race DNS server 的 tag（race on 时 outbound.domain_resolver / 节点域名 rule1 指它）。单一真值。 */
+export const DNS_NODE_RACE_TAG = 'dns-node-race';
+
 export function getNodeResolverTag(
   config: UserConfig | null | undefined,
   ctx: 'dial' | 'rule'
 ): string {
-  const mode = config?.dnsConfig?.nodeDomainResolver ?? 'auto';
-  if (mode === 'dnspod') return 'dns-node';
-  if (mode === 'system') {
+  // issue #147：race on（resolveNodeDomainsAhead !== false）→ 指本地 race server（多上游并发，dial 与 rule 同 tag）。
+  // 仅 race server 就绪时 config 才为 on（ProxyManager 用 raceServerPort 算 effective config；snapshot/preflight/诊断
+  // 等未就绪路径恒 off，不引用 dns-node-race，防 FATAL）。off → 单上游（nodeResolverSingle，逃生/降级，与旧档位等价）。
+  if (config?.dnsConfig?.resolveNodeDomainsAhead !== false) {
+    return DNS_NODE_RACE_TAG;
+  }
+  const single = effectiveSingleResolverId(config?.dnsConfig);
+  if (single === 'dnspod') return 'dns-node';
+  if (single === 'system') {
     if (ctx === 'rule' && config?.proxyModeType === 'tun') return 'dns-node'; // INV-1
     return 'dns-local';
   }
-  // auto（含缺省）：忠实保留两路径各自基线解析器，逐字节回现状。
+  // 'ali' / 自定义（自定义 server 见 Task#5）/ 缺省：忠实保留两路径各自基线解析器，逐字节回现状。
   return ctx === 'dial' ? 'dns-bootstrap' : 'dns-domestic';
 }
 

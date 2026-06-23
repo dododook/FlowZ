@@ -53,7 +53,8 @@ import {
   buildOutbounds,
   type PendingRuleSelector,
 } from './singbox-outbound-builder';
-import { resolveNodeDomains, upstreamsForResolverMode } from './node-domain-resolver';
+import { NodeDnsRaceServer } from './node-dns-race-server';
+import { resolveUpstreams, DEFAULT_POOL_IDS } from '../../shared/node-resolver-upstreams';
 import {
   isEndpointProtocol,
   isAccountBasedProtocol,
@@ -170,7 +171,6 @@ export interface IProxyManager {
   // 运行期管理 API 客户端（sing-box 1.14 gRPC）：供 StatsService 经此订阅 Status/Connections 流；未启动核时为 null。
   getApiClient(): SingBoxApiClient | null;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
-  getResolvedNodeIps(): string[];
   on(
     event:
       | 'started'
@@ -218,10 +218,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 供 generateDnsConfig 把内网/captive 域名重定向到它（takeover 后 dns-local=公网解不了内网）+ rule C 直连放行防环。
   // null=无可用 LAN 解析器（非 TUN/关/DHCP 读不到/仅公网）→ 退回 dns-local。每次 start 入口重置重读。
   private lanResolverForDns: string | null = null;
-  // #57 resolve-ahead：节点服务器域名→IP 预解析表（域名作 key）。仅 start 路径（开关开时）在 generateSingBoxConfig
-  // 前用并发多上游 DoH 填充，由 generateSingBoxConfig 透传 buildOutbounds → buildProxyOutbound 写 outbound.server。
-  // 空 Map=现状（域名）：snapshot/preflight/speedtest/未启动路径恒空 → 生成物逐字节回现状。模块级 TTL 缓存使重启廉价。
-  private lastResolvedHosts: Map<string, string> = new Map();
+  // issue #147：本地节点域名 race DNS server（多上游并发 race）+ 其监听端口。start 路径（race on）起；
+  // raceServerPort>0 = race 就绪 → getNodeResolverTag on→dns-node-race + buildDnsConfig 生成该 server；
+  // =0（off / 起失败 / snapshot/preflight/未启动路径）→ 降级单上游（生成物逐字节回现状，快照零变化）。
+  private nodeDnsRaceServer = new NodeDnsRaceServer({
+    log: (level, message) => this.logToManager(level, message),
+  });
+  private raceServerPort = 0;
+  // issue #147 §E.1：本地 race server 的上游 IP（含内置+自定义），TUN 下经 route 直连放行防回环。race off / 未起 → []。
+  private raceUpstreamIps: string[] = [];
   // 杀核前「静默 StatsService」回调（停其到管理 API 的 Status/Connections gRPC 流）：核将死，提前 cancel 流避免 RST 噪音。
   private quiesceStats: (() => void) | null = null;
   // 事件驱动出口 re-probe 去重（item 1）：记上次因「选中 TS 节点 STATUS 翻 Running」已发过 re-probe 的 serverId。
@@ -617,45 +622,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
     }
 
-    // 3.9 #57 resolve-ahead：start 前把代理节点【服务器域名】并发多上游(DoH)预解析为 IP → this.lastResolvedHosts，
-    //     供 generateSingBoxConfig→buildProxyOutbound 写 outbound.server（SNI/Host 仍原域名），使拨号不依赖运行时
-    //     单点 DNS（#57 L1 根治）。开关 resolveNodeDomainsAhead 默认开；解析失败的域名不进表→回退原域名（既有
-    //     dns-bootstrap 兜底，零回归）。整批受预算硬约束，绝不无限阻塞 start。与上方 resolvedServerIps（Windows
-    //     TUN route_exclude，serverId→IP）正交：键/用途不同、互不影响。
-    this.lastResolvedHosts = new Map();
-    if (config.dnsConfig?.resolveNodeDomainsAhead !== false) {
-      // 仅普通拨号出站参与（buildProxyOutbound 路径）；custom 透传 / wireguard·tailscale endpoint 走各自构造、
-      // 不读 resolvedHosts，故不预解析（与 doc：v1 不纳入 WG peer / 账号制 mesh）。IP 字面量由 resolveNodeDomains 跳过。
-      const skipProtocols = new Set(['custom', 'wireguard', 'tailscale']);
-      const nodeDomains = new Set<string>();
-      for (const s of config.servers) {
-        if (skipProtocols.has((s.protocol || '').toLowerCase())) continue;
-        const addr = s.address?.trim();
-        if (addr) nodeDomains.add(addr); // resolveNodeDomains 内部再去重 + 跳过 IP 字面量
-      }
-      if (nodeDomains.size > 0) {
-        const t0 = Date.now();
-        try {
-          // 解析档位（nodeDomainResolver）决定预解析上游：auto=AliDNS+DNSPod DoH / dnspod=DNSPod / system=纯系统 DNS。
-          this.lastResolvedHosts = await resolveNodeDomains([...nodeDomains], {
-            upstreams: upstreamsForResolverMode(config.dnsConfig?.nodeDomainResolver),
-            // debug 级逐域名解析路径（域名→IP/上游/失败回退/缓存命中），logLevel=debug 时可见，供 #57 真机排查。
-            log: (level, message) => this.logToManager(level, message),
-          });
-          this.logToManager(
-            'info',
-            `节点域名解析前置：已将 ${this.lastResolvedHosts.size} 个节点域名预解析为 IP，耗时 ${Date.now() - t0}ms`
-          );
-        } catch (e) {
-          // 预解析整体异常绝不阻断启动：清空表 → 全部回退原域名（现状行为）。
-          this.lastResolvedHosts = new Map();
-          this.logToManager(
-            'warn',
-            `节点域名解析前置失败，回退域名: ${(e as Error)?.message ?? e}`
-          );
-        }
-      }
-    }
+    // 3.9 issue #147：节点 outbound.server 恒用域名（buildProxyOutbound）→ 内核 resolveDialer 运行时解析多 A →
+    //     DialSerial 逐 IP 重试（取代旧 resolve-ahead 烧单 IP，那会关闭内核多 IP 容错，见设计 §1.1）。多上游 race
+    //     的本地 server 起停 + effective config 降级见下（startNodeDnsRaceServer）。
+    await this.startNodeDnsRaceServer(config);
 
     // 4. 生成 sing-box 配置文件
     const singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
@@ -966,6 +936,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // Phase 2：停止/退出语境一并杀掉残留的瞬态登录核（无孤儿进程）。放早退之前——列表直接点登录时
     // 主核未运行，下方 `!singboxProcess && !singboxPid` 会早退，故在此先收瞬态核。
     this.killAllTailscaleLoginCores();
+    // issue #147：本地 race DNS server 随核停（绑主核生命周期）。
+    this.nodeDnsRaceServer.stop();
+    this.raceServerPort = 0;
+    this.raceUpstreamIps = [];
     // 1.14 管理 API 客户端随核停（停订阅 + 关连接）。
     this.tailscaleApiClient?.stop();
     this.tailscaleApiClient = null;
@@ -2136,14 +2110,56 @@ done
    * #57 resolve-ahead：本次预解析得到的节点 IP（写进了 outbound.server）。供 DiagnosticService 把这些
    * config.servers 之外的真实节点 IP 一并按节点身份脱敏（<ip-N>），杜绝漏进诊断报告（红线：零节点身份明文）。
    */
-  getResolvedNodeIps(): string[] {
-    return [...this.lastResolvedHosts.values()];
+  /**
+   * issue #147：起本地 race DNS server（race on）。raceServerPort>0 = 就绪 → getNodeResolverTag on→dns-node-race
+   * + buildDnsConfig 生成该 server；off / 起失败 → port=0 降级单上游（绝不阻断 start，fail-open）。
+   */
+  private async startNodeDnsRaceServer(config: UserConfig): Promise<void> {
+    this.raceServerPort = 0;
+    this.raceUpstreamIps = [];
+    if (config.dnsConfig?.resolveNodeDomainsAhead === false) {
+      this.nodeDnsRaceServer.stop();
+      return;
+    }
+    const dns = config.dnsConfig;
+    const ups = resolveUpstreams(
+      dns?.nodeResolverPool ?? DEFAULT_POOL_IDS,
+      dns?.nodeResolverCustom
+    );
+    try {
+      this.raceServerPort = await this.nodeDnsRaceServer.start(ups);
+      this.raceUpstreamIps = ups.directIps; // §E.1：自定义上游 route 直连放行（内置已在 bootstrap-direct，重复无害）
+      this.logToManager(
+        'info',
+        `节点域名 race 解析就绪：127.0.0.1:${this.raceServerPort}（Tier1 ${ups.tier1.length} / Tier2 ${ups.tier2.length}）`
+      );
+    } catch (e) {
+      this.raceServerPort = 0;
+      this.logToManager(
+        'warn',
+        `race server 启动失败，降级单上游(dns-bootstrap): ${(e as Error)?.message ?? e}`
+      );
+    }
+  }
+
+  /**
+   * race server 未就绪（off / 起失败 / snapshot·preflight·诊断等非运行路径，raceServerPort=0）→ 强制 race off：
+   * 使 getNodeResolverTag/buildDnsConfig 一致走单上游、不引用不存在的 dns-node-race（防 FATAL），且快照逐字节回现状。
+   */
+  private withRaceOff(config: UserConfig): UserConfig {
+    return {
+      ...config,
+      dnsConfig: { ...config.dnsConfig, resolveNodeDomainsAhead: false } as UserConfig['dnsConfig'],
+    };
   }
 
   /**
    * 生成 sing-box 配置（sing-box 1.12.x / 1.13.x 兼容格式）
    */
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig {
+    // issue #147：race server 就绪(raceServerPort>0)才走 race 解析；否则（off/起失败/snapshot/preflight/诊断）
+    // 强制 race off → getNodeResolverTag/buildDnsConfig 一致走单上游、不引用 dns-node-race（防 FATAL，快照零变化）。
+    const cfg = this.raceServerPort > 0 ? config : this.withRaceOff(config);
     // 全局直连哨兵（#73 proxifier）：无真实选中节点，proxy-selector default=direct（在 buildOutbounds 内置）。
     const isDirect = isDirectSelection(config.selectedServerId);
     const selectedServer = isDirect
@@ -2171,16 +2187,14 @@ done
 
     // outbounds 须先于 route/endpoints 生成：其产出的两载体（pendingEndpoints / pendingRuleSelectors）
     // 由下方 route deps + endpoints 注入 + 末尾 currentRuleTargetMap 回填消费。回写 this.* 维持原时序。
-    const outboundsResult = buildOutbounds(selectedServer, config, idToTagMap, {
+    const outboundsResult = buildOutbounds(selectedServer, cfg, idToTagMap, {
       gateInvalidNodes: this.gateInvalidNodes,
       log: (level, message) => this.logToManager(level, message),
-      // #57 resolve-ahead：透传预解析表（startInternal 前置填充）。空 Map → buildProxyOutbound 回退原域名（现状）。
-      resolvedHosts: this.lastResolvedHosts,
       // Phase 2：reverseMesh(system 内核接口)需提权,仅 TUN 模式可行（系统代理路径不提权）。非 TUN →
       // buildOutbounds 跳过 reverseMesh 节点不发射,避免内核接口创建失败致启动 FATAL。此判据取「会以提权跑」
       // 的下界(TUN);helper 实际就绪由连接闸门保证,maybePromptHelperGate 仅 macOS/Win 引导(Linux 另径),
       // 各平台 system 接口可创建性真机另验(设计 §11.6/11.7)。
-      systemInterfaceAvailable: config.proxyModeType === 'tun',
+      systemInterfaceAvailable: cfg.proxyModeType === 'tun',
     });
     this.pendingEndpoints = outboundsResult.pendingEndpoints;
     this.pendingRuleSelectors = outboundsResult.pendingRuleSelectors;
@@ -2188,11 +2202,12 @@ done
     const singboxConfig: SingBoxConfig = {
       log: buildLogConfig(config, this.privacyProvider()),
       dns: buildDnsConfig(
-        config,
+        cfg,
         'proxy-selector',
         this.lanResolverForDns,
         idToTagMap,
-        (level, message) => this.logToManager(level, message)
+        (level, message) => this.logToManager(level, message),
+        this.raceServerPort
       ),
       inbounds: buildInbounds(config, resolvedIps, {
         probeDirectPort: this.probeDirectPort,
@@ -2208,6 +2223,8 @@ done
         onDegraded: () => {
           this.customRuleFilesDegraded = true;
         },
+        // §E.1：race 就绪时把上游 IP 传给 route 做直连放行（防 TUN 回环）；未就绪路径恒 []（零变化）。
+        raceUpstreamIps: this.raceServerPort > 0 ? this.raceUpstreamIps : [],
       }),
       experimental: {
         cache_file: {

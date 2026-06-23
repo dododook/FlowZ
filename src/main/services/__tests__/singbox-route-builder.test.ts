@@ -385,3 +385,36 @@ describe('buildRouteConfig — 节点 IP 直连排除（CIDR 形状）', () => {
     expect(directCidrs(rc)).toContain('fd00::1/128');
   });
 });
+
+describe('buildRouteConfig — issue #147 race 上游直连放行（§E.1，防 TUN 回环）', () => {
+  const n = {
+    id: 's1',
+    name: 'N1',
+    protocol: 'vless',
+    address: '1.2.3.4',
+    port: 443,
+  } as unknown as ServerConfig;
+  // C 段 bootstrap-direct 规则：direct + 含内置 DNS IP 223.5.5.5。
+  const bootstrapRule = (rc: any): any =>
+    (rc.rules || []).find(
+      (r: any) =>
+        r.action === 'route' &&
+        r.outbound === 'direct' &&
+        Array.isArray(r.ip_cidr) &&
+        r.ip_cidr.some((c: string) => c.startsWith('223.5.5.5'))
+    );
+
+  it('自定义 race 上游 IP → C 段含其 /32 + port 加 853（DoT）', () => {
+    const rc = buildRouteConfig(cfg([n]), idMap([n]), deps([], { raceUpstreamIps: ['1.1.1.1'] }));
+    const r = bootstrapRule(rc);
+    expect(r.ip_cidr).toContain('1.1.1.1/32');
+    expect(r.port).toEqual(expect.arrayContaining([53, 443, 853]));
+  });
+
+  it('无自定义上游（[] / 未传）→ port 不含 853（snapshot 零变化）', () => {
+    expect(
+      bootstrapRule(buildRouteConfig(cfg([n]), idMap([n]), deps([], { raceUpstreamIps: [] }))).port
+    ).not.toContain(853);
+    expect(bootstrapRule(buildRouteConfig(cfg([n]), idMap([n]), deps([]))).port).not.toContain(853);
+  });
+});

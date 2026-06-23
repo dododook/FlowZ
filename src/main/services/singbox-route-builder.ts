@@ -85,6 +85,10 @@ export interface RouteConfigDeps {
   pendingEndpoints: SingBoxEndpoint[];
   log: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
   onDegraded: () => void;
+  // issue #147：本地 race server 的【自定义】上游 IP（内置 ali/dnspod 已在 BOOTSTRAP_DIRECT_DNS_IPS）。
+  // TUN 下主进程 race server 对这些 IP 的 DoH/UDP 查询若不直连放行 → 进 TUN → 经代理节点 → 节点解析又回 race server → 回环死锁。
+  // 故在 hijack-dns 之前直连放行（:53/:443/:853）。缺省 [] = race off / 无自定义上游（零变化）。
+  raceUpstreamIps?: string[];
 }
 
 export function buildRouteConfig(
@@ -225,8 +229,19 @@ export function buildRouteConfig(
       ...(deps.lanResolverForDns
         ? [hostToExcludeCidr(deps.lanResolverForDns)].filter((c): c is string => c !== null)
         : []),
+      // issue #147：本地 race server 的自定义上游 IP（内置 ali/dnspod 已在 BOOTSTRAP_DIRECT_DNS_IPS）须直连放行，
+      // 否则 TUN 下 race server 对它们的 DoH/UDP 查询进 TUN→经代理节点→节点解析又回 race server→回环死锁。
+      ...(deps.raceUpstreamIps ?? [])
+        .map((ip) => hostToExcludeCidr(ip))
+        .filter((c): c is string => c !== null),
     ],
-    port: dedupe([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])]),
+    // :53=UDP / :443=DoH（恒）；:853=DoT 仅有自定义 race 上游时加（无则保持现状，snapshot 零变化）。
+    port: dedupe([
+      53,
+      443,
+      ...((deps.raceUpstreamIps?.length ?? 0) > 0 ? [853] : []),
+      ...(customDomesticDns ? [customDomesticDns.port] : []),
+    ]),
     action: 'route',
     outbound: 'direct',
   });

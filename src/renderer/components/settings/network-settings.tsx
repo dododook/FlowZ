@@ -1,8 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -22,6 +25,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store/app-store';
 import { parseDnsServerSpec } from '@shared/dns';
+import {
+  BUILTIN_UPSTREAMS,
+  isValidCustomUpstreamSpec,
+  parseCustomUpstream,
+  upstreamCanonicalKey,
+  MAX_TIER1_UPSTREAMS,
+  DEFAULT_POOL_IDS,
+  DEFAULT_SINGLE_ID,
+} from '@shared/node-resolver-upstreams';
+import type { CustomDnsUpstream, DnsConfig } from '@shared/types';
 import { DEFAULT_BYPASS_LAN } from '@shared/system-proxy-bypass';
 import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
 import { toast } from 'sonner';
@@ -327,40 +340,10 @@ export function NetworkSettings() {
                 />
               )}
             </div>
+            {/* 节点域名解析容错（issue #147 多源 race）：Switch 开关在上控制下方上游选择 on(多选 race 池)/off(单选)。
+                Switch on(!== false) → race 池多选；off → 单上游逃生。两态字段(pool / single)各存各的，互不覆盖。 */}
             <SettingsRow
-              label={t('settings.advanced.nodeDomainResolver')}
-              description={t('settings.advanced.nodeDomainResolverDesc')}
-              tooltip={t('settings.advanced.nodeDomainResolverDescFull')}
-            >
-              <Select
-                value={config.dnsConfig?.nodeDomainResolver ?? 'auto'}
-                onValueChange={(v) =>
-                  updateDns({
-                    nodeDomainResolver: v as NonNullable<
-                      typeof config.dnsConfig
-                    >['nodeDomainResolver'],
-                  })
-                }
-              >
-                <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">{t('settings.advanced.nodeResolverAuto')}</SelectItem>
-                  <SelectItem value="dnspod">
-                    {t('settings.advanced.nodeResolverDnspod')}
-                  </SelectItem>
-                  <SelectItem value="system">
-                    {t('settings.advanced.nodeResolverSystem')}
-                    {isLinux && config.proxyModeType === 'tun'
-                      ? ` (${t('settings.advanced.nodeResolverExperimental')})`
-                      : ''}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingsRow>
-            <SettingsRow
-              label={t('settings.advanced.resolveNodeDomainsAhead', '节点域名解析前置')}
+              label={t('settings.advanced.resolveNodeDomainsAhead')}
               description={t('settings.advanced.resolveNodeDomainsAheadDesc')}
               tooltip={t('settings.advanced.resolveNodeDomainsAheadDescFull')}
             >
@@ -369,6 +352,12 @@ export function NetworkSettings() {
                 onCheckedChange={(c) => updateDns({ resolveNodeDomainsAhead: c })}
               />
             </SettingsRow>
+            <NodeResolverSection
+              dns={config.dnsConfig}
+              isLinux={isLinux}
+              isTun={config.proxyModeType?.toLowerCase() === 'tun'}
+              onUpdate={updateDns}
+            />
             <SettingsRow
               label={t('settings.advanced.takeoverSystemDns', 'TUN 接管系统 DNS')}
               description={t(
@@ -758,5 +747,248 @@ export function NetworkSettings() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * 节点域名解析上游选择（issue #147 多源 race）。受 resolveNodeDomainsAhead 控制形态：
+ *  - 开（!== false）= 多选 race 池：Tier1（加密 DoH/DoT，上限 3）抢跑段 + Tier2（system / 明文 UDP，不占额度）兜底段，
+ *    勾选写入 nodeResolverPool；可添加/删除自定义纯 IP 上游（写入 nodeResolverCustom，添加自动勾选进 pool）。
+ *  - 关 = 单选：一个 Select 列全部上游，写入 nodeResolverSingle。
+ * 不变量：pool(on) 与 single(off) 各存各的，切 Switch 互不覆盖（本组件只读写各自字段）。
+ */
+function NodeResolverSection({
+  dns,
+  isLinux,
+  isTun,
+  onUpdate,
+}: {
+  dns: DnsConfig | undefined;
+  isLinux: boolean;
+  isTun: boolean;
+  onUpdate: (patch: Partial<DnsConfig>) => void;
+}) {
+  const { t } = useTranslation();
+  const [customSpec, setCustomSpec] = useState('');
+
+  const raceOn = dns?.resolveNodeDomainsAhead !== false;
+  // memo 稳定空数组引用，使下方按 [custom] 的 useMemo 依赖在 nodeResolverCustom 未变时真正稳定。
+  const custom: CustomDnsUpstream[] = useMemo(
+    () => dns?.nodeResolverCustom ?? [],
+    [dns?.nodeResolverCustom]
+  );
+  // pool 缺省 = DEFAULT_POOL_IDS（ali+dnspod）；显式空数组才视为「全不勾」由后端回退默认（此处只如实回显）。
+  const pool: string[] = dns?.nodeResolverPool ?? [...DEFAULT_POOL_IDS];
+  const single = dns?.nodeResolverSingle ?? DEFAULT_SINGLE_ID;
+
+  // 自定义按 Tier 分桶（tier1 入抢跑段、tier2 入兜底段；解析失败的脏数据跳过）。useMemo 仅在 custom 变化时重算 parse。
+  const customTier1 = useMemo(
+    () => custom.filter((c) => parseCustomUpstream(c)?.tier === 1),
+    [custom]
+  );
+  const customTier2 = useMemo(
+    () => custom.filter((c) => parseCustomUpstream(c)?.tier === 2),
+    [custom]
+  );
+
+  // 抢跑段（Tier1）= 内置 ali/dnspod + 自定义 tier1；兜底段（Tier2）= 自定义 tier2 + system（恒置底）。
+  const tier1Items: { id: string; label: string; custom?: CustomDnsUpstream }[] = [
+    { id: 'ali', label: t('settings.advanced.nodeResolverAli') },
+    { id: 'dnspod', label: t('settings.advanced.nodeResolverDnspod') },
+    ...customTier1.map((c) => ({ id: c.id, label: c.spec, custom: c })),
+  ];
+  const tier2Items: { id: string; label: string; custom?: CustomDnsUpstream }[] = [
+    ...customTier2.map((c) => ({ id: c.id, label: c.spec, custom: c })),
+    {
+      id: 'system',
+      label:
+        t('settings.advanced.nodeResolverSystem') +
+        (isLinux && isTun ? ` (${t('settings.advanced.nodeResolverExperimental')})` : ''),
+    },
+  ];
+
+  const tier1Selected = tier1Items.filter((it) => pool.includes(it.id)).length;
+  const tier1Full = tier1Selected >= MAX_TIER1_UPSTREAMS;
+
+  const togglePool = (id: string, checked: boolean) => {
+    const next = checked ? [...new Set([...pool, id])] : pool.filter((x) => x !== id);
+    onUpdate({ nodeResolverPool: next });
+  };
+
+  const addCustom = () => {
+    const spec = customSpec.trim();
+    if (!spec) return;
+    if (!isValidCustomUpstreamSpec(spec)) {
+      toast.error(t('settings.advanced.nodeResolverErrDomain'));
+      return;
+    }
+    // canonical 去重：临时 id 算 key，比内置 + 已加自定义。
+    const probe = parseCustomUpstream({ id: '_probe', spec });
+    if (!probe) {
+      toast.error(t('settings.advanced.nodeResolverErrDomain'));
+      return;
+    }
+    const newKey = upstreamCanonicalKey(probe);
+    const existingKeys = new Set<string>([
+      ...Object.values(BUILTIN_UPSTREAMS).map(upstreamCanonicalKey),
+      ...custom
+        .map(parseCustomUpstream)
+        .filter((u): u is NonNullable<typeof u> => u != null)
+        .map(upstreamCanonicalKey),
+    ]);
+    if (existingKeys.has(newKey)) {
+      toast.error(t('settings.advanced.nodeResolverErrDuplicate'));
+      return;
+    }
+    const id = `custom-${Date.now().toString(36)}`;
+    onUpdate({
+      nodeResolverCustom: [...custom, { id, spec }],
+      nodeResolverPool: [...new Set([...pool, id])], // 添加即自动勾选进 pool
+    });
+    setCustomSpec('');
+  };
+
+  const removeCustom = (id: string) => {
+    onUpdate({
+      nodeResolverCustom: custom.filter((c) => c.id !== id),
+      nodeResolverPool: pool.filter((x) => x !== id), // 一并从 pool 移除
+    });
+  };
+
+  // race off：单选内置上游（ali / dnspod / system）。
+  // off 单上游暂不支持自定义（§E 二期未实现）：后端 getNodeResolverTag 对「off + 自定义 single」会静默回退 ali 基线，
+  // 列出自定义会让用户选了却不生效，故仅在 race on 的多选里提供自定义；off 只列内置以保证所选即生效。
+  if (!raceOn) {
+    const singleItems = [
+      { id: 'ali', label: t('settings.advanced.nodeResolverAli') },
+      { id: 'dnspod', label: t('settings.advanced.nodeResolverDnspod') },
+      {
+        id: 'system',
+        label:
+          t('settings.advanced.nodeResolverSystem') +
+          (isLinux && isTun ? ` (${t('settings.advanced.nodeResolverExperimental')})` : ''),
+      },
+    ];
+    // single 若为陈旧/自定义 id（非内置）→ 回显 ali，与后端「未知 single 走 ali 基线」一致，避免空白选择。
+    const singleValue = singleItems.some((it) => it.id === single) ? single : DEFAULT_SINGLE_ID;
+    return (
+      <div className="space-y-2 py-3">
+        <SettingsRow label={t('settings.advanced.nodeResolverSingleLabel')}>
+          <Select value={singleValue} onValueChange={(v) => onUpdate({ nodeResolverSingle: v })}>
+            <SelectTrigger className="h-8 w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {singleItems.map((it) => (
+                <SelectItem key={it.id} value={it.id}>
+                  {it.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <p className="text-xs text-muted-foreground">
+          {t('settings.advanced.nodeResolverSingleHint')}
+        </p>
+      </div>
+    );
+  }
+
+  // race on：多选 race 池（抢跑段 + 兜底段 + 自定义）。
+  const renderItem = (
+    it: { id: string; label: string; custom?: CustomDnsUpstream },
+    opts: { disabled?: boolean }
+  ) => {
+    const checked = pool.includes(it.id);
+    return (
+      <div key={it.id} className="flex items-center gap-2">
+        <Checkbox
+          id={`node-resolver-${it.id}`}
+          checked={checked}
+          disabled={opts.disabled && !checked}
+          onCheckedChange={(c) => togglePool(it.id, c === true)}
+        />
+        <Label
+          htmlFor={`node-resolver-${it.id}`}
+          className="cursor-pointer text-sm font-normal text-foreground"
+        >
+          {it.label}
+        </Label>
+        {it.custom && (
+          <button
+            type="button"
+            aria-label={t('common.delete', 'Delete')}
+            className="text-xs text-muted-foreground hover:text-destructive"
+            onClick={() => removeCustom(it.custom!.id)}
+          >
+            ×
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // race on 多选区默认折叠（SettingsCollapsible）：折叠头展示「竞速上游 + 已选摘要」，
+  // 点开才渲染完整三段（抢跑/兜底/自定义）。避免 checkbox 列表随自定义上游增多纵向撑长卡片（用户决策：保留 checkbox + 默认折叠）。
+  const selectedItems = [...tier1Items, ...tier2Items].filter((it) => pool.includes(it.id));
+  const summary =
+    t('settings.advanced.nodeResolverSelectedCount', { count: selectedItems.length }) +
+    (selectedItems.length > 0 ? ` · ${selectedItems.map((it) => it.label).join(', ')}` : '');
+  return (
+    <SettingsCollapsible
+      label={
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          <span>{t('settings.advanced.nodeResolverRaceHeading')}</span>
+          <span className="text-xs font-normal text-muted-foreground">{summary}</span>
+        </span>
+      }
+    >
+      <div className="space-y-4 py-3">
+        {/* 抢跑段（Tier1，上限 3）——标题已上移到折叠头，此处仅 hint + 满额徽章 + checkboxes */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              {t('settings.advanced.nodeResolverRaceHint')}
+            </p>
+            {tier1Full && (
+              <Badge variant="secondary">{t('settings.advanced.nodeResolverTier1Full')}</Badge>
+            )}
+          </div>
+          <div className="space-y-2">
+            {tier1Items.map((it) => renderItem(it, { disabled: tier1Full }))}
+          </div>
+        </div>
+
+        {/* 兜底段（Tier2，不占额度） */}
+        <div className="space-y-2 border-t border-border/60 pt-3">
+          <p className="text-sm font-medium text-foreground">
+            {t('settings.advanced.nodeResolverFallbackHeading')}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t('settings.advanced.nodeResolverFallbackHint')}
+          </p>
+          <div className="space-y-2">{tier2Items.map((it) => renderItem(it, {}))}</div>
+        </div>
+
+        {/* 添加自定义上游（纯 IP，去重） */}
+        <div className="flex items-center gap-2 border-t border-border/60 pt-3">
+          <Input
+            value={customSpec}
+            onChange={(e) => setCustomSpec(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addCustom();
+              }
+            }}
+            placeholder={t('settings.advanced.nodeResolverCustomPlaceholder')}
+            className="max-w-xs"
+          />
+          <Button size="sm" variant="outline" onClick={addCustom}>
+            {t('settings.advanced.nodeResolverAddCustom')}
+          </Button>
+        </div>
+      </div>
+    </SettingsCollapsible>
   );
 }

@@ -127,11 +127,7 @@ export function buildProxyOutbound(
   idToTagMap: Map<string, string>,
   // #57：节点域名 dial 解析器 tag，由调用方传 getNodeResolverTag(config,'dial')。
   // 缺省 dns-bootstrap（AliDNS IP-DoH）= 现状，兼容无 config 上下文的兜底调用。
-  nodeResolverTag: string = 'dns-bootstrap',
-  // #57 resolve-ahead：域名→IP 预解析表（域名作 key）。命中则 outbound.server 写 IP、拨号不依赖运行时 DNS；
-  // 未命中（解析失败/IP 字面量/开关关）→ 回退原 server.address。SNI/Host/ws-path 一律仍用原域名（见下）。
-  // 缺省 undefined = 现状（不预解析）。
-  resolvedHosts?: ReadonlyMap<string, string>
+  nodeResolverTag: string = 'dns-bootstrap'
 ): SingBoxOutbound {
   // sing-box 要求协议类型必须是小写
   const protocol = server.protocol.toLowerCase();
@@ -155,9 +151,10 @@ export function buildProxyOutbound(
   const outbound: SingBoxOutbound = {
     type: protocol,
     tag: idToTagMap.get(server.id) || `proxy-${server.id}`,
-    // #57 resolve-ahead：命中预解析表 → 写 IP（拨号免运行时 DNS）；否则回退原域名。绝不 mutate server.address——
-    // 下方 SNI（tls/reality/naive server_name）与 ws Host 仍读 server.address（原域名），覆盖会致无显式 SNI 节点握手失败。
-    server: resolvedHosts?.get(server.address) ?? server.address,
+    // issue #147：server 恒用原域名——交内核 resolveDialer 运行时解析多 A → DialSerial 逐个 IP 重试（取代旧
+    // resolve-ahead 烧单 IP，那会令 destination.IsDomain()=false、关闭内核多 IP 容错，见设计 §1.1）。
+    // 多上游 race / 抗单点由 domain_resolver 指向的本地 race server 承担（getNodeResolverTag）。
+    server: server.address,
     server_port: server.port,
     // 代理节点域名经引导解析（默认 dns-bootstrap=AliDNS IP-DoH），免疫 UDP 53 限速/劫持，
     // 避免节点解析失败导致全断流；同时防止 dns-local 死循环导致的连接挂起。
@@ -605,9 +602,6 @@ export interface PendingRuleSelector {
 export interface OutboundsDeps {
   gateInvalidNodes: Map<string, InvalidNodeInfo>;
   log: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
-  // #57 resolve-ahead：域名→IP 预解析表（this.lastResolvedHosts），透传 buildProxyOutbound 写 outbound.server。
-  // 缺省 undefined（preflight/speedtest/snapshot/未启动路径）= 现状（域名）。
-  resolvedHosts?: ReadonlyMap<string, string>;
   // Phase 2：本次启动 sing-box 是否会以提权运行（内核接口可创建）= TUN 模式 + helper。缺省 undefined/false
   // （preflight/speedtest/snapshot/系统代理路径）→ reverseMesh 节点不发射（system:true 需提权，否则启动 FATAL）。
   systemInterfaceAvailable?: boolean;
@@ -848,12 +842,7 @@ export function buildOutbounds(
         continue;
       }
       try {
-        const ob = buildProxyOutbound(
-          server,
-          idToTagMap,
-          getNodeResolverTag(config, 'dial'),
-          deps.resolvedHosts
-        );
+        const ob = buildProxyOutbound(server, idToTagMap, getNodeResolverTag(config, 'dial'));
         ob.tag = tag;
         if (server.detour && config.servers.some((s) => s.id === server.detour)) {
           // 环检测：沿 detour 链行进，若回到本节点即成环 → 不设 detour，避免 sing-box 报循环引用启动失败
@@ -970,9 +959,9 @@ export function buildOutbounds(
       const stlsOutbound: SingBoxOutbound = {
         type: 'shadowtls',
         tag: stlsTag,
-        // #57 resolve-ahead：外层 shadowtls 才是真正的 TCP 拨号目标（内层 SS 经 detour 指向它），同样命中预解析表
-        // 写 IP；server_name（下方 :827）仍用 shadowTlsSettings.sni（身份），不被 IP 覆盖。与 buildProxyOutbound 同语义。
-        server: deps.resolvedHosts?.get(srv.address) ?? srv.address,
+        // issue #147：外层 shadowtls 是真正的 TCP 拨号目标（内层 SS 经 detour 指向它），server 恒用原域名，
+        // 交内核运行时解析（取代 resolve-ahead 烧 IP）。server_name 仍用 shadowTlsSettings.sni（身份），不受影响。
+        server: srv.address,
         // port `||` 非 falsy-zero bug：ShadowTLS 端口合法值 1-65535，0/未设 → 降级用主端口；
         // 改 `??` 反而会把非法 0 透传给核致 FATAL，故 `||` 才是正确选择。
         server_port: srv.shadowTlsSettings.port || srv.port,

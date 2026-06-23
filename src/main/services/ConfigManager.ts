@@ -173,6 +173,10 @@ export class ConfigManager implements IConfigManager {
       // 按迁移时刻 proxyModeType 写 effective 值，置标记防重复执行覆盖用户后续手动改的值。
       await this.migrateFakeIpToggle(config);
 
+      // 节点域名解析器一次性迁移（issue #147，幂等、绝不抛）：旧单选档位 nodeDomainResolver → 新多源 race 模型
+      // nodeResolverPool(on 多选)+nodeResolverSingle(off 单选)。须在 migrateFakeIpToggle 之后（依赖 dnsConfig 已补齐）。
+      await this.migrateNodeResolver(config);
+
       // 应用分流默认预设一次性注入（幂等、flag 守卫）：为未配置的内置预设注入默认「代理·跟全局」规则，
       // 并剔除已下线预设（apple/bilibili）的残留。使每张卡片启动即有 rule-sel-app selector → 首次切节点即热切换，
       // 无需先手动触发一次创建规则。仅执行一次（置 appRulesSeeded），之后用户可自由增删不被回灌。
@@ -823,6 +827,33 @@ export class ConfigManager implements IConfigManager {
   }
 
   /**
+   * 节点域名解析器迁移（issue #147）：旧单选档位 nodeDomainResolver(auto/dnspod/system) → 新多源模型
+   * nodeResolverPool(race on 多选)+nodeResolverSingle(race off 单选)。幂等(nodeResolverMigrated 守卫)、绝不抛。
+   * 保留用户原意图：dnspod→[dnspod]/single dnspod；system→[system]/single system；auto/缺省→[ali,dnspod]/single ali。
+   * 不删 nodeDomainResolver（@deprecated 留作迁移源，幂等防重复后不再读）。dnsConfig 由上游 migrateFakeIpToggle 补齐。
+   */
+  private async migrateNodeResolver(config: UserConfig): Promise<void> {
+    try {
+      const dns = config.dnsConfig;
+      if (!dns || dns.nodeResolverMigrated === true) return; // 已迁移（含新装）幂等跳过；无 dnsConfig 理论不达（上游已补）
+      const old = dns.nodeDomainResolver ?? 'auto';
+      if (dns.nodeResolverPool === undefined) {
+        dns.nodeResolverPool =
+          old === 'dnspod' ? ['dnspod'] : old === 'system' ? ['system'] : ['ali', 'dnspod'];
+      }
+      if (dns.nodeResolverSingle === undefined) {
+        dns.nodeResolverSingle = old === 'dnspod' ? 'dnspod' : old === 'system' ? 'system' : 'ali';
+      }
+      dns.nodeResolverMigrated = true;
+      await this.saveConfig(config).catch((e) =>
+        this.log('warn', `节点解析器迁移后落盘失败（不阻断，下次重试）: ${e}`)
+      );
+    } catch (e) {
+      this.log('warn', `节点解析器迁移失败（吞掉，不影响启动）: ${e}`);
+    }
+  }
+
+  /**
    * 创建默认配置
    */
   private createDefaultConfig(): UserConfig {
@@ -861,6 +892,10 @@ export class ConfigManager implements IConfigManager {
         enableFakeIp: true, // 新装默认开（usesFakeIp 已统一为纯看开关；存量经 migrateFakeIpToggle 一次性迁移）
         fakeIpToggleMigrated: true, // 新装无需迁移：直接落 effective 默认，标记防 migrate 再改写
         takeoverSystemDns: true, // TUN 模式接管系统 DNS 默认开（缺省本已 ?? true 视为开，此处显式声明）
+        // issue #147 节点域名解析（多源 race）：新装默认 race-on、池=AliDNS+DNSPod；off 单选默认 Ali。
+        nodeResolverPool: ['ali', 'dnspod'],
+        nodeResolverSingle: 'ali',
+        nodeResolverMigrated: true, // 新装无需迁移：直接落新模型默认，标记防 migrate 再改写
       },
 
       customRuleSets: [], // 默认空

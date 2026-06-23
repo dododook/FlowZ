@@ -153,9 +153,8 @@ export class DiagnosticService {
       redactedSingboxConfig: redactedSingbox,
       appLogTail,
       singboxLogTail,
-      // #57 resolve-ahead：把预解析得到的节点 IP 一并纳入身份脱敏（它们已写进 redactedSingboxConfig 的
-      // outbound.server，但不在 config.servers 里 → 不补会以明文漏进报告）。
-      nodeIdentifiers: collectNodeIdentifiers(config, this.proxyManager.getResolvedNodeIps()),
+      // issue #147：节点 outbound.server 已恒为域名（不再烧 IP），无额外预解析 IP 需补脱敏 → 仅扫 config.servers。
+      nodeIdentifiers: collectNodeIdentifiers(config),
       hint: wantDeeper
         ? `当前日志级别为 ${effLevel}，未含 DNS 解析等连接详情，但日志中已出现连接/DNS 类错误。建议到 设置 → 高级 → 诊断 开启「诊断采集」，复现问题后再次导出可获得更完整的根因数据。`
         : undefined,

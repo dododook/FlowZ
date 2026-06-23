@@ -270,15 +270,23 @@ export interface DnsConfig {
   // migrateFakeIpToggle 按迁移时刻 proxyModeType 写 effective 值（TUN/manual→true、systemProxy→保留）后置 true。
   // undefined=未迁移（旧配置）；迁移幂等，置 true 后永不再改写，避免覆盖用户后续手动改的值。
   fakeIpToggleMigrated?: boolean;
-  // 节点域名解析器（#57）：决定代理节点域名的 dial/rule1 解析走哪个 resolver。
-  // auto（缺省）=AliDNS IP-DoH（dns-bootstrap，零行为变化）/ dnspod=DNSPod IP-DoH（dns-node，1.12.12.12）/
-  // system=系统 DNS（dns-local；TUN 下 rule ctx 仍强制 IP-DoH 防递归）。旧配置无此字段 → 视为 auto。
+  // ── 节点域名解析上游选择（issue #147 多源 race，取代 #57 单选档位 + 烧 IP）。设计 docs/design/issue147-node-dns-race-resolver.md ──
+  // @deprecated 旧单选档位，仅供迁移读取（auto→pool[ali,dnspod] / dnspod→[dnspod] / system→[system]）；
+  // 迁移后不再写入，新逻辑读 nodeResolverPool/nodeResolverSingle。旧配置无此字段 → 视为 'auto'。
   nodeDomainResolver?: 'auto' | 'dnspod' | 'system';
-  // 节点域名解析前置（#57 resolve-ahead）：缺省/true=开（默认）。开 → start 前在主进程用并发多上游 DoH
-  // 把代理节点【服务器域名】预解析为 IP 写进 outbound.server（SNI/Host 仍保留原域名），使拨号不依赖运行时
-  // 单点 DNS，规避节点域名解析失败导致全断流。解析失败的域名自动回退原域名（走既有 dns-bootstrap）。
-  // 关 → 不预解析、保持现状（域名 + domain_resolver 引导解析）。旧配置无此字段 → 视为开。
+  // 节点域名解析容错（issue #147，原「resolve-ahead 前置烧 IP」重定义）：缺省/true=开（默认）。
+  // 开 → domain_resolver 指本地 race server（dns-node-race）：多上游 DoH 并发 race（最快非空 wins），多 A 透传给内核 DialSerial 逐个重试。
+  // 关 → domain_resolver 按 nodeResolverSingle 指【单上游】（逃生阀，退回单点）。与上游选择正交（设计 §9.1）。旧配置无 → 视为开。
   resolveNodeDomainsAhead?: boolean;
+  // race【on】勾选的上游 id 列表（内置 'ali'|'dnspod'|'system' + 自定义 id）。Tier1(ali/dnspod/自定义DoH)抢跑、上限 3；
+  // Tier2(system/自定义UDP)兜底不占额度。空 → 回退默认 ['ali','dnspod']。缺省即默认。
+  nodeResolverPool?: string[];
+  // race【off】单选的上游 id。缺省 'ali'。与 pool 各存各的，切换互不覆盖。
+  nodeResolverSingle?: string;
+  // 用户自定义上游（强制纯 IP：parseDnsServerSpec.isDomain 为 true 拒绝）。id 稳定供 pool/single 引用。
+  nodeResolverCustom?: CustomDnsUpstream[];
+  // 旧 nodeDomainResolver → 新多源模型一次性迁移标记（参照 fakeIpToggleMigrated）。undefined=未迁移。
+  nodeResolverMigrated?: boolean;
   // TUN 模式强制接管系统 DNS（SystemDnsManager）：缺省/true=开（默认）。on-link 的 LAN/ISP DNS 不进 TUN →
   // hijack-dns 看不到 → 需代理的域名走系统解析得到真实/错族 IP（双栈站 ERR_CONNECTION_CLOSED / 真 v6 泄漏）。
   // 开 → TUN 启动把系统 DNS 改为可路由的 8.8.8.8 使其经 TUN 被 hijack；停止/退出/崩溃还原。
@@ -291,6 +299,13 @@ export interface DnsConfig {
   // P2c DNS 查询超时（sing-box 1.14 `dns.timeout`，毫秒）：缺省/未设=用核默认（不下发）。>0 时下发 dns.timeout:"<n>ms"，
   // 治理慢上游不拖整体解析。sanitize 丢弃 ≤0 / 非有限 / 超合理范围（1..60000ms）的值（见 ConfigManager.validateConfig）。
   dnsTimeoutMs?: number;
+}
+
+// issue #147：自定义节点解析上游（强制纯 IP，DoH/DoT/UDP）。spec 经 shared/dns.parseDnsServerSpec 校验
+// （isDomain=true 拒绝，保证零 bootstrap + route 直连放行确定）。详见 docs/design/issue147-node-dns-race-resolver.md §9.1。
+export interface CustomDnsUpstream {
+  id: string; // 稳定 id，供 DnsConfig.nodeResolverPool / nodeResolverSingle 引用
+  spec: string; // 'https://223.5.5.5/dns-query'(DoH) | 'tls://<IP>:853'(DoT) | '<IP>'(裸 IP=UDP:53)
 }
 
 // ============================================================================

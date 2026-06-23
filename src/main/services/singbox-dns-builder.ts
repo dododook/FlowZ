@@ -24,6 +24,7 @@ import {
   isIpv4Host,
   isIpv6Host,
   getNodeResolverTag,
+  DNS_NODE_RACE_TAG,
   effectiveCustomRules,
   DOMESTIC_BANK_AND_STOCK_DOMAINS,
 } from './singbox-config-helpers';
@@ -72,7 +73,10 @@ export function buildDnsConfig(
   lanResolverForDns: string | null,
   // id→唯一 tag 映射（buildIdToTagMap 单一真值）：tailscale 按名解析的 endpoint tag 直接读它，免重抄去重循环。
   idToTagMap: Map<string, string>,
-  log: DnsLogFn
+  log: DnsLogFn,
+  // issue #147：本地 race DNS server 端口（>0 = race 就绪）。生成 dns-node-race server（节点域名 domain_resolver/rule1
+  // 指它，getNodeResolverTag）。=0（off/起失败/snapshot/preflight）不生成，节点域名走单上游（getNodeResolverTag 同步降级）。
+  raceServerPort = 0
 ): SingBoxDnsConfig {
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
 
@@ -174,6 +178,18 @@ export function buildDnsConfig(
     // 否则在境内直接发起会因 GFW 拦截/污染导致 FakeIP 映射失败或 TTL 极短产生大量无效解析。
     buildUserDns('dns-remote', foreign, selectedServerTag),
   ];
+
+  // issue #147：race on + server 就绪 → 本地 race DNS server。节点域名 domain_resolver / rule1 经 getNodeResolverTag
+  // 指 dns-node-race；多上游并发 race 在 server 内部，内核经它拿多 A → DialSerial 逐 IP 重试。127.0.0.1 loopback
+  // 不进 TUN、口非 53 不被 hijack。raceServerPort=0（off/未就绪/snapshot）不生成，getNodeResolverTag 同步走单上游、不悬空引用。
+  if (raceServerPort > 0 && config.dnsConfig?.resolveNodeDomainsAhead !== false) {
+    dnsServers.push({
+      tag: DNS_NODE_RACE_TAG,
+      type: 'udp',
+      server: '127.0.0.1',
+      server_port: raceServerPort,
+    });
+  }
 
   // P6 局域网网关：local DNS server 邻居解析（sing-box 1.14 neighbor_domain）——对这些后缀的单标签短名
   // （如 nas.lan）走局域网邻居解析（主机名→IP），实现「按局域网设备短名访问」。内核硬限界（实证 alpha.32）：

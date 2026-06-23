@@ -217,16 +217,15 @@ describe('prunedSelectorDefault', () => {
   });
 });
 
-// #57 resolve-ahead：buildProxyOutbound 的 resolvedHosts 仅改 outbound.server，绝不动 SNI/server_name。
-describe('buildProxyOutbound — resolve-ahead（resolvedHosts → outbound.server）', () => {
+// issue #147：buildProxyOutbound 的 server 恒用原域名（删 resolve-ahead 烧 IP）→ 交内核 resolveDialer 多 A 重试；
+// SNI/server_name 不受影响（本就读 server.address）。
+describe('buildProxyOutbound — server 恒用域名（issue #147 删烧 IP）', () => {
   const DOMAIN = 'node.example.com';
-  const IP = '203.0.113.7';
   const idMap = new Map<string, string>();
-  const RESOLVED: ReadonlyMap<string, string> = new Map([[DOMAIN, IP]]);
   const srv = (over: Partial<ServerConfig>): ServerConfig =>
     ({ id: 'x', name: 'X', address: DOMAIN, port: 443, ...over }) as unknown as ServerConfig;
 
-  it('命中：server=IP，但 tls.server_name 仍= 显式 SNI（不被 IP 覆盖）', () => {
+  it('vless+tls 显式 SNI：server=域名，server_name 保留', () => {
     const ob = buildProxyOutbound(
       srv({
         protocol: 'vless',
@@ -235,68 +234,30 @@ describe('buildProxyOutbound — resolve-ahead（resolvedHosts → outbound.serv
         tlsSettings: { serverName: 'sni.example.net' },
       }),
       idMap,
-      'dns-bootstrap',
-      RESOLVED
+      'dns-bootstrap'
     );
-    expect(ob.server).toBe(IP);
+    expect(ob.server).toBe(DOMAIN);
     expect(ob.tls?.server_name).toBe('sni.example.net');
-    expect(ob.domain_resolver).toBe('dns-bootstrap'); // 档位 tag 保留（回退路径仍用）
+    expect(ob.domain_resolver).toBe('dns-bootstrap');
   });
 
-  it('命中且无显式 SNI：server=IP，但 tls.server_name 回退【原域名】而非 IP（核心断言）', () => {
+  it('无显式 SNI：server=域名，tls.server_name 回退原域名', () => {
     const ob = buildProxyOutbound(
       srv({ protocol: 'trojan', password: 'pw', security: 'tls' }),
       idMap,
-      'dns-bootstrap',
-      RESOLVED
+      'dns-bootstrap'
     );
-    expect(ob.server).toBe(IP);
+    expect(ob.server).toBe(DOMAIN);
     expect(ob.tls?.server_name).toBe(DOMAIN);
   });
 
-  it('reality 无 SNI：server=IP，server_name 仍 undefined（不被 IP 顶替）', () => {
+  it('IP 字面量节点：server 原样 IP（内核直拨、无需解析）', () => {
     const ob = buildProxyOutbound(
-      srv({
-        protocol: 'vless',
-        uuid: 'u',
-        security: 'reality',
-        realitySettings: { publicKey: 'pk', shortId: 'sid' },
-      }),
+      srv({ address: '198.51.100.9', protocol: 'trojan', password: 'pw', security: 'tls' }),
       idMap,
-      'dns-bootstrap',
-      RESOLVED
+      'dns-bootstrap'
     );
-    expect(ob.server).toBe(IP);
-    expect(ob.tls?.server_name).toBeUndefined();
-  });
-
-  it('naive：server=IP，tls.server_name 回退原域名', () => {
-    const ob = buildProxyOutbound(
-      srv({ protocol: 'naive', username: 'u', password: 'p' }),
-      idMap,
-      'dns-bootstrap',
-      RESOLVED
-    );
-    expect(ob.server).toBe(IP);
-    expect(ob.tls?.server_name).toBe(DOMAIN);
-  });
-
-  it('未命中（map 无此域名）/ 不传 resolvedHosts → server 保持原域名（现状）', () => {
-    const base = srv({ protocol: 'trojan', password: 'pw', security: 'tls' });
-    expect(buildProxyOutbound(base, idMap, 'dns-bootstrap', new Map()).server).toBe(DOMAIN);
-    expect(buildProxyOutbound(base, idMap, 'dns-bootstrap').server).toBe(DOMAIN);
-  });
-
-  it('IP 字面量节点不在 map → server 原样（前置层不会把 IP 当 key）', () => {
-    const ipNode = srv({
-      address: '198.51.100.9',
-      protocol: 'trojan',
-      password: 'pw',
-      security: 'tls',
-    });
-    expect(buildProxyOutbound(ipNode, idMap, 'dns-bootstrap', RESOLVED).server).toBe(
-      '198.51.100.9'
-    );
+    expect(ob.server).toBe('198.51.100.9');
   });
 });
 

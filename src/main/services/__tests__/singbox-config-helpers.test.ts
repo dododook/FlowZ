@@ -94,32 +94,38 @@ describe('hostToExcludeCidr — 真 IP 才产 CIDR，非 IP/空/畸形 → null�
   });
 });
 
-describe('getNodeResolverTag — #57 节点域名解析器档位矩阵', () => {
+describe('getNodeResolverTag — issue #147：race on→dns-node-race / off→档位矩阵', () => {
   const mk = (over: Partial<UserConfig>): UserConfig => over as unknown as UserConfig;
+  // race off（逃生/降级 / snapshot·preflight 路径）才走单上游矩阵；race server 就绪时 ProxyManager 才置 config on。
+  const off = (resolver?: string): Partial<UserConfig> =>
+    ({
+      dnsConfig: {
+        resolveNodeDomainsAhead: false,
+        ...(resolver ? { nodeDomainResolver: resolver } : {}),
+      },
+    }) as unknown as Partial<UserConfig>;
 
-  it('auto（缺省）：dial=dns-bootstrap / rule=dns-domestic（两路径不同档，零行为变化）', () => {
-    expect(getNodeResolverTag(undefined, 'dial')).toBe('dns-bootstrap');
-    expect(getNodeResolverTag(undefined, 'rule')).toBe('dns-domestic');
-    expect(getNodeResolverTag(mk({}), 'dial')).toBe('dns-bootstrap');
-    expect(
-      getNodeResolverTag(mk({ dnsConfig: { nodeDomainResolver: 'auto' } as any }), 'rule')
-    ).toBe('dns-domestic');
+  it('race on（缺省 resolveNodeDomainsAhead）→ dns-node-race（dial 与 rule 同）', () => {
+    expect(getNodeResolverTag(mk({ dnsConfig: {} as any }), 'dial')).toBe('dns-node-race');
+    expect(getNodeResolverTag(mk({ dnsConfig: {} as any }), 'rule')).toBe('dns-node-race');
   });
 
-  it('dnspod → dns-node（两 ctx 一致）', () => {
-    const c = mk({ dnsConfig: { nodeDomainResolver: 'dnspod' } as any });
+  it('off + auto（缺省档）：dial=dns-bootstrap / rule=dns-domestic（两路径不同档）', () => {
+    expect(getNodeResolverTag(mk(off('auto')), 'dial')).toBe('dns-bootstrap');
+    expect(getNodeResolverTag(mk(off('auto')), 'rule')).toBe('dns-domestic');
+  });
+
+  it('off + dnspod → dns-node（两 ctx 一致）', () => {
+    const c = mk(off('dnspod'));
     expect(getNodeResolverTag(c, 'dial')).toBe('dns-node');
     expect(getNodeResolverTag(c, 'rule')).toBe('dns-node');
   });
 
-  it('system → dns-local；但 INV-1：TUN 下 rule ctx 强制 dns-node 防递归', () => {
-    const sys = mk({ dnsConfig: { nodeDomainResolver: 'system' } as any });
+  it('off + system → dns-local；INV-1：TUN 下 rule ctx 强制 dns-node 防递归', () => {
+    const sys = mk(off('system'));
     expect(getNodeResolverTag(sys, 'dial')).toBe('dns-local');
     expect(getNodeResolverTag(sys, 'rule')).toBe('dns-local'); // 非 TUN
-    const sysTun = mk({
-      dnsConfig: { nodeDomainResolver: 'system' } as any,
-      proxyModeType: 'tun',
-    });
+    const sysTun = mk({ ...off('system'), proxyModeType: 'tun' });
     expect(getNodeResolverTag(sysTun, 'dial')).toBe('dns-local'); // dial 不受 INV-1
     expect(getNodeResolverTag(sysTun, 'rule')).toBe('dns-node'); // INV-1
   });
