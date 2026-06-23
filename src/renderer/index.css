@@ -203,33 +203,9 @@
     background: transparent;
   }
 
-  /* 主内容区可视滚动条（issue #154）：全局 ::-webkit-scrollbar width:0 隐藏了所有滚动条，节点/规则等长列表
-     用户无法感知"还有更多"也无法拖动。仅对主滚动容器 .main-content-card 恢复一条**细的、自动隐藏、不突兀**的滚动条：
-       - 默认 thumb 透明（完全隐形，零干扰）；
-       - 鼠标悬停内容区 或 正在滚动(.is-scrolling，由 main-layout 滚动事件加/移)时才显细淡 thumb，停止交互即隐藏；
-       - thumb 上再悬停加深，便于拖动；content-box+透明描边使可见宽度更细。
-     刻意不设 scrollbar-width/scrollbar-color：Chromium 121+ 一旦显式设 scrollbar-width 会忽略 ::-webkit-scrollbar
-     伪元素样式，致此处自定义自动隐藏失效。仅用 webkit 伪元素（Electron=Chromium，足够）。 */
-  .main-content-card::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  .main-content-card::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .main-content-card::-webkit-scrollbar-thumb {
-    background-color: transparent; /* 默认隐藏：不突兀 */
-    border-radius: 9999px;
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
-  .main-content-card:hover::-webkit-scrollbar-thumb,
-  .main-content-card.is-scrolling::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.4); /* 交互时显示：细而淡 */
-  }
-  .main-content-card::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.6); /* 悬停 thumb 上更明显，便于拖动 */
-  }
+  /* #154 给 .main-content-card 恢复的「自动隐藏可视滚动条」已移除（用户反馈：扩大化到首页/导航/设置/服务器全部页面）。
+     回到全局 ::-webkit-scrollbar width:0——所有页面滚动条隐藏、内容仍可滚（滚轮/触控板），与 #154 之前一致。
+     注：.main-content-card 仍是主内容卡片的核心 class（背景/圆角/Mica 装饰见下方），此处仅去掉其滚动条样式。 */
 
   /* ── Sidebar styles ── */
   /* macOS: transparent so system vibrancy (frosted glass) shows through */
@@ -286,6 +262,14 @@
     height: 44px;
     margin-left: auto;
     margin-right: auto;
+  }
+
+  /* Mac 收起栏宽 80px（红绿灯水平约束、不可更窄）→ 方块随之放大到 52px，配合 JSX 中 Mac 折叠图标 26px，
+     填充栏宽、避免「窄图标 + 宽栏」的空旷感（Win/Linux 栏 56px 保持 44px 方块）。
+     复用 main.tsx:36 注入的 html.platform-darwin 平台 class（沿用现有平台隔离、不新增 class，见 [[ui-redesign-conduit]] §6）。 */
+  html.platform-darwin .nav-item.collapsed {
+    width: 52px;
+    height: 52px;
   }
 
   /* 收起态选中：参考微信图标栏——以图标着色为主、背景框收敛（更自然，不显空旷） */
