@@ -48,7 +48,7 @@ jest.mock('child_process', () => {
       if (inFlight > maxInFlight) maxInFlight = inFlight;
       setTimeout(() => {
         inFlight -= 1;
-        cb(null, { stdout: 'sing-box version 1.14.0-alpha.33 (go1.25)\n environment ...' });
+        cb(null, { stdout: 'sing-box version 1.14.0-alpha.34 (go1.25)\n environment ...' });
       }, 5);
     },
     __stats: () => ({ calls, maxInFlight }),
@@ -98,7 +98,7 @@ describe('spawnCoreVersionFirstLine 串行化（issue #150）', () => {
     expect(stats.calls).toBe(5); // force=true 不吃缓存，5 次真探测
     expect(stats.maxInFlight).toBe(1); // 串行化关键断言：绝不并发 execve 内核
     // 解析结果正确（不因串行而损坏）
-    for (const r of results) expect(r).toBe('1.14.0-alpha.33');
+    for (const r of results) expect(r).toBe('1.14.0-alpha.34');
   });
 
   it('一次探测失败不毒化链：后续探测仍正常排队执行', async () => {
@@ -119,7 +119,7 @@ describe('spawnCoreVersionFirstLine 串行化（issue #150）', () => {
     const failed = await svc.getCoreVersion(true); // 失败 → 回落随包基线（不抛）
     const ok = await svc.getCoreVersion(true); // 链未被毒化 → 正常解析
     expect(typeof failed).toBe('string');
-    expect(ok).toBe('1.14.0-alpha.33');
+    expect(ok).toBe('1.14.0-alpha.34');
 
     cp.exec = orig;
   });

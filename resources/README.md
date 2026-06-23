@@ -6,72 +6,59 @@
 
 ```
 resources/
-├── win/                    # Windows 平台资源
-│   ├── sing-box.exe       # sing-box Windows 可执行文件
-│   └── app.ico            # 应用图标（同时用作托盘图标）
-├── mac-x64/               # macOS Intel (x64) 平台资源
-│   ├── sing-box           # sing-box macOS x64 可执行文件
-│   └── app.icns           # 应用图标（同时用作托盘图标）
-├── mac-arm64/             # macOS Apple Silicon (arm64) 平台资源
-│   ├── sing-box           # sing-box macOS arm64 可执行文件
-│   └── app.icns           # 应用图标（同时用作托盘图标）
-└── data/                  # 共享数据文件
-    ├── geoip-cn.srs       # 中国 IP 地址段数据
-    ├── geosite-cn.srs     # 中国域名列表
-    └── geosite-geolocation-!cn.srs  # 非中国域名列表
+├── win/                          # Windows (x64)
+│   ├── sing-box.exe              # sing-box 可执行文件（入库）
+│   ├── libcronet.dll             # NaïveProxy/cronet 运行时库（dlopen，fetch 产物，不入库）
+│   └── com.flowz.helper.exe      # 提权服务 helper（build 产物，不入库）
+├── linux/                        # Linux (x64)
+│   ├── sing-box                  # sing-box 可执行文件（入库）
+│   └── libcronet.so              # NaïveProxy/cronet 运行时库（dlopen，fetch 产物，不入库）
+├── mac-x64/                      # macOS Intel (x64)
+│   ├── sing-box                  # sing-box 可执行文件（入库）
+│   └── com.flowz.helper          # 提权服务 helper（build 产物，不入库）
+├── mac-arm64/                    # macOS Apple Silicon (arm64)
+│   ├── sing-box                  # sing-box 可执行文件（入库）
+│   ├── com.flowz.helper          # 提权服务 helper（build 产物，不入库）
+│   └── LICENSE
+├── dashboard/                    # sing-box 官方面板静态资源（fetch 产物，不入库）
+├── data/                         # 共享数据：随包内置 geo 规则集（geoip-*.srs / geosite-*.srs，入库）
+├── app.png / app-gray.png        # 托盘图标（常态/置灰）
+└── README.md
 ```
+
+> 说明：`sing-box` 二进制、`data/` geo 规则集、图标与 `LICENSE` **入库**；`libcronet.*`、`dashboard/`、
+> `com.flowz.helper{,.exe}` 体积大或属构建产物 **不入库**，由下列命令在开发/CI 现拉现编后随 `resources/` 一起打包：
+>
+> - `npm run fetch:cronet`   → 各平台 `libcronet.*`（NaïveProxy/cronet，运行时 dlopen）
+> - `npm run fetch:dashboard`→ `dashboard/`（官方面板，gh-pages 构建产物）
+> - `npm run build:helper`   → 各平台 `com.flowz.helper{,.exe}`（提权服务，交叉编译）
+>
+> 应用图标本体见 `build/icon.ico` / `build/icon.icns`（electron-builder 打包用）；`resources/app*.png` 仅作托盘图标。
 
 ## 资源管理
 
 应用程序使用 `ResourceManager` 类来管理资源文件的访问：
 
-- 自动检测当前平台和架构
+- 自动检测当前平台和架构（win / linux / mac-x64 / mac-arm64）
 - 处理开发环境和生产环境的路径差异
 - 提供统一的资源访问接口
 
 ## 开发环境 vs 生产环境
 
-### 开发环境
-资源文件从项目根目录的 `resources/` 目录加载：
-```
-/path/to/project/resources/
-```
-
-### 生产环境
-资源文件从打包后的 `resources/` 目录加载：
-```
-/path/to/app/resources/
-```
-
-## 打包配置
-
-在 `electron-builder` 配置中，需要将 `resources` 目录包含到打包产物中：
-
-```json
-{
-  "files": [
-    "dist/**/*",
-    "resources/**/*"
-  ],
-  "extraResources": [
-    {
-      "from": "resources",
-      "to": "resources",
-      "filter": ["**/*"]
-    }
-  ]
-}
-```
+- **开发环境**：从项目根目录的 `resources/` 加载。
+- **生产环境**：从打包后的 `resources/`（electron-builder `extraResources`）加载。
 
 ## 注意事项
 
-1. **可执行权限**: macOS 的 sing-box 文件需要可执行权限（`chmod +x`）
-2. **文件大小**: sing-box 可执行文件较大（~30-35MB），会影响安装包大小
-3. **更新**: GeoIP/GeoSite 数据文件需要定期更新以获得最新的路由规则
-4. **图标复用**: 托盘图标直接复用应用图标（app.ico/app.icns），Electron 会自动处理不同平台和 DPI 的适配
+1. **可执行权限**：macOS / Linux 的 `sing-box` 与 helper 需可执行权限（`chmod +x`）。
+2. **文件大小**：`sing-box` 可执行文件较大（约 65–77 MB/平台），会影响安装包大小。
+3. **更新**：GeoIP/GeoSite 数据（`data/*.srs`）需定期更新以获得最新路由规则；运行期亦可经规则资源管理在线更新到 userData。
+4. **换核**：升级 sing-box 时从官方 release 下载对应平台二进制替换 `resources/<platform>/sing-box[.exe]`，
+   并同步更新 `src/shared/core-manifest.json` 的 `bundledCoreVersion`。`libcronet` 独立按 `cronetVersion` 管理，
+   换核不必同步（除非官方核 ABI 变更）。换核须确认二进制 `Tags` 含 `with_naive_outbound`（naive 支持前提）。
 
 ## sing-box 版本
 
-当前使用的 sing-box 版本：**1.12.12**
+当前使用的 sing-box 版本：**1.14.0-alpha.34**（SagerNet 官方 release，`Tags` 含 `with_naive_outbound`）
 
 下载地址：https://github.com/SagerNet/sing-box/releases
