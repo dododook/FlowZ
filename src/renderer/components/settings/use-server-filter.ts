@@ -6,16 +6,20 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getSortedProtocolOptions } from './shared/protocol-options';
-import type { ServerConfigWithId, SortKey, SortOrder } from './server-list-helpers';
+import { sortServers, type ServerConfigWithId } from './server-list-helpers';
+import { useServerSortStore } from './use-server-sort-store';
 
 export function useServerFilter(servers: ServerConfigWithId[], latencyMap: Record<string, number>) {
   const { t, i18n } = useTranslation();
 
-  // 搜索 / 过滤 / 排序
+  // 搜索 / 过滤每实例本地态（切 Tab/页面清空是预期行为）；
+  // 排序偏好提到共享持久 store（跨 Tab/页面/重启记忆，修「排序无记忆」）。
   const [searchQuery, setSearchQuery] = useState('');
   const [filterProtocol, setFilterProtocol] = useState<string>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('name');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const sortKey = useServerSortStore((s) => s.sortKey);
+  const sortOrder = useServerSortStore((s) => s.sortOrder);
+  const setSortKey = useServerSortStore((s) => s.setSortKey);
+  const setSortOrder = useServerSortStore((s) => s.setSortOrder);
 
   // 过滤 + 排序
   // 协议筛选项按【当前分组实际存在的协议】动态生成：订阅组不再列 WG/WARP/Tailscale 等不可能出现的协议，
@@ -51,24 +55,8 @@ export function useServerFilter(servers: ServerConfigWithId[], latencyMap: Recor
       list = list.filter((s) => s.protocol.toLowerCase() === filterProtocol);
     }
 
-    // 排序
-    list = [...list].sort((a, b) => {
-      let cmp = 0;
-      if (sortKey === 'name') {
-        cmp = a.name.localeCompare(b.name);
-      } else if (sortKey === 'protocol') {
-        cmp = a.protocol.localeCompare(b.protocol);
-      } else if (sortKey === 'address') {
-        cmp = (a.address || '').localeCompare(b.address || '');
-      } else if (sortKey === 'latency') {
-        const getVal = (v: number | undefined) =>
-          v === undefined ? Infinity : v === -1 ? Infinity - 1 : v;
-        const la = getVal(latencyMap[a.id]);
-        const lb = getVal(latencyMap[b.id]);
-        cmp = la - lb;
-      }
-      return sortOrder === 'asc' ? cmp : -cmp;
-    });
+    // 排序（latency 对无测速结果优雅降级：无结果沉底、全空按名称，见 sortServers）
+    list = sortServers(list, sortKey, sortOrder, latencyMap);
 
     return list;
   }, [servers, searchQuery, filterProtocol, sortKey, sortOrder, latencyMap]);

@@ -14,6 +14,41 @@ export type ViewMode = 'card' | 'list';
 export type SortKey = 'name' | 'protocol' | 'latency' | 'address';
 export type SortOrder = 'asc' | 'desc';
 
+/**
+ * 节点列表排序（纯函数，供 useServerFilter 调用 + 单测）。
+ * latency 排序对「无有效测速结果」优雅降级：无结果节点**始终沉底**（与 asc/desc 无关），
+ * 两者都无结果 → 按名称升序——空测速=稳定的默认序（体感等同默认排序），但排序偏好仍保留，
+ * 测速一回来已测节点自动按延迟浮顶。测速结果（latencyMap）刻意不持久化：延迟易过期，
+ * 陈旧值会把已挂节点显示成「最快」而误导，故只持久化排序偏好、不持久化结果。
+ */
+export function sortServers(
+  list: ServerConfigWithId[],
+  sortKey: SortKey,
+  sortOrder: SortOrder,
+  latencyMap: Record<string, number>
+): ServerConfigWithId[] {
+  // undefined=从未测速，-1=测速失败/超时 → 均视作「无有效结果」。
+  const realLatency = (id: string): number | null => {
+    const v = latencyMap[id];
+    return v === undefined || v === -1 ? null : v;
+  };
+  return [...list].sort((a, b) => {
+    if (sortKey === 'latency') {
+      const la = realLatency(a.id);
+      const lb = realLatency(b.id);
+      if (la === null && lb === null) return a.name.localeCompare(b.name);
+      if (la === null) return 1; // 无结果沉底（不随 asc/desc 翻转）
+      if (lb === null) return -1;
+      return sortOrder === 'asc' ? la - lb : lb - la;
+    }
+    let cmp = 0;
+    if (sortKey === 'name') cmp = a.name.localeCompare(b.name);
+    else if (sortKey === 'protocol') cmp = a.protocol.localeCompare(b.protocol);
+    else if (sortKey === 'address') cmp = (a.address || '').localeCompare(b.address || '');
+    return sortOrder === 'asc' ? cmp : -cmp;
+  });
+}
+
 /** ServerActions 所需的运行期上下文（测速态 + 各操作 handler），由 ServerCard/ServerRow 透传给 ServerActions。 */
 export interface ServerActionsContext {
   testingServerIds: Set<string>;
