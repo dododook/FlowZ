@@ -152,9 +152,16 @@ export function Sidebar({
         <button
           onClick={toggleCollapsed}
           title={collapsed ? t('sidebar.expand', '展开侧栏') : t('sidebar.collapse', '收起侧栏')}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+          className={`flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground ${
+            collapsed ? (isMac ? 'h-[52px] w-[52px]' : 'h-[44px] w-[44px]') : 'h-7 w-7'
+          }`}
         >
-          <PanelLeft className="h-[18px] w-[18px] rtl-mirror" strokeWidth={1.8} />
+          {/* 折叠态与导航项(.nav-item.collapsed)同尺寸方块+图标，使 icon-rail 顶部 toggle 与下方导航整齐对齐
+              （Mac 52/26、Win·Linux 44/22）；展开态保持 28/18 小巧 toggle。 */}
+          <PanelLeft
+            className={`${collapsed ? (isMac ? 'h-[26px] w-[26px]' : 'h-[22px] w-[22px]') : 'h-[18px] w-[18px]'} rtl-mirror`}
+            strokeWidth={1.8}
+          />
         </button>
       </div>
 

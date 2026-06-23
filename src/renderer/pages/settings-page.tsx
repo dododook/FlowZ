@@ -54,10 +54,10 @@ export function SettingsPage({ activeSection }: SettingsPageProps) {
   const meta = sectionTitles[activeSection] ?? sectionTitles.general;
 
   return (
-    // 设置/表单页：居中窄列（max-w-[720px] mx-auto）。表单控件定宽，满宽会让「标签左·控件右」中间空一大条；
-    // 居中窄列让控件填满列、两侧对称留白（macOS 系统设置 / Win11 Fluent 同款，刻意整洁）。
-    // 密集列表页（规则/节点/连接）仍满宽，分而治之。
-    <div className="mx-auto max-w-[720px] space-y-6">
+    // 设置页满宽跟随窗口（用户选定：自动缩放、不居中留白）。跟随 main-layout container(max-w-1400)：
+    // 窗口 < 1400 铺满、> 1400 由 container 统一居中。SettingsRow「标签左·控件右」在宽窗口会拉开，
+    // 是用户知情的取舍（换取大屏不浪费空间）；与密集列表页（规则/节点/连接）满宽行为一致。
+    <div className="space-y-6">
       <PageHeader
         title={t(meta.titleKey, meta.defaultTitle)}
         description={t(meta.descKey, meta.defaultDesc)}
