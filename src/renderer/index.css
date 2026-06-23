@@ -203,6 +203,34 @@
     background: transparent;
   }
 
+  /* 主内容区可视滚动条（issue #154）：全局 ::-webkit-scrollbar width:0 隐藏了所有滚动条，节点/规则等长列表
+     用户无法感知"还有更多"也无法拖动。仅对主滚动容器 .main-content-card 恢复一条**细的、自动隐藏、不突兀**的滚动条：
+       - 默认 thumb 透明（完全隐形，零干扰）；
+       - 鼠标悬停内容区 或 正在滚动(.is-scrolling，由 main-layout 滚动事件加/移)时才显细淡 thumb，停止交互即隐藏；
+       - thumb 上再悬停加深，便于拖动；content-box+透明描边使可见宽度更细。
+     刻意不设 scrollbar-width/scrollbar-color：Chromium 121+ 一旦显式设 scrollbar-width 会忽略 ::-webkit-scrollbar
+     伪元素样式，致此处自定义自动隐藏失效。仅用 webkit 伪元素（Electron=Chromium，足够）。 */
+  .main-content-card::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .main-content-card::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .main-content-card::-webkit-scrollbar-thumb {
+    background-color: transparent; /* 默认隐藏：不突兀 */
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .main-content-card:hover::-webkit-scrollbar-thumb,
+  .main-content-card.is-scrolling::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.4); /* 交互时显示：细而淡 */
+  }
+  .main-content-card::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.6); /* 悬停 thumb 上更明显，便于拖动 */
+  }
+
   /* ── Sidebar styles ── */
   /* macOS: transparent so system vibrancy (frosted glass) shows through */
   html.platform-darwin .sidebar {
@@ -213,7 +241,7 @@
   /* 内容卡片对应的边角处需要展示 sidebar 背景颜色，必须与 app-shell 完全一致 */
   html.platform-win32 .sidebar,
   html.platform-linux .sidebar {
-    background: #E9EEF3; /* 硬编码和 app-shell 保持一致，避免 CSS 变量在 GPU 缓存失效时出现色差 */
+    background: #e9eef3; /* 硬编码和 app-shell 保持一致，避免 CSS 变量在 GPU 缓存失效时出现色差 */
   }
 
   html.platform-darwin.dark .sidebar {
@@ -222,7 +250,7 @@
 
   html.platform-win32.dark .sidebar,
   html.platform-linux.dark .sidebar {
-    background: #1F252E; /* 硬编码，和 app-shell dark 一致 */
+    background: #1f252e; /* 硬编码，和 app-shell dark 一致 */
   }
 
   .nav-item {
@@ -342,7 +370,7 @@
     pointer-events: none;
     z-index: 1;
     /* 默认：Windows/Linux 使用 sidebar 亮色 */
-    background: #E9EEF3;
+    background: #e9eef3;
   }
 
   /* 顶部内切角：方块右下角圆弧 = 卡片左上角圆弧的镜像 */
@@ -362,7 +390,7 @@
   html.platform-win32.dark .main-content-card::after,
   html.platform-linux.dark .main-content-card::before,
   html.platform-linux.dark .main-content-card::after {
-    background: #1F252E;
+    background: #1f252e;
   }
 
   /* macOS：sidebar 是透明毛玻璃，内切角透明让 vibrancy 穿透
@@ -410,19 +438,19 @@
 
   html.platform-win32 .app-shell,
   html.platform-linux .app-shell {
-    background: #E9EEF3;
+    background: #e9eef3;
   }
 
   /* Must be fully opaque (no rgba) to prevent GPU semi-transparent layer repaint artifacts */
   html.platform-win32.dark .app-shell,
   html.platform-linux.dark .app-shell {
-    background: #1F252E;
+    background: #1f252e;
   }
 
   /* Dark sidebar must exactly match app-shell bg so box-shadow corner masking is seamless */
   html.platform-win32.dark .sidebar,
   html.platform-linux.dark .sidebar {
-    background: #1F252E;
+    background: #1f252e;
   }
 
   /* ──────────────────────────────────────────────────────────────
