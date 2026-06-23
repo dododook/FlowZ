@@ -103,14 +103,17 @@
     background: transparent;
   }
 
-  /* Windows / Linux: use a solid background so vibrancy is not needed */
-  html.platform-win32,
-  html.platform-win32 body,
-  html.platform-win32 #root,
+  /* Linux: 实色底（无材质） */
   html.platform-linux,
   html.platform-linux body,
   html.platform-linux #root {
     background: hsl(var(--background)) !important;
+  }
+  /* Windows: 透明底，透出 Mica（物理屏）或窗口 backgroundColor 实色兜底（RDP/透明关，DWM 回落 #1F252E/#E9EEF3，不黑） */
+  html.platform-win32,
+  html.platform-win32 body,
+  html.platform-win32 #root {
+    background: transparent !important;
   }
 
   body {
@@ -219,7 +222,7 @@
 
   html.platform-win32.dark .sidebar,
   html.platform-linux.dark .sidebar {
-    background: #0B0F14; /* 硬编码，和 app-shell dark 一致 */
+    background: #1F252E; /* 硬编码，和 app-shell dark 一致 */
   }
 
   .nav-item {
@@ -336,7 +339,7 @@
   html.platform-win32.dark .main-content-card::after,
   html.platform-linux.dark .main-content-card::before,
   html.platform-linux.dark .main-content-card::after {
-    background: #0B0F14;
+    background: #1F252E;
   }
 
   /* macOS：sidebar 是透明毛玻璃，内切角透明让 vibrancy 穿透
@@ -390,13 +393,13 @@
   /* Must be fully opaque (no rgba) to prevent GPU semi-transparent layer repaint artifacts */
   html.platform-win32.dark .app-shell,
   html.platform-linux.dark .app-shell {
-    background: #0B0F14;
+    background: #1F252E;
   }
 
   /* Dark sidebar must exactly match app-shell bg so box-shadow corner masking is seamless */
   html.platform-win32.dark .sidebar,
   html.platform-linux.dark .sidebar {
-    background: #0B0F14;
+    background: #1F252E;
   }
 
   /* ──────────────────────────────────────────────────────────────
@@ -450,4 +453,14 @@
   html[dir='rtl'] .rtl-mirror {
     transform: scaleX(-1);
   }
+}
+
+/* ── Windows Mica：win32 侧栏/外壳/内切角透明 → 物理屏透出 Mica、RDP 回落窗口实色底；内容卡片仍实色。
+      刻意放在所有 @layer 之外：非 layered 规则优先级高于上方全部 layered win32 实色规则，
+      免去逐条拆改重复的 win32.dark/light 实色规则（含 220+397 两处重复的侧栏规则）。 ── */
+html.platform-win32 .sidebar,
+html.platform-win32 .app-shell,
+html.platform-win32 .main-content-card::before,
+html.platform-win32 .main-content-card::after {
+  background: transparent;
 }

@@ -82,6 +82,7 @@ const settingsNavItems = [
 ];
 
 const isMac = window.electron?.platform === 'darwin';
+const isWindows = window.electron?.platform === 'win32';
 
 export function Sidebar({
   currentView,
@@ -115,10 +116,13 @@ export function Sidebar({
   };
 
   return (
-    <div className="w-[240px] sidebar h-full flex flex-col relative z-20 select-none">
-      {/* macOS traffic light spacer */}
+    <div className="w-[184px] sidebar h-full flex flex-col relative z-20 select-none">
+      {/* 集成标题栏顶部拖拽区：Mac 让出红绿灯(52)、Windows 让出覆盖层按钮(右上, 40 与 overlay 等高)、可拖窗。
+          Linux 无集成标题栏(默认边框) → 仅留 16px 间距。 */}
       {isMac ? (
         <div className="h-[52px] flex-shrink-0 app-region-drag" />
+      ) : isWindows ? (
+        <div className="h-[32px] flex-shrink-0 app-region-drag" />
       ) : (
         <div className="h-4 flex-shrink-0" />
       )}

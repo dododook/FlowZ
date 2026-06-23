@@ -529,6 +529,13 @@ async function createWindow(forceShow = false) {
   }
 
   const isMac = process.platform === 'darwin';
+  const isWindows = process.platform === 'win32';
+  // 集成标题栏覆盖层（Windows）：透明底融进内容/Mica、随主题切换重设按钮符号色。height 32 = Win11 原生标题栏高。
+  const overlayColors = (dark: boolean) => ({
+    color: '#00000000', // 透明：覆盖层融进内容/Mica，避免突兀的底块
+    symbolColor: dark ? '#E6EDF3' : '#1F2937',
+    height: 32,
+  });
 
   // 单次 loadConfig 读取窗口尺寸 + 主题（loadConfig 内部 catch 兜默认配置、绝不抛，无需 try/catch）。
   // 注意：transparent 仅 macOS 启用，Win/Linux 启用会侧边栏透明 + 鼠标事件穿透（Electron 已知问题）。
@@ -552,7 +559,7 @@ async function createWindow(forceShow = false) {
     title: 'FlowZ',
     icon: resourceManager.getAppIconPath(),
     show: false, // 先不显示，等待加载完成
-    backgroundColor: isMac ? '#00000000' : cfg.uiTheme === 'dark' ? '#0B0F14' : '#E9EEF3',
+    backgroundColor: isMac ? '#00000000' : cfg.uiTheme === 'dark' ? '#1F252E' : '#E9EEF3',
     transparent: isMac,
     autoHideMenuBar: true, // 自动隐藏菜单栏
     webPreferences: {
@@ -562,11 +569,20 @@ async function createWindow(forceShow = false) {
       sandbox: false,
       devTools: isDevelopment, // 仅在开发环境启用开发者工具，生产环境禁用（除非特殊需求）
     },
-    // macOS 特定配置
+    // macOS：集成式窗口（红绿灯内嵌 + sidebar 半透材质）
     ...(isMac && {
       titleBarStyle: 'hiddenInset',
       vibrancy: 'sidebar',
       visualEffectState: 'active',
+    }),
+    // Windows：集成式标题栏（隐藏原生栏 + 右上覆盖层按钮，对齐 Mac）+ Win11 Mica 材质。
+    // Mica 仅作窗口/侧栏底（壁纸微染），内容卡片实色不透。窗口 backgroundColor 取实色主题色作兜底：
+    // 物理屏+透明效果 → Mica；RDP/透明关 → DWM 回落该实色 #1F252E/#E9EEF3（不会黑）。
+    // Linux 无覆盖层 API → 不进此分支，默认边框 + 实色底。
+    ...(isWindows && {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: overlayColors(cfg.uiTheme === 'dark'),
+      backgroundMaterial: 'mica',
     }),
   });
 
@@ -581,7 +597,12 @@ async function createWindow(forceShow = false) {
     const onThemeUpdated = () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         const isDark = nativeTheme.shouldUseDarkColors;
-        mainWindow.setBackgroundColor(isDark ? '#0B0F14' : '#E9EEF3');
+        // 实色底：Win/Linux 同步原生窗口背景（深色取 macOS 风格中灰 #1F252E），修 GPU 待机后圆角黑色伪影。
+        mainWindow.setBackgroundColor(isDark ? '#1F252E' : '#E9EEF3');
+        // Windows 集成标题栏：覆盖层按钮颜色随主题切换重设。
+        if (isWindows) {
+          mainWindow.setTitleBarOverlay(overlayColors(isDark));
+        }
       }
     };
     nativeTheme.on('updated', onThemeUpdated);
