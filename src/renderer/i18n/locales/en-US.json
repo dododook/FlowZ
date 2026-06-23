@@ -66,6 +66,8 @@
     "ruleResources": "Rule Resources",
     "rules": "Rules",
     "settings": "Settings",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
     "group": {
       "routing": "Routing",
       "diagnostics": "Diagnostics"

@@ -66,6 +66,8 @@
     "ruleResources": "規則資源",
     "rules": "路由規則",
     "settings": "設定",
+    "collapse": "收合側欄",
+    "expand": "展開側欄",
     "group": {
       "routing": "分流",
       "diagnostics": "診斷"

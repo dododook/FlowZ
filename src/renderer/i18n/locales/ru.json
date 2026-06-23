@@ -66,6 +66,8 @@
     "ruleResources": "Ресурсы правил",
     "rules": "Правила",
     "settings": "Настройки",
+    "collapse": "Свернуть панель",
+    "expand": "Развернуть панель",
     "group": {
       "routing": "Маршрутизация",
       "diagnostics": "Диагностика"

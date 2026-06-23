@@ -66,6 +66,8 @@
     "ruleResources": "规则资源",
     "rules": "路由规则",
     "settings": "设置",
+    "collapse": "收起侧栏",
+    "expand": "展开侧栏",
     "group": {
       "routing": "分流",
       "diagnostics": "诊断"

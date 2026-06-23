@@ -247,6 +247,29 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* 收起态(icon-rail)：收成「居中方块按钮」（44px），替代满宽 pill —— 宽 rail 里满宽高亮会显得空旷别扭。
+     图标居中、标签由 JSX 不渲染（hover 走 title 浮标）。 */
+  .nav-item.collapsed {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+    gap: 0;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* 收起态选中：参考微信图标栏——以图标着色为主、背景框收敛（更自然，不显空旷） */
+  .nav-item.collapsed.active {
+    background: hsl(var(--primary) / 0.12);
+  }
+
+  /* 收起态隐藏左侧 active 指示条：它绝对定位 left:-6px，在「居中方块按钮」里会飘成孤立左条；选中由上面的背景框 + 图标着色表达 */
+  .nav-item.collapsed .nav-item-indicator {
+    display: none;
+  }
+
   .nav-item:hover {
     background: hsl(var(--primary) / 0.07);
     color: hsl(var(--foreground));

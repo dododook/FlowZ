@@ -66,6 +66,8 @@
     "ruleResources": "منابع قوانین",
     "rules": "قوانین",
     "settings": "تنظیمات",
+    "collapse": "جمع کردن نوار کناری",
+    "expand": "باز کردن نوار کناری",
     "group": {
       "routing": "مسیریابی",
       "diagnostics": "عیب‌یابی"

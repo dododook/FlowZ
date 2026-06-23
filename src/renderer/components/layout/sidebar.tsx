@@ -12,6 +12,7 @@ import {
   ScrollText,
   FolderDown,
   Activity,
+  PanelLeft,
 } from 'lucide-react';
 
 // 自定义的分流图标（完整连贯的 Y 型，不带断点）
@@ -39,6 +40,7 @@ function FlowSplitIcon(props: any) {
 }
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
+import { useSidebarStore } from './use-sidebar-store';
 
 interface SidebarProps {
   currentView: string;
@@ -93,8 +95,14 @@ export function Sidebar({
   const { t } = useTranslation();
   // F27：设置页「返回」回到进入前的来源视图（默认 home）
   const settingsReturnView = useAppStore((s) => s.settingsReturnView);
+  // 折叠态(icon-rail)：收起仅图标 + hover tooltip；持久化见 use-sidebar-store。
+  const collapsed = useSidebarStore((s) => s.collapsed);
+  const toggleCollapsed = useSidebarStore((s) => s.toggleCollapsed);
 
   const isSettings = currentView === 'settings';
+
+  // 收起宽度：Mac 取 80px —— 红绿灯约 72px 宽，留 ~8px 余量避免绿灯顶到内容边；Win/Linux 无此约束 → 更紧凑 56px。
+  const railWidth = isMac ? 'w-[80px]' : 'w-[56px]';
 
   const renderNavItem = (
     item: { id: string; icon: React.ElementType },
@@ -102,23 +110,30 @@ export function Sidebar({
     isActive: boolean
   ) => {
     const Icon = item.icon;
+    const label = isSettings ? t(`settings.nav.${item.id}`, item.id) : t(`sidebar.${item.id}`);
     return (
-      <button key={item.id} onClick={onClick} className={`nav-item${isActive ? ' active' : ''}`}>
+      <button
+        key={item.id}
+        onClick={onClick}
+        title={collapsed ? label : undefined}
+        className={`nav-item${isActive ? ' active' : ''}${collapsed ? ' collapsed' : ''}`}
+      >
         <span className="nav-item-indicator" />
         <Icon
-          className="h-[16px] w-[16px] flex-shrink-0"
+          className={`${collapsed ? 'h-[22px] w-[22px]' : 'h-[16px] w-[16px]'} flex-shrink-0`}
           strokeWidth={isActive ? 2.2 : 1.8}
           style={{ color: isActive ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}
         />
-        <span>{isSettings ? t(`settings.nav.${item.id}`, item.id) : t(`sidebar.${item.id}`)}</span>
+        {!collapsed && <span>{label}</span>}
       </button>
     );
   };
 
   return (
-    <div className="w-[184px] sidebar h-full flex flex-col relative z-20 select-none">
-      {/* 集成标题栏顶部拖拽区：Mac 让出红绿灯(52)、Windows 让出覆盖层按钮(右上, 40 与 overlay 等高)、可拖窗。
-          Linux 无集成标题栏(默认边框) → 仅留 16px 间距。 */}
+    <div
+      className={`${collapsed ? railWidth : 'w-[184px]'} sidebar h-full flex flex-col relative z-20 select-none transition-[width] duration-300 ease-out`}
+    >
+      {/* 集成标题栏顶部条：Mac 让出红绿灯(52)、Windows 让出覆盖层按钮(32)、可拖窗；Linux 默认边框。 */}
       {isMac ? (
         <div className="h-[52px] flex-shrink-0 app-region-drag" />
       ) : isWindows ? (
@@ -127,6 +142,22 @@ export function Sidebar({
         <div className="h-4 flex-shrink-0" />
       )}
 
+      {/* 折叠 toggle：独立一行置于顶部条下方。
+          —— 不放进顶部条：Mac 收起栏被窗口锚定的红绿灯(~72px)几乎占满，toggle 在栏内会飘出到内容区（布局奇怪）；
+          —— 不放进拖拽区：下方是普通 no-drag 内容，天然可点（无需 Electron drag/no-drag 兜底）。
+          展开左对齐(齐导航项)、收起居中。 */}
+      <div
+        className={`flex px-2 py-1 app-region-no-drag ${collapsed ? 'justify-center' : 'justify-start'}`}
+      >
+        <button
+          onClick={toggleCollapsed}
+          title={collapsed ? t('sidebar.expand', '展开侧栏') : t('sidebar.collapse', '收起侧栏')}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+        >
+          <PanelLeft className="h-[18px] w-[18px] rtl-mirror" strokeWidth={1.8} />
+        </button>
+      </div>
+
       {isSettings ? (
         /* ── Settings sub-navigation ── */
         <>
@@ -134,16 +165,19 @@ export function Sidebar({
           <div className="px-2 pb-2 app-region-no-drag">
             <button
               onClick={() => onViewChange(settingsReturnView)}
-              className="nav-item"
+              title={collapsed ? t('settings.nav.back', '返回应用') : undefined}
+              className={`nav-item${collapsed ? ' collapsed' : ''}`}
               style={{ color: 'hsl(var(--muted-foreground))' }}
             >
               <ChevronLeft
-                className="h-4 w-4 flex-shrink-0 rtl-mirror"
+                className={`${collapsed ? 'h-[22px] w-[22px]' : 'h-4 w-4'} flex-shrink-0 rtl-mirror`}
                 style={{ color: 'hsl(var(--muted-foreground))' }}
               />
-              <span style={{ color: 'hsl(var(--muted-foreground))' }}>
-                {t('settings.nav.back', '返回应用')}
-              </span>
+              {!collapsed && (
+                <span style={{ color: 'hsl(var(--muted-foreground))' }}>
+                  {t('settings.nav.back', '返回应用')}
+                </span>
+              )}
             </button>
           </div>
 
@@ -164,11 +198,15 @@ export function Sidebar({
           <nav className="flex-1 pb-2 app-region-no-drag overflow-hidden">
             {mainNavGroups.map((group, gi) => (
               <div key={gi} className="space-y-[6px]">
-                {group.label && (
-                  <div className="px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground select-none">
-                    {t(`sidebar.group.${group.label}`)}
-                  </div>
-                )}
+                {group.label &&
+                  (collapsed ? (
+                    /* 收起态：分区标题转居中短分隔线，保留分组视觉、不显凌乱 */
+                    <div className="mx-auto my-1.5 h-px w-5 bg-border/50" />
+                  ) : (
+                    <div className="px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground select-none">
+                      {t(`sidebar.group.${group.label}`)}
+                    </div>
+                  ))}
                 {group.items.map((item) =>
                   renderNavItem(item, () => onViewChange(item.id), currentView === item.id)
                 )}

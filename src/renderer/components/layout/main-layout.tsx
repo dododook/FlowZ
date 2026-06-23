@@ -28,7 +28,7 @@ export function MainLayout({
         onSettingsSectionChange={onSettingsSectionChange}
       />
       <main className="flex-1 overflow-auto flex flex-col relative z-10 main-content-card transition-all duration-300">
-        {/* 集成标题栏拖拽区：Mac(hiddenInset) h-9；Windows(titleBarOverlay 按钮在右上) 40px 与覆盖层等高、给按钮让位。 */}
+        {/* 集成标题栏拖拽区：Mac(hiddenInset) h-9；Windows(titleBarOverlay 按钮在右上) 32px 与覆盖层等高、给按钮让位。 */}
         {isMac && <div className="h-9 flex-shrink-0 app-region-drag" />}
         {isWindows && <div className="h-[32px] flex-shrink-0 app-region-drag" />}
         <div
