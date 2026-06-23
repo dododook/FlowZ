@@ -2087,6 +2087,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "172.19.0.1/16",
         ],
         "auto_route": true,
+        "interface_name": "flowz-tun0",
         "mtu": 1350,
         "route_exclude_address": [
           "10.0.0.0/8",
@@ -6851,6 +6852,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "172.19.0.1/16",
         ],
         "auto_route": true,
+        "interface_name": "flowz-tun0",
         "mtu": 1350,
         "route_exclude_address": [
           "10.0.0.0/8",

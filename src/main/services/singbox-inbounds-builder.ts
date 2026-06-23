@@ -8,6 +8,7 @@
 
 import type { UserConfig } from '../../shared/types';
 import { localProxyPort } from '../../shared/proxy-ports';
+import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
 import type { SingBoxInbound } from './singbox-config-types';
 import {
   isIpv4Host,
@@ -192,6 +193,12 @@ export function buildInbounds(
       stack: effectiveStack,
       route_exclude_address: excludeAddr,
     };
+
+    // Windows：下发固定可辨的接口名（wintun 适配器名），使 issue #159 的「起核前等本名网卡释放」门控能按名锚定，
+    // 杜绝与外部 sing-box 默认 tun0 / 其它 VPN 网卡混淆。mac(utun 名内核分配)/Linux(无释放竞态) 不设、保持现状。
+    if (process.platform === 'win32') {
+      tunInbound.interface_name = resolveWinTunInterfaceName(config);
+    }
 
     // P6 局域网网关：按 MAC 限/排设备进 TUN（sing-box 1.14 include/exclude_mac_address）。
     // 内核硬限界（实证 alpha.32）：**仅 Linux + auto_route + auto_redirect**，脏 MAC → check/启动 FATAL，

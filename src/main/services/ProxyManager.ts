@@ -90,6 +90,9 @@ import {
 } from '../utils/paths';
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
+import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
+import { probeWinTunAdapterPresent, waitForAdapterReleased } from './win-tun-adapter';
+import { probeTcpReachable, waitForCoreReady, CoreStartRetryError } from './core-readiness';
 import coreManifest from '../../shared/core-manifest.json';
 
 /**
@@ -335,6 +338,23 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private static readonly MAX_LOG_FILE_SIZE = 20 * 1024 * 1024; // 20MB
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL = 10000; // 10秒检查一次
+
+  // issue #159：Windows TUN 重启前等自家 wintun 适配器释放的门控参数。8s 上限覆盖硬杀后驱动回收滞后，
+  // 250ms 轮询；探测到消失即早退（常见 1-3s），超时 fail-open 放行交启动 retry（绝不卡死代理）。
+  private static readonly TUN_ADAPTER_RELEASE_TIMEOUT_MS = 8000;
+  // 500ms 轮询：每轮 probe 一次 Get-NetAdapter（spawn powershell，冷启 ~百 ms），间隔放宽控最坏 spawn 次数（≤~16）。
+  // 常见 1-3 轮即检出释放、早退。若真机证明 PS spawn 仍过重，可改单次长轮询 PS 脚本（内部 while+Start-Sleep）只付一次冷启。
+  private static readonly TUN_ADAPTER_RELEASE_POLL_MS = 500;
+  // wintun 适配器存在性探测（默认 Get-NetAdapter，零提权，按本名匹配）；注入式便于单测替换桩。
+  private adapterProbe: (name: string) => Promise<boolean> = probeWinTunAdapterPresent;
+
+  // issue #159 纵深网：helper 起核后等核真就绪（管理 API 绑定）的门控。成功路径早退（API 通常 <1s 绑定）不加延迟；
+  // 12s 上限仅在「进程活但 API 始终不绑」的卡死态触顶，进程死则即时捕获。
+  private static readonly CORE_READY_TIMEOUT_MS = 12000;
+  // 500ms 轮询：成功路径 isReady(异步TCP) 早退、不触发 isAlive(execSync 探活阻塞)；仅失败路径每轮探活，放宽间隔控阻塞次数。
+  private static readonly CORE_READY_POLL_MS = 500;
+  // 管理 API 可连探测（默认 TCP 直连）；注入式便于单测替换桩。
+  private coreReadyProbe: (host: string, port: number) => Promise<boolean> = probeTcpReachable;
 
   // 自动重启相关
   private autoRestartEnabled: boolean = true;
@@ -648,7 +668,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     内的 beside 保留，此处对其幂等）；mac 静态编入 cronet，ensureCronetReadyForLaunch 内部跳过。热路径仅 stat。
     await this.ensureCronetReadyForLaunch();
 
-    // 5. 启动 sing-box 进程
+    // 5. 启动 sing-box 进程（issue #159 的 wintun 适配器释放门控已下沉至 startSingBoxProcess 顶部，覆盖每次重试腿 + helper/UAC 两支路）
     const runStartWithRetry = (): Promise<void> =>
       retry(() => this.startSingBoxProcess(), {
         maxRetries: 2,
@@ -1017,6 +1037,33 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       } catch {
         /* best-effort：退出兜底，失败不阻塞退出 */
       }
+    }
+  }
+
+  /**
+   * issue #159：Windows TUN 起核前，等上一轮自家 wintun 适配器（按 resolveWinTunInterfaceName 取名）真正释放。
+   * 只认本名网卡 → 不误等外部 sing-box / 用户手动核 / 自家孤儿核的同址 tun0。已释放或超时(fail-open)均放行，
+   * 绝不卡死代理（残留由 runStartWithRetry 兜底）。仅由 startInternal 在 win32 && TUN 时调用。
+   */
+  private async waitForOwnTunAdapterReleased(config: UserConfig): Promise<void> {
+    const name = resolveWinTunInterfaceName(config);
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+    const { released, polls } = await waitForAdapterReleased(
+      name,
+      {
+        timeoutMs: ProxyManager.TUN_ADAPTER_RELEASE_TIMEOUT_MS,
+        pollMs: ProxyManager.TUN_ADAPTER_RELEASE_POLL_MS,
+      },
+      { probe: (n) => this.adapterProbe(n), sleep }
+    ).catch(() => ({ released: false, polls: 0 }));
+    if (released) {
+      // 仅在确实等过（>1 次探测）才记一行，避免无残留时刷无意义日志。
+      if (polls > 1) this.logToManager('info', `Windows TUN 适配器 ${name} 已释放，继续启动`);
+    } else {
+      this.logToManager(
+        'warn',
+        `Windows TUN 适配器 ${name} 释放等待超时，仍继续启动（如起核失败将自动重试）`
+      );
     }
   }
 
@@ -3320,6 +3367,11 @@ exit 0
       throw new Error('helper 报告已启动但进程不存在');
     }
 
+    // issue #159：等核真就绪（管理 API 绑定）再判成功，而非「spawn 即 started」。起核期内核死/超时 → 抛可重试
+    // 错误交 runStartWithRetry 快速重起（届时 wintun 适配器/端口已释放），替代「假成功 + 10s 健康检查兜底」。
+    // watcher/健康检查移到就绪后启动：只监控已确认运行的核，起核期死由本就绪门控直接捕获。
+    await this.waitForCoreReadyOrThrow(res.pid);
+
     this.startLogFileWatcher();
     this.startHealthCheck();
     this.emit('started');
@@ -3330,7 +3382,46 @@ exit 0
     this.logToManager('info', 'sing-box 已由提权 helper 启动成功（免授权）');
   }
 
+  /**
+   * issue #159：等核真就绪（管理 API 端口可连）再放行。起核期进程死 / 超时未绑 API → 停掉半死核（其 wintun
+   * 适配器随即开始释放，给 retry 让路）+ 抛可重试错误（文案不含 nonRetryable 关键词 → runStartWithRetry 会重试）。
+   * 无管理 API 端口（异常）→ fail-open 放行（退回旧 spawn 即成行为，绝不卡死启动）。仅 startViaHelper 调用。
+   */
+  private async waitForCoreReadyOrThrow(pid: number): Promise<void> {
+    const port = this.tailscaleApiPort;
+    if (!port) return; // 无管理 API 端口 → 不阻断
+    const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+    const outcome = await waitForCoreReady(
+      { timeoutMs: ProxyManager.CORE_READY_TIMEOUT_MS, pollMs: ProxyManager.CORE_READY_POLL_MS },
+      {
+        isAlive: () => this.isProcessAlive(pid),
+        isReady: () => this.coreReadyProbe('127.0.0.1', port),
+        sleep,
+      }
+    ).catch(() => 'timeout' as const);
+    if (outcome === 'ready') return;
+    // 失败：尽力停掉这个起不来的核（best-effort，其 wintun 适配器随即开始释放，给 retry 让路），再抛 CoreStartRetryError
+    // ——startSingBoxProcess 的 helper catch 会透传它给 runStartWithRetry 静默重起（而非误判 helper 启动失败弹 UAC/osascript）。
+    await this.helperManager?.stopCore().catch(() => {});
+    if (outcome === 'dead') {
+      throw new CoreStartRetryError('sing-box 启动期退出（TUN 初始化未完成），将自动重试');
+    }
+    throw new CoreStartRetryError('sing-box 启动后未在预期内就绪（管理 API 未绑定），将自动重试');
+  }
+
   private async startSingBoxProcess(): Promise<void> {
+    // 复位 helper 启动标志：本次启动尚未确定走 helper 还是直起，由实际启动路径置位（startViaHelper 成功置 true，
+    //   直起 UAC/osascript 路径保持 false）。修复 issue #159 就绪门控失败、重试腿回退直起时 startedViaHelper 残留 true
+    //   → 后续 stop() 误走 helper 停核分支（停不动→回退提权 taskkill/osascript，降级但自愈）。每次启动腿都从干净态判定。
+    this.startedViaHelper = false;
+
+    // issue #159：起核前（win32&&TUN）等上一轮自家 wintun 适配器释放。置于本方法顶部（而非 startInternal）→ 每次
+    //   runStartWithRetry 重启腿、以及下方 helper / UAC 两条启动支路都经此门控（不止首次），杜绝重试立刻再撞僵尸适配器。
+    const launchCfg = this.currentConfig;
+    if (launchCfg && process.platform === 'win32' && launchCfg.proxyModeType === 'tun') {
+      await this.waitForOwnTunAdapterReleased(launchCfg);
+    }
+
     // macOS TUN 模式 + helper 就绪 → 走零提权路径（避免每次启停弹 osascript 授权框）。
     // helper 就绪但启动失败（如 .app 被移动致锁定的 singbox 路径失效）→ 回退 osascript 看护脚本，
     // 不在 helper 路径死循环（startViaHelper 抛出前不会残留状态：未到设标志处，或经 cleanup 复位）。
@@ -3348,6 +3439,8 @@ exit 0
         try {
           return await this.startViaHelper();
         } catch (e) {
+          // 起核期未就绪/退出（CoreStartRetryError）≠ helper 启动失败：透传给 runStartWithRetry 静默重起，不回退 osascript。
+          if (e instanceof CoreStartRetryError) throw e;
           this.logToManager(
             'warn',
             `helper 启动失败，回退 osascript 看护脚本: ${e instanceof Error ? e.message : String(e)}`
@@ -3365,6 +3458,8 @@ exit 0
       try {
         return await this.startViaHelper();
       } catch (e) {
+        // 起核期未就绪/退出（CoreStartRetryError）≠ helper 启动失败：透传给 runStartWithRetry 静默重起，不回退 UAC。
+        if (e instanceof CoreStartRetryError) throw e;
         this.logToManager(
           'warn',
           `helper 服务启动失败，回退 UAC 路径: ${e instanceof Error ? e.message : String(e)}`

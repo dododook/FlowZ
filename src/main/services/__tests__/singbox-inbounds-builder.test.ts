@@ -84,6 +84,31 @@ describe('buildInbounds — TUN', () => {
     expect(tun.route_exclude_address).toContain('223.5.5.5/32'); // 核心 DNS 防回流
   });
 
+  it('Windows TUN：下发固定接口名 interface_name=flowz-tun0（缺省，issue #159 适配器释放门控锚点）', () => {
+    const ibs = withPlatform('win32', () =>
+      buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+    );
+    expect(byTag(ibs, 'tun-in').interface_name).toBe('flowz-tun0');
+  });
+
+  it('Windows TUN：尊重 tunConfig.interfaceName 覆盖', () => {
+    const c = cfg({
+      proxyModeType: 'tun',
+      tunConfig: { interfaceName: 'my-tun' },
+    } as unknown as Partial<UserConfig>);
+    const ibs = withPlatform('win32', () => buildInbounds(c, undefined, deps()));
+    expect(byTag(ibs, 'tun-in').interface_name).toBe('my-tun');
+  });
+
+  it('mac/Linux TUN：不下发 interface_name（utun 名内核分配 / 无释放竞态）', () => {
+    for (const plat of ['darwin', 'linux'] as const) {
+      const ibs = withPlatform(plat, () =>
+        buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+      );
+      expect(byTag(ibs, 'tun-in').interface_name).toBeUndefined();
+    }
+  });
+
   it('选中节点为 IP 字面量 → 排除该节点 IP（防回流死循环）', () => {
     const c = cfg({
       proxyModeType: 'tun',
