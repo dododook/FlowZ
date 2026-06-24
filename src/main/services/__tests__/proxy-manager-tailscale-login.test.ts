@@ -260,3 +260,59 @@ describe('finalize 清理（proc exit）', () => {
     expect(svc.tailscaleLoginCores.has('srv-1')).toBe(false);
   });
 });
+
+// #174 review MED-5：空 authUrl（清「登录中」）下沉 finalize，覆盖取消/崩溃/超时全退出路径；成功路径不发（避免 clobber）。
+describe('finalize 发空 authUrl 清「登录中」（取消/崩溃 → 清；成功 → 不清）', () => {
+  /** 过滤 finalize 收尾发的空 authUrl（serverId + url:''，无 transient/nodeName）。 */
+  function emptyAuthUrlEvents(sent: { channel: string; data: any }[], serverId: string) {
+    return sent.filter(
+      (e) =>
+        e.channel === IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL &&
+        e.data?.serverId === serverId &&
+        e.data?.url === ''
+    );
+  }
+
+  it('用户取消（cancelTailscaleLogin → proc exit）→ 发空 authUrl 退出「登录中」', async () => {
+    const { svc, sent } = makeSvc();
+    await svc.startTailscaleLogin(tsServer({ id: 'srv-1', name: 'my-ts' }));
+    const proc = spawnedProcs[0];
+
+    svc.cancelTailscaleLogin('srv-1'); // 用户手动取消 → killTailscaleLogin → SIGTERM
+    proc.emit('exit', 0, null); // 进程退出 → finalize
+
+    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(1);
+  });
+
+  it('核自行崩溃（无取消，直接 proc exit）→ 发空 authUrl 退出「登录中」', async () => {
+    const { svc, sent } = makeSvc();
+    await svc.startTailscaleLogin(tsServer({ id: 'srv-1', name: 'my-ts' }));
+    const proc = spawnedProcs[0];
+
+    proc.emit('exit', 1, null); // 核崩溃退出 → finalize
+
+    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(1);
+  });
+
+  it('spawn error → 发空 authUrl（同退出路径）', async () => {
+    const { svc, sent } = makeSvc();
+    await svc.startTailscaleLogin(tsServer({ id: 'srv-1', name: 'my-ts' }));
+    const proc = spawnedProcs[0];
+
+    proc.emit('error', new Error('ENOENT')); // 只 emit error → finalize
+
+    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(1);
+  });
+
+  it('登录成功（STATUS=Running → 杀核 → proc exit）→ finalize 不发空 authUrl（不 clobber 成功态）', async () => {
+    const { svc, sent } = makeSvc();
+    await svc.startTailscaleLogin(tsServer({ id: 'srv-1', name: 'my-ts' }));
+    const proc = spawnedProcs[0];
+
+    // Running → 标记 loginCompleted + 杀核
+    apiClients[0].onUpdate([{ endpointTag: 'my-ts', backendState: 'Running', authURL: '' }]);
+    proc.emit('exit', 0, null); // 被杀退出 → finalize
+
+    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(0);
+  });
+});

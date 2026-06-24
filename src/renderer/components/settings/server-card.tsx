@@ -18,7 +18,6 @@ import {
   isWarpNode,
   tailscaleNeedsLogin,
   tailscaleLoggingIn,
-  tailscaleStatusChecking,
   meshInternetOff,
   endpointLabel,
   type ServerConfigWithId,
@@ -33,9 +32,6 @@ interface ServerCardProps {
   invalidNodes: Record<string, InvalidNodeInfo>;
   tailscaleLoginStates: Record<string, boolean>;
   tailscaleAuthUrls: Record<string, string>;
-  // 代理关 + status-only 探针在飞 + 该节点 loggedIn 尚未知 → 显「检测中」中性态（不误报需登录）。
-  tailscaleStatusProbing: boolean;
-  proxyRunning: boolean;
   shadowedCidrs: Map<string, string[]>;
   onSelectServer: (serverId: string) => void;
   onToggleSelect: (id: string, e: React.MouseEvent) => void;
@@ -50,8 +46,6 @@ export function ServerCard({
   invalidNodes,
   tailscaleLoginStates,
   tailscaleAuthUrls,
-  tailscaleStatusProbing,
-  proxyRunning,
   shadowedCidrs,
   onSelectServer,
   onToggleSelect,
@@ -59,13 +53,6 @@ export function ServerCard({
 }: ServerCardProps) {
   const { t } = useTranslation();
   const countryCode = getCountryCode(server.name);
-  // 同参只算一次：「检测中」角标显隐 + 与「登录」角标的互斥取反共用（避免同帧重复求值）。
-  const isChecking = tailscaleStatusChecking(
-    server,
-    tailscaleLoginStates[server.id] !== undefined,
-    proxyRunning,
-    tailscaleStatusProbing
-  );
   return (
     <Card
       className={`cursor-pointer transition-colors relative overflow-hidden ${
@@ -129,56 +116,45 @@ export function ServerCard({
               WARP
             </Badge>
           )}
-          {/* 代理关 + 探针在飞 + 该节点 loggedIn 未知 → 中性「检测中」（不误报需登录）；与下方「登录」角标互斥。 */}
-          {isChecking && (
+          {tailscaleLoggingIn(
+            server,
+            tailscaleAuthUrls[server.id] !== undefined,
+            tailscaleLoginStates[server.id]
+          ) && (
             <Badge
               variant="outline"
-              className="text-xs h-4 px-1 bg-muted text-muted-foreground border-border"
+              className="text-xs h-4 px-1 bg-badge-blue/15 text-badge-blue border-badge-blue/30"
             >
-              {t('servers.tsLoginChecking', 'Checking')}
+              {t('servers.tsLoggingIn', '登录中…')}
             </Badge>
           )}
-          {!isChecking &&
-            tailscaleLoggingIn(
-              server,
-              tailscaleAuthUrls[server.id] !== undefined,
-              tailscaleLoginStates[server.id]
-            ) && (
+          {!tailscaleLoggingIn(
+            server,
+            tailscaleAuthUrls[server.id] !== undefined,
+            tailscaleLoginStates[server.id]
+          ) &&
+            tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
               <Badge
                 variant="outline"
-                className="text-xs h-4 px-1 bg-badge-blue/15 text-badge-blue border-badge-blue/30"
-              >
-                {t('servers.tsLoggingIn', '登录中…')}
-              </Badge>
-            )}
-          {!isChecking &&
-            !tailscaleLoggingIn(
-              server,
-              tailscaleAuthUrls[server.id] !== undefined,
-              tailscaleLoginStates[server.id]
-            ) &&
-            tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
-            <Badge
-              variant="outline"
-              role="button"
-              tabIndex={0}
-              title={t('servers.tsLoginClickHint', 'Click to log in')}
-              onClick={(e) => {
-                e.stopPropagation();
-                openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
+                role="button"
+                tabIndex={0}
+                title={t('servers.tsLoginClickHint', 'Click to log in')}
+                onClick={(e) => {
                   e.stopPropagation();
                   openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
-                }
-              }}
-              className="text-xs h-4 px-1 cursor-pointer bg-badge-amber/15 text-badge-amber border-badge-amber/30 hover:bg-badge-amber/25"
-            >
-              {t('servers.tsLoginAction', 'Log in')}
-            </Badge>
-          )}
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
+                  }
+                }}
+                className="text-xs h-4 px-1 cursor-pointer bg-badge-amber/15 text-badge-amber border-badge-amber/30 hover:bg-badge-amber/25"
+              >
+                {t('servers.tsLoginAction', 'Log in')}
+              </Badge>
+            )}
           {meshInternetOff(server) && (
             <Badge
               variant="outline"

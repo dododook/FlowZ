@@ -38,7 +38,6 @@ export const IPC_CHANNELS = {
   TAILSCALE_LOGIN: 'tailscale:login', // 按需瞬态登录核：拉起登录专用 sing-box 取交互登录 URL（Phase 2）
   TAILSCALE_LOGIN_CANCEL: 'tailscale:loginCancel', // 取消某节点在飞的瞬态登录核（用户手动取消）
   TAILSCALE_LOGOUT: 'tailscale:logout', // 退出登录：清该节点 state 目录（持久会话）；保留节点配置/authKey
-  PROBE_TAILSCALE_STATUSES: 'tailscale:probeStatuses', // 多节点 status-only 探针：主核未运行时拉瞬态核读 STATUS，驱动各 TS 节点真实登录态（不开登录 URL）
   TAILSCALE_STATE_EXISTS: 'tailscale:stateExists', // 批量查 TS 节点 state 目录存在性（不起核判「登录过没」）：代理关时登录态缓存未命中的兜底
 
   // 订阅管理
@@ -152,6 +151,7 @@ export const IPC_CHANNELS = {
   EVENT_SPEED_TEST_PROGRESS: 'event:speedTestProgress', // 测速进度（已测/成功/总数）
   EVENT_TAILSCALE_AUTH_URL: 'event:tailscaleAuthUrl', // Tailscale 节点需交互登录：核日志抓出的登录 URL（瞬态核路径）
   EVENT_TAILSCALE_STATUS: 'event:tailscaleStatus', // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（backendState/loggedIn/authURL/IP/过期）
+  EVENT_TAILSCALE_STATE_CLEARED: 'event:tailscaleStateCleared', // 启动前属主归一删掉某节点 root 残留 state（登录态已失效）→ 渲染端清缓存，避免陈旧 loggedIn=true 与已清空 state 撕裂（payload={serverId}）
   EVENT_SYSTEM_PROXY_RESIDUAL: 'event:systemProxyResidual', // TUN 启动后检测到无 marker 的系统代理残留（非 FlowZ 设的）→ 一次性提示
 
   // 应用语言同步（渲染进程 -> 主进程）

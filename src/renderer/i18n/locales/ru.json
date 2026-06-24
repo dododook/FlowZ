@@ -1088,7 +1088,7 @@
     "tsConnCardKeyReadyDesc": "Подключается автоматически при запуске прокси — вход не нужен",
     "tsConnCardSettings": "Настройки",
     "tsConnCardSettingsTitle": "Настройки Tailscale",
-    "tsConnCardSettingsDesc": "Выходной узел, маршрутизация подсетей и расширенные опции (прокси не перезапускается автоматически после сохранения).",
+    "tsConnCardSettingsDesc": "Выходной узел, маршрутизация подсети и расширенные параметры. Сохранение при работающем прокси переподключит для применения.",
     "tsConnCardDisconnect": "Отключить",
     "tsConnCardDelete": "Удалить",
     "tsConnCardDeleteTitle": "Удалить подключение Tailscale?",

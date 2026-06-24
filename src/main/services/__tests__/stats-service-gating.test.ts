@@ -276,6 +276,32 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect((service as any).connMap.has('conn-0')).toBe(false);
       expect((service as any).connMap.has('conn-50000')).toBe(true);
     });
+
+    it('UPDATE 把活跃条目移到插入序末尾（LRU：eviction 删最久未更新而非最早插入）', () => {
+      const { service, mock } = setup({ withVisible: true, visible: false });
+      service.start();
+      // conn-0 最早插入，但持续被 UPDATE（活跃长连接：VPN/大下载），其余只 NEW 一次（漏发 CLOSED 的死连接）。
+      // 用独立 connection 对象（不复用模块级 RAW_CONN，避免被其它测试的裸 mutate 污染初值）。
+      const events = Array.from({ length: 50_000 }, (_, i) => ({
+        type: 'NEW' as const,
+        id: `conn-${i}`,
+        connection: { id: `conn-${i}`, uplinkTotal: '100', downlinkTotal: '200' },
+      }));
+      mock.pushConn({ reset: true, events }); // size=50000，迭代序首=conn-0
+      // conn-0 收到 UPDATE → delete+set 移到末尾，迭代序首变为 conn-1（最久未更新）。
+      mock.pushConn({
+        events: [{ type: 'UPDATE', id: 'conn-0', uplinkDelta: '1', downlinkDelta: '1' }],
+      });
+      // 再来 1 条 NEW 触发超上限 eviction：删的是 conn-1（迭代序首/最久未更新），活跃的 conn-0 被保护。
+      mock.pushConn({
+        events: [{ type: 'NEW', id: 'conn-new', connection: { id: 'conn-new', uplinkTotal: '0' } }],
+      });
+      expect((service as any).connMap.size).toBe(50_000);
+      expect((service as any).connMap.has('conn-0')).toBe(true); // 活跃长连接被保护（修复前会被删）
+      expect((service as any).connMap.has('conn-1')).toBe(false); // 最久未更新的死连接被驱逐
+      // 累加语义不受 delete+set 影响：UPDATE 仍正确累加到既有 totals。
+      expect(Number((service as any).connMap.get('conn-0').uplinkTotal)).toBe(101); // 100 + 1
+    });
   });
 
   describe('缺省行为（未注入 isWindowVisible）', () => {

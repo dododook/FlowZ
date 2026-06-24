@@ -313,7 +313,7 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
             <DialogDescription>
               {t(
                 'servers.tsConnCardSettingsDesc',
-                '出口节点、子网路由与高级选项（保存后不自动重启代理）。'
+                '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
               )}
             </DialogDescription>
           </DialogHeader>

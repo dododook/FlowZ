@@ -73,11 +73,7 @@ import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
 import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
-import {
-  buildTailscaleLoginConfig,
-  buildTailscaleStatusProbeConfig,
-  tailscaleEndpointInRunningCore,
-} from './tailscale-login-core';
+import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from './tailscale-login-core';
 import { SingBoxApiClient, type TailscaleEndpointStatus } from './singbox-api-client';
 import { reconcileTreeOwnership } from './runtime-ownership';
 import {
@@ -474,6 +470,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } else if (process.platform === 'darwin') {
       // B 块：受保护目录是 macOS 现役核单一真相，install-core 换核后路径不变、内容变；每次 start 重解析
       // this.singboxPath，消除「同会话换核/装 helper 后仍用构造时缓存的旧（bundle）路径」（修 review HIGH-1）。
+      this.singboxPath = this.getSingBoxPath();
+    } else if (process.platform === 'win32') {
+      // 对齐 darwin HIGH-1：Windows 现役核恒为可写核（getSingBoxPath 优先 userData/core_update），CoreUpdateService
+      // 同会话换核写入该处后路径不变、内容变；每次 start 重解析 this.singboxPath，消除「同会话换核后仍用构造时
+      // 缓存的随包路径 → version 探测/check/spawn 全走旧核 → 换核静默 no-op」（修 #168 review MED-2）。
       this.singboxPath = this.getSingBoxPath();
     }
 
@@ -3857,6 +3858,20 @@ exit 0
             (r.deleted.length > 0 ? '；若该 Tailscale 节点登录态被清，需重新登录' : '')
         );
       }
+      // 删了某节点 state（<userData>/tailscale/<serverId>/...）→ 该节点登录态已失效。通知渲染端清登录缓存，
+      // 否则陈旧 loggedIn=true 与已清空的磁盘 state 撕裂（#173 review MED-4）。state_directory 键即 serverId
+      // （tailscaleStateDir = <userData>/tailscale/<serverId>），取 tsRoot 下首段路径段还原 serverId。渲染端消费另接。
+      const clearedServerIds = new Set<string>();
+      for (const deletedPath of r.deleted) {
+        const rel = path.relative(tsRoot, deletedPath);
+        // 越界（rel 以 .. 开头或绝对路径）= 不在 tsRoot 下，跳过（防御，正常不发生）。
+        if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
+        const serverId = rel.split(path.sep)[0];
+        if (serverId) clearedServerIds.add(serverId);
+      }
+      for (const serverId of clearedServerIds) {
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_STATE_CLEARED, { serverId });
+      }
     } catch {
       /* 尽力而为，绝不阻断启动 */
     }
@@ -5348,18 +5363,11 @@ exit 0
       // 瞬态核独立的 1.14 管理 API 客户端（镜像主核 tailscaleApiClient，但各自端口/secret/stop，互不干扰）：
       // 订阅瞬态核 STATUS 流 → backendState=Running 即驱动 loggedIn 验真登录态。finalize 须 stop() 它防泄漏。
       apiClient?: SingBoxApiClient;
+      // 登录成功标记：STATUS=Running（已认证、state 落盘）时置 true。供 finalize 区分「成功收尾」与「取消/崩溃/超时」——
+      // 成功路径登录态由 setTailscaleLoginState(true)/STATUS 驱动、authUrl 已清，finalize 不再发空 authUrl（否则 clobber）。
+      loginCompleted?: boolean;
     }
   >();
-
-  // 多节点 status-only 探针的单飞句柄（同时至多一个）：主核未运行时拉一个含全部 TS endpoint 的瞬态核读 STATUS，
-  // 驱动各节点真实登录态（修「代理关 → 无 STATUS → 已登录节点误显需登录」）。在飞则复用（不重复 spawn）。
-  // 与 tailscaleLoginCores（每节点登录核、会开浏览器）正交：探针 status-only，不解析 AUTH_URL、不弹 toast。
-  private tailscaleStatusProbe: {
-    proc: ChildProcess;
-    timeoutTimer: NodeJS.Timeout;
-    killTimer?: NodeJS.Timeout;
-    apiClient?: SingBoxApiClient;
-  } | null = null;
 
   /**
    * 按需登录：拉起登录专用 sing-box（无 inbound/TUN，零提权，log.level:info，带独立 1.14 管理 api service）→
@@ -5433,6 +5441,7 @@ exit 0
       timeoutTimer: NodeJS.Timeout;
       killTimer?: NodeJS.Timeout;
       apiClient?: SingBoxApiClient;
+      loginCompleted?: boolean;
     } = { proc, timeoutTimer: undefined as unknown as NodeJS.Timeout };
     // 超时杀核（三平台共用，可重置）：未打开 URL 前等 2min（用户没点 → 放弃）；用户**打开登录 URL 后**
     // 延长到 5min——浏览器 Login successful 后，瞬态核 tsnet 还要从控制面同步到 backendState=Running
@@ -5446,12 +5455,8 @@ exit 0
           `Tailscale 节点「${server.name}」登录超时，已停止登录进程`,
           'sing-box'
         );
-        // 超时=登录未完成：发空 authUrl 清渲染端缓存 → 卡片/表单退出「登录中」回「需登录」（成功路径由
-        // setTailscaleLoginState(true) 自行清 authUrl，不经此）。
-        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
-          serverId: server.id,
-          url: '',
-        });
+        // 超时=登录未完成：杀核 → proc 'exit' → finalize 统一发空 authUrl 清渲染端缓存（退出「登录中」回「需登录」）。
+        // 不在此处单独发：空 authUrl 已下沉 finalize，覆盖取消/崩溃/超时全路径（#174 review MED-5），避免重复/分叉。
         this.killTailscaleLogin(server.id);
       }, ms);
     };
@@ -5465,6 +5470,16 @@ exit 0
     const finalize = (): void => {
       if (finalized) return;
       finalized = true;
+      // 统一收尾点：所有退出路径（用户取消 cancelTailscaleLogin、核自行崩溃、登录超时、spawn 失败）都经此。
+      // 登录未成功 → 发空 authUrl 清渲染端缓存，卡片/表单退出「登录中」回「需登录」，杜绝取消/崩溃后 UI 卡死
+      // （#174 review MED-5：原空 authUrl 只挂在超时回调，取消/崩溃路径不清 → tailscaleAuthUrls[id] 永留 → 卡死）。
+      // 成功路径（loginCompleted）的 authUrl 由 setTailscaleLoginState(true)/STATUS 清，此处不重复发（否则 clobber）。
+      if (!handle.loginCompleted) {
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
+          serverId: server.id,
+          url: '',
+        });
+      }
       clearTimeout(handle.timeoutTimer); // 清最新的登录超时（urlOpened 后已被 armLoginTimeout 重置过）
       // 进程已退出（优雅 SIGTERM 或自行崩溃）→ 取消挂起的 SIGKILL 升级，防 timer 泄漏。
       clearTimeout(handle.killTimer);
@@ -5551,6 +5566,10 @@ exit 0
     // 的 finalize 在后续 tick 触发，不在本回调栈内同步 cancel 正派发的 stream；即便同步，SubscribeTailscaleStatus
     // 'data' 的 `if(this.stopped)return` 守卫也挡住重入。
     if (ep.backendState === 'Running') {
+      // 登录已成功（state 落盘）→ 标记 loginCompleted，让随后的 finalize 不再发空 authUrl（成功态的 authUrl 清理
+      // 由 setTailscaleLoginState(true)/STATUS 承担；finalize 的空 authUrl 仅用于取消/崩溃/超时收尾，见 #174 review MED-5）。
+      const handle = this.tailscaleLoginCores.get(server.id);
+      if (handle) handle.loginCompleted = true;
       this.killTailscaleLogin(server.id);
     }
   }
@@ -5595,148 +5614,6 @@ exit 0
       this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
     }
     this.killTailscaleLogin(serverId);
-  }
-
-  /**
-   * 多节点 status-only 探针：主核未运行时拉一个含**全部** Tailscale 节点 endpoint 的瞬态核，订阅 STATUS 流读各
-   * 节点真实登录态（Running/Starting→loggedIn=true，NeedsLogin→false），驱动渲染端「检测中→已登录/需登录」角标。
-   *
-   * 根因：loggedIn 只来自管理 API STATUS 流、只在核运行时有；代理关 → 无主核 STATUS → 已登录的 TS 节点被误显
-   * 「需登录」。本探针补上这条 STATUS 来源（不靠 stateExists 启发式——#132：未认证残留 state 会误判已登录）。
-   *
-   * 与 startTailscaleLogin（每节点登录核、开浏览器）的关键区别——**status-only**：不解析 stdout AUTH_URL、不开
-   * 浏览器、不弹登录 toast；NeedsLogin 节点只记 loggedIn=false（emit 带 probe 标记让渲染端探针态不弹 toast）。
-   *
-   * 门控：① 主核运行中（getStatus().running）→ 直接返回（主核 STATUS 本就有，无需探针，且避双写 state_directory
-   * 冲突）。② 无 TS 节点 → 空返。③ 单飞：已有在飞探针则复用（不重复 spawn）。
-   *
-   * 收尾：全部 endpoint STATUS 到达终态（Running/NeedsLogin 等稳定态，Starting 续等）后、或超时（~12s）→ 拆核
-   * （杀进程 + 停 apiClient + 删临时 config + 清单飞句柄），幂等 finalize（同 startTailscaleLogin 写法）。
-   */
-  async probeTailscaleLoginStates(): Promise<void> {
-    // 门控①：主核运行中 → 主核 STATUS 流已驱动登录态，无需探针（且避免与主核双写 state_directory）。
-    if (this.getStatus().running) return;
-    // 门控②：仅 Tailscale 节点；无则空返。
-    const tsServers = (this.currentConfig?.servers || []).filter(
-      (s) => s.protocol?.toLowerCase() === 'tailscale'
-    );
-    if (tsServers.length === 0) return;
-    // 门控③：单飞——已有在飞探针则复用。
-    if (this.tailscaleStatusProbe) return;
-
-    if (!require('fs').existsSync(this.singboxPath)) {
-      throw new Error(`找不到 sing-box 可执行文件: ${this.singboxPath}`);
-    }
-
-    // 独立空闲端口（排除主核 api 端口）+ 每次随机 secret——与登录核同口径，避 bind 冲突。
-    const apiPort = await this.resolveTailscaleLoginApiPort();
-    const apiSecret = require('crypto').randomBytes(16).toString('hex');
-    const probeConfig = buildTailscaleStatusProbeConfig(tsServers, {
-      port: apiPort,
-      secret: apiSecret,
-    });
-    const cfgPath = path.join(
-      getUserDataPath(),
-      `ts-probe-${require('crypto').randomBytes(6).toString('hex')}.json`
-    );
-    require('fs').writeFileSync(cfgPath, JSON.stringify(probeConfig));
-
-    // 非提权 spawn（同 startTailscaleLogin）：用户态 tailscale endpoint 零提权可起。status-only 探针不读 stdout
-    // （登录态走 api STATUS 流、无 AUTH_URL 解析）→ stdout/stderr 设 'ignore'：避免 pipe 无消费者时核 log.level:info
-    // 持续写日志填满内核缓冲(~64KB)→write 阻塞→核挂起停推 STATUS（review 中级，与必须 pipe 抓 URL 的登录核相反）。
-    const proc = spawn(this.singboxPath, ['run', '-c', cfgPath], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-      env: { ...process.env },
-      windowsHide: true,
-    });
-
-    // 超时 ~12s：全部 endpoint 终态未到也拆核（避免 NeedsLogin 节点的探针核常驻）。
-    const timeoutTimer = setTimeout(() => {
-      this.logToManager('info', 'Tailscale 状态探针超时，已停止探针进程', 'sing-box');
-      this.killTailscaleStatusProbe();
-    }, 12000);
-
-    const handle: {
-      proc: ChildProcess;
-      timeoutTimer: NodeJS.Timeout;
-      killTimer?: NodeJS.Timeout;
-      apiClient?: SingBoxApiClient;
-    } = { proc, timeoutTimer };
-    this.tailscaleStatusProbe = handle;
-
-    // 幂等收尾（同 startTailscaleLogin finalize）：清 timer + 停 apiClient + 清句柄 + 删临时 config。
-    // error（spawn 失败，无后续 exit）与 exit 两路径都调，防 cfg/句柄/apiClient 泄漏（句柄残留 → 单飞恒命中、探针卡死）。
-    let finalized = false;
-    const finalize = (): void => {
-      if (finalized) return;
-      finalized = true;
-      clearTimeout(timeoutTimer);
-      clearTimeout(handle.killTimer);
-      handle.apiClient?.stop();
-      handle.apiClient = undefined;
-      this.tailscaleStatusProbe = null;
-      try {
-        require('fs').unlinkSync(cfgPath);
-      } catch {
-        /* 已删/无权限：忽略 */
-      }
-    };
-    proc.on('error', (e) => {
-      this.logToManager('error', `Tailscale 状态探针进程启动失败: ${e.message}`, 'sing-box');
-      finalize();
-    });
-    proc.on('exit', finalize);
-
-    // 终态判定：每个 endpoint 进入稳定态（非 Starting/空态）即记入 settled；全部 TS 节点 settled → 拆核。
-    // Starting 续等（认证握手中）；Running/NeedsLogin/Stopped 等为终态。按 tag 去重（一个 endpoint 多帧只记一次）。
-    const expectedTags = new Set(tsServers.map((s) => s.name));
-    const settledTags = new Set<string>();
-    handle.apiClient = new SingBoxApiClient(
-      { host: '127.0.0.1', port: apiPort },
-      apiSecret,
-      (eps) => {
-        for (const ep of eps) {
-          // tag(=server.name)→serverId（闭包 tsServers 直查，不依赖 currentConfig 当前态）。
-          const server = tsServers.find((s) => s.name === ep.endpointTag);
-          if (!server) continue;
-          // status-only：includeAuthURL=false（不带 URL）、probe=true（渲染端探针态不弹登录 toast）。
-          this.emitTailscaleStatus(server.id, ep, false, true);
-          if (
-            expectedTags.has(ep.endpointTag) &&
-            ep.backendState &&
-            ep.backendState !== 'Starting'
-          ) {
-            settledTags.add(ep.endpointTag);
-          }
-        }
-        // 全部节点到达终态 → 已读到真实登录态，拆核（无需常驻）。
-        if (settledTags.size >= expectedTags.size) {
-          this.killTailscaleStatusProbe();
-        }
-      }
-    );
-    handle.apiClient.start();
-
-    this.logToManager('info', `Tailscale 状态探针已启动（${tsServers.length} 节点）`, 'sing-box');
-  }
-
-  /** 杀状态探针核（终态/超时/退出统一收口）：SIGTERM→3s→SIGKILL 升级。幂等。Map 项/cfg 由 finalize（proc exit）删。 */
-  private killTailscaleStatusProbe(): void {
-    const handle = this.tailscaleStatusProbe;
-    if (!handle) return;
-    clearTimeout(handle.timeoutTimer);
-    if (handle.killTimer) return; // 已挂起升级 → 幂等
-    try {
-      handle.killTimer = escalateProcessKill({
-        sendSignal: (sig) => {
-          handle.proc.kill(sig);
-        },
-        schedule: (fn, ms) => setTimeout(fn, ms),
-        graceMs: 3000,
-      });
-    } catch {
-      /* 已退出：忽略 */
-    }
   }
 
   /** sing-box 管理 API（services[{type:api}] + 状态订阅）是否可用：要求核 ≥1.14。§5 守卫已保证 start 路径恒满足；
@@ -5790,15 +5667,11 @@ exit 0
    * includeAuthURL：是否在事件里带 authURL（驱动渲染端「需登录」toast）。主核路径=true（STATUS 是唯一 URL 来源）；
    * 瞬态核路径=false——瞬态核的登录 URL 已由 stdout AUTH_URL 解析（handleTailscaleLoginUrl 自动开浏览器 + 推
    * EVENT_TAILSCALE_AUTH_URL toast）单点承载，STATUS 不再重复带 URL（択一防同节点双发登录 toast 漂移）。
-   *
-   * probe：本条来自「多节点 status-only 探针」（代理关时读真实登录态）。渲染端据此 NeedsLogin 也不弹登录 toast
-   * （探针是后台静默查询、非用户主动登录），仅更 loggedIn 驱动「检测中→已登录/需登录」角标收敛。
    */
   private emitTailscaleStatus(
     serverId: string,
     ep: TailscaleEndpointStatus,
-    includeAuthURL = true,
-    probe = false
+    includeAuthURL = true
   ): void {
     const loggedIn =
       (ep.backendState === 'Running' || ep.backendState === 'Starting') &&
@@ -5810,7 +5683,6 @@ exit 0
       authURL: includeAuthURL ? ep.authURL || undefined : undefined,
       tailscaleIPs: ep.self?.tailscaleIPs || [],
       expired: ep.self?.expired === true,
-      probe,
     });
   }
 
@@ -5873,12 +5745,11 @@ exit 0
     // Map 项 + 临时 config 由 finalize 删（挂在 proc 'exit'/'error'）；此处不删，避免与 finalize 竞态漏清 cfg。
   }
 
-  /** app 退出/窗口关闭：杀掉全部残留瞬态登录核 + 在飞状态探针（无孤儿进程）。由 stop/teardownForQuit 调用。 */
+  /** app 退出/窗口关闭：杀掉全部残留瞬态登录核（无孤儿进程）。由 stop/teardownForQuit 调用。 */
   private killAllTailscaleLoginCores(): void {
     for (const serverId of Array.from(this.tailscaleLoginCores.keys())) {
       this.killTailscaleLogin(serverId);
     }
-    this.killTailscaleStatusProbe();
   }
 
   /**

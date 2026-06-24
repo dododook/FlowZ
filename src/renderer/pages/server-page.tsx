@@ -130,7 +130,11 @@ export function ServerPage() {
         const known = useAppStore.getState().tailscaleLoginStates;
         for (const id of tsIds) {
           // 仅对缓存无记录的节点兜底（缓存=STATUS 流真值优先，不被 state 乐观值覆盖）。
-          if (known[id] === undefined && existsMap[id]) setTailscaleLoginState(id, true);
+          // skipCache：这是纯文件存在性推断的乐观值，不持久化进缓存（缓存只存 STATUS 真值）——
+          // 否则 revoked/过期 key 的 state 残留会让乐观 true 固化、长期误显已连接（review #3/#10/#15）。
+          if (known[id] === undefined && existsMap[id]) {
+            setTailscaleLoginState(id, true, { skipCache: true });
+          }
         }
       })
       .catch(() => {

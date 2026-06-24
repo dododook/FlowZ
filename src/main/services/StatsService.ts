@@ -284,6 +284,12 @@ export class StatsService {
             existing.downlinkTotal = String(
               (Number(existing.downlinkTotal) || 0) + (Number(ev.downlinkDelta) || 0)
             );
+            // LRU 近似（#167 OOM eviction 删错对象修复）：JS Map 迭代序=插入序，活跃长连接仅走 UPDATE 帧
+            // （只改 totals 字段、不 re-set）会永远停在最早插入位 → 超上限 eviction(keys().next())恰删掉注释
+            // 声称要保护的健康长连接，而非真正漏删的死连接。delete+set 把刚收到 UPDATE 的活跃条目移到插入序末尾，
+            // 使迭代序首部恒为「最久未更新」条目（最可能是漏发 CLOSED 的死连接），eviction 删的才是该删的。
+            this.connMap.delete(id);
+            this.connMap.set(id, existing);
           } else if (ev?.connection) {
             this.connMap.set(id, ev.connection);
           }

@@ -11,6 +11,7 @@
  *  - 纯逻辑 waitForAdapterReleased 注入 probe/sleep，便于无真实计时器/无真实网卡的单测。
  */
 import { execFile } from 'child_process';
+import { powershellPath } from '../utils/win-system32';
 
 /**
  * 探测 Windows 上是否仍存在名为 `name` 的网卡（设备级，零提权）。
@@ -20,8 +21,10 @@ export function probeWinTunAdapterPresent(name: string): Promise<boolean> {
   return new Promise((resolve) => {
     // -Name 精确匹配（PS 单引号内 '' 转义防注入）；命中输出网卡名，未命中经 SilentlyContinue 吞错→空输出。
     const psName = name.replace(/'/g, "''");
+    // 绝对路径调 PowerShell（不依赖 PATH）：PATH 缺/被劫持 System32 时裸 'powershell.exe'
+    // spawn 失败 → fail-open 永久判「已释放」→ #159 僵尸 wintun 释放门变 no-op。见 win-system32.ts。
     execFile(
-      'powershell.exe',
+      powershellPath(),
       [
         '-NoProfile',
         '-NonInteractive',

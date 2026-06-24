@@ -5,6 +5,7 @@
 import { useEffect } from 'react';
 import { api } from '../ipc';
 import { useAppStore } from '../store/app-store';
+import { useTailscaleLoginCacheStore } from '../store/use-tailscale-login-cache-store';
 import { ErrorHandler, ErrorCategory, proxyErrorCategory } from '../lib/error-handler';
 import { toast } from 'sonner';
 import i18n from '../i18n';
@@ -56,9 +57,9 @@ interface NativeEventData {
     authURL?: string;
     tailscaleIPs: string[];
     expired: boolean;
-    // 本条来自多节点 status-only 探针（代理关时读真实登录态）：渲染端据此 NeedsLogin 也不弹登录 toast，仅更 loggedIn。
-    probe?: boolean;
   };
+  // 启动前属主归一删掉某节点 root 残留 state（登录态失效）→ 渲染端清缓存 + 登录态（review #4）。
+  tailscaleStateCleared: { serverId: string };
   systemProxyResidual: { proxy: string };
   speedTestResult: { serverId: string; latency: number };
   // #40 核覆盖 reconcile：本机在用的非官方核 ≤ 随包基线 → 兼容风险提醒（启动时主进程 emit）。
@@ -107,6 +108,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'tailscaleStatus':
         unsubscribe = api.proxy.onTailscaleStatus(callback as any);
+        break;
+      case 'tailscaleStateCleared':
+        unsubscribe = api.proxy.onTailscaleStateCleared(callback as any);
         break;
       case 'systemProxyResidual':
         unsubscribe = api.proxy.onSystemProxyResidual(callback as any);
@@ -289,14 +293,8 @@ function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   // 「需登录」角标；tailscaleIPs（self.tailscaleIPs）入 store 供节点卡「组网信息」popover 展示内网 IP。
   // backendState/authURL 仅本地驱动登录 toast（不入 store）。
   useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
-  // 内网 IP 在探针短路前就存（探针/非探针事件都带 self.tailscaleIPs，组网卡 popover 据此显示）。
+  // 内网 IP（self.tailscaleIPs）入 store，组网卡 popover 据此显示。
   useAppStore.getState().setTailscaleIps(data.serverId, data.tailscaleIPs || []);
-  // 探针来源（status-only）：首条 STATUS 到达 → 探针有结果，关「检测中」态（各节点 loggedIn 已分别更新、角标据此收敛）。
-  // 探针**不弹登录 toast**——它是代理关时的后台静默查询、非用户主动登录；NeedsLogin 节点只记 loggedIn=false。
-  if (data.probe) {
-    useAppStore.getState().setTailscaleStatusProbing(false);
-    return;
-  }
   // NeedsLogin 且核给出 authURL → 登录 toast（与瞬态核 AUTH_URL 共用 showTsLoginToast，固定 id 供翻 Running 时
   // dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
   if (data.backendState === 'NeedsLogin' && data.authURL) {
@@ -306,6 +304,13 @@ function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
     // 已认证/离开 NeedsLogin → dismiss 该节点那条登录 toast（固定 id）。
     toast.dismiss(tsAuthToastId(data.serverId));
   }
+}
+
+// 启动前属主归一删掉某节点 root 残留 state（登录态已失效）→ 清登录缓存 + 登录态，避免陈旧 loggedIn=true
+// 与已清空 state 撕裂（review #4）。代理开启后真实 STATUS 流仍会再校正。
+function handleTailscaleStateCleared(data: NativeEventData['tailscaleStateCleared']) {
+  useTailscaleLoginCacheStore.getState().removeCached(data.serverId);
+  useAppStore.getState().setTailscaleLoginState(data.serverId, false);
 }
 
 // 一次性：本渲染会话只提示一次残留系统代理，避免每次连 TUN（含切节点重启）反复唠叨（用户「忽略」即不再提示）。
@@ -394,6 +399,7 @@ export function useNativeEventListeners() {
   useNativeEvent('invalidNodes', handleInvalidNodes);
   useNativeEvent('tailscaleAuth', handleTailscaleAuth);
   useNativeEvent('tailscaleStatus', handleTailscaleStatus);
+  useNativeEvent('tailscaleStateCleared', handleTailscaleStateCleared);
   useNativeEvent('systemProxyResidual', handleSystemProxyResidual);
   useNativeEvent('speedTestResult', handleSpeedTestResult);
   useNativeEvent('coreBaselineWarning', handleCoreBaselineWarning);

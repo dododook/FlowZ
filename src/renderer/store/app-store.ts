@@ -94,10 +94,6 @@ interface AppState {
   // 登录成功（setTailscaleLoginState(id,true)）时清该 serverId 的 URL，避免点角标开已失效的旧 URL。
   tailscaleAuthUrls: Record<string, string>;
 
-  // 多节点 status-only 探针在飞中（代理关时读真实登录态）：探针起置 true、STATUS 到达/超时置 false。
-  // 「需登录」角标据此：代理关 + 探测中 + loggedIn 尚未知 → 显「检测中」中性态（不误报需登录），探针回来再收敛真值。
-  tailscaleStatusProbing: boolean;
-
   // Tailscale 节点内网 IP（serverId → tailnet IP 列表，100.x/fd7a:…）。1.14 api STATUS 流（self.tailscaleIPs）
   // 实时携带，由 setTailscaleIps 写入；供节点卡片「组网信息」popover 展示内网 IP，消「要登录控制台才看得到」黑盒。
   tailscaleIps: Record<string, string[]>;
@@ -139,11 +135,13 @@ interface AppState {
   refreshConnectionStatus: () => Promise<void>;
   refreshStatistics: () => Promise<void>;
   // Tailscale 登录态单条覆盖（loggedIn=Running||Starting），由 EVENT_TAILSCALE_STATUS 驱动。
-  setTailscaleLoginState: (serverId: string, loggedIn: boolean) => void;
+  setTailscaleLoginState: (
+    serverId: string,
+    loggedIn: boolean,
+    opts?: { skipCache?: boolean }
+  ) => void;
   // Tailscale 交互登录 URL 单条覆盖（serverId → 最新 AUTH_URL），由 EVENT_TAILSCALE_AUTH_URL 驱动。
   setTailscaleAuthUrl: (serverId: string, url: string) => void;
-  // 多节点 status-only 探针在飞标记（触发探针置 true；首条探针 STATUS 到达 / 超时置 false）。
-  setTailscaleStatusProbing: (probing: boolean) => void;
   // Tailscale 内网 IP 单条覆盖（self.tailscaleIPs），由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleIps: (serverId: string, ips: string[]) => void;
 
@@ -181,7 +179,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 启动秒显：从 localStorage 缓存派生登录态初值（代理关时不再 spawn 瞬态核探针，见 use-tailscale-login-cache-store）。
   tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
   tailscaleAuthUrls: {},
-  tailscaleStatusProbing: false,
   tailscaleIps: {},
   isPrivacyMode: false,
   helperStatus: null,
@@ -421,7 +418,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // 单条覆盖：EVENT_TAILSCALE_STATUS 即时点亮/熄灭该节点登录态（loggedIn=Running||Starting）。
   // 1.14 api STATUS 是单一真值（无整表刷新 / 无乐观代际防覆盖：无并发整表覆盖竞态，纯单点写）。
-  setTailscaleLoginState: (serverId, loggedIn) => {
+  setTailscaleLoginState: (serverId, loggedIn, opts) => {
     set((s) => {
       const tailscaleLoginStates = { ...s.tailscaleLoginStates, [serverId]: loggedIn };
       // 登录成功后旧 AUTH_URL 失效：清掉该 serverId 的缓存 URL，避免点角标开过期登录页（无则原样返回引用）。
@@ -433,7 +430,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { tailscaleLoginStates };
     });
     // 持久化登录态真值（STATUS 流 / 登出均经此）→ 代理关时下次启动秒显，免起核探针。
-    useTailscaleLoginCacheStore.getState().setCached(serverId, loggedIn);
+    // skipCache：state 文件存在性兜底的「乐观 true」不写缓存——缓存只存 STATUS 流真值（设计契约）；
+    // 否则 revoked/过期 key 的 state 目录残留会把乐观值固化进缓存（缓存优先级又高于 state 兜底），长期误显已连接。
+    if (!opts?.skipCache) useTailscaleLoginCacheStore.getState().setCached(serverId, loggedIn);
   },
   // always-emit AUTH_URL：全量入表（无条件覆盖最新 URL），登录成功由 setTailscaleLoginState 反向清理。
   // 空 URL（登录超时/失败信号）→ 删除该 serverId 缓存，使卡片/表单退出「登录中」回「需登录」。
@@ -451,11 +450,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         : { tailscaleAuthUrls: { ...s.tailscaleAuthUrls, [serverId]: url } };
     });
   },
-  setTailscaleStatusProbing: (probing) => {
-    // 值未变则不触发订阅者重渲染（探针多帧 STATUS 反复置 false 时省无谓渲染）。
-    set((s) => (s.tailscaleStatusProbing === probing ? {} : { tailscaleStatusProbing: probing }));
-  },
-
   // 单条覆盖：EVENT_TAILSCALE_STATUS 即时更新该节点内网 IP（self.tailscaleIPs，纯单点写无并发竞态）。
   setTailscaleIps: (serverId, ips) => {
     // IP 列表未变则不重建表（STATUS 多帧同 IP 反复 emit 时省整表浅拷贝 + 无谓订阅者重渲染）。

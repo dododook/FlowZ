@@ -1088,7 +1088,7 @@
     "tsConnCardKeyReadyDesc": "Connects automatically when the proxy starts — no login needed",
     "tsConnCardSettings": "Settings",
     "tsConnCardSettingsTitle": "Tailscale Settings",
-    "tsConnCardSettingsDesc": "Exit node, subnet routing and advanced options (proxy won't restart automatically after saving).",
+    "tsConnCardSettingsDesc": "Exit node, subnet routing and advanced options. Saving while the proxy is running auto-reconnects to apply.",
     "tsConnCardDisconnect": "Disconnect",
     "tsConnCardDelete": "Delete",
     "tsConnCardDeleteTitle": "Delete Tailscale connection?",

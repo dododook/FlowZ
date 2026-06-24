@@ -137,34 +137,6 @@ export const tailscaleLoggingIn = (
   !loggedIn;
 
 /**
- * Tailscale 节点是否处于「检测中」中性态（纯函数，便于单测）：代理关 → 无主核 STATUS 流，已登录节点会被
- * tailscaleNeedsLogin 误显「需登录」；status-only 探针在飞期间该节点 loggedIn 尚未知 → 显「检测中」而非「需登录」，
- * 避免误报。探针 STATUS 回来（loggedInKnown=true）→ 退出检测态、改显真实「已登录/需登录」。
- *
- * 判定 = Tailscale 节点 且 非 authKey（authKey 节点免交互登录、恒已登录态、不参与检测）且 代理关 且 探针在飞
- * 且 该节点 loggedIn 尚未知（store.tailscaleLoginStates[id] === undefined）。
- *
- * @param loggedInKnown 该节点登录态是否已由某次 STATUS（含探针）确定（= tailscaleLoginStates[id] !== undefined）
- * @param proxyRunning 主核是否运行（运行中则主核 STATUS 已驱动真值，不进检测态）
- * @param probing 多节点 status-only 探针是否在飞（store.tailscaleStatusProbing）
- *
- * 注意（批2 起，2026-06-24）：server-page 自动探针已删，`setTailscaleStatusProbing(true)` 暂无触发点 → probing
- * 恒 false → 本函数恒返回 false、「检测中」角标暂不渲染。这是已登记的待办（非 bug），待批3 单例卡「刷新状态」
- * 按钮定夺：复用全局 probing 显 spinner，或改本地 loading 态后整链清理。见 docs/design/tailscale-connection-redesign.md。
- */
-export const tailscaleStatusChecking = (
-  s: ServerConfigWithId,
-  loggedInKnown: boolean,
-  proxyRunning: boolean,
-  probing: boolean
-): boolean =>
-  s.protocol?.toLowerCase() === 'tailscale' &&
-  !s.tailscaleSettings?.authKey?.trim() &&
-  !proxyRunning &&
-  probing &&
-  !loggedInKnown;
-
-/**
  * Tailscale 表单登录区三态（纯函数，便于单测；与 tailscaleNeedsLogin 同登录态口径）。
  * - 'loggedIn'：已登录 → 显「已登录」+ 退出登录 + 重新登录。
  * - 'needsLogin'：编辑态（有 id）未登录且未填 authKey → 显「立即登录」。

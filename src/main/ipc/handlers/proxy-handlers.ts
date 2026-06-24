@@ -166,15 +166,6 @@ export function registerProxyHandlers(
     }
   );
 
-  // 多节点 status-only 探针：主核未运行时拉瞬态核读 STATUS，驱动各 TS 节点真实登录态（不开登录 URL/不弹 toast）。
-  // 门控在主进程内部（主核运行中/无 TS 节点/已在飞 → no-op）；登录态经 EVENT_TAILSCALE_STATUS 异步驱动渲染端。
-  registerIpcHandler<void, void>(
-    IPC_CHANNELS.PROBE_TAILSCALE_STATUSES,
-    async (_event: IpcMainInvokeEvent) => {
-      await proxyManager.probeTailscaleLoginStates();
-    }
-  );
-
   // 批量查 TS 节点 state 目录存在性（不起核）：代理关时登录态缓存未命中的兜底，判「登录过没」。
   // 纯文件存在性判定（tailscaleStateExists 失败安全返 false），零进程、零网络。
   registerIpcHandler<{ serverIds: string[] }, Record<string, boolean>>(

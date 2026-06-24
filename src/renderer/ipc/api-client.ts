@@ -158,10 +158,17 @@ export const proxyApi = {
       authURL?: string;
       tailscaleIPs: string[];
       expired: boolean;
-      probe?: boolean;
     }) => void
   ): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, listener);
+  },
+
+  /**
+   * 监听「启动前属主归一删掉某节点 root 残留 state」（登录态已失效）→ 渲染端清登录缓存 + 登录态，
+   * 避免陈旧 loggedIn=true 与已清空 state 撕裂（review #4）。
+   */
+  onTailscaleStateCleared(listener: (data: { serverId: string }) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_STATE_CLEARED, listener);
   },
 
   /**
@@ -320,14 +327,6 @@ export const serverApi = {
    */
   async tailscaleLogout(serverId: string): Promise<{ runningNeedsRestart: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_LOGOUT, { serverId });
-  },
-
-  /**
-   * 多节点 status-only 探针：代理关时拉瞬态核读各 Tailscale 节点真实登录态（驱动「检测中→已登录/需登录」角标）。
-   * 不开登录 URL、不弹 toast。门控在主进程（主核运行中/无 TS 节点/已在飞 → no-op）；结果经 EVENT_TAILSCALE_STATUS 推回。
-   */
-  async probeTailscaleStatuses(): Promise<void> {
-    return ipcClient.invoke(IPC_CHANNELS.PROBE_TAILSCALE_STATUSES);
   },
 
   /**

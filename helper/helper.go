@@ -177,13 +177,19 @@ func chownRuntimeDirs() {
 	}
 }
 
-// chownTree：递归 Lchown 整棵树到 (uid,gid)。尽力而为——目录不存在/读不了即跳过，绝不返回错误中断遍历。
+// chownTree：递归把树里**仍属 root**的条目 Lchown 到 (uid,gid)。尽力而为——目录不存在/读不了即跳过，
+// 绝不返回错误中断遍历。guard：只动 uid==0 的条目（root 跑 sing-box 留下的），已是登录用户属主的不再 Lchown
+// → 避免每次 TUN 起停周期对可能很大的树做无谓全量 Lchown（filepath.Walk 用 Lstat，info 即条目自身属性，不跟随符号链接）。
 func chownTree(root string, uid, gid int) {
 	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
+		if err != nil || info == nil {
 			return nil
 		}
-		_ = os.Lchown(p, uid, gid)
+		// 仅 root 写入的条目才归还属主；非 root（已是登录用户）跳过，省掉无谓 Lchown。
+		// 拿不到底层 Stat_t（理论上不该发生）时保守归还，维持原「确保属主稳定」语义。
+		if st, ok := info.Sys().(*syscall.Stat_t); !ok || st.Uid == 0 {
+			_ = os.Lchown(p, uid, gid)
+		}
 		return nil
 	})
 }

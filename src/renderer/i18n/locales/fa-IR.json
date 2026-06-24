@@ -1088,7 +1088,7 @@
     "tsConnCardKeyReadyDesc": "هنگام شروع پروکسی به‌طور خودکار متصل می‌شود — بدون نیاز به ورود",
     "tsConnCardSettings": "تنظیمات",
     "tsConnCardSettingsTitle": "تنظیمات Tailscale",
-    "tsConnCardSettingsDesc": "گره خروج، مسیریابی زیرشبکه و گزینه‌های پیشرفته (پروکسی پس از ذخیره به‌طور خودکار راه‌اندازی مجدد نمی‌شود).",
+    "tsConnCardSettingsDesc": "گره خروجی، مسیریابی زیرشبکه و گزینه‌های پیشرفته. ذخیره در حین اجرای پروکسی برای اعمال دوباره وصل می‌شود.",
     "tsConnCardDisconnect": "قطع اتصال",
     "tsConnCardDelete": "حذف",
     "tsConnCardDeleteTitle": "اتصال Tailscale حذف شود؟",

@@ -1038,26 +1038,44 @@ if (gotTheLock) {
     coreUpdateService.setHelperManager(macHelper); // B 块：install-core 仅 macOS（Windows/Linux 得降级实例，不真用）
     proxyManager.setHelperGate(promptHelperGate);
     // 启动后检测 helper 是否可升级（已装 proto < 期望，如属主根治 v6）→ 发事件让渲染端 toast 主动引导升级
-    // （否则用户不去设置页就不知道要升级、根治不生效）。**跟随渲染端首屏加载完成**再发（+ 短延迟给 React 挂载
-    // + 事件 hook 注册），既不固定长延迟滞后、又不发太早 renderer 没注册监听而丢失；dismiss 已置 / 不可升级 → 不发。
-    const emitHelperUpgradeableIfNeeded = async (): Promise<void> => {
+    // （否则用户不去设置页就不知道要升级、根治不生效）。**跟随渲染端首屏加载完成**再发；但单次定时发射有竞态：
+    // 若首屏 React 挂载 + useNativeEventListeners 注册监听慢于固定延迟，事件先于 listener 订阅 → toast 静默丢失无重试。
+    // 改为**有限次重复发射**（递增间隔跨越慢首屏窗口）：即便某次发射时 listener 尚未订阅而丢失，后续几次会补上；
+    // 渲染端 handleHelperUpgradeable 自带 helperUpgradeWarnedThisSession 幂等守卫，重复收到只 toast 一次（重发安全）。
+    // dismiss 已置 / 明确不可升级 → 'skip' 立即终止重发。返回 'emitted'（已发，仍续发覆盖窗口）| 'skip'（终止）| 'retry'。
+    const tryEmitHelperUpgradeable = async (): Promise<'emitted' | 'skip' | 'retry'> => {
       try {
-        if (!helperManager) return;
+        if (!helperManager) return 'skip';
         const cfg = await configManager.loadConfig().catch(() => null);
-        if (cfg?.helperUpgradePromptDismissed === true) return;
+        if (cfg?.helperUpgradePromptDismissed === true) return 'skip';
         const st = await helperManager.getStatus();
         if (st.upgradeable) {
           ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_HELPER_UPGRADEABLE, {
             version: st.version ?? '',
           });
+          return 'emitted';
         }
+        return 'skip'; // 明确不可升级 → 不再重试
       } catch {
-        /* 静默：升级提示非关键，绝不阻断启动 */
+        return 'retry'; // 瞬时失败（status 未就绪等）→ 退避重试
       }
     };
+    // did-finish-load（HTML/JS 加载完）后启动重试序列。首发 ~1.2s 给 React 挂载 + 事件 hook 注册的常见窗口；
+    // 之后每 ~1.5s 再发一次，至多 5 次（≈1.2s/2.7s/4.2s/5.7s/7.2s），覆盖首屏慢于 1.2s 的尾部场景而不无限重发。
+    const UPGRADE_EMIT_MAX_ATTEMPTS = 5;
     const fireUpgradeCheck = (): void => {
-      // did-finish-load（HTML/JS 加载完）后再给 ~1.2s 让 React 挂载 + useNativeEventListeners 注册监听，避免丢事件。
-      setTimeout(() => void emitHelperUpgradeableIfNeeded(), 1200);
+      let attempt = 0;
+      const schedule = (delay: number): void => {
+        setTimeout(() => {
+          void tryEmitHelperUpgradeable().then((r) => {
+            attempt += 1;
+            // 'skip'（dismiss / 明确不可升级）立即终止；'emitted'（已发）与 'retry'（瞬时失败）都在配额内续发，
+            // 跨越首屏 listener 注册窗口 → 即便首发丢失后续补上（渲染端幂等守卫吸收重复，只 toast 一次）。
+            if (r !== 'skip' && attempt < UPGRADE_EMIT_MAX_ATTEMPTS) schedule(1500);
+          });
+        }, delay);
+      };
+      schedule(1200);
     };
     const wcForUpgrade = mainWindow?.webContents;
     if (wcForUpgrade && !wcForUpgrade.isLoading()) fireUpgradeCheck();

@@ -1088,7 +1088,7 @@
     "tsConnCardKeyReadyDesc": "代理啟動即自動連接，無需登入",
     "tsConnCardSettings": "設定",
     "tsConnCardSettingsTitle": "Tailscale 設定",
-    "tsConnCardSettingsDesc": "出口節點、子網路由與進階選項（儲存後不自動重啟代理）。",
+    "tsConnCardSettingsDesc": "出口節點、子網路由與高級選項。代理執行中儲存會自動重連以生效。",
     "tsConnCardDisconnect": "斷開",
     "tsConnCardDelete": "刪除",
     "tsConnCardDeleteTitle": "刪除 Tailscale 連接？",

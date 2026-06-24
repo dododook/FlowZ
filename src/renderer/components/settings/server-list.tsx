@@ -93,9 +93,6 @@ export function ServerList({
   // Tailscale 节点真实登录态（serverId → loggedIn）：驱动「需登录」角标，交互登录成功后角标自动消失。
   const tailscaleLoginStates = useAppStore((state) => state.tailscaleLoginStates);
   const tailscaleAuthUrls = useAppStore((state) => state.tailscaleAuthUrls);
-  // 「检测中」中性态输入：代理关 + status-only 探针在飞 + 该节点 loggedIn 尚未知 → 显「检测中」（不误报需登录）。
-  const tailscaleStatusProbing = useAppStore((state) => state.tailscaleStatusProbing);
-  const proxyRunning = useAppStore((state) => state.connectionStatus?.proxyCore.running ?? false);
   // shadow 角标的 engaged gate 输入（与 route-builder 同口径）：仅出网且未 engaged 节点不参与「首声明者占段」。
   const customRules = useAppStore((state) => state.config?.customRules);
   const appRules = useAppStore((state) => state.config?.appRules);
@@ -526,8 +523,6 @@ export function ServerList({
               invalidNodes={invalidNodes}
               tailscaleLoginStates={tailscaleLoginStates}
               tailscaleAuthUrls={tailscaleAuthUrls}
-              tailscaleStatusProbing={tailscaleStatusProbing}
-              proxyRunning={proxyRunning}
               shadowedCidrs={shadowedCidrs}
               onSelectServer={onSelectServer}
               onToggleSelect={toggleSelect}
@@ -548,8 +543,6 @@ export function ServerList({
               invalidNodes={invalidNodes}
               tailscaleLoginStates={tailscaleLoginStates}
               tailscaleAuthUrls={tailscaleAuthUrls}
-              tailscaleStatusProbing={tailscaleStatusProbing}
-              proxyRunning={proxyRunning}
               shadowedCidrs={shadowedCidrs}
               onSelectServer={onSelectServer}
               onToggleSelectId={toggleSelectId}
