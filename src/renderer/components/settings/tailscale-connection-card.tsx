@@ -54,7 +54,7 @@ interface TailscaleConnectionCardProps {
 
 export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConnectionCardProps) {
   const { t } = useTranslation();
-  const { saveServer, deleteServer } = useServerActions();
+  const { saveServer, deleteServer, selectServer } = useServerActions();
 
   const serverId = tsNode?.id;
   // 综合登录态（缓存初值 + state 文件兜底 + STATUS 实时校正已在 app-store 融合，单一布尔即真值）。
@@ -65,6 +65,10 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
   );
   const tailscaleIps = useAppStore((s) => (serverId ? s.tailscaleIps[serverId] : undefined));
   const setTailscaleLoginState = useAppStore((s) => s.setTailscaleLoginState);
+  // 当前主出口是否为本 TS 节点（selectedServerId 单一真值）：单例卡承载「设为出口/当前出口」——批3 把 TS 抽离
+  // 列表后，这是登录后选 TS 作主出口的唯一入口（列表点击选中入口已随抽离丢失，否则登录了也用不上 TS 出口）。
+  const selectedServerId = useAppStore((s) => s.config?.selectedServerId);
+  const isSelectedExit = !!serverId && selectedServerId === serverId;
 
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -141,6 +145,24 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
     await deleteServer(serverId);
   };
 
+  // 设为主出口：把本 TS 节点设为 selectedServerId（全局出口）。出口语义（exit node / 回退 direct）在「设置」里配。
+  const handleSelectExit = async () => {
+    if (!serverId) return;
+    await selectServer(serverId);
+  };
+
+  // 「设为出口 / 当前出口」片段（connected 与 key-ready 态共用）：已是主出口显徽章，否则给「设为出口」按钮。
+  const exitAction = isSelectedExit ? (
+    <span className="inline-flex items-center gap-1 rounded-md bg-success/15 px-2.5 py-1 text-sm text-success">
+      <Check className="h-4 w-4" />
+      {t('servers.tsConnCardCurrentExit', '当前出口')}
+    </span>
+  ) : (
+    <Button size="sm" variant="outline" onClick={() => void handleSelectExit()}>
+      {t('servers.tsConnCardSetExit', '设为出口')}
+    </Button>
+  );
+
   return (
     <Card className="border-primary/20">
       <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -213,6 +235,7 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
 
           {state === 'connected' && (
             <div className="flex flex-wrap gap-2 sm:justify-end">
+              {exitAction}
               <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>
                 <Settings className="me-2 h-4 w-4" />
                 {t('servers.tsConnCardSettings', '设置')}
@@ -226,6 +249,7 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
 
           {state === 'key-ready' && (
             <div className="flex flex-wrap gap-2 sm:justify-end">
+              {exitAction}
               <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>
                 <Settings className="me-2 h-4 w-4" />
                 {t('servers.tsConnCardSettings', '设置')}

@@ -194,13 +194,14 @@ export function ServerConfigDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* WARP 一键入口置顶（仅新增）：用户想用 WARP 会在协议处找它，不必先懂「WARP=WireGuard」。 */}
-                  {!isEditing && (
-                    <SelectItem value="warp">
-                      {t('servers.warpOption', 'Cloudflare WARP (one-click)')}
-                    </SelectItem>
-                  )}
-                  {getSortedProtocolOptions(t, i18n.language).map((p) => (
+                  {/* 组网协议（WireGuard/WARP/Tailscale）不从「添加节点」加——统一走组网 tab 顶部「接入组网」区
+                      （批3 一致性，与 tailscale 抽离同口径）。添加流(!isEditing)过滤掉 wireguard、不再显示 WARP 伪协议入口；
+                      编辑现有 WG/WARP 节点(isEditing，WARP 节点 protocol='wireguard')保留 wireguard 选项以正常显示/编辑。 */}
+                  {getSortedProtocolOptions(
+                    t,
+                    i18n.language,
+                    (v) => isEditing || v !== 'wireguard'
+                  ).map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
                     </SelectItem>

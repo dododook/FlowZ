@@ -1135,7 +1135,9 @@
     "meshInfoIntranetIp": "Внутренний IP",
     "meshInfoRoutes": "Маршруты",
     "meshInfoNotAssigned": "Ещё не назначен",
-    "meshInfoNoRoutes": "Нет"
+    "meshInfoNoRoutes": "Нет",
+    "tsConnCardSetExit": "Сделать выходом",
+    "tsConnCardCurrentExit": "Текущий выход"
   },
   "rules": {
     "ruleColumn": "Правило",

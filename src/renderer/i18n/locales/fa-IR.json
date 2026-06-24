@@ -1135,7 +1135,9 @@
     "meshInfoIntranetIp": "IP داخلی",
     "meshInfoRoutes": "مسیرها",
     "meshInfoNotAssigned": "هنوز اختصاص نیافته",
-    "meshInfoNoRoutes": "هیچ‌کدام"
+    "meshInfoNoRoutes": "هیچ‌کدام",
+    "tsConnCardSetExit": "تنظیم به‌عنوان خروجی",
+    "tsConnCardCurrentExit": "خروجی فعلی"
   },
   "rules": {
     "ruleColumn": "قانون",

@@ -1135,7 +1135,9 @@
     "meshInfoIntranetIp": "内网 IP",
     "meshInfoRoutes": "路由",
     "meshInfoNotAssigned": "尚未分配",
-    "meshInfoNoRoutes": "无"
+    "meshInfoNoRoutes": "无",
+    "tsConnCardSetExit": "设为出口",
+    "tsConnCardCurrentExit": "当前出口"
   },
   "rules": {
     "ruleColumn": "规则",

@@ -1135,7 +1135,9 @@
     "meshInfoIntranetIp": "Intranet IP",
     "meshInfoRoutes": "Routes",
     "meshInfoNotAssigned": "Not assigned yet",
-    "meshInfoNoRoutes": "None"
+    "meshInfoNoRoutes": "None",
+    "tsConnCardSetExit": "Set as exit",
+    "tsConnCardCurrentExit": "Current exit"
   },
   "rules": {
     "ruleColumn": "Rule",
