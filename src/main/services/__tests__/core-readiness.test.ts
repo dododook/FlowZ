@@ -66,6 +66,55 @@ describe('waitForCoreReady', () => {
     );
     expect(r).toBe('dead');
   });
+
+  // issue #176：被更新的 start/stop 接管 → superseded，且优先于 ready/dead/timeout，不触发 isReady/isAlive。
+  it('已被接管 → superseded（优先于一切，零 isReady/isAlive 调用）', async () => {
+    let readyCalls = 0;
+    let aliveCalls = 0;
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 300 },
+      {
+        isAlive: () => {
+          aliveCalls++;
+          return true;
+        },
+        isReady: async () => {
+          readyCalls++;
+          return true;
+        },
+        sleep: noSleep,
+        isSuperseded: () => true,
+      }
+    );
+    expect(r).toBe('superseded');
+    expect(readyCalls).toBe(0);
+    expect(aliveCalls).toBe(0);
+  });
+
+  it('等待中途被接管 → superseded（不再误判 timeout/ready）', async () => {
+    let superseded = false;
+    let polls = 0;
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 300 },
+      {
+        isAlive: () => true,
+        isReady: async () => false,
+        sleep: async () => {
+          if (++polls >= 2) superseded = true;
+        },
+        isSuperseded: () => superseded,
+      }
+    );
+    expect(r).toBe('superseded');
+  });
+
+  it('isSuperseded 缺省（undefined）→ 行为不变（向后兼容）', async () => {
+    const r = await waitForCoreReady(
+      { timeoutMs: 900, pollMs: 300 },
+      { isAlive: () => true, isReady: async () => false, sleep: noSleep }
+    );
+    expect(r).toBe('timeout');
+  });
 });
 
 describe('probeTcpReachable', () => {

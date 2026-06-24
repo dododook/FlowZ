@@ -148,6 +148,9 @@ export class DiagnosticService {
         })(),
         cronetHealTriggered: this.proxyManager.getCronetHealStats().triggered,
         cronetHealFailed: this.proxyManager.getCronetHealStats().failed,
+        // issue #176：最近一次启动经几次就绪重试才成功。>0 = 起核慢（Windows 重启争用下 wintun 适配器未及时释放），
+        // 区别于「核崩溃自动重启」——便于在报告里把「争用慢起但已自愈」与真崩溃分开。
+        lastStartReadyRetries: this.proxyManager.getLastStartReadyRetries(),
       },
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,
@@ -156,7 +159,7 @@ export class DiagnosticService {
       // issue #147：节点 outbound.server 已恒为域名（不再烧 IP），无额外预解析 IP 需补脱敏 → 仅扫 config.servers。
       nodeIdentifiers: collectNodeIdentifiers(config),
       hint: wantDeeper
-        ? `当前日志级别为 ${effLevel}，未含 DNS 解析等连接详情，但日志中已出现连接/DNS 类错误。建议到 设置 → 高级 → 诊断 开启「诊断采集」，复现问题后再次导出可获得更完整的根因数据。`
+        ? `当前日志级别为 ${effLevel}，未含 DNS 解析等连接详情，但日志中已出现连接/DNS 类错误。建议到 主页 → 日志 → 诊断 开启「诊断采集」，复现问题后再次导出可获得更完整的根因数据。`
         : undefined,
     };
 

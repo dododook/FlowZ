@@ -23,6 +23,20 @@ export class CoreStartRetryError extends Error {
 }
 
 /**
+ * issue #176：本次起核在就绪等待期内被「更新的 start/stop」接管（lifecycleGeneration 变化）的让位标记错误。
+ * 关键区别于 CoreStartRetryError：**不重试、不清理**——接管方拥有进程/系统代理/适配器状态，本腿必须静默退场，
+ * 绝不调 stopCore()/cleanup()（会清掉接管方的 refs）。start() 包装层 instanceof 命中即 return（不 rethrow）。
+ * 背景：旧实现就绪/重试腿不读世代令牌，被去抖重启/用户停止接管后仍烧满 12s + stopCore + retry，与接管流叠加
+ * 抢放 wintun 适配器 → 「管理 API 未绑定」假超时自我放大（Windows TUN 重启风暴根因）。
+ */
+export class CoreStartSupersededError extends Error {
+  constructor(message = 'sing-box 起核已被更新的启动/停止操作接管，本腿让位') {
+    super(message);
+    this.name = 'CoreStartSupersededError';
+  }
+}
+
+/**
  * TCP 可连探测（管理 API 已绑定即就绪）。零提权。连上 → true；超时/拒绝/错误 → false。
  */
 export function probeTcpReachable(host: string, port: number, timeoutMs = 1000): Promise<boolean> {
@@ -42,8 +56,11 @@ export function probeTcpReachable(host: string, port: number, timeoutMs = 1000):
   });
 }
 
-/** ready=就绪；dead=进程已退出（起核期死）；timeout=进程在但管理 API 未在预期内绑定。 */
-export type CoreReadyOutcome = 'ready' | 'dead' | 'timeout';
+/**
+ * ready=就绪；dead=进程已退出（起核期死）；timeout=进程在但管理 API 未在预期内绑定；
+ * superseded=就绪等待期内被更新的 start/stop 接管（issue #176），应静默让位（不重试、不清理）。
+ */
+export type CoreReadyOutcome = 'ready' | 'dead' | 'timeout' | 'superseded';
 
 /** waitForCoreReady 注入依赖（单测可替换为桩）。 */
 export interface CoreReadyDeps {
@@ -52,11 +69,14 @@ export interface CoreReadyDeps {
   /** 管理 API 是否可连（就绪信号）。 */
   isReady: () => Promise<boolean>;
   sleep: (ms: number) => Promise<void>;
+  /** 本次起核是否已被更新的 start/stop 接管（issue #176，可选；缺省视作未接管）。 */
+  isSuperseded?: () => boolean;
 }
 
 /**
- * 轮询等核就绪。每轮：进程死 → 'dead'（立即，不等满 timeout）；API 可连 → 'ready'；否则 sleep。
- * 满 maxPolls 仍未就绪 → 末轮再判一次 → 'timeout'。早退使成功路径仅等到 API 绑定（通常 <1s），不加额外延迟。
+ * 轮询等核就绪。每轮：被接管 → 'superseded'（立即让位，#176）；进程死 → 'dead'（立即，不等满 timeout）；
+ * API 可连 → 'ready'；否则 sleep。满 maxPolls 仍未就绪 → 末轮再判一次 → 'timeout'。
+ * 早退使成功路径仅等到 API 绑定（通常 <1s），不加额外延迟。
  */
 export async function waitForCoreReady(
   opts: { timeoutMs: number; pollMs: number },
@@ -64,13 +84,16 @@ export async function waitForCoreReady(
 ): Promise<CoreReadyOutcome> {
   const pollMs = Math.max(1, opts.pollMs);
   const maxPolls = Math.max(1, Math.ceil(opts.timeoutMs / pollMs));
+  // supersede 先于一切判定：被更新的 start/stop 接管后，本腿继续等就绪/重试毫无意义且有害（抢适配器/撞端口），立即让位。
   // isReady（异步 TCP）先于 isAlive（execSync 探活，阻塞 event loop）：成功路径（API 早绑）即返回，绝不触发阻塞探活。
   // 顺序安全：API 监听随核进程而生灭，端口可连 ⟹ 核存活（端口不会在核死后仍被本核监听）。
   for (let i = 0; i < maxPolls; i++) {
+    if (deps.isSuperseded?.()) return 'superseded';
     if (await deps.isReady()) return 'ready';
     if (!deps.isAlive()) return 'dead';
     await deps.sleep(pollMs);
   }
+  if (deps.isSuperseded?.()) return 'superseded';
   if (await deps.isReady()) return 'ready';
   if (!deps.isAlive()) return 'dead';
   return 'timeout';

@@ -89,7 +89,12 @@ import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
 import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
 import { probeWinTunAdapterPresent, waitForAdapterReleased } from './win-tun-adapter';
-import { probeTcpReachable, waitForCoreReady, CoreStartRetryError } from './core-readiness';
+import {
+  probeTcpReachable,
+  waitForCoreReady,
+  CoreStartRetryError,
+  CoreStartSupersededError,
+} from './core-readiness';
 import coreManifest from '../../shared/core-manifest.json';
 
 /**
@@ -277,6 +282,19 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // trailing 触发时取 this.currentConfig（恒最新），故各 switchMode 分支须先更新 currentConfig。
   private restartDebounceTimer: NodeJS.Timeout | null = null;
   private static readonly RESTART_DEBOUNCE_MS = 1500;
+  // issue #176 配置变更重启轴单飞：lifecycleDepth>0 = 有 start/stop/restart 在飞。去抖重启 trailing 命中时不并发
+  // 起第二条（杜绝「就绪等待中又来重启」叠加 stop/超时/restart 互踩 → wintun 适配器抢放 → 「管理 API 未绑定」假
+  // 超时风暴），只置 restartPending；在飞操作 settle 回 depth 0 时由 endLifecycleOp 排空一次尾随重启（吃最新
+  // currentConfig）。与崩溃轴（isRestarting/lifecycleGeneration）、换核轴（coreSwapInProgress）正交、互不干扰。
+  private lifecycleDepth = 0;
+  private restartPending = false;
+  // issue #176：最近一次 start() 是否因被接管而「静默让位」（未真正起核）。startInternal 入口复位 false，start() 的
+  // supersede 吞掉分支同步置 true。供 attemptAutoRestart 在 await start() 后判别——让位时跳过「自动重启成功」日志与
+  // EVENT_PROXY_STARTED（否则发出与「已让位」矛盾、pid/startTime 陈旧的多余 started 事件）。
+  // 安全契约：读取必须**紧贴**对应的 `await this.start(...)`（之间无 await）——置 true 发生在 start() 让位 catch 的
+  //   同步段、与 promise resolve 之间无让出窗口，故读者恒读到自己那次 start 的让位态，不被并发 start 的入口复位污染。
+  //   成功 start 路径不写 true（入口置 false、成功不改）→ 成功恒 false。新增读者须遵守此「读紧贴 await」约束。
+  private lastStartSuperseded = false;
   // 上次生成时有外化规则因「文件未落盘」降级走 inline（值已在 inline route 规则里、文件无消费者）。
   // 置 true → 热路径(switchMode no-op 分支)改走重启重落盘，防「写文件但无人消费」导致值陈旧。
   private customRuleFilesDegraded = false;
@@ -352,6 +370,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private static readonly CORE_READY_POLL_MS = 500;
   // 管理 API 可连探测（默认 TCP 直连）；注入式便于单测替换桩。
   private coreReadyProbe: (host: string, port: number) => Promise<boolean> = probeTcpReachable;
+  // issue #176 诊断计数：本次启动经几次「就绪重试」才成功（runStartWithRetry 累计）。>0 = 起核慢（多因 Windows
+  // 重启争用下 wintun 适配器未及时释放），与「核崩溃自动重启」（restartCount/AUTO_RESTARTING）是不同轴，纳入诊断
+  // 区分「核崩」vs「争用慢起」。每次 startInternal 复位。
+  private lastStartReadyRetries = 0;
 
   // 自动重启相关
   private autoRestartEnabled: boolean = true;
@@ -405,15 +427,25 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * fresh start 无 marker → no-op。
    */
   async start(config: UserConfig, options: { interactive?: boolean } = {}): Promise<void> {
+    this.beginLifecycleOp();
     try {
       await this.startInternal(config, options);
     } catch (e) {
+      // issue #176：本腿在就绪等待期被更新的 start/stop 接管 → 静默让位，**绝不 cleanup**（接管方已拥有/正在
+      //   建立进程与系统代理状态，cleanup 会清掉它的 refs）。镜像 attemptAutoRestart「自动重启已让位」语义。
+      if (e instanceof CoreStartSupersededError) {
+        this.lastStartSuperseded = true; // 供 attemptAutoRestart 判别，跳过让位时的多余 started 事件
+        this.logToManager('info', '启动已让位（检测到更新的启动/停止操作接管）');
+        return;
+      }
       // 启动失败终态收口：① 清进程引用——否则 singboxProcess/pid 仍指向已死进程，下次 start 的内部 stop() 会对
       //   死进程挂 once('exit')（exit 早发过、永不再触发）→ 永挂 → UI 恒「启动中」（修「二次点击卡死」根因 A）。
       //   cleanup 在此只在「最终失败」执行，不影响 retry 成功路径的探针端口。② 清可能残留的系统代理（L-2′）。
       this.cleanup();
       await this.ensureSystemProxyCleared();
       throw e;
+    } finally {
+      this.endLifecycleOp('start');
     }
   }
 
@@ -425,6 +457,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 被拒时不污染世代。updateCore/applyStagedNow 自身的 start 在 installCoreFromDir 返回后调用（coreSwapInProgress
     // 已清），不受此闸影响。
     this.rejectIfCoreSwapInProgress('启动代理');
+    // issue #176：本次 start 让位标记从干净态开始（被接管时 start() 包装置 true）。
+    this.lastStartSuperseded = false;
     // 生命周期世代 +1：标记一次新的 start 接管（供退避中的 attemptAutoRestart 比对让位，M-2′）。
     this.lifecycleGeneration++;
     // 新启动接管 → 清掉任何陈旧的 supersede-崩溃补发标记（防上一会话遗留的标记误触发补发，M-2′-G1 防陈旧）。
@@ -676,13 +710,23 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     内的 beside 保留，此处对其幂等）；mac 静态编入 cronet，ensureCronetReadyForLaunch 内部跳过。热路径仅 stat。
     await this.ensureCronetReadyForLaunch();
 
+    // issue #176 L1.2：快照本次起核世代——就绪/重试腿据此判 supersede 让位。捕获点在本方法上方内部 stop()
+    //   （它会 lifecycleGeneration++）之后，故此值即本次 start 的稳定基线；之后任一外部 start/stop 接管即令其变化。
+    const startGen = this.lifecycleGeneration;
+    let readyRetries = 0; // 本次启动累计的就绪重试次数（onRetry 自增），成功后落 lastStartReadyRetries 供诊断。
+    this.lastStartReadyRetries = 0;
+
     // 5. 启动 sing-box 进程（issue #159 的 wintun 适配器释放门控已下沉至 startSingBoxProcess 顶部，覆盖每次重试腿 + helper/UAC 两支路）
     const runStartWithRetry = (): Promise<void> =>
-      retry(() => this.startSingBoxProcess(), {
+      retry(() => this.startSingBoxProcess(startGen), {
         maxRetries: 2,
         delay: 2000,
         exponentialBackoff: true,
         shouldRetry: (error) => {
+          // issue #176：被更新的 start/stop 接管（CoreStartSupersededError）→ 绝不重试（接管方拥有生命周期）。
+          if (error instanceof CoreStartSupersededError) {
+            return false;
+          }
           // 启动 gate 备用腿（补 check 盲区）：run 阶段 `dependency[X] not found` FATAL（detour/selector 幽灵
           // tag）→ 允许重试一次（onRetry 会解析 tag、pruneTagsClosure 修正重写盘），refFixAttempted 闸保证只修一次。
           if (/dependency\[(.+?)\] not found/i.test(error.message)) {
@@ -716,7 +760,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           return true;
         },
         onRetry: (error, attempt) => {
-          this.logToManager('warn', `启动失败，正在进行第 ${attempt} 次重试: ${error.message}`);
+          readyRetries = attempt; // issue #176 诊断：累计就绪重试次数
+          // issue #176：软化文案——多数是「起核较慢/争用」而非真失败，避免「启动失败」吓到用户（#176 即因此报 bug）。
+          this.logToManager(
+            'warn',
+            `sing-box 起核较慢，正在自动重试（第 ${attempt} 次）: ${error.message}`
+          );
           // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置（review P1-4）。
           // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
           if (/address already in use|in use|bind|eaddrinuse/i.test(error.message)) {
@@ -797,6 +846,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       } else {
         throw err;
       }
+    }
+
+    // issue #176 诊断：起核成功（含经数次就绪重试）。落 lastStartReadyRetries，>0 时记一行——便于把「争用下起得慢
+    //   但已自愈」与「核崩溃自动重启」（restartCount/AUTO_RESTARTING 另一轴）在诊断里区分开。
+    this.lastStartReadyRetries = readyRetries;
+    if (readyRetries > 0) {
+      this.logToManager('info', `sing-box 经 ${readyRetries} 次就绪重试后启动成功`);
     }
 
     // 系统代理单一写者收口（拆双轨）：systemProxy 模式 → 置系统代理（marker + 防自指在 SystemProxyManager 内，
@@ -958,9 +1014,19 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 停止代理
+   * 停止代理。issue #176 单飞外壳：begin/end 包住全程（含内部早退），令在飞期到来的去抖重启置待决而非并发；
+   * 真实停止逻辑在 stopInner。stop 是终态 → endLifecycleOp('stop') 在回到 idle 时丢弃待决重启（停止优先）。
    */
   async stop(opts?: { quitting?: boolean }): Promise<void> {
+    this.beginLifecycleOp();
+    try {
+      await this.stopInner(opts);
+    } finally {
+      this.endLifecycleOp('stop');
+    }
+  }
+
+  private async stopInner(opts?: { quitting?: boolean }): Promise<void> {
     // Phase 2：停止/退出语境一并杀掉残留的瞬态登录核（无孤儿进程）。放早退之前——列表直接点登录时
     // 主核未运行，下方 `!singboxProcess && !singboxPid` 会早退，故在此先收瞬态核。
     this.killAllTailscaleLoginCores();
@@ -1115,14 +1181,52 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * 重启代理
    */
   async restart(config: UserConfig, options: { interactive?: boolean } = {}): Promise<void> {
-    await this.stop();
-    // start 腿失败的系统代理清理已下沉进 start() 的 public 包装（L-2′），此处无需再 catch。
-    await this.start(config, options);
+    this.beginLifecycleOp();
+    try {
+      await this.stop();
+      // start 腿失败的系统代理清理已下沉进 start() 的 public 包装（L-2′），此处无需再 catch。
+      await this.start(config, options);
+    } finally {
+      this.endLifecycleOp('restart');
+    }
+  }
+
+  /**
+   * issue #176 单飞：进入一次 lifecycle 操作（start/stop/restart）。与 endLifecycleOp 成对（try/finally）。
+   * lifecycleDepth 是重入计数：restart 内嵌 stop/start 时 depth 会到 2，确保 restart 全程 depth≥1（无 0 缝隙让
+   * 去抖 timer 钻进来并发起第二条）。
+   */
+  private beginLifecycleOp(): void {
+    this.lifecycleDepth++;
+  }
+
+  /**
+   * issue #176 单飞：退出一次 lifecycle 操作。仅在回到 idle（depth 0）时处理待决重启：
+   * - kind='stop'（终态停止：用户断开 / 切模式停止腿外）→ 丢弃 restartPending（停止优先，避免停了又被排空拉起；
+   *   与 stop() 内既有「取消未决去抖 timer」对称）。
+   * - kind='start'/'restart' 收尾 → 有 restartPending 则排空一次尾随重启（吃最新 currentConfig）。
+   * depth>0（仍在更外层操作内，如 restart 内嵌的 stop/start）→ 不处理，留给最外层那次。
+   */
+  private endLifecycleOp(kind: 'start' | 'stop' | 'restart'): void {
+    this.lifecycleDepth = Math.max(0, this.lifecycleDepth - 1);
+    if (this.lifecycleDepth > 0) return;
+    if (kind === 'stop') {
+      this.restartPending = false;
+      return;
+    }
+    if (this.restartPending) {
+      this.restartPending = false;
+      this.scheduleDebouncedRestart();
+    }
   }
 
   /**
    * 去抖重启：连改多条配置合并为一次重启。trailing 触发时取最新 this.currentConfig（调用方须已更新它），
    * 故窗口内的后续切节点(hotSwitch)/no-op/再次结构变更都会被最终那次重启自然纳入。stop()/quit 取消未决重启。
+   *
+   * issue #176 单飞：trailing 触发时若有 lifecycle 操作在飞（lifecycleDepth>0，如上一条重启的 start 还在就绪等待），
+   * **不并发起第二条**（那正是「就绪等待中又来重启」叠加 stop/超时/restart 互踩的风暴根因），只置 restartPending；
+   * 待在飞操作 settle 回 depth 0 时由 endLifecycleOp 排空一次。
    */
   private scheduleDebouncedRestart(): void {
     if (this.restartDebounceTimer) clearTimeout(this.restartDebounceTimer);
@@ -1132,6 +1236,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (!this.singboxProcess && !this.singboxPid) return;
       const cfg = this.currentConfig;
       if (!cfg) return;
+      // issue #176 单飞：有 start/stop/restart 在飞 → 不并发，置待决，由 endLifecycleOp 在 depth 归 0 时排空。
+      if (this.lifecycleDepth > 0) {
+        this.restartPending = true;
+        return;
+      }
       // helper gate abort / 其它错误内部消化（终态=停止），防 timer 回调 unhandled rejection
       void this.restart(cfg).catch((e) => {
         this.logToManager('warn', `去抖重启结束: ${e instanceof Error ? e.message : String(e)}`);
@@ -3341,7 +3450,7 @@ exit 0
    * macOS 提权 helper 路径：经 socket 让 root daemon 启动 sing-box（免授权）。
    * 成功 resolve；失败 throw（交给 start() 的 retry 决策）。停止/退出/崩溃回收均免授权。
    */
-  private async startViaHelper(): Promise<void> {
+  private async startViaHelper(startGen: number): Promise<void> {
     const helper = this.helperManager!;
     const fs = require('fs');
     if (!fs.existsSync(this.singboxPath)) {
@@ -3379,7 +3488,7 @@ exit 0
     // issue #159：等核真就绪（管理 API 绑定）再判成功，而非「spawn 即 started」。起核期内核死/超时 → 抛可重试
     // 错误交 runStartWithRetry 快速重起（届时 wintun 适配器/端口已释放），替代「假成功 + 10s 健康检查兜底」。
     // watcher/健康检查移到就绪后启动：只监控已确认运行的核，起核期死由本就绪门控直接捕获。
-    await this.waitForCoreReadyOrThrow(res.pid);
+    await this.waitForCoreReadyOrThrow(res.pid, startGen);
 
     this.startLogFileWatcher();
     this.startHealthCheck();
@@ -3395,8 +3504,10 @@ exit 0
    * issue #159：等核真就绪（管理 API 端口可连）再放行。起核期进程死 / 超时未绑 API → 停掉半死核（其 wintun
    * 适配器随即开始释放，给 retry 让路）+ 抛可重试错误（文案不含 nonRetryable 关键词 → runStartWithRetry 会重试）。
    * 无管理 API 端口（异常）→ fail-open 放行（退回旧 spawn 即成行为，绝不卡死启动）。仅 startViaHelper 调用。
+   * issue #176：就绪等待期被更新的 start/stop 接管（startGen≠lifecycleGeneration）→ 抛 CoreStartSupersededError
+   *   静默让位，**不调 stopCore()**（接管方已/正在拆核，本腿再 stopCore 会与之抢放 wintun 适配器、加剧风暴）。
    */
-  private async waitForCoreReadyOrThrow(pid: number): Promise<void> {
+  private async waitForCoreReadyOrThrow(pid: number, startGen: number): Promise<void> {
     const port = this.tailscaleApiPort;
     if (!port) return; // 无管理 API 端口 → 不阻断
     const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -3406,19 +3517,25 @@ exit 0
         isAlive: () => this.isProcessAlive(pid),
         isReady: () => this.coreReadyProbe('127.0.0.1', port),
         sleep,
+        isSuperseded: () => this.lifecycleGeneration !== startGen,
       }
     ).catch(() => 'timeout' as const);
     if (outcome === 'ready') return;
+    // issue #176：被接管 → 静默让位，绝不 stopCore（接管方拥有拆核权，避免抢放适配器）。由 start() 包装吞掉。
+    if (outcome === 'superseded') {
+      throw new CoreStartSupersededError();
+    }
     // 失败：尽力停掉这个起不来的核（best-effort，其 wintun 适配器随即开始释放，给 retry 让路），再抛 CoreStartRetryError
     // ——startSingBoxProcess 的 helper catch 会透传它给 runStartWithRetry 静默重起（而非误判 helper 启动失败弹 UAC/osascript）。
     await this.helperManager?.stopCore().catch(() => {});
     if (outcome === 'dead') {
-      throw new CoreStartRetryError('sing-box 启动期退出（TUN 初始化未完成），将自动重试');
+      throw new CoreStartRetryError('sing-box 启动期退出（TUN 初始化未完成），正在自动重试');
     }
-    throw new CoreStartRetryError('sing-box 启动后未在预期内就绪（管理 API 未绑定），将自动重试');
+    // issue #176：软化文案——「未绑定」多因 Windows 重启争用下 wintun 适配器未及时释放致起核慢，非真失败。
+    throw new CoreStartRetryError('sing-box 起核较慢（管理接口尚未就绪），正在自动重试');
   }
 
-  private async startSingBoxProcess(): Promise<void> {
+  private async startSingBoxProcess(startGen: number): Promise<void> {
     // 复位 helper 启动标志：本次启动尚未确定走 helper 还是直起，由实际启动路径置位（startViaHelper 成功置 true，
     //   直起 UAC/osascript 路径保持 false）。修复 issue #159 就绪门控失败、重试腿回退直起时 startedViaHelper 残留 true
     //   → 后续 stop() 误走 helper 停核分支（停不动→回退提权 taskkill/osascript，降级但自愈）。每次启动腿都从干净态判定。
@@ -3446,10 +3563,10 @@ exit 0
         );
       } else if (await this.helperManager.isReady()) {
         try {
-          return await this.startViaHelper();
+          return await this.startViaHelper(startGen);
         } catch (e) {
           // 起核期未就绪/退出（CoreStartRetryError）≠ helper 启动失败：透传给 runStartWithRetry 静默重起，不回退 osascript。
-          if (e instanceof CoreStartRetryError) throw e;
+          if (e instanceof CoreStartRetryError || e instanceof CoreStartSupersededError) throw e;
           this.logToManager(
             'warn',
             `helper 启动失败，回退 osascript 看护脚本: ${e instanceof Error ? e.message : String(e)}`
@@ -3465,10 +3582,12 @@ exit 0
     // 后台」概念（backgroundDisabled 恒 false），无需该前置判定；未装 helper → isReady=false → 落下方 UAC 路径。
     if (this.needsWindowsUAC() && this.helperManager && (await this.helperManager.isReady())) {
       try {
-        return await this.startViaHelper();
+        return await this.startViaHelper(startGen);
       } catch (e) {
         // 起核期未就绪/退出（CoreStartRetryError）≠ helper 启动失败：透传给 runStartWithRetry 静默重起，不回退 UAC。
-        if (e instanceof CoreStartRetryError) throw e;
+        // issue #176：就绪等待期被接管（CoreStartSupersededError）同样透传让位——绝不回退 UAC 起第二条流抢适配器
+        //   （这是 #176 风暴的 Windows 主路径；与上方 macOS 分支 :3559 对齐）。
+        if (e instanceof CoreStartRetryError || e instanceof CoreStartSupersededError) throw e;
         this.logToManager(
           'warn',
           `helper 服务启动失败，回退 UAC 路径: ${e instanceof Error ? e.message : String(e)}`
@@ -4713,6 +4832,13 @@ exit 0
 
       // 重新启动（崩溃自动重启：interactive:false，禁 helper 引导模态，防崩溃循环弹窗风暴）
       await this.start(this.currentConfig, { interactive: false });
+
+      // issue #176：本腿 start 在就绪等待期被用户手动 start/stop 接管 → start() 已静默让位返回（未真起核），
+      //   不能误报「自动重启成功」+ 发陈旧 started 事件（接管方会自己发终态）。让位时直接退场，finally 复位 isRestarting。
+      if (this.lastStartSuperseded) {
+        this.logToManager('info', '自动重启已让位（start 期被更新的启动/停止操作接管）');
+        return;
+      }
 
       this.logToManager('info', 'sing-box 自动重启成功');
 
@@ -6080,6 +6206,14 @@ exit 0
   /** T2 诊断：本会话 libcronet 自愈触发/失败计数（纳入诊断报告供「库被反复删（疑杀软）」定位）。 */
   getCronetHealStats(): { triggered: number; failed: number } {
     return { triggered: this.cronetHealTriggeredCount, failed: this.cronetHealFailedCount };
+  }
+
+  /**
+   * issue #176 诊断：本次（最近一次）启动经几次就绪重试才成功。>0 = 起核慢（多因 Windows 重启争用下 wintun
+   * 适配器未及时释放），与「核崩溃自动重启」（restartCount）是不同轴——纳入诊断报告区分「核崩」vs「争用慢起」。
+   */
+  getLastStartReadyRetries(): number {
+    return this.lastStartReadyRetries;
   }
 
   /**

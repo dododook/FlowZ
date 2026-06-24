@@ -274,6 +274,7 @@ export interface DiagnosticReportInput {
     cronetLibStatus?: string; // libcronet 可用性：available / copy-failed（损坏/拷贝失败）/ no-lib（无内置库）
     cronetHealTriggered?: number; // 本会话 libcronet 自愈触发次数
     cronetHealFailed?: number; // 本会话 libcronet 自愈失败次数（连续失败疑库被反复删/杀软）
+    lastStartReadyRetries?: number; // issue #176：最近一次启动经几次就绪重试（>0=起核慢，多因 Win 重启争用，非核崩）
   };
   redactedUserConfig: unknown;
   redactedSingboxConfig: unknown;
@@ -347,6 +348,11 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   if (runtime.cronetHealTriggered || runtime.cronetHealFailed) {
     lines.push(
       `- libcronet 自愈：触发 ${runtime.cronetHealTriggered ?? 0} 次 / 失败 ${runtime.cronetHealFailed ?? 0} 次`
+    );
+  }
+  if (runtime.lastStartReadyRetries) {
+    lines.push(
+      `- 最近一次起核经 ${runtime.lastStartReadyRetries} 次就绪重试才成功（起核慢，多因 Windows 重启争用下 wintun 适配器未及时释放；非核崩溃）`
     );
   }
   lines.push('');
