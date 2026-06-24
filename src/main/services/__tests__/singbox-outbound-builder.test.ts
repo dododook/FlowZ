@@ -19,6 +19,7 @@ import {
   buildProxyOutbound,
   isNodeUsable,
   prunedSelectorDefault,
+  shouldEmitTlsEngine,
 } from '../singbox-outbound-builder';
 import { resourceManager } from '../ResourceManager';
 import type { ServerConfig } from '../../../shared/types';
@@ -478,17 +479,27 @@ describe('buildProxyOutbound — 可选协议设置下发（B 组编辑项）', 
   });
 
   // P3c：TLS engine。仅对 TCP-TLS 协议下发；'go'/空省略；Hy2/TUIC（QUIC）即便设了也不下发。
-  it('tls engine：trojan engine=windows → tls.engine=windows', () => {
-    const ob = buildProxyOutbound(
-      node({
-        protocol: 'trojan',
-        password: 'pw',
-        security: 'tls',
-        tlsSettings: { serverName: 'a.com', engine: 'windows' },
-      }),
-      tags
-    ) as any;
-    expect(ob.tls.engine).toBe('windows');
+  it('tls engine：trojan engine=windows 在 win32 → tls.engine=windows；非 win32 → 降级省略', () => {
+    const orig = process.platform;
+    const make = () =>
+      buildProxyOutbound(
+        node({
+          protocol: 'trojan',
+          password: 'pw',
+          security: 'tls',
+          tlsSettings: { serverName: 'a.com', engine: 'windows' },
+        }),
+        tags
+      ) as any;
+    try {
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+      expect(make().tls.engine).toBe('windows');
+      // 跨平台导入降级：windows 引擎带到 linux/darwin → 落核心默认 Go 栈（不下发），免核 FATAL
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      expect(make().tls.engine).toBeUndefined();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: orig, configurable: true });
+    }
   });
 
   it('tls engine：engine=go 或未设 → 省略（用核心默认 Go TLS）', () => {
@@ -825,5 +836,37 @@ describe('buildProxyOutbound — TLS spoof（P3a 抗审查）', () => {
     } finally {
       Object.defineProperty(process, 'arch', { value: orig, configurable: true });
     }
+  });
+});
+
+describe('shouldEmitTlsEngine — TLS 引擎平台门控（跨平台导入降级）', () => {
+  const platforms: NodeJS.Platform[] = ['win32', 'darwin', 'linux'];
+
+  it('windows(Schannel) 仅 win32 下发', () => {
+    expect(shouldEmitTlsEngine('windows', 'win32')).toBe(true);
+    expect(shouldEmitTlsEngine('windows', 'darwin')).toBe(false);
+    expect(shouldEmitTlsEngine('windows', 'linux')).toBe(false);
+  });
+
+  it('apple(Network.framework) 仅 darwin 下发', () => {
+    expect(shouldEmitTlsEngine('apple', 'darwin')).toBe(true);
+    expect(shouldEmitTlsEngine('apple', 'win32')).toBe(false);
+    expect(shouldEmitTlsEngine('apple', 'linux')).toBe(false);
+  });
+
+  it('go / 空 / undefined / 未知引擎一律不下发（落核心默认 Go 栈）', () => {
+    for (const p of platforms) {
+      expect(shouldEmitTlsEngine('go', p)).toBe(false);
+      expect(shouldEmitTlsEngine('', p)).toBe(false);
+      expect(shouldEmitTlsEngine(undefined, p)).toBe(false);
+      expect(shouldEmitTlsEngine('bogus', p)).toBe(false);
+    }
+  });
+
+  it('跨平台导入降级回归点：apple 导入非 darwin、windows 导入非 win32 均不下发（免核 FATAL）', () => {
+    expect(shouldEmitTlsEngine('apple', 'win32')).toBe(false);
+    expect(shouldEmitTlsEngine('apple', 'linux')).toBe(false);
+    expect(shouldEmitTlsEngine('windows', 'darwin')).toBe(false);
+    expect(shouldEmitTlsEngine('windows', 'linux')).toBe(false);
   });
 });

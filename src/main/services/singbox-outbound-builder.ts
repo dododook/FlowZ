@@ -35,6 +35,22 @@ function isQuicManagedTls(protocol: string): boolean {
   return p === 'hysteria2' || p === 'tuic';
 }
 
+/**
+ * TLS 系统原生栈引擎（tls.engine）是否应在当前平台下发：windows(Schannel) 仅 win32、apple(Network.framework)
+ * 仅 darwin。go / 空 / 未知一律返回 false（go 是核心默认跨平台 Go 栈，无需显式下发）。
+ * 平台兜底（第二道闸）：跨平台导入的配置——如 Mac 节点 engine='apple' 导入 Windows——经此降级，
+ * 非对应平台返回 false → 调用方落 Go 栈，防原样下发 apple/windows 在非对应平台致核 FATAL。
+ * 抽纯函数（传 platform 参数）以便单测，免在测试里 mock process.platform。
+ */
+export function shouldEmitTlsEngine(
+  engine: string | undefined,
+  platform: NodeJS.Platform
+): boolean {
+  if (engine === 'windows') return platform === 'win32';
+  if (engine === 'apple') return platform === 'darwin';
+  return false;
+}
+
 /** 组网节点「不承载全隧道」的原因短语，供诊断 warn 复用（Phase2 system 内核接口 vs 关外网）。 */
 function meshNonFullTunnelReason(server: ServerConfig): string {
   return meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
@@ -382,9 +398,9 @@ export function buildProxyOutbound(
     // TLS 栈引擎（P3c，sing-box 1.14 tls.engine）：windows(Schannel)/apple(Network.framework) 用系统原生栈，
     // ClientHello 指纹更真。仅对 TCP-TLS 协议下发——Hy2/TUIC 走 QUIC 自带 TLS1.3，系统 TCP-TLS 栈不适用，
     // 表单也不对它们暴露此项。'go'/空 = 跨平台 Go TLS（核心默认），无需显式下发。windows/apple 在非对应平台
-    // 运行时 FATAL，由表单按平台过滤可选值兜底。
+    // 运行时 FATAL → shouldEmitTlsEngine 按当前平台门控（表单过滤之外的第二道闸，兜跨平台导入的配置）。
     const tlsEngine = server.tlsSettings?.engine;
-    if (tlsEngine && tlsEngine !== 'go' && !isQuicManagedTls(protocol)) {
+    if (!isQuicManagedTls(protocol) && shouldEmitTlsEngine(tlsEngine, process.platform)) {
       outbound.tls.engine = tlsEngine;
     }
 
