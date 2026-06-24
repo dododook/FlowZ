@@ -31,3 +31,19 @@ export function deriveTsCardState(
   if (loggedIn === true) return 'connected';
   return 'needs-login';
 }
+
+/**
+ * connected 态副标题组成（设备名 · 内网 IP）。纯函数便于单测——卡片层只渲染返回串。
+ * - 设备名恒显（节点配置名）；
+ * - 内网 IP 仅「代理开 + 有 IP」时拼接（代理关时是缓存/state 乐观态，无实时 IP 流，不显陈旧 IP 误导）；
+ * - 多 IP（IPv4 + IPv6）用 ' · ' 连接，与设备名同分隔符，视觉一致。
+ */
+export function tsConnectedSubtitle(
+  deviceName: string,
+  ips: string[] | undefined,
+  proxyRunning: boolean
+): string {
+  const parts = [deviceName];
+  if (proxyRunning && ips && ips.length > 0) parts.push(ips.join(' · '));
+  return parts.filter(Boolean).join(' · ');
+}

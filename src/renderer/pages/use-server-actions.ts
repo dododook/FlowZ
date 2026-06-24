@@ -64,7 +64,10 @@ export function useServerActions() {
     }
   };
 
-  const saveServer = async (serverData: NewServerData, editingServer: ServerConfig | undefined) => {
+  const saveServer = async (
+    serverData: NewServerData,
+    editingServer: ServerConfig | undefined
+  ): Promise<ServerConfig | undefined> => {
     try {
       if (!config) throw new Error(t('errors.configNotLoaded'));
       // Tailscale 单节点硬限：新增（非编辑）一个 TS 节点但已存在另一个 → 拦下不写。
@@ -74,22 +77,20 @@ export function useServerActions() {
         tailscaleSlotTaken(servers, editingServer?.id)
       ) {
         toast.error(t('servers.tailscaleSingleOnly'));
-        return;
+        return undefined;
       }
       const now = new Date().toISOString();
-      const updatedServers = buildSavedServers(
-        servers,
-        serverData,
-        editingServer,
-        crypto.randomUUID(),
-        now
-      );
+      const newId = crypto.randomUUID();
+      const updatedServers = buildSavedServers(servers, serverData, editingServer, newId, now);
       await saveConfig({ ...config, servers: updatedServers });
 
       const action = editingServer ? t('servers.actionUpdate') : t('servers.actionAdd');
       toast.success(t('servers.saveSuccess', { action }), {
         description: t('servers.saveSuccessDesc', { name: serverData.name }),
       });
+      // 返回保存后的目标节点（新建=带 newId 的新节点 / 编辑=更新后的现有节点），供调用方拿 id 后续操作
+      // （如单例卡「连接 Tailscale」无节点时先建节点、再立即用其 id 发起交互登录）。其它调用方忽略返回值即可。
+      return updatedServers.find((s) => s.id === (editingServer?.id ?? newId));
     } catch (error) {
       toast.error(t('servers.saveFail'), {
         description: error instanceof Error ? error.message : t('servers.saveFailDesc'),

@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { ServerList } from '@/components/settings/server-list';
+import { TailscaleConnectionCard } from '@/components/settings/tailscale-connection-card';
+import { MeshAccessEntry } from '@/components/settings/mesh-access-entry';
 import { ServerConfigDialog } from '@/components/settings/server-config-dialog';
 import { SubscriptionDialog } from '@/components/settings/subscription-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -79,7 +81,12 @@ export function ServerPage() {
   // 按组 id 统一取数（manual/mesh/订阅 id）；空组在 grouped 中被省略，回落 []（仍渲染该订阅 tab 供更新）。
   const serversOfGroup = (id: string) => grouped.find((g) => g.id === id)?.servers ?? [];
   const manualProxyServers = serversOfGroup('manual');
-  const meshServers = serversOfGroup('mesh');
+  // 组网组全量（含 Tailscale）：供 tab 是否显示、state 兜底 effect 取 TS id、单例卡取 tsNode。
+  const meshServersAll = serversOfGroup('mesh');
+  // 组网列表只渲染节点制协议（WireGuard/WARP）——Tailscale 抽离为顶部单例卡（批3），不再进列表（设计文档④）。
+  const meshServers = meshServersAll.filter((s) => s.protocol?.toLowerCase() !== 'tailscale');
+  // 单例卡承载的唯一 Tailscale 节点（单例硬限保证至多一个）；无则卡片渲染「连接」入口态。
+  const tailscaleNode = meshServersAll.find((s) => isAccountBasedProtocol(s.protocol));
 
   // 默认激活 Tab = 当前选中节点所在组（自建 / 组网 / 某订阅）；用户手动切 Tab 后由 override 接管。
   // 用「派生 + override」而非 useState 惰性初值：config 异步到位前挂载不会把激活组锁死在 'manual'。
@@ -94,14 +101,15 @@ export function ServerPage() {
   const activeTab =
     tabOverride &&
     (tabOverride === 'manual' ||
-      // 组网 Tab 仅在有组网节点时有效——删光最后一个组网节点后从 mesh 回落，避免停在无 Trigger 的空 Tab。
-      (tabOverride === 'mesh' && meshServers.length > 0) ||
+      // 组网 Tab 常显（承载接入入口）→ override 到 mesh 恒有效，不再要求有组网节点。
+      tabOverride === 'mesh' ||
       subscriptionIds.has(tabOverride))
       ? tabOverride
       : selectedGroupKey;
 
-  // 组网 Tab 的 Tailscale 节点 id 指纹（稳定 string；避免 meshServers 数组引用每渲染变导致 effect 反复跑）。
-  const tsNodeIdsKey = meshServers
+  // 组网 Tab 的 Tailscale 节点 id 指纹（稳定 string；避免数组引用每渲染变导致 effect 反复跑）。
+  // 取自 meshServersAll（含 TS）——批3 把 TS 抽离列表后仍需对 TS 节点跑 state 兜底，故不能用已剔除 TS 的 meshServers。
+  const tsNodeIdsKey = meshServersAll
     .filter((s) => isAccountBasedProtocol(s.protocol))
     .map((s) => s.id)
     .sort()
@@ -134,6 +142,8 @@ export function ServerPage() {
   }, [proxyRunning, tsNodeIdsKey, setTailscaleLoginState]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // 「接入组网」入口的 Tailscale 按钮（无 TS 节点时）滚动定位到上方单例连接卡。
+  const tailscaleCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -177,9 +187,12 @@ export function ServerPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSaveServer = (
+  const handleSaveServer = async (
     serverData: Omit<ServerConfigWithId, 'id' | 'createdAt' | 'updatedAt'>
-  ) => saveServer(serverData, editingServer);
+  ): Promise<void> => {
+    // saveServer 现返回保存后的节点（供单例卡连接流程拿 id）；dialog 的 onSave 期望 void，显式丢弃返回值。
+    await saveServer(serverData, editingServer);
+  };
 
   // ================= 订阅操作 =================
 
@@ -272,16 +285,17 @@ export function ServerPage() {
                   )}
                 </TabsTrigger>
 
-                {/* 组网/Endpoint Tab（WireGuard/WARP/Tailscale）——有节点才显示，避免对不用组网的用户造成噪音 */}
-                {meshServers.length > 0 && (
-                  <TabsTrigger value="mesh" className="flex items-center gap-1.5 whitespace-nowrap">
-                    <Network className="h-3.5 w-3.5" />
-                    {t('servers.meshNodes')}
+                {/* 组网 Tab 常显：批3 起它承载 TS/WG/WARP「接入组网」入口，新用户（无组网节点）也须可达——
+                    否则 protocol-options 已移除 tailscale，首个 Tailscale 将无处接入。无节点时不显数量 Badge。 */}
+                <TabsTrigger value="mesh" className="flex items-center gap-1.5 whitespace-nowrap">
+                  <Network className="h-3.5 w-3.5" />
+                  {t('servers.meshNodes')}
+                  {meshServersAll.length > 0 && (
                     <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
-                      {meshServers.length}
+                      {meshServersAll.length}
                     </Badge>
-                  </TabsTrigger>
-                )}
+                  )}
+                </TabsTrigger>
 
                 {/* 每个订阅一个 Tab */}
                 {subscriptions.map((sub) => {
@@ -323,19 +337,30 @@ export function ServerPage() {
           />
         </TabsContent>
 
-        {/* 组网节点内容（WireGuard/WARP/Tailscale） */}
+        {/* 组网节点内容：顶部 Tailscale 单例连接卡 + 接入组网入口区（批3），下面 WireGuard/WARP 列表 */}
         <TabsContent value="mesh">
-          <ServerList
-            servers={meshServers}
-            selectedServerId={selectedServerId ?? undefined}
-            onAddServer={handleAddServer}
-            onEditServer={handleEditServer}
-            onDeleteServer={handleDeleteServer}
-            onDeleteServers={handleDeleteServers}
-            onCloneServer={handleCloneServer}
-            onSelectServer={handleSelectServer}
-            onImportClick={() => setIsImportDialogOpen(true)}
-          />
+          <div className="space-y-4">
+            <div ref={tailscaleCardRef}>
+              <TailscaleConnectionCard tsNode={tailscaleNode} proxyRunning={proxyRunning} />
+            </div>
+            <MeshAccessEntry
+              hasTailscale={!!tailscaleNode}
+              onTailscaleClick={() =>
+                tailscaleCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }
+            />
+            <ServerList
+              servers={meshServers}
+              selectedServerId={selectedServerId ?? undefined}
+              onAddServer={handleAddServer}
+              onEditServer={handleEditServer}
+              onDeleteServer={handleDeleteServer}
+              onDeleteServers={handleDeleteServers}
+              onCloneServer={handleCloneServer}
+              onSelectServer={handleSelectServer}
+              onImportClick={() => setIsImportDialogOpen(true)}
+            />
+          </div>
         </TabsContent>
 
         {/* 各订阅节点内容 */}

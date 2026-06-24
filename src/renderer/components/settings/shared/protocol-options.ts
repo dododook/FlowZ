@@ -17,7 +17,8 @@ export const PROTOCOL_OPTIONS: { value: ProtocolType; label: string }[] = [
   { value: 'shadowsocks', label: 'Shadowsocks' },
   { value: 'socks', label: 'SOCKS5' },
   { value: 'ssh', label: 'SSH' },
-  { value: 'tailscale', label: 'Tailscale' },
+  // Tailscale 不再从「添加节点」协议下拉加入——已抽离为组网 tab 顶部的单例「连接」卡（批3，设计文档④）。
+  // 仅移除「添加」入口；数据层（ServerConfig protocol='tailscale'）与路由/出口引用照常，TailscaleForm 经单例卡设置复用。
   { value: 'trojan', label: 'Trojan' },
   { value: 'tuic', label: 'TUIC' },
   { value: 'vless', label: 'VLESS' },

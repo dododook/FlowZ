@@ -57,9 +57,11 @@ type TailscaleFormValues = z.infer<ReturnType<typeof createTailscaleSchema>>;
 interface TailscaleFormProps {
   serverConfig?: ServerConfig;
   onSubmit: (config: any) => Promise<void>;
+  // 单例连接卡复用本表单作「设置」时传 true：隐藏内嵌登录区（连接/断开/重登已由卡片统一承载，避免双入口语义打架）。
+  hideLoginSection?: boolean;
 }
 
-export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
+export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: TailscaleFormProps) {
   const { t } = useTranslation();
 
   const form = useForm<TailscaleFormValues>({
@@ -161,7 +163,9 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
   const serverId = serverConfig?.id;
   const loggedIn = useAppStore((s) => (serverId ? !!s.tailscaleLoginStates[serverId] : false));
   // 登录中：已产生 authUrl（点了登录、瞬态核在等浏览器授权 + STATUS 同步到 Running）且未登录成功。
-  const hasAuthUrl = useAppStore((s) => (serverId ? s.tailscaleAuthUrls[serverId] !== undefined : false));
+  const hasAuthUrl = useAppStore((s) =>
+    serverId ? s.tailscaleAuthUrls[serverId] !== undefined : false
+  );
   const loggingIn = hasAuthUrl && !loggedIn;
   const setTailscaleLoginState = useAppStore((s) => s.setTailscaleLoginState);
   const loginUi = tailscaleLoginUiState(!!serverId, loggedIn, !!authKeyValue?.trim());
@@ -226,61 +230,62 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
             {/* 登录区三态（读真实 loggedIn 替代纯静态 !authKey 门控）：
                 已登录 → 「✓ 已登录」+ 退出登录 + 重新登录；需登录（编辑态未登录未填 key）→ 立即登录；
                 新建态（无 id）→ 引导先保存，不显示。 */}
-            {loginUi === 'loggedIn' ? (
-              <FieldSpan>
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-1.5 text-sm text-success">
-                    <Check className="h-4 w-4" />
-                    {t('servers.tsLoggedIn', 'Logged in')}
+            {!hideLoginSection &&
+              (loginUi === 'loggedIn' ? (
+                <FieldSpan>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-1.5 text-sm text-success">
+                      <Check className="h-4 w-4" />
+                      {t('servers.tsLoggedIn', 'Logged in')}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleTsLogout()}
+                      >
+                        {t('servers.tsLogout', 'Log out')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleTsReauth()}
+                      >
+                        {t('servers.tsReauth', 'Re-login · switch account')}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                </FieldSpan>
+              ) : loginUi === 'needsLogin' && serverConfig ? (
+                <FieldSpan>
+                  <div className="flex flex-col gap-1.5">
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
-                      onClick={() => void handleTsLogout()}
+                      className="w-full sm:w-auto"
+                      disabled={loggingIn}
+                      onClick={() => void runTailscaleLogin(serverConfig)}
                     >
-                      {t('servers.tsLogout', 'Log out')}
+                      {loggingIn
+                        ? t('servers.tsLoggingIn', '登录中…')
+                        : t('servers.tsLoginNow', 'Log in now')}
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleTsReauth()}
-                    >
-                      {t('servers.tsReauth', 'Re-login · switch account')}
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {loggingIn
+                        ? t(
+                            'servers.tsLoggingInDesc',
+                            '已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。'
+                          )
+                        : t(
+                            'servers.tsLoginNowDesc',
+                            'Open the browser now to complete Tailscale login (no auth key needed).'
+                          )}
+                    </p>
                   </div>
-                </div>
-              </FieldSpan>
-            ) : loginUi === 'needsLogin' && serverConfig ? (
-              <FieldSpan>
-                <div className="flex flex-col gap-1.5">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                    disabled={loggingIn}
-                    onClick={() => void runTailscaleLogin(serverConfig)}
-                  >
-                    {loggingIn
-                      ? t('servers.tsLoggingIn', '登录中…')
-                      : t('servers.tsLoginNow', 'Log in now')}
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    {loggingIn
-                      ? t(
-                          'servers.tsLoggingInDesc',
-                          '已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。'
-                        )
-                      : t(
-                          'servers.tsLoginNowDesc',
-                          'Open the browser now to complete Tailscale login (no auth key needed).'
-                        )}
-                  </p>
-                </div>
-              </FieldSpan>
-            ) : null}
+                </FieldSpan>
+              ) : null)}
             <FieldSpan>
               <FormField
                 control={form.control}
