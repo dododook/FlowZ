@@ -86,6 +86,10 @@ const settingsNavItems = [
 const isMac = window.electron?.platform === 'darwin';
 const isWindows = window.electron?.platform === 'win32';
 
+// 折叠 icon-rail 分隔线（toggle↓导航 + routing/diagnostics 分组前共用）：bg-muted-foreground/40
+// 跨浅(#e9eef3)/深(#1f252e)主题对比适中、不刺眼；旧 bg-border/50 因 border 色贴近两主题背景、再砍半透明 → 几乎隐形。
+const RAIL_DIVIDER_CLASS = 'mx-auto my-1.5 h-px w-5 bg-muted-foreground/40';
+
 export function Sidebar({
   currentView,
   onViewChange,
@@ -169,7 +173,7 @@ export function Sidebar({
           收起后 toggle 被放大成与导航项同尺寸方块，易被误读为首个导航项 → 分隔澄清「控制≠导航」、
           并使顶部分组节奏与中段(routing/diagnostics 组前分隔)一致。
           展开态 toggle 为 28px 小按钮、形态已区分，不渲染。 */}
-      {collapsed && <div className="mx-auto my-1.5 h-px w-5 bg-border/50" />}
+      {collapsed && <div className={RAIL_DIVIDER_CLASS} />}
 
       {isSettings ? (
         /* ── Settings sub-navigation ── */
@@ -214,7 +218,7 @@ export function Sidebar({
                 {group.label &&
                   (collapsed ? (
                     /* 收起态：分区标题转居中短分隔线，保留分组视觉、不显凌乱 */
-                    <div className="mx-auto my-1.5 h-px w-5 bg-border/50" />
+                    <div className={RAIL_DIVIDER_CLASS} />
                   ) : (
                     <div className="px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground select-none">
                       {t(`sidebar.group.${group.label}`)}
