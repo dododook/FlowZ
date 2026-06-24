@@ -19,7 +19,7 @@ import type { ServerConfigWithId } from './server-list-helpers';
 const EMPTY: string[] = [];
 
 /** 组网节点的内网 IP（Tailscale 取传入的 STATUS 流 tailnet IP；WireGuard 取 localAddress）。 */
-function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string[]): string[] {
+export function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string[]): string[] {
   // Tailscale = 账号制协议（唯一），其内网 IP 来自 api STATUS 流（store.tailscaleIps[id]）。
   if (isAccountBasedProtocol(server.protocol)) {
     return tailscaleIps;
@@ -29,7 +29,7 @@ function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string[]): st
 }
 
 /** 组网节点的路由段（Tailscale = accept/advertise routes；WireGuard = peer.allowed_ips）。 */
-function meshRoutes(server: ServerConfigWithId): string[] {
+export function meshRoutes(server: ServerConfigWithId): string[] {
   if (isAccountBasedProtocol(server.protocol)) {
     const ts = server.tailscaleSettings;
     // accept routes（routes）+ advertise routes（本机对外广告）并集去重；纯展示，与 force-route 计算解耦。

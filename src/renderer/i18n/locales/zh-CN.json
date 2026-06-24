@@ -1137,7 +1137,8 @@
     "meshInfoNotAssigned": "尚未分配",
     "meshInfoNoRoutes": "无",
     "tsConnCardSetExit": "设为出口",
-    "tsConnCardCurrentExit": "当前出口"
+    "tsConnCardCurrentExit": "当前出口",
+    "tsConnCardExitNode": "出口节点"
   },
   "rules": {
     "ruleColumn": "规则",

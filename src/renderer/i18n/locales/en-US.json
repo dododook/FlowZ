@@ -1137,7 +1137,8 @@
     "meshInfoNotAssigned": "Not assigned yet",
     "meshInfoNoRoutes": "None",
     "tsConnCardSetExit": "Set as exit",
-    "tsConnCardCurrentExit": "Current exit"
+    "tsConnCardCurrentExit": "Current exit",
+    "tsConnCardExitNode": "Exit node"
   },
   "rules": {
     "ruleColumn": "Rule",

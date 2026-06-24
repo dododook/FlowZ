@@ -1137,7 +1137,8 @@
     "meshInfoNotAssigned": "هنوز اختصاص نیافته",
     "meshInfoNoRoutes": "هیچ‌کدام",
     "tsConnCardSetExit": "تنظیم به‌عنوان خروجی",
-    "tsConnCardCurrentExit": "خروجی فعلی"
+    "tsConnCardCurrentExit": "خروجی فعلی",
+    "tsConnCardExitNode": "گره خروجی"
   },
   "rules": {
     "ruleColumn": "قانون",

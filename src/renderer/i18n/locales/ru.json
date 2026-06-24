@@ -1137,7 +1137,8 @@
     "meshInfoNotAssigned": "Ещё не назначен",
     "meshInfoNoRoutes": "Нет",
     "tsConnCardSetExit": "Сделать выходом",
-    "tsConnCardCurrentExit": "Текущий выход"
+    "tsConnCardCurrentExit": "Текущий выход",
+    "tsConnCardExitNode": "Выходной узел"
   },
   "rules": {
     "ruleColumn": "Правило",
