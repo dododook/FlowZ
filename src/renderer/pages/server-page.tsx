@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { ServerList } from '@/components/settings/server-list';
@@ -41,9 +41,10 @@ export function ServerPage() {
   const config = useAppStore((state) => state.config);
   const serverPageAction = useAppStore((s) => s.serverPageAction);
   const setServerPageAction = useAppStore((s) => s.setServerPageAction);
-  // 「代理关时也显真实 Tailscale 登录态」触发输入：代理关 + 有组网节点 → 拉 status-only 探针读各 TS 节点登录态。
+  // 「代理关时也显真实 Tailscale 登录态」：代理关时无常驻核 STATUS，用持久缓存 + state 文件兜底（不起核），
+  // 真实态由代理开启时主核 STATUS 流校正。取代旧「进页面 spawn 瞬态核探针 + 13s 检测中」过度主动设计。
   const proxyRunning = useAppStore((state) => state.connectionStatus?.proxyCore.running ?? false);
-  const setTailscaleStatusProbing = useAppStore((state) => state.setTailscaleStatusProbing);
+  const setTailscaleLoginState = useAppStore((state) => state.setTailscaleLoginState);
 
   const {
     updatingSubId,
@@ -99,58 +100,38 @@ export function ServerPage() {
       ? tabOverride
       : selectedGroupKey;
 
-  // 组网 Tab 是否有 Tailscale 节点（探针只对 TS 节点有意义；WG/WARP 不参与登录态）。
-  const hasTailscaleMeshNode = meshServers.some((s) => isAccountBasedProtocol(s.protocol));
+  // 组网 Tab 的 Tailscale 节点 id 指纹（稳定 string；避免 meshServers 数组引用每渲染变导致 effect 反复跑）。
+  const tsNodeIdsKey = meshServers
+    .filter((s) => isAccountBasedProtocol(s.protocol))
+    .map((s) => s.id)
+    .sort()
+    .join(',');
 
-  // 「代理关时也显真实登录态」：组网 Tab 激活 + 代理关 + 有 TS 节点 → 拉 status-only 探针读各节点真实登录态
-  // （驱动「检测中→已登录/需登录」角标，修「代理关 → 无 STATUS → 已登录节点误显需登录」）。代理在跑时主核 STATUS
-  // 本就有，不触发。ref 节流：同一「代理态 × 是否有 TS 节点」条件只触发一次，避免切 Tab/重渲染反复拉核（主进程
-  // 亦单飞兜底）。代理态翻转（关→开→关）会让指纹变化、允许下次代理关时重新探测。
-  // 探针指纹：含组网成员标识（排序后的 server id 拼接），而非仅数量——否则「删一节点同时增一节点」数量不变会漏探。
-  const meshFingerprint = useMemo(
-    () =>
-      meshServers
-        .map((s) => s.id)
-        .sort()
-        .join(','),
-    [meshServers]
-  );
-  const probeFingerprintRef = useRef<string>('');
-  const probeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 代理关时用 state 文件存在性兜底登录态（不起核、毫秒级文件检查），仅补缓存未覆盖的 TS 节点。
+  // 取代旧「进 mesh tab spawn 瞬态核探针 + 13s 检测中」——后者切 Tab/重渲染反复拉核、反复闪「检测中」，过度主动。
+  // 缓存（STATUS 流真值，由 app-store 启动初值 + 双写持有）优先；缓存未命中且 state 目录存在 → 乐观显「已登录」，
+  // 真实态由代理开启时主核 STATUS 流校正（key 失效在那时暴露，无须代理关时着急确认）。
   useEffect(() => {
-    const clearProbeTimeout = (): void => {
-      if (probeTimeoutRef.current) {
-        clearTimeout(probeTimeoutRef.current);
-        probeTimeoutRef.current = null;
-      }
+    if (proxyRunning || !tsNodeIdsKey) return;
+    const tsIds = tsNodeIdsKey.split(',');
+    let cancelled = false;
+    void api.server
+      .tailscaleStateExists(tsIds)
+      .then((existsMap) => {
+        if (cancelled) return;
+        const known = useAppStore.getState().tailscaleLoginStates;
+        for (const id of tsIds) {
+          // 仅对缓存无记录的节点兜底（缓存=STATUS 流真值优先，不被 state 乐观值覆盖）。
+          if (known[id] === undefined && existsMap[id]) setTailscaleLoginState(id, true);
+        }
+      })
+      .catch(() => {
+        /* state 检查失败（极少见）不阻断；登录态留待代理开启时 STATUS 校正 */
+      });
+    return () => {
+      cancelled = true;
     };
-    if (activeTab !== 'mesh' || proxyRunning || !hasTailscaleMeshNode) {
-      // 代理开/无 TS 节点/非组网 Tab → 不在探测，复位指纹使下次满足条件时可重新触发；并清「检测中」+ 超时兜底。
-      probeFingerprintRef.current = '';
-      clearProbeTimeout();
-      setTailscaleStatusProbing(false);
-      return;
-    }
-    const fingerprint = `mesh:${meshFingerprint}`;
-    if (probeFingerprintRef.current === fingerprint) return;
-    probeFingerprintRef.current = fingerprint;
-    setTailscaleStatusProbing(true);
-    // 兜底超时：「invoke resolve 但零 STATUS」路径下（gRPC 无帧/核起即自退），handleTailscaleStatus 永不触发、
-    // probing 永卡 true → 角标永久「检测中」（review 中级：渲染端 probing 与主进程探针生命周期脱钩）。主进程探针
-    // 12s 拆核，此处 13s 后无条件退出「检测中」。STATUS 已到则该 set 被去重短路、无副作用。
-    clearProbeTimeout();
-    probeTimeoutRef.current = setTimeout(() => {
-      setTailscaleStatusProbing(false);
-      probeTimeoutRef.current = null;
-    }, 13000);
-    void api.server.probeTailscaleStatuses().catch(() => {
-      // 探针拉核失败（极少见）→ 退出「检测中」态，角标回落真实/保守显示，不阻断页面。
-      clearProbeTimeout();
-      setTailscaleStatusProbing(false);
-    });
-    // 卸载/依赖变更时清未 fire 的 13s 兜底 timeout（否则组件已卸载，timer 仍 fire setTailscaleStatusProbing → 对已卸载组件 set）。
-    return () => clearProbeTimeout();
-  }, [activeTab, proxyRunning, hasTailscaleMeshNode, meshFingerprint, setTailscaleStatusProbing]);
+  }, [proxyRunning, tsNodeIdsKey, setTailscaleLoginState]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 

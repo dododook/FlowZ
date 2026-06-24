@@ -1011,6 +1011,8 @@
     "tsLoginChecking": "Checking",
     "tsLoginNow": "Log in now",
     "tsLoginNowDesc": "Open the browser now to complete Tailscale login (no auth key needed).",
+    "tsLoggingIn": "Logging in…",
+    "tsLoggingInDesc": "Browser opened — finish the authorization; status updates automatically on success.",
     "tsLoginOpening": "Logging in to \"{{name}}\"",
     "tsLoginOpeningDesc": "Opening the browser to complete login. Authorize there, then come back.",
     "tsLoginAlready": "Tailscale node \"{{name}}\" is already logged in",

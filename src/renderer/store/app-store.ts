@@ -15,6 +15,10 @@ import type { UpdateInfo } from '../../shared/types/update';
 import { api } from '../ipc';
 import { toast } from 'sonner';
 import i18n from '../i18n';
+import {
+  loadTailscaleLoginStatesFromCache,
+  useTailscaleLoginCacheStore,
+} from './use-tailscale-login-cache-store';
 
 // 兼容旧的类型定义
 type ProxyMode = UserConfig['proxyMode'];
@@ -174,7 +178,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   ipInfo: null,
   latencyMap: {},
   invalidNodes: {},
-  tailscaleLoginStates: {},
+  // 启动秒显：从 localStorage 缓存派生登录态初值（代理关时不再 spawn 瞬态核探针，见 use-tailscale-login-cache-store）。
+  tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
   tailscaleAuthUrls: {},
   tailscaleStatusProbing: false,
   tailscaleIps: {},
@@ -336,6 +341,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ config, isPrivacyMode });
         // Tailscale 登录态不在此拉取：1.14 由 api STATUS 流（EVENT_TAILSCALE_STATUS，随主核起停持续推送）
         // 实时驱动 tailscaleLoginStates，无需 loadConfig 时整表 IPC 刷新（已剥离 refreshTailscaleLoginStates）。
+        // 登录态缓存 GC：清不在当前 servers 的孤儿条目——一劳永逸覆盖所有绕过渲染端 deleteServer 的删节点路径
+        // （ConfigManager sanitize 丢多余 TS / 损坏备份导入 / 手改配置），免 localStorage 缓存条目无上限泄漏。
+        const liveServerIds = new Set(config.servers.map((s) => s.id));
+        const loginCache = useTailscaleLoginCacheStore.getState();
+        for (const id of Object.keys(loginCache.cache)) {
+          if (!liveServerIds.has(id)) loginCache.removeCached(id);
+        }
       } catch (error) {
         console.error('[Store] Exception loading config:', error);
         toast.error(i18n.t('common.configLoadFail'));
@@ -420,15 +432,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return { tailscaleLoginStates };
     });
+    // 持久化登录态真值（STATUS 流 / 登出均经此）→ 代理关时下次启动秒显，免起核探针。
+    useTailscaleLoginCacheStore.getState().setCached(serverId, loggedIn);
   },
   // always-emit AUTH_URL：全量入表（无条件覆盖最新 URL），登录成功由 setTailscaleLoginState 反向清理。
+  // 空 URL（登录超时/失败信号）→ 删除该 serverId 缓存，使卡片/表单退出「登录中」回「需登录」。
   setTailscaleAuthUrl: (serverId, url) => {
-    // URL 未变则不重建表（always-emit 同一 URL 反复 emit 时省整表浅拷贝 + 无谓订阅者重渲染）。
-    set((s) =>
-      s.tailscaleAuthUrls[serverId] === url
+    set((s) => {
+      if (!url) {
+        if (s.tailscaleAuthUrls[serverId] === undefined) return {};
+        const tailscaleAuthUrls = { ...s.tailscaleAuthUrls };
+        delete tailscaleAuthUrls[serverId];
+        return { tailscaleAuthUrls };
+      }
+      // URL 未变则不重建表（always-emit 同一 URL 反复 emit 时省整表浅拷贝 + 无谓订阅者重渲染）。
+      return s.tailscaleAuthUrls[serverId] === url
         ? {}
-        : { tailscaleAuthUrls: { ...s.tailscaleAuthUrls, [serverId]: url } }
-    );
+        : { tailscaleAuthUrls: { ...s.tailscaleAuthUrls, [serverId]: url } };
+    });
   },
   setTailscaleStatusProbing: (probing) => {
     // 值未变则不触发订阅者重渲染（探针多帧 STATUS 反复置 false 时省无谓渲染）。
@@ -451,6 +472,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteServer: async (serverId) => {
     try {
       await api.server.delete(serverId);
+      // 清该节点 Tailscale 登录态缓存（仅 TS 节点有此缓存，非 TS 为 no-op）：免删-增循环陈旧缓存累积，
+      // 也免导入/恢复复用旧 uuid 时陈旧 true 让 state 兜底跳过、误显「已登录」。
+      useTailscaleLoginCacheStore.getState().removeCached(serverId);
       // Reload config to get updated server list（Tailscale 登录态由 api STATUS 流实时驱动，无需在此刷新）。
       await get().loadConfig();
     } catch (error) {
@@ -462,6 +486,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteServers: async (serverIds) => {
     try {
       const count = await api.server.deleteBatch(serverIds);
+      // 同 deleteServer：批量清各节点 Tailscale 登录态缓存（非 TS 为 no-op）。
+      const cache = useTailscaleLoginCacheStore.getState();
+      for (const id of serverIds) cache.removeCached(id);
       await get().loadConfig();
       return count;
     } catch (error) {

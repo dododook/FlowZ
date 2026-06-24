@@ -18,6 +18,7 @@ import {
   getProtocolBadgeVariant,
   isWarpNode,
   tailscaleNeedsLogin,
+  tailscaleLoggingIn,
   tailscaleStatusChecking,
   meshInternetOff,
   endpointLabel,
@@ -146,7 +147,26 @@ export function ServerRow({
               {t('servers.tsLoginChecking', 'Checking')}
             </Badge>
           )}
-          {!isChecking && tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
+          {!isChecking &&
+            tailscaleLoggingIn(
+              server,
+              tailscaleAuthUrls[server.id] !== undefined,
+              tailscaleLoginStates[server.id]
+            ) && (
+              <Badge
+                variant="outline"
+                className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-blue/15 text-badge-blue border-badge-blue/30"
+              >
+                {t('servers.tsLoggingIn', '登录中…')}
+              </Badge>
+            )}
+          {!isChecking &&
+            !tailscaleLoggingIn(
+              server,
+              tailscaleAuthUrls[server.id] !== undefined,
+              tailscaleLoginStates[server.id]
+            ) &&
+            tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
             <Badge
               variant="outline"
               role="button"

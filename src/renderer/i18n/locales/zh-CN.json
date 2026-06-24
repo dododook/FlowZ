@@ -1011,6 +1011,8 @@
     "tsLoginChecking": "检测中",
     "tsLoginNow": "立即登录",
     "tsLoginNowDesc": "立即打开浏览器完成 Tailscale 登录（无需 Auth Key）。",
+    "tsLoggingIn": "登录中…",
+    "tsLoggingInDesc": "已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。",
     "tsLoginOpening": "正在登录「{{name}}」",
     "tsLoginOpeningDesc": "正在打开浏览器完成登录，请在浏览器中授权后返回。",
     "tsLoginAlready": "Tailscale 节点「{{name}}」已登录",

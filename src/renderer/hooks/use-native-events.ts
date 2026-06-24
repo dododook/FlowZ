@@ -255,6 +255,11 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   // loggedIn=false）一律由 api STATUS（tailscaleStatus）驱动，此处不再据 AUTH_URL 反推 loggedIn=false。
   const idKey = data.serverId ?? data.nodeName;
   const url = data.authURL ?? data.url;
+  // 空 URL = 登录超时/失败信号（main 侧 armLoginTimeout 发）→ 清缓存退出「登录中」回「需登录」，不弹 toast。
+  if (data.serverId && !url) {
+    useAppStore.getState().setTailscaleAuthUrl(data.serverId, '');
+    return;
+  }
   // always-emit：无条件全量入表（transient 与主核两路径都存）→ 角标据此可点直开。serverId 缺失（旧主进程/
   // 节点已删）则无法入表（角标按 serverId 取 URL），跳过存储但 toast 仍按下方门控走。
   if (data.serverId && url) {

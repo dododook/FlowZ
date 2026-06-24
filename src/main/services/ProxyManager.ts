@@ -5428,22 +5428,34 @@ exit 0
       windowsHide: true,
     });
 
-    // ~2min 不点 URL → 超时杀核（沿用 Phase 1 轮询上限语义）。
-    const timeoutTimer = setTimeout(() => {
-      this.logToManager(
-        'info',
-        `Tailscale 节点「${server.name}」登录超时，已停止登录进程`,
-        'sing-box'
-      );
-      this.killTailscaleLogin(server.id);
-    }, 120000);
-
     const handle: {
       proc: ChildProcess;
       timeoutTimer: NodeJS.Timeout;
       killTimer?: NodeJS.Timeout;
       apiClient?: SingBoxApiClient;
-    } = { proc, timeoutTimer };
+    } = { proc, timeoutTimer: undefined as unknown as NodeJS.Timeout };
+    // 超时杀核（三平台共用，可重置）：未打开 URL 前等 2min（用户没点 → 放弃）；用户**打开登录 URL 后**
+    // 延长到 5min——浏览器 Login successful 后，瞬态核 tsnet 还要从控制面同步到 backendState=Running
+    // （登录态验真依据，下方 STATUS 流），这段必须算进窗口，否则登录成功却被提前杀核 → STATUS 回不来 →
+    // app 误显「未登录」（Windows 真机实证：urlOpened 后仅 112s 即被掐断）。
+    const armLoginTimeout = (ms: number): void => {
+      clearTimeout(handle.timeoutTimer);
+      handle.timeoutTimer = setTimeout(() => {
+        this.logToManager(
+          'info',
+          `Tailscale 节点「${server.name}」登录超时，已停止登录进程`,
+          'sing-box'
+        );
+        // 超时=登录未完成：发空 authUrl 清渲染端缓存 → 卡片/表单退出「登录中」回「需登录」（成功路径由
+        // setTailscaleLoginState(true) 自行清 authUrl，不经此）。
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
+          serverId: server.id,
+          url: '',
+        });
+        this.killTailscaleLogin(server.id);
+      }, ms);
+    };
+    armLoginTimeout(120000); // 初始：等用户点击登录 URL 的 2min
     this.tailscaleLoginCores.set(server.id, handle);
 
     // 幂等收尾：清 timer + 停瞬态 api client（停订阅 + 关连接，防泄漏）+ 删 Map + 删临时 config。error 与 exit 两路径都调它。
@@ -5453,7 +5465,7 @@ exit 0
     const finalize = (): void => {
       if (finalized) return;
       finalized = true;
-      clearTimeout(timeoutTimer);
+      clearTimeout(handle.timeoutTimer); // 清最新的登录超时（urlOpened 后已被 armLoginTimeout 重置过）
       // 进程已退出（优雅 SIGTERM 或自行崩溃）→ 取消挂起的 SIGKILL 升级，防 timer 泄漏。
       clearTimeout(handle.killTimer);
       // 瞬态 api client 停订阅 + 关 gRPC 连接（与主核 tailscaleApiClient 独立、各自 stop，互不干扰）。stop() 幂等。
@@ -5477,6 +5489,10 @@ exit 0
         if (!hit || urlOpened) continue;
         urlOpened = true;
         this.handleTailscaleLoginUrl(server, hit.url);
+        // 用户已打开登录 URL → 从「等点击 2min」延长到「等登录完成 + STATUS 同步」窗口。登录成功
+        // (STATUS=Running) 由 handleTransientTailscaleStatus 立即杀核收尾、不等满窗口，故上限放宽零成本——
+        // 只兜「开了浏览器又一直不登录」。
+        armLoginTimeout(300000);
       }
     };
     proc.stdout?.on('data', onData);

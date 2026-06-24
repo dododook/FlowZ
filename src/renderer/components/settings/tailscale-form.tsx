@@ -160,6 +160,9 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
   // 真实登录态（store 单一真值，与列表「需登录」角标同口径）：驱动登录区三态，替代纯静态 !authKey 门控。
   const serverId = serverConfig?.id;
   const loggedIn = useAppStore((s) => (serverId ? !!s.tailscaleLoginStates[serverId] : false));
+  // 登录中：已产生 authUrl（点了登录、瞬态核在等浏览器授权 + STATUS 同步到 Running）且未登录成功。
+  const hasAuthUrl = useAppStore((s) => (serverId ? s.tailscaleAuthUrls[serverId] !== undefined : false));
+  const loggingIn = hasAuthUrl && !loggedIn;
   const setTailscaleLoginState = useAppStore((s) => s.setTailscaleLoginState);
   const loginUi = tailscaleLoginUiState(!!serverId, loggedIn, !!authKeyValue?.trim());
 
@@ -257,15 +260,23 @@ export function TailscaleForm({ serverConfig, onSubmit }: TailscaleFormProps) {
                     type="button"
                     variant="outline"
                     className="w-full sm:w-auto"
+                    disabled={loggingIn}
                     onClick={() => void runTailscaleLogin(serverConfig)}
                   >
-                    {t('servers.tsLoginNow', 'Log in now')}
+                    {loggingIn
+                      ? t('servers.tsLoggingIn', '登录中…')
+                      : t('servers.tsLoginNow', 'Log in now')}
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    {t(
-                      'servers.tsLoginNowDesc',
-                      'Open the browser now to complete Tailscale login (no auth key needed).'
-                    )}
+                    {loggingIn
+                      ? t(
+                          'servers.tsLoggingInDesc',
+                          '已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。'
+                        )
+                      : t(
+                          'servers.tsLoginNowDesc',
+                          'Open the browser now to complete Tailscale login (no auth key needed).'
+                        )}
                   </p>
                 </div>
               </FieldSpan>

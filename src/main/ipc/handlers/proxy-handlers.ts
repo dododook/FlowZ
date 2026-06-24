@@ -14,6 +14,7 @@ import type {
 } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
+import { tailscaleStateExists } from '../../services/tailscale-state';
 import type { StatsService } from '../../services/StatsService';
 
 /**
@@ -171,6 +172,21 @@ export function registerProxyHandlers(
     IPC_CHANNELS.PROBE_TAILSCALE_STATUSES,
     async (_event: IpcMainInvokeEvent) => {
       await proxyManager.probeTailscaleLoginStates();
+    }
+  );
+
+  // 批量查 TS 节点 state 目录存在性（不起核）：代理关时登录态缓存未命中的兜底，判「登录过没」。
+  // 纯文件存在性判定（tailscaleStateExists 失败安全返 false），零进程、零网络。
+  registerIpcHandler<{ serverIds: string[] }, Record<string, boolean>>(
+    IPC_CHANNELS.TAILSCALE_STATE_EXISTS,
+    async (_event: IpcMainInvokeEvent, args) => {
+      const out: Record<string, boolean> = {};
+      // IPC 边界防御：非数组入参（畸形调用）一律视作空，逐项再过滤非字符串 id（防 for...of 对字符串逐字符迭代）。
+      const ids = Array.isArray(args?.serverIds) ? args.serverIds : [];
+      for (const id of ids) {
+        if (typeof id === 'string') out[id] = tailscaleStateExists(id);
+      }
+      return out;
     }
   );
 }

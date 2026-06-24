@@ -331,6 +331,14 @@ export const serverApi = {
   },
 
   /**
+   * 批量查 TS 节点 state 目录存在性（不起核判「登录过没」）：代理关时登录态缓存未命中的兜底。
+   * 返回 serverId → 是否已有持久登录会话目录。
+   */
+  async tailscaleStateExists(serverIds: string[]): Promise<Record<string, boolean>> {
+    return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_STATE_EXISTS, { serverIds });
+  },
+
+  /**
    * 切换服务器
    */
   async switch(serverId: string): Promise<void> {

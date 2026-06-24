@@ -39,6 +39,7 @@ export const IPC_CHANNELS = {
   TAILSCALE_LOGIN_CANCEL: 'tailscale:loginCancel', // 取消某节点在飞的瞬态登录核（用户手动取消）
   TAILSCALE_LOGOUT: 'tailscale:logout', // 退出登录：清该节点 state 目录（持久会话）；保留节点配置/authKey
   PROBE_TAILSCALE_STATUSES: 'tailscale:probeStatuses', // 多节点 status-only 探针：主核未运行时拉瞬态核读 STATUS，驱动各 TS 节点真实登录态（不开登录 URL）
+  TAILSCALE_STATE_EXISTS: 'tailscale:stateExists', // 批量查 TS 节点 state 目录存在性（不起核判「登录过没」）：代理关时登录态缓存未命中的兜底
 
   // 订阅管理
   SUBSCRIPTION_ADD: 'subscription:add',
