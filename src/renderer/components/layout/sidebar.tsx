@@ -165,6 +165,12 @@ export function Sidebar({
         </button>
       </div>
 
+      {/* 折叠态：toggle(控制) 与下方导航(目标) 之间补一条边界线，与组间分隔同款。
+          收起后 toggle 被放大成与导航项同尺寸方块，易被误读为首个导航项 → 分隔澄清「控制≠导航」、
+          并使顶部分组节奏与中段(routing/diagnostics 组前分隔)一致。
+          展开态 toggle 为 28px 小按钮、形态已区分，不渲染。 */}
+      {collapsed && <div className="mx-auto my-1.5 h-px w-5 bg-border/50" />}
+
       {isSettings ? (
         /* ── Settings sub-navigation ── */
         <>
