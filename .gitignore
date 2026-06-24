@@ -71,6 +71,10 @@ subscription-cache/
 local.config.*
 *.local.json
 
+# sing-box 内核二进制（由 npm run fetch:core 按 core-manifest.json 版本+coreSha256 下载官方 release，打包时随 resources 打入；每平台 66–74MB、4 平台 ~276MB 不入库防仓库膨胀，CI 现拉现打）
+resources/*/sing-box
+resources/*/sing-box.exe
+
 # NaiveProxy 核心库（由 npm run fetch:cronet 下载，打包时随 resources 打入；体积大不入库）
 resources/*/libcronet.*
 
