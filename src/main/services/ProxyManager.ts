@@ -1320,7 +1320,27 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       return;
     }
 
-    // 其余变化（模式/端口/TUN/规则/节点集合/interrupt 开关 等需重生成配置的项）→ 重启应用。
+    // issue #176 P2-A：订阅刷新「仅新增了未被引用的纯代理节点」（机场加新节点的常见情形，#176 高频触发源：6+
+    //   订阅 autoUpdate）→ 免整核重启。安全模型是**非对称**的（见 canSkipRestartForAddedUnreferenced）：新增未引用
+    //   节点的 route 排除 / DNS rule1 条目缺失**无害**（该节点未承载流量，要被选中才连它、届时 planHotSwitch 经
+    //   currentIdToTagMap 查不到 → 退回重启自然补全）；而删除/改址会让运行核**残留陈旧**条目（旧址被复用为真实目标时
+    //   可致错误直连）→ 必须重启。故只放行「纯新增未引用节点」。externalized 规则值若同窗口变了，与 no-op 分支同款经
+    //   syncCustomRuleFiles 热重载（不重启）/降级则重启。
+    if (
+      this.currentConfig &&
+      this.canSkipRestartForAddedUnreferenced(this.currentConfig, newConfig)
+    ) {
+      this.logToManager(
+        'info',
+        '仅新增未引用节点（订阅刷新等），免重启应用（新节点下次启动/被选中时生效）'
+      );
+      this.currentConfig = newConfig;
+      if (this.customRuleFilesDegraded) this.scheduleDebouncedRestart();
+      else await this.syncCustomRuleFiles(newConfig);
+      return;
+    }
+
+    // 其余变化（模式/端口/TUN/规则/选中或被引用节点集合/interrupt 开关 等需重生成配置的项）→ 重启应用。
     // 去抖合并：先把缓存更新到最新 newConfig（窗口内 hotSwitch/no-op/再次结构变更都对账到它），
     // 再调度 trailing 重启（~1.5s 内连改多条只重启一次，消除「连改 5 条规则=5 次断流」）。
     this.logToManager('info', '配置已更改，调度去抖重启以应用...');
@@ -1468,8 +1488,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * （selectedServerId、ghProxyPrefix、ruleResource* 调度、builtinGeoMeta、subscriptions 元数据、
    * mainSessionViaProxy、未被引用的本地资源、servers 的 updatedAt/createdAt 时间戳）。
    * 两配置此键相等 ⇔ 生成的 sing-box 配置等价。供 canHotSwitch（判纯切节点）与 switchMode（判生成无关变更 → 免重启 no-op）共用。
+   *
+   * issue #176 P2-A：可选 serverIds 把 servers 投影过滤到「被引用集」——两配置此「引用归一键」相等 ⇔ 生成配置中
+   *   实际承载流量的部分（选中节点+其 detour 前置链+规则目标+endpoint）逐字节一致，差异只在未引用的惰性 selector
+   *   成员节点（订阅刷新增删的纯代理节点）→ 运行核行为不变、可免重启。不传 serverIds = 全量（原行为，现有调用方不变）。
    */
-  private configGenerationNorm(c: UserConfig): string {
+  private configGenerationNorm(c: UserConfig, serverIds?: ReadonlySet<string>): string {
     // 用户路由（自定义规则 + 应用分流）仅 smart 模式影响生成（global=真·全局忽略用户分流、direct=全直连，均不 emit）。
     // 非 smart 下其内容/增删/编辑/换节点都不改变 sing-box 配置 → 不应翻转 norm（否则运行中编辑规则误触重启断流）。
     const userRoutingActive = (c.proxyMode || 'smart').toLowerCase() === 'smart';
@@ -1552,6 +1576,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         .map((rr) => rr.id)
         .sort(),
       servers: [...c.servers]
+        .filter((s) => !serverIds || serverIds.has(s.id)) // P2-A：传 serverIds 时仅保留被引用节点
         .sort((a, b) => a.id.localeCompare(b.id))
         .map((s) => {
           const copy: Record<string, unknown> = { ...s };
@@ -1560,6 +1585,75 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           return copy;
         }),
     });
+  }
+
+  /**
+   * issue #176 P2-A：「被引用节点」id 集——其定义变化会影响运行核实际行为、故必须随之重启。
+   *   = {选中节点} ∪ {所有启用规则(custom/app)目标}，按 detour（前置代理链）传递闭包展开
+   *   ＋ 保守纳入全部 endpoint 协议节点（WireGuard/Tailscale 可能 force-route 子网/mesh，独立于选中即承载流量）。
+   * 其余「纯代理」节点仅作 selector 惰性成员、不承载任何流量，增删改不改变运行核行为 → 不在此集 → 可免重启。
+   * 安全方向：**过度纳入只会多一次重启、绝不错跳**（漏纳入才会错误免重启致运行核用旧前置参数 → 流量错误/泄漏）。
+   *   故 endpoint 一律纳入、detour 取全闭包、direct 哨兵剔除、悬空 detour 忽略。
+   * 注：custom-endpoint（`customSettings.isEndpoint`）不被 isEndpointProtocol 纳入，但其 `endpointForcedRouteCidrs`
+   *   恒返 []（不 force-route）→ 不会独立于选中承载流量 → 按普通未引用节点处理即安全（新增它经 additions-only
+   *   模型放行、其 route/DNS 条目缺失无害），无需进引用集。
+   */
+  private referencedServerIds(c: UserConfig): Set<string> {
+    const byId = new Map(c.servers.map((s) => [s.id, s]));
+    const R = new Set<string>();
+    const stack: string[] = [];
+    const seed = (id?: string | null): void => {
+      if (id && !isDirectSelection(id)) stack.push(id);
+    };
+    seed(c.selectedServerId);
+    for (const r of c.customRules || []) if (r.enabled) seed(r.targetServerId);
+    for (const a of c.appRules || []) if (a.enabled) seed(a.targetServerId);
+    for (const s of c.servers) if (isEndpointProtocol(s.protocol)) stack.push(s.id); // 保守纳入全部 endpoint
+    while (stack.length) {
+      const id = stack.pop() as string;
+      if (R.has(id)) continue; // 成环/重复保护
+      R.add(id);
+      const s = byId.get(id);
+      if (s?.detour && byId.has(s.detour)) stack.push(s.detour); // detour 前置链传递闭包
+    }
+    return R;
+  }
+
+  /**
+   * issue #176 P2-A：判 next 相对 old 是否「仅新增了未被引用的纯代理节点」——是则可免整核重启（订阅刷新加新节点）。
+   * 非对称安全模型：新增未引用节点 → 其 route 排除/DNS rule1（route-builder/dns-builder 遍历**全部**节点的 address+
+   *   serverName）条目缺失**无害**（节点未承载流量、被选中才连它→届时退回重启补全）；删除/改址/改任一旧节点 →
+   *   运行核**残留陈旧**条目（旧址被复用为真实代理目标时可致错误直连）→ 必须重启。
+   * 全部满足才放行（缺一即重启）：
+   *   ① selectedServerId 未变；② 所有非 servers 的生成相关字段未变（servers 过滤到空集后归一键相等）；
+   *   ③ 旧节点全部原样保留在 next（无删除、无任一旧节点 address/参数改动——含选中/规则目标/detour/endpoint）；
+   *   ④ 新增节点（next\old）全部未被引用（非选中/非规则目标/不在 detour 链/非 endpoint）。
+   */
+  private canSkipRestartForAddedUnreferenced(old: UserConfig, next: UserConfig): boolean {
+    if (old.selectedServerId !== next.selectedServerId) return false; // ①
+    const EMPTY: ReadonlySet<string> = new Set();
+    // ② 非 servers 字段逐字节一致（servers 投影到空 → 仅比对路由/规则/DNS/端口/模式 等非节点字段）
+    if (this.configGenerationNorm(old, EMPTY) !== this.configGenerationNorm(next, EMPTY))
+      return false;
+    const fingerprint = (s: ServerConfig): string => {
+      const c: Record<string, unknown> = { ...s };
+      delete c.updatedAt; // 时间戳不影响生成
+      delete c.createdAt;
+      return this.stableStringify(c);
+    };
+    const oldById = new Map(old.servers.map((s) => [s.id, s]));
+    const newById = new Map(next.servers.map((s) => [s.id, s]));
+    // ③ 旧节点全部原样保留（无删除、无改动；含 address/serverName 与全部协议参数）
+    for (const s of old.servers) {
+      const n = newById.get(s.id);
+      if (!n || fingerprint(n) !== fingerprint(s)) return false;
+    }
+    // ④ 新增节点全部未被引用
+    const refNext = this.referencedServerIds(next);
+    for (const s of next.servers) {
+      if (!oldById.has(s.id) && refNext.has(s.id)) return false;
+    }
+    return true;
   }
 
   /**
