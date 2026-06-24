@@ -1138,7 +1138,8 @@
     "meshInfoNoRoutes": "None",
     "tsConnCardSetExit": "Set as exit",
     "tsConnCardCurrentExit": "Current exit",
-    "tsConnCardExitNode": "Exit node"
+    "meshInfoExitNode": "Exit node",
+    "meshInfoAcceptRoutesOn": "Accept subnet routes: on"
   },
   "rules": {
     "ruleColumn": "Rule",

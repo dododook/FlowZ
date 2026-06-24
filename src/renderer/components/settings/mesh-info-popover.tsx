@@ -19,7 +19,7 @@ import type { ServerConfigWithId } from './server-list-helpers';
 const EMPTY: string[] = [];
 
 /** 组网节点的内网 IP（Tailscale 取传入的 STATUS 流 tailnet IP；WireGuard 取 localAddress）。 */
-export function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string[]): string[] {
+function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string[]): string[] {
   // Tailscale = 账号制协议（唯一），其内网 IP 来自 api STATUS 流（store.tailscaleIps[id]）。
   if (isAccountBasedProtocol(server.protocol)) {
     return tailscaleIps;
@@ -29,7 +29,7 @@ export function meshIntranetIps(server: ServerConfigWithId, tailscaleIps: string
 }
 
 /** 组网节点的路由段（Tailscale = accept/advertise routes；WireGuard = peer.allowed_ips）。 */
-export function meshRoutes(server: ServerConfigWithId): string[] {
+function meshRoutes(server: ServerConfigWithId): string[] {
   if (isAccountBasedProtocol(server.protocol)) {
     const ts = server.tailscaleSettings;
     // accept routes（routes）+ advertise routes（本机对外广告）并集去重；纯展示，与 force-route 计算解耦。
@@ -47,6 +47,9 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
 
   const ips = meshIntranetIps(server, tailscaleIps);
   const routes = meshRoutes(server);
+  // Tailscale 专属：出口节点 + 接受子网路由开关（WireGuard 无此概念，条件不显）。
+  const ts = isAccountBasedProtocol(server.protocol) ? server.tailscaleSettings : undefined;
+  const exitNode = ts?.exitNode?.trim();
 
   return (
     <HoverCard openDelay={150} closeDelay={80}>
@@ -77,6 +80,19 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
               {routes.length > 0 ? routes.join(', ') : t('servers.meshInfoNoRoutes')}
             </div>
           </div>
+          {exitNode && (
+            <div>
+              <div className="font-medium text-foreground">
+                {t('servers.meshInfoExitNode', '出口节点')}
+              </div>
+              <div className="break-all font-mono">{exitNode}</div>
+            </div>
+          )}
+          {ts?.acceptRoutes && (
+            <div className="font-medium text-foreground">
+              {t('servers.meshInfoAcceptRoutesOn', '接受子网路由：已开启')}
+            </div>
+          )}
         </div>
       </HoverCardContent>
     </HoverCard>

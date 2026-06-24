@@ -40,11 +40,11 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import type { ServerConfig } from '@/bridge/types';
-import { deriveTsCardState, tsConnectedSubtitle } from '../../../shared/tailscale-conn-state';
+import { deriveTsCardState } from '../../../shared/tailscale-conn-state';
 import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { TailscaleForm } from './tailscale-form';
 import { useServerActions } from '../../pages/use-server-actions';
-import { meshIntranetIps, meshRoutes } from './mesh-info-popover';
+import { MeshInfoPopover } from './mesh-info-popover';
 
 interface TailscaleConnectionCardProps {
   /** 当前唯一的 Tailscale 节点（单例硬限保证至多一个）；无则渲染「连接」入口态。 */
@@ -64,7 +64,6 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
   const hasAuthUrl = useAppStore((s) =>
     serverId ? s.tailscaleAuthUrls[serverId] !== undefined : false
   );
-  const tailscaleIps = useAppStore((s) => (serverId ? s.tailscaleIps[serverId] : undefined));
   const setTailscaleLoginState = useAppStore((s) => s.setTailscaleLoginState);
   // 当前主出口是否为本 TS 节点（selectedServerId 单一真值）：单例卡承载「设为出口/当前出口」——批3 把 TS 抽离
   // 列表后，这是登录后选 TS 作主出口的唯一入口（列表点击选中入口已随抽离丢失，否则登录了也用不上 TS 出口）。
@@ -164,12 +163,6 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
     </Button>
   );
 
-  // 组网信息（批3 单例卡补回旧节点 MeshInfoPopover 丢失的展示）：内网 IP（STATUS 流，代理开时携带）/
-  // 路由（accept+advertise，配置即有）/ 出口节点（配置即有）。复用 mesh-info-popover 同源取值函数，口径一致。
-  const meshIps = tsNode ? meshIntranetIps(tsNode, tailscaleIps ?? []) : [];
-  const meshRouteList = tsNode ? meshRoutes(tsNode) : [];
-  const tsExitNode = tsNode?.tailscaleSettings?.exitNode?.trim();
-
   return (
     <Card className="border-primary/20">
       <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -195,39 +188,21 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
                 </span>
               )}
             </p>
-            <p className="truncate text-sm text-muted-foreground">
-              {state === 'connected' && tsNode
-                ? tsConnectedSubtitle(tsNode.name, tailscaleIps, proxyRunning)
-                : state === 'key-ready'
-                  ? t('servers.tsConnCardKeyReadyDesc', '代理启动即自动连接，无需登录')
-                  : state === 'logging-in'
-                    ? t('servers.tsConnCardLoggingInDesc', '已在浏览器打开授权页，完成后自动连接')
-                    : t('servers.tsConnCardIntro', '账号制组网：登录后本机即加入你的 tailnet')}
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <span className="truncate">
+                {state === 'connected' && tsNode
+                  ? tsNode.name
+                  : state === 'key-ready'
+                    ? t('servers.tsConnCardKeyReadyDesc', '代理启动即自动连接，无需登录')
+                    : state === 'logging-in'
+                      ? t('servers.tsConnCardLoggingInDesc', '已在浏览器打开授权页，完成后自动连接')
+                      : t('servers.tsConnCardIntro', '账号制组网：登录后本机即加入你的 tailnet')}
+              </span>
+              {/* 组网信息收进 ⓘ（与列表节点同款，hover 弹内网 IP/路由/出口节点/接受子网路由），卡片不被信息撑大。 */}
+              {(state === 'connected' || state === 'key-ready') && tsNode && (
+                <MeshInfoPopover server={tsNode} />
+              )}
             </p>
-            {(state === 'connected' || state === 'key-ready') && tsNode && (
-              <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
-                <div className="break-all">
-                  <span className="text-foreground">{t('servers.meshInfoIntranetIp')}: </span>
-                  <span className="font-mono">
-                    {meshIps.length > 0 ? meshIps.join(', ') : t('servers.meshInfoNotAssigned')}
-                  </span>
-                </div>
-                {meshRouteList.length > 0 && (
-                  <div className="break-all">
-                    <span className="text-foreground">{t('servers.meshInfoRoutes')}: </span>
-                    <span className="font-mono">{meshRouteList.join(', ')}</span>
-                  </div>
-                )}
-                {tsExitNode && (
-                  <div className="break-all">
-                    <span className="text-foreground">
-                      {t('servers.tsConnCardExitNode', '出口节点')}:{' '}
-                    </span>
-                    <span className="font-mono">{tsExitNode}</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 

@@ -1138,7 +1138,8 @@
     "meshInfoNoRoutes": "Нет",
     "tsConnCardSetExit": "Сделать выходом",
     "tsConnCardCurrentExit": "Текущий выход",
-    "tsConnCardExitNode": "Выходной узел"
+    "meshInfoExitNode": "Выходной узел",
+    "meshInfoAcceptRoutesOn": "Принимать маршруты подсети: вкл"
   },
   "rules": {
     "ruleColumn": "Правило",

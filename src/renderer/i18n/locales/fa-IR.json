@@ -1138,7 +1138,8 @@
     "meshInfoNoRoutes": "هیچ‌کدام",
     "tsConnCardSetExit": "تنظیم به‌عنوان خروجی",
     "tsConnCardCurrentExit": "خروجی فعلی",
-    "tsConnCardExitNode": "گره خروجی"
+    "meshInfoExitNode": "گره خروجی",
+    "meshInfoAcceptRoutesOn": "پذیرش مسیرهای زیرشبکه: روشن"
   },
   "rules": {
     "ruleColumn": "قانون",

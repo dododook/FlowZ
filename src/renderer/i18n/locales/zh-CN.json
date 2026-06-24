@@ -1138,7 +1138,8 @@
     "meshInfoNoRoutes": "无",
     "tsConnCardSetExit": "设为出口",
     "tsConnCardCurrentExit": "当前出口",
-    "tsConnCardExitNode": "出口节点"
+    "meshInfoExitNode": "出口节点",
+    "meshInfoAcceptRoutesOn": "接受子网路由：已开启"
   },
   "rules": {
     "ruleColumn": "规则",
