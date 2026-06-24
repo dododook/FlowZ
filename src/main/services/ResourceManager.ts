@@ -58,12 +58,14 @@ export class ResourceManager {
     // Windows 平台需要 .exe 扩展名
     const filename = this.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
 
-    // Windows Portable 模式特殊处理：优先使用 userData 下的核心
-    if (this.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR) {
+    // Windows（portable + 安装版统一）：优先 userData 可写核——换核覆盖跨平台统一模型：现役核恒为可写核、随包核
+    // 只是种子（见 docs/design/core-override-cross-platform-unify）。存在才用、缺失回落随包种子，故首启/迁移永不 brick；
+    // 现役核与安装目录种子解耦后，NSIS 重装覆盖种子不再降级用户已更新到的更新核。
+    if (this.platform === 'win32') {
       const fs = require('fs');
-      const portableCorePath = path.join(app.getPath('userData'), 'core_update', filename);
-      if (fs.existsSync(portableCorePath)) {
-        return portableCorePath;
+      const winCorePath = path.join(app.getPath('userData'), 'core_update', filename);
+      if (fs.existsSync(winCorePath)) {
+        return winCorePath;
       }
     }
 
@@ -102,8 +104,9 @@ export class ResourceManager {
   getSingBoxUpdateTargetPath(): string {
     const filename = this.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
 
-    // Windows Portable 模式特殊处理：更新文件必须写入 userData 才能持久化
-    if (this.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR) {
+    // Windows（portable + 安装版统一）：核更新/换核写入 userData 可写核（与 getSingBoxPath 优先项一致），
+    // 使现役核与安装目录随包种子解耦——重装/升级 NSIS 覆盖种子不再降级用户更新到的更新核（统一模型）。
+    if (this.platform === 'win32') {
       return path.join(app.getPath('userData'), 'core_update', filename);
     }
 
@@ -377,13 +380,18 @@ export class ResourceManager {
       }
       return this.getSingBoxPath();
     }
-    if (this.platform !== 'linux') {
+    // Linux + Windows：userData 可写核（种子 + 版本感知 reseed），其它平台无可写核 → 回落 getSingBoxPath。
+    // Windows 曾在此 no-op（reseed 不执行 → 升级带来更新随包核时旧可写核永不被替换、需手动「重置出厂」）——
+    // 本处统一补齐换核执行（设计见 docs/design/core-override-cross-platform-unify）。原子 rename 规避运行中 .exe
+    // 文件锁（reseed 在 core spawn 之前 + #150 version 探测串行，撞锁概率极低；真失败则诚实 reseedError）。
+    if (this.platform !== 'linux' && this.platform !== 'win32') {
       return this.getSingBoxPath();
     }
 
+    const filename = this.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
     const userDataPath = app.getPath('userData');
     const updateDir = path.join(userDataPath, 'core_update');
-    const targetPath = path.join(updateDir, 'sing-box');
+    const targetPath = path.join(updateDir, filename);
 
     // 检查是否已经有可写核心（force=true 跳过复用、强制用随包核覆盖——§5 最低版本守卫：升级遗留的旧可写核
     // 会被硬切 1.14 的配置 FATAL，须随包 1.14 核覆盖刷新）
@@ -398,7 +406,7 @@ export class ResourceManager {
 
     // 从应用内置的包中复制（force 时 copyFile 覆盖旧核）
     const platformDir = this.getPlatformResourceDir();
-    const sourcePath = path.join(platformDir, 'sing-box');
+    const sourcePath = path.join(platformDir, filename);
 
     if (await this.fileExists(sourcePath)) {
       // 原子替换（写 targetPath.tmp → chmod 0o755 → rename），非原地 copyFile 覆盖：force 重播种时 targetPath
