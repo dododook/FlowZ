@@ -63,6 +63,8 @@ interface NativeEventData {
   speedTestResult: { serverId: string; latency: number };
   // #40 核覆盖 reconcile：本机在用的非官方核 ≤ 随包基线 → 兼容风险提醒（启动时主进程 emit）。
   coreBaselineWarning: { current: string; bundled: string; kind: string };
+  // 提权 helper proto < 期望（如属主根治 v6）：启动后主进程 emit → toast 引导升级（带「升级」action + 「不再提示」）。
+  helperUpgradeable: { version: string };
 }
 
 type NativeEventListener<K extends keyof NativeEventData> = (data: NativeEventData[K]) => void;
@@ -114,6 +116,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'coreBaselineWarning':
         unsubscribe = api.proxy.onCoreBaselineWarning(callback as any);
+        break;
+      case 'helperUpgradeable':
+        unsubscribe = api.helper.onUpgradeable(callback as any);
         break;
       default:
         console.warn(`Unknown event: ${eventName}`);
@@ -343,6 +348,33 @@ function handleCoreBaselineWarning(data: NativeEventData['coreBaselineWarning'])
   });
 }
 
+// 提权 helper 可升级（proto < 期望，如属主根治 v6）→ 启动弹窗引导升级。每会话一次；带「升级」action（直接装、一次授权）
+// + 「不再提示」（持久化 helperUpgradePromptDismissed，下次启动不再发）。
+let helperUpgradeWarnedThisSession = false;
+function handleHelperUpgradeable(_data: NativeEventData['helperUpgradeable']) {
+  if (helperUpgradeWarnedThisSession) return;
+  helperUpgradeWarnedThisSession = true;
+  toast.warning(i18n.t('helper.upgrade.title', '提权助手有新版本'), {
+    description: i18n.t(
+      'helper.upgrade.desc',
+      '新版修复了跨提权态的文件属主冲突（会导致 Tailscale / 启动异常）。建议升级，仅需授权一次。'
+    ),
+    duration: Infinity,
+    action: {
+      label: i18n.t('helper.upgrade.action', '升级'),
+      onClick: () => {
+        void api.helper.install();
+      },
+    },
+    cancel: {
+      label: i18n.t('helper.upgrade.dismiss', '不再提示'),
+      onClick: () => {
+        void api.config.setValue('helperUpgradePromptDismissed', true);
+      },
+    },
+  });
+}
+
 /**
  * Hook to listen to all native events and update store
  */
@@ -360,4 +392,5 @@ export function useNativeEventListeners() {
   useNativeEvent('systemProxyResidual', handleSystemProxyResidual);
   useNativeEvent('speedTestResult', handleSpeedTestResult);
   useNativeEvent('coreBaselineWarning', handleCoreBaselineWarning);
+  useNativeEvent('helperUpgradeable', handleHelperUpgradeable);
 }

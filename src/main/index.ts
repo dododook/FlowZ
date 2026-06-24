@@ -1037,6 +1037,32 @@ if (gotTheLock) {
     proxyManager.setHelperManager(helperManager);
     coreUpdateService.setHelperManager(macHelper); // B 块：install-core 仅 macOS（Windows/Linux 得降级实例，不真用）
     proxyManager.setHelperGate(promptHelperGate);
+    // 启动后检测 helper 是否可升级（已装 proto < 期望，如属主根治 v6）→ 发事件让渲染端 toast 主动引导升级
+    // （否则用户不去设置页就不知道要升级、根治不生效）。**跟随渲染端首屏加载完成**再发（+ 短延迟给 React 挂载
+    // + 事件 hook 注册），既不固定长延迟滞后、又不发太早 renderer 没注册监听而丢失；dismiss 已置 / 不可升级 → 不发。
+    const emitHelperUpgradeableIfNeeded = async (): Promise<void> => {
+      try {
+        if (!helperManager) return;
+        const cfg = await configManager.loadConfig().catch(() => null);
+        if (cfg?.helperUpgradePromptDismissed === true) return;
+        const st = await helperManager.getStatus();
+        if (st.upgradeable) {
+          ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_HELPER_UPGRADEABLE, {
+            version: st.version ?? '',
+          });
+        }
+      } catch {
+        /* 静默：升级提示非关键，绝不阻断启动 */
+      }
+    };
+    const fireUpgradeCheck = (): void => {
+      // did-finish-load（HTML/JS 加载完）后再给 ~1.2s 让 React 挂载 + useNativeEventListeners 注册监听，避免丢事件。
+      setTimeout(() => void emitHelperUpgradeableIfNeeded(), 1200);
+    };
+    const wcForUpgrade = mainWindow?.webContents;
+    if (wcForUpgrade && !wcForUpgrade.isLoading()) fireUpgradeCheck();
+    else if (wcForUpgrade) wcForUpgrade.once('did-finish-load', fireUpgradeCheck);
+    else setTimeout(fireUpgradeCheck, 1500); // mainWindow 尚未创建时的兜底
     // 系统代理单一写者：注入同一 singleton（上方 756 创建），enable/clear 统一收口 ProxyManager.start()/终态。
     proxyManager.setSystemProxyManager(systemProxyManager);
     // 系统 DNS 接管单一写者：注入同一 singleton，set（仅 TUN）/restore 统一收口 ProxyManager.start()/终态。

@@ -254,6 +254,14 @@ done
 kill -TERM "$SBPID" 2>/dev/null
 for i in $(seq 1 10); do kill -0 "$SBPID" 2>/dev/null || break; sleep 0.5; done
 kill -9 "$SBPID" 2>/dev/null
+# 归还运行时目录属主给登录用户（根治跨提权态属主冲突）：root 跑的 sing-box 把 tailscale state /
+# dashboard / ui 写成 root → 下次以登录用户跑读不了致 endpoint post-start FATAL。CONFDIR(=config 父目录)
+# 属主即登录用户；本看护脚本以 root 跑、有权 chown。与 helper daemon 路径(helper.go chownRuntimeDirs)同口径。
+CONFDIR=$(dirname "$CFG")
+OWNER=$(stat -f %u "$CONFDIR" 2>/dev/null)
+if [ -n "$OWNER" ] && [ "$OWNER" != "0" ]; then
+  for d in tailscale singbox-dashboard ui; do chown -R "$OWNER" "$CONFDIR/$d" 2>/dev/null; done
+fi
 rm -f "$STOPFLAG"
 `;
     require('fs').writeFileSync(this.getWrapperScriptPath(), script, { mode: 0o755 });

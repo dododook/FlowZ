@@ -471,6 +471,9 @@ export interface UserConfig {
   // 注：socket 鉴权 token 刻意不放这里——它存独立文件，避免被渲染端整体回写 config 时清零。
   helperPromptDismissed?: boolean;
 
+  // 提权 helper：用户已忽略「helper 可升级」启动弹窗（proto < 期望，如属主根治 v6）。不再每次启动提示；设置页可手动升级。
+  helperUpgradePromptDismissed?: boolean;
+
   // macOS 提权 helper：用户已忽略「后台运行被系统禁用」引导弹窗（不再提示）。设置页 helper 卡保留常驻入口。
   helperDisabledPromptDismissed?: boolean;
 

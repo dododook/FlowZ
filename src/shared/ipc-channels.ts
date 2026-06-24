@@ -141,6 +141,7 @@ export const IPC_CHANNELS = {
   EVENT_CORE_VERSION_CHANGED: 'event:coreVersionChanged',
   EVENT_CORE_AUTO_UPDATE_STATUS: 'event:coreAutoUpdateStatus', // 内核自动更新状态变更（staged 待生效 / 跨带提示）
   EVENT_CORE_BASELINE_WARNING: 'event:coreBaselineWarning', // 非官方核 ≤ 随包基线：启动 reconcile 发兼容风险提醒
+  EVENT_HELPER_UPGRADEABLE: 'event:helperUpgradeable', // 提权 helper proto < 期望（如属主根治 v6）：启动后发，渲染端 toast 引导升级
   EVENT_AUTO_NODE_SWITCHED: 'event:autoNodeSwitched', // 自动换节点成功通知
   EVENT_PROXY_INVALID_NODES: 'proxy:invalid-nodes', // 启动 gate 剔除的非法节点（空数组=清陈旧标灰）
   EVENT_IP_INFO_UPDATED: 'event:ipInfoUpdated', // 出口 IP 信息更新

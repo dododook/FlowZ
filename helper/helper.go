@@ -49,7 +49,12 @@ import (
 //
 //	签名+清 quarantine，实现 macOS 内核持久化更新（App 升级不覆盖）。**向后兼容**：v1-v4 命令不变，装着 v4 的用户
 //	TUN 启停继续可用，仅内核更新需 v5（无 v5 时 app fallback 一次 osascript）→ 非强制重装、温和提示可升级。
-const protoVersion = "5"
+//
+// v6：start 的 child 退出后自动 chownRuntimeDirs——把 root 跑 sing-box 留下的 tailscale state / dashboard / ui
+//
+//	属主归还登录用户，根治跨提权态属主冲突（root 跑写 root 600 → 登录用户跑读不了 → endpoint post-start FATAL）。
+//	协议命令不变、纯行为增强；旧 v5 helper 仍可用 TUN，仅本根治需 v6 → app 据 proto 检测「可升级」温和提示重装。
+const protoVersion = "6"
 
 var (
 	singboxBin string // 安装时锁定的 sing-box 路径
@@ -143,6 +148,44 @@ func installCore(srcDir, wantHash string) string {
 	_ = exec.Command("/usr/bin/xattr", "-cr", coreDir).Run()
 	_ = exec.Command("/usr/bin/codesign", "--force", "--deep", "-s", "-", sb).Run()
 	return "OK installed"
+}
+
+// chownRuntimeDirs（proto v6 行为）：把 sing-box 运行时写入的 userData 子目录（tailscale state /
+// singbox-dashboard / external_ui）属主**归还登录用户**。helper 以 root 跑 sing-box，tsnet 等会把这些文件
+// 创建成 root 600 → 之后以登录用户（系统代理模式）跑 sing-box 时 open 不了 → endpoint post-start
+// `permission denied` 拖垮整个启动（即便没选 tailscale 节点，它在 endpoints[] 里也会被 post-start）。
+// 每次 child 退出后调用 → 属主恒为登录用户（confDir=app 数据目录、属主即登录用户），根治跨提权态属主冲突，
+// 且**不丢 Tailscale 登录态**（chown 保留 state、非删除）。绝不阻断、单项失败即跳过。
+func chownRuntimeDirs() {
+	if confDir == "" {
+		return
+	}
+	fi, err := os.Stat(confDir)
+	if err != nil {
+		return
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return
+	}
+	uid, gid := int(st.Uid), int(st.Gid)
+	if uid == 0 {
+		return // confDir 本身属 root（异常）→ 不动，避免把运行时目录误归到 root
+	}
+	for _, name := range []string{"tailscale", "singbox-dashboard", "ui"} {
+		chownTree(filepath.Join(confDir, name), uid, gid)
+	}
+}
+
+// chownTree：递归 Lchown 整棵树到 (uid,gid)。尽力而为——目录不存在/读不了即跳过，绝不返回错误中断遍历。
+func chownTree(root string, uid, gid int) {
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		_ = os.Lchown(p, uid, gid)
+		return nil
+	})
 }
 
 // cfg 必须位于 confDir 内（清洗后前缀匹配），防止越权指定任意路径作 root 配置。
@@ -335,6 +378,10 @@ func handle(conn net.Conn) {
 		go func() {
 			_ = c.Wait()
 			close(done) // 广播子进程已被收割：terminateChild 据此免 KILL、watchParent 据此退出
+			// proto v6：root 跑的 sing-box 退出后，把运行时目录（tailscale state / dashboard / ui）属主归还
+			// 登录用户 → 下次以登录用户（系统代理模式）跑能直接读、不再 FATAL，且不丢 Tailscale 登录态。
+			// 放 Wait() 之后确保文件已不被 sing-box 占用、属主稳定。
+			chownRuntimeDirs()
 			mu.Lock()
 			if child == c {
 				child, childDone = nil, nil

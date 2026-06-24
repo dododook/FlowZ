@@ -926,6 +926,11 @@ export const helperApi = {
   async uninstall(): Promise<{ success: boolean; error?: string; status: HelperStatus }> {
     return ipcClient.invoke(IPC_CHANNELS.HELPER_UNINSTALL);
   },
+
+  /** 监听「helper 可升级」事件（启动后主进程检测 proto < 期望时 emit，渲染端 toast 引导升级） */
+  onUpgradeable(listener: (data: { version: string }) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_HELPER_UPGRADEABLE, listener);
+  },
 };
 
 /**

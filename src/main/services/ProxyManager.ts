@@ -79,6 +79,7 @@ import {
   tailscaleEndpointInRunningCore,
 } from './tailscale-login-core';
 import { SingBoxApiClient, type TailscaleEndpointStatus } from './singbox-api-client';
+import { reconcileTreeOwnership } from './runtime-ownership';
 import {
   getUserDataPath,
   getSingBoxConfigPath,
@@ -626,6 +627,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.gateInvalidNodes.clear();
     this.refFixAttempted = false;
     this.cronetHealAttempted = false; // T2：每次 start 复位 cronet 自愈一次性闸（换核/修好后可再触发一次）
+
+    // 3.7.1 根治跨提权态 state 属主冲突：本次以登录用户(非提权)跑 sing-box 前，归一 tailscale state 属主——
+    //   删掉上次 TUN(root/SYSTEM)跑残留的 root 600 文件，让 tsnet 以登录用户重建。否则 sing-box 以登录用户
+    //   open 不了 root 600 的 tailscaled.* → endpoint post-start `permission denied` → 拖垮**整个**启动
+    //   （即便没选 tailscale 节点，它在 endpoints[] 里也会被 post-start；系统代理模式同样中招）。
+    this.reconcileRuntimeOwnershipBeforeStart();
 
     // 3.8 方案B：DNS 接管激活时,先读接管前的内网 LAN 解析器(私网 IPv4),供 generateDnsConfig 把内网/captive 域名
     //     重定向到它(takeover 把系统 DNS 改公网 8.8.8.8 后 dns-local 解不了内网/可能环)。必须在 generateSingBoxConfig
@@ -1486,9 +1493,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       builtinGeoMeta: null,
       subscriptions: null,
       mainSessionViaProxy: null,
-      // helper 引导「不再提示」纯 UI 偏好，不影响 sing-box 生成 → 运行中勾选不应触发重启断流。
+      // helper 引导/升级「不再提示」纯 UI 偏好，不影响 sing-box 生成 → 运行中勾选不应触发重启断流。
       helperPromptDismissed: null,
       helperDisabledPromptDismissed: null,
+      helperUpgradePromptDismissed: null,
       // fakeIpToggleMigrated 是一次性迁移元数据标记，不影响生成（enableFakeIp 本身仍在 norm 内 → 影响生成保留）。
       //   若不排除：未来某路径重建 dnsConfig 丢标记 → norm 翻转无谓重启，且再次迁移可能覆盖用户手动改的值。
       dnsConfig: c.dnsConfig ? { ...c.dnsConfig, fakeIpToggleMigrated: null } : c.dnsConfig,
@@ -3828,6 +3836,33 @@ exit 0
   }
 
   /**
+   * 启动前归一运行时目录属主(根治跨提权态属主冲突,详见 runtime-ownership)。
+   * 仅在「本次将以登录用户(非提权)运行 sing-box」时执行——提权(root/SYSTEM)路径能读现有 root state,不动以免
+   * 每次 TUN 启动都删 state 致 Tailscale 重登。删掉上次 root 跑残留的 root 600 state → tsnet 以登录用户重建。
+   * POSIX only(Windows 属主模型不同,由 helper 侧 takeown 覆盖,后续治本层)。绝不抛、不阻断启动。
+   */
+  private reconcileRuntimeOwnershipBeforeStart(): void {
+    if (process.platform === 'win32' || typeof process.getuid !== 'function') return;
+    // 本次走提权(osascript/UAC)→ root/elevated 跑,能读现有 root state → 不归一(避免每次 TUN 删 state→Tailscale 重登)。
+    if (this.needsOsascript() || this.needsWindowsUAC()) return;
+    try {
+      const uid = process.getuid();
+      const gid = typeof process.getgid === 'function' ? process.getgid() : uid;
+      const tsRoot = path.join(getUserDataPath(), 'tailscale');
+      const r = reconcileTreeOwnership(tsRoot, uid, gid);
+      if (r.deleted.length > 0 || r.chowned.length > 0) {
+        this.logToManager(
+          'info',
+          `已归一 tailscale state 属主（删 ${r.deleted.length} / chown ${r.chowned.length}）杜绝跨提权态权限冲突` +
+            (r.deleted.length > 0 ? '；若该 Tailscale 节点登录态被清，需重新登录' : '')
+        );
+      }
+    } catch {
+      /* 尽力而为，绝不阻断启动 */
+    }
+  }
+
+  /**
    * 解析进程启动错误
    */
   private parseLaunchError(error: Error): string {
@@ -3854,6 +3889,12 @@ exit 0
       const lowerOutput = errorOutput.toLowerCase();
 
       if (lowerOutput.includes('permission denied') || lowerOutput.includes('access denied')) {
+        // 细分：tailscale tsnet / state 文件的权限错误是「跨提权态 state 属主冲突」(root 跑留下 root 600
+        // state、登录用户跑读不了)，已由启动前 reconcileRuntimeOwnershipBeforeStart 兜底；它**不是** TUN 设备
+        // 提权问题，误报「以管理员运行」会把排查带偏(真机踩坑根因)。给准确提示 + 引导重试。
+        if (/logpolicy|tailscaled|tailscale|state_directory/i.test(errorOutput)) {
+          return `Tailscale 状态文件权限异常（跨提权态属主冲突），已尝试自动归一，请重试启动 [${errorOutput}]`;
+        }
         return `TUN 模式需要管理员权限，请以管理员身份运行应用 [${errorOutput}]`;
       }
 

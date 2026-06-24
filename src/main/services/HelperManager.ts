@@ -33,10 +33,10 @@ const PLIST_PATH = `/Library/LaunchDaemons/${LABEL}.plist`;
 const SYSTEM_SUPPORT = '/Library/Application Support/FlowZ';
 const SOCKET_PATH = `${SYSTEM_SUPPORT}/helper.sock`;
 /** 与 helper.go 的 protoVersion 对应。**分级**（v5 起）：proto ≥ MIN_USABLE 即 TUN 功能齐全（可用，不报需修复）；
- *  MIN_USABLE ≤ proto < EXPECTED → upgradeable（v5 加 install-core 内核更新，旧 v4 仍能 TUN，仅温和提示可升级、
- *  不强制重装）；proto < MIN_USABLE 才 needsRepair。
- *  v3=SIGTERM 收割 child；v4=freeport；v5=install-core（root 写受保护目录持久化内核 + 哈希校验防 TOCTOU）。 */
-const EXPECTED_PROTO = '5';
+ *  MIN_USABLE ≤ proto < EXPECTED → upgradeable（旧版仍能 TUN，仅温和提示可升级、不强制重装）；proto < MIN_USABLE 才 needsRepair。
+ *  v3=SIGTERM 收割 child；v4=freeport；v5=install-core（root 写受保护目录持久化内核 + 哈希校验防 TOCTOU）；
+ *  v6=chownRuntimeDirs（root 跑的 sing-box 退出后归还 tailscale/dashboard/ui 属主给登录用户，根治跨提权态属主冲突）。 */
+const EXPECTED_PROTO = '6';
 const MIN_USABLE_PROTO = 4;
 /** launchctl 加载态探测缓存 TTL：getStatus 被首页/设置页高频轮询，避免每次都 spawn launchctl。 */
 const LOADED_PROBE_TTL_MS = 10_000;
