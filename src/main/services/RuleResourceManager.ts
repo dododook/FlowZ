@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import * as fssync from 'fs';
 import * as path from 'path';
 import { getRuleResourcesPath } from '../utils/paths';
+import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { applyGhProxy, ghMirrorUrl, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
 import {
   mrdRawUrl,
@@ -723,7 +724,19 @@ export class RuleResourceManager {
           reject(new Error(`http ${status}`));
           return;
         }
-        res.on('data', (c: Buffer) => chunks.push(c));
+        let received = 0;
+        res.on('data', (c: Buffer) => {
+          received += c.length;
+          // OOM 防护（审计 #1）：GitHub git-trees JSON 被劫持/WAF 可回灌 GB 级 → chunks 无界 + Buffer.concat 峰值放大；
+          // 两个 ?recursive=1 请求经 Promise.all 并发各持一份，更需上限。超 16MiB 即中止（catalog tree 实际 < 数 MB）。
+          if (received > MAX_GITHUB_JSON_BYTES) {
+            clearTimeout(overall);
+            req.abort();
+            reject(new Error('response too large'));
+            return;
+          }
+          chunks.push(c);
+        });
         res.on('end', () => {
           clearTimeout(overall);
           try {

@@ -16,6 +16,10 @@ import type {
 // 流推送间隔：1s（纳秒，int64）。对齐旧轮询 1s 节奏（首页速率/连接数体感）。
 const STATUS_INTERVAL_NS = 1_000_000_000;
 const CONNECTIONS_INTERVAL_NS = 1_000_000_000;
+// OOM 安全网（审计 #3）：sing-box 系统性漏发 CLOSED（UDP/QUIC NAT 超时回收高发）时 connMap 漏删条目单调累积。
+// 正常活跃连接数 << 此值；仅异常累积时硬上限驱逐最旧条目兜底防 OOM。刻意不用 TTL 清扫——会误清合法长连接
+// （VPN/大下载 > TTL 仍活，被删后 UPDATE 帧 connection=null 无法补建 → 丢到下次 reset），size 上限更安全。
+const MAX_CONN_MAP_SIZE = 50_000;
 
 /** 数值规整：string/number → number，非有限值 → undefined（避免 NaN 进 UI 差分）。 */
 function num(v: unknown): number | undefined {
@@ -290,6 +294,13 @@ export class StatsService {
           if (ev?.connection) this.connMap.set(id, ev.connection);
           break;
       }
+    }
+    // OOM 安全网（审计 #3）：超硬上限按插入顺序（JS Map 迭代序=最早插入、最可能是漏删的死连接）驱逐最旧，
+    // 不依赖上游 CLOSED 事件完整性。正常 connMap.size << 上限，此循环不触发。
+    while (this.connMap.size > MAX_CONN_MAP_SIZE) {
+      const oldest = this.connMap.keys().next().value;
+      if (oldest === undefined) break;
+      this.connMap.delete(oldest);
     }
     // 活动连接数由本流的 connMap.size 维护（Status 的 connectionsIn/Out 核不填 → 首页恒 0 的根因）；在可见性
     // 短路前更新，使下一次 Status onUpdate 广播到的计数恒为真实活跃连接数。

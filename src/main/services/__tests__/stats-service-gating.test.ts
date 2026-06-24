@@ -260,6 +260,22 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(conns).toHaveLength(1);
       expect(conns[0].id).toBe('conn-2');
     });
+
+    it('OOM 安全网（审计 #3）：connMap 超 50k 硬上限时驱逐最旧条目（漏 CLOSED 兜底）', () => {
+      const { service, mock } = setup({ withVisible: true, visible: false }); // 不可见省 50k 列表物化开销
+      service.start();
+      // 模拟 sing-box 系统性漏发 CLOSED → 50001 条 NEW 累积超上限
+      const events = Array.from({ length: 50_001 }, (_, i) => ({
+        type: 'NEW' as const,
+        id: `conn-${i}`,
+        connection: { ...RAW_CONN, id: `conn-${i}` },
+      }));
+      mock.pushConn({ reset: true, events });
+      // 硬上限驱逐最旧（Map 插入序）：size 收敛到 50000，最早的 conn-0 被驱逐、最新的保留
+      expect((service as any).connMap.size).toBe(50_000);
+      expect((service as any).connMap.has('conn-0')).toBe(false);
+      expect((service as any).connMap.has('conn-50000')).toBe(true);
+    });
   });
 
   describe('缺省行为（未注入 isWindowVisible）', () => {

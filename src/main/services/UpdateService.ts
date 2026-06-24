@@ -9,6 +9,7 @@ import * as path from 'path';
 import { LogManager } from './LogManager';
 import type { UpdateInfo, UpdateCheckResult, UpdateProgress } from '../../shared/types/update';
 import { APP_USER_AGENT } from '../../shared/constants';
+import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { getUserDataPath } from '../utils/paths';
 import { system32 } from '../utils/win-system32';
 import { compareSemver } from '../../shared/version';
@@ -663,7 +664,23 @@ export class UpdateService {
 
       request.on('response', (res) => {
         let data = '';
-        res.on('data', (chunk) => (data += chunk.toString()));
+        res.on('data', (chunk) => {
+          // 已收口（超限/超时/错误）后忽略 drain 中的残帧：abort 不同步停止 res，
+          // 已 buffer 的帧仍会触发 data，若继续累加会徒增内存峰值。
+          if (settled) return;
+          data += chunk.toString();
+          // OOM 防护（审计 #2）：GitHub api 被劫持/WAF 接管可回灌 GB 级响应撞 V8 堆/512MB string 上限。
+          // 启动后 5s 自动检查更新即可被诱发。超 16MiB 即 abort + 单点收口 finish（releases JSON 实际 < 数 MB）。
+          if (data.length > MAX_GITHUB_JSON_BYTES) {
+            try {
+              request.abort();
+            } catch {
+              /* ignore */
+            }
+            finish(new Error('GitHub 响应过大（疑似被劫持/WAF 拦截）'));
+            return;
+          }
+        });
         res.on('end', () => {
           if (res.statusCode === 200) {
             try {
