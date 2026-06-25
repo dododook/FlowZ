@@ -1,207 +1,115 @@
 # 发布指南
 
-本文档描述了如何发布 FlowZ Electron 的新版本。
+**简体中文** · [English](RELEASE.en.md)
+
+本文档描述如何发布 FlowZ 新版本。发布的「单一触发点」是**推送 `v*` tag**：CI（`.github/workflows/release.yml`）随后在三平台构建并自动创建 GitHub Release。本地全量打包仅用于验证/离线出包，不走发布路径。
 
 ## 前置要求
 
-1. **GitHub CLI**: 安装 GitHub CLI 工具
-   ```bash
-   # macOS
-   brew install gh
-   
-   # Windows
-   winget install --id GitHub.cli
-   ```
+1. **仓库写权限**：能向 `origin` 推送 tag。
+2. **Node.js 26**：与 CI（`actions/setup-node@v4`，`node-version: 26`）一致，避免本地/CI 行为漂移。
+3. **GitHub CLI（可选）**：仅用于手动查看/编辑已发布 Release；标准流程由 CI 用内置 `GITHUB_TOKEN` 自动建 Release，无需本地 `gh`。
+4. **Go（仅本地打包 helper 时需要）**：`build:helper` 现编现打 macOS/Windows 提权 helper（二进制不入库）。CI 已在 mac/win runner 自动装 Go；仅当你本地 `npm run dist:mac`/`dist:win` 时才需本机有 Go。
 
-2. **认证**: 确保已登录 GitHub CLI
-   ```bash
-   gh auth login
-   ```
-
-3. **权限**: 确保有仓库的写入权限
-
-## 发布流程
-
-### 方式一：手动发布（推荐用于测试）
+## 发布流程（标准：推 tag 触发 CI）
 
 1. **更新版本号**
-   
-   编辑 `package.json` 中的 `version` 字段：
+
+   编辑 `package.json` 的 `version`（当前 `4.1.3`）：
    ```json
-   {
-     "version": "1.0.1"
-   }
+   { "version": "4.1.4" }
    ```
 
-2. **更新 CHANGELOG**
-   
-   在 `CHANGELOG.md` 中添加新版本的更新内容：
-   ```markdown
-   ## [1.0.1] - 2024-12-14
-   
-   ### Added
-   - 新功能描述
-   
-   ### Fixed
-   - 修复的问题
-   ```
-
-3. **提交更改**
+2. **提交并推送**
    ```bash
-   git add package.json CHANGELOG.md
-   git commit -m "chore: bump version to 1.0.1"
+   git add package.json
+   git commit -m "chore: bump version to 4.1.4"
    git push
    ```
 
-4. **构建打包产物**
+3. **推送 Release tag**
+
+   用脚本按 `package.json` 版本号创建并推送 `v{version}` tag（触发 CI）：
    ```bash
-   npm run release:prepare
+   npm run release:tag            # 创建并推送 vX.Y.Z
+   npm run release:tag -- -u      # 远程已存在同名 tag 时强制更新（删旧 tag 重推）
+   npm run release:tag -- -y -u   # 跳过确认 + 强制更新
    ```
-   
-   这将构建并打包所有平台的安装包。
+   脚本（`scripts/push-release.js`）会校验工作区干净度、检查本地/远程 tag 是否已存在，并在确认后创建并推送 tag。**它只推 tag**——构建与发布全部由 CI 完成。
 
-5. **执行发布脚本**
-   ```bash
-   npm run release
-   ```
-   
-   脚本将自动：
-   - 创建 Git tag (v1.0.1)
-   - 推送 tag 到远程仓库
-   - 生成 Release Notes
-   - 创建 GitHub Release
-   - 上传所有打包产物
+4. **CI 自动构建并发布**
 
-### 方式二：自动发布（推荐用于生产）
-
-1. **更新版本号和 CHANGELOG**（同上）
-
-2. **提交并推送更改**
-   ```bash
-   git add package.json CHANGELOG.md
-   git commit -m "chore: bump version to 1.0.1"
-   git push
-   ```
-
-3. **创建并推送 tag**
-   ```bash
-   git tag -a v1.0.1 -m "Release 1.0.1"
-   git push origin v1.0.1
-   ```
-
-4. **GitHub Actions 自动构建**
-   
-   推送 tag 后，GitHub Actions 会自动：
-   - 在 Windows 和 macOS 上构建应用
-   - 打包所有格式（NSIS、DMG、ZIP）
-   - 创建 GitHub Release
-   - 上传所有产物
+   推送 `v*` tag 后，`release.yml` 自动：
+   - 在 `windows-2022` / `macos-14` / `ubuntu-latest` 三平台并行 `npm run package:<platform>`；
+   - 构建期拉取内核与面板（见下「构建期外部产物」），mac 额外把 arm64/x64 两份 `.app` 打成 DMG；
+   - 汇总各平台产物，生成 Release Notes，经 `softprops/action-gh-release` 创建 GitHub Release 并上传全部安装包。
 
 5. **检查 Release**
-   
-   访问 GitHub 仓库的 Releases 页面，确认发布成功。
 
-## 版本号规范
+   打开仓库 Releases 页，确认版本、各平台产物齐全（尤其 mac arm64 与 x64 两份，历史上易缺其一）。
 
-遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范：
+## 本地全量打包（可选：验证 / 离线出包，不触发发布）
 
-- **主版本号 (MAJOR)**: 不兼容的 API 修改
-- **次版本号 (MINOR)**: 向下兼容的功能性新增
-- **修订号 (PATCH)**: 向下兼容的问题修正
+```bash
+npm run release:prepare   # = fetch:core + fetch:cronet + fetch:dashboard + build + package:all（win+mac+linux）
+# 或按平台：
+npm run dist:win          # Windows（nsis + portable，x64）
+npm run dist:mac          # macOS（arm64 + x64）
+npm run dist:linux        # Linux（AppImage + deb，x64）
+```
+`dist:*` 带 `--publish never`，只产出本地包、不上传。产物在 `dist-package/`。
 
-示例：
-- `1.0.0` → `1.0.1`: 修复 bug
-- `1.0.0` → `1.1.0`: 添加新功能
-- `1.0.0` → `2.0.0`: 重大更新，可能不兼容
+## 构建期外部产物（不入库，构建时拉取）
+
+内核与面板**不再随仓库入库**，改为构建期从官方 Release 按 SHA 校验拉取（仓库瘦身、防膨胀）：
+
+| 脚本 | 拉取内容 |
+|------|----------|
+| `fetch:core` | sing-box 内核（`coreArchiveSha256` 校验压缩包 = 官方 release digest，零后处理） |
+| `fetch:cronet` | cronet 库（Windows/Linux dlopen 外部库；macOS 静态编入不需要） |
+| `fetch:dashboard` | clash 面板静态资源 |
+
+`package:*` / `dist:*` 已串联对应 fetch 步骤。换内核版本：改 `src/shared/core-manifest.json` 的 `bundledCoreVersion` + `coreArchiveSha256`（压缩包 SHA256，= 官方 release asset digest）后重新 `fetch:core --force`。
 
 ## 打包产物
 
-每次发布会生成以下文件：
+| 平台 | 产物 | 架构 |
+|------|------|------|
+| Windows | NSIS 安装器 + portable | x64 |
+| macOS | DMG | arm64、x64 |
+| Linux | AppImage + deb | x64 |
 
-### Windows
-- `FlowZ-{version}-win-x64.exe` - NSIS 安装程序
-- `FlowZ-{version}-win-x64.zip` - 便携版
+> 提权 helper 二进制由 `build:helper`（Go）现编现打进 mac/win 包；CI 在 mac/win runner 装 Go。缺 Go → 安装时报「提权助手二进制缺失」。
 
-### macOS
-- `FlowZ-{version}-mac-x64.dmg` - Intel 芯片 DMG 镜像
-- `FlowZ-{version}-mac-arm64.dmg` - Apple Silicon DMG 镜像
-- `FlowZ-{version}-mac-x64.zip` - Intel 芯片便携版
-- `FlowZ-{version}-mac-arm64.zip` - Apple Silicon 便携版
+## 版本号规范
+
+遵循 [语义化版本](https://semver.org/lang/zh-CN/)：
+
+- **MAJOR**：不兼容变更
+- **MINOR**：向下兼容的新功能
+- **PATCH**：向下兼容的修复
+
+tag 形如 `v4.1.4`（`push-release.js` 自动加 `v` 前缀，勿手写带 `v` 的 version）。
 
 ## 故障排除
 
-### 问题：GitHub CLI 未安装
-
-**解决方案**：
-```bash
-# macOS
-brew install gh
-
-# Windows
-winget install --id GitHub.cli
-```
-
-### 问题：权限不足
-
-**解决方案**：
-```bash
-gh auth login
-```
-按照提示完成认证。
-
-### 问题：Tag 已存在
-
-**解决方案**：
-```bash
-# 删除本地 tag
-git tag -d v1.0.1
-
-# 删除远程 tag
-git push origin :refs/tags/v1.0.1
-
-# 重新创建 tag
-git tag -a v1.0.1 -m "Release 1.0.1"
-git push origin v1.0.1
-```
-
-### 问题：打包失败
-
-**解决方案**：
-1. 确保所有依赖已安装：`npm ci`
-2. 清理并重新构建：`npm run build`
-3. 检查资源文件是否完整（sing-box 二进制、图标等）
-4. 查看详细错误日志
+| 问题 | 处理 |
+|------|------|
+| 远程 tag 已存在 | `npm run release:tag -- -u` 强制更新，或改 `package.json` 版本号后重发 |
+| Release 缺 mac 某架构包 | CI「Create DMG」步对缺失架构会 `::error::`；检查 `package:mac` 的 `electron-builder --arm64 --x64` 是否两架构都产出 |
+| 安装报「提权助手二进制缺失」 | 该平台打包时缺 Go → 装 Go 后重打（CI 已自动装；本地 `dist:mac`/`dist:win` 需本机 Go） |
+| 构建失败 | `npm ci` 重装依赖；确认能联网（`fetch:core`/`fetch:cronet`/`fetch:dashboard` 需访问官方 Release）；查 CI 日志定位平台 |
 
 ## CI/CD 配置
 
-### GitHub Actions 工作流
-
-项目包含两个工作流：
-
-1. **build.yml**: 每次推送到 main/develop 分支时自动构建
-2. **release.yml**: 推送 tag 时自动发布
-
-### 环境变量
-
-GitHub Actions 使用以下环境变量：
-- `GITHUB_TOKEN`: 自动提供，用于创建 Release
-
-### 自定义配置
-
-如需修改 CI/CD 配置，编辑 `.github/workflows/` 目录下的文件。
-
-## 最佳实践
-
-1. **测试后再发布**: 在本地充分测试后再发布
-2. **更新文档**: 确保 CHANGELOG 和 README 是最新的
-3. **语义化版本**: 严格遵循语义化版本规范
-4. **发布说明**: 在 Release Notes 中清晰描述更新内容
-5. **备份**: 发布前备份重要数据
-6. **回滚计划**: 准备好回滚方案以应对问题
+- **`.github/workflows/build.yml`**：推送到分支时构建校验。
+- **`.github/workflows/release.yml`**：推送 `v*` tag 时三平台打包 + 自动建 Release。
+- 环境变量：CI 用内置 `GITHUB_TOKEN`（`permissions: contents: write`）创建 Release；electron 二进制走 npmmirror 镜像加速。
+- 修改 CI：编辑 `.github/workflows/` 下的文件。
 
 ## 参考资料
 
 - [Electron Builder 文档](https://www.electron.build/)
-- [GitHub CLI 文档](https://cli.github.com/manual/)
+- [softprops/action-gh-release](https://github.com/softprops/action-gh-release)
 - [GitHub Actions 文档](https://docs.github.com/en/actions)
 - [语义化版本规范](https://semver.org/lang/zh-CN/)

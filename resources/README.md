@@ -1,68 +1,71 @@
-# Resources directory
+# 资源文件目录
 
-[English](README.md) · [中文](README.zh-CN.md)
+**简体中文** · [English](README.en.md)
 
-Cross-platform resource files for the app.
+这个目录包含应用程序的跨平台资源文件。
 
-## Layout
+## 目录结构
 
 ```
 resources/
 ├── win/                          # Windows (x64)
-│   ├── sing-box.exe              # sing-box binary (fetched, not committed)
-│   ├── libcronet.dll             # NaiveProxy/cronet runtime lib (dlopen, fetched, not committed)
-│   └── com.flowz.helper.exe      # privilege service helper (built, not committed)
+│   ├── sing-box.exe              # sing-box 可执行文件（fetch 产物，不入库）
+│   ├── libcronet.dll             # NaïveProxy/cronet 运行时库（dlopen，fetch 产物，不入库）
+│   └── com.flowz.helper.exe      # 提权服务 helper（build 产物，不入库）
 ├── linux/                        # Linux (x64)
-│   ├── sing-box                  # sing-box binary (fetched, not committed)
-│   └── libcronet.so              # NaiveProxy/cronet runtime lib (dlopen, fetched, not committed)
+│   ├── sing-box                  # sing-box 可执行文件（fetch 产物，不入库）
+│   └── libcronet.so              # NaïveProxy/cronet 运行时库（dlopen，fetch 产物，不入库）
 ├── mac-x64/                      # macOS Intel (x64)
-│   ├── sing-box                  # sing-box binary (fetched, not committed)
-│   └── com.flowz.helper          # privilege service helper (built, not committed)
+│   ├── sing-box                  # sing-box 可执行文件（fetch 产物，不入库）
+│   └── com.flowz.helper          # 提权服务 helper（build 产物，不入库）
 ├── mac-arm64/                    # macOS Apple Silicon (arm64)
-│   ├── sing-box                  # sing-box binary (fetched, not committed)
-│   ├── com.flowz.helper          # privilege service helper (built, not committed)
+│   ├── sing-box                  # sing-box 可执行文件（fetch 产物，不入库）
+│   ├── com.flowz.helper          # 提权服务 helper（build 产物，不入库）
 │   └── LICENSE
-├── dashboard/                    # official sing-box dashboard static assets (fetched, not committed)
-├── data/                         # shared data: bundled geo rule-sets (geoip-*.srs / geosite-*.srs, committed)
-├── app.png / app-gray.png        # tray icons (normal / grayed)
-└── README.md
+├── dashboard/                    # sing-box 官方面板静态资源（fetch 产物，不入库）
+├── data/                         # 共享数据：随包内置 geo 规则集（geoip-*.srs / geosite-*.srs，入库）
+├── app.png / app-gray.png        # 托盘图标（常态/置灰）
+├── README.md                     # 本文档（简体中文）
+└── README.en.md                  # English
 ```
 
-> The `data/` geo rule-sets, icons, and `LICENSE` are **committed**; the `sing-box` binary, `libcronet.*`, `dashboard/`, and `com.flowz.helper{,.exe}` are large or build artifacts and are **not committed** — they're fetched/built in dev/CI and packaged together with `resources/`:
+> 说明：`data/` geo 规则集、图标与 `LICENSE` **入库**；`sing-box` 二进制、`libcronet.*`、`dashboard/`、
+> `com.flowz.helper{,.exe}` 体积大或属构建产物 **不入库**，由下列命令在开发/CI 现拉现编后随 `resources/` 一起打包：
 >
-> - `npm run fetch:core`      → per-platform `sing-box[.exe]` (SagerNet official release; pulled per `core-manifest.json` `bundledCoreVersion`, archive verified by `coreArchiveSha256`)
-> - `npm run fetch:cronet`    → per-platform `libcronet.*` (NaiveProxy/cronet, runtime dlopen)
-> - `npm run fetch:dashboard` → `dashboard/` (official panel, gh-pages build output)
-> - `npm run build:helper`    → per-platform `com.flowz.helper{,.exe}` (privilege service, cross-compiled)
+> - `npm run fetch:core`     → 各平台 `sing-box[.exe]`（SagerNet 官方 release，按 core-manifest.json 的 `bundledCoreVersion` 拉、`coreArchiveSha256` 校验压缩包）
+> - `npm run fetch:cronet`   → 各平台 `libcronet.*`（NaïveProxy/cronet，运行时 dlopen）
+> - `npm run fetch:dashboard`→ `dashboard/`（官方面板，gh-pages 构建产物）
+> - `npm run build:helper`   → 各平台 `com.flowz.helper{,.exe}`（提权服务，交叉编译）
 >
-> The app icon itself is `build/icon.ico` / `build/icon.icns` (used by electron-builder); `resources/app*.png` are tray icons only.
+> 应用图标本体见 `build/icon.ico` / `build/icon.icns`（electron-builder 打包用）；`resources/app*.png` 仅作托盘图标。
 
-## Resource management
+## 资源管理
 
-The app accesses these files through the `ResourceManager` class:
+应用程序使用 `ResourceManager` 类来管理资源文件的访问：
 
-- Auto-detects the current platform and architecture (win / linux / mac-x64 / mac-arm64).
-- Handles the path difference between development and production.
-- Provides a unified resource-access interface.
+- 自动检测当前平台和架构（win / linux / mac-x64 / mac-arm64）
+- 处理开发环境和生产环境的路径差异
+- 提供统一的资源访问接口
 
-## Development vs production
+## 开发环境 vs 生产环境
 
-- **Development**: loaded from the project-root `resources/`.
-- **Production**: loaded from the packaged `resources/` (electron-builder `extraResources`).
+- **开发环境**：从项目根目录的 `resources/` 加载。
+- **生产环境**：从打包后的 `resources/`（electron-builder `extraResources`）加载。
 
-## Notes
+## 注意事项
 
-1. **Executable bit**: `sing-box` and the helper on macOS / Linux need the executable bit (`chmod +x`).
-2. **File size**: the `sing-box` binary is large (~65–77 MB per platform) and affects installer size; hence it's not committed and is fetched at build time by `npm run fetch:core` (see above and "Swapping the core").
-3. **Updates**: GeoIP/GeoSite data (`data/*.srs`) should be refreshed periodically; at runtime they can also be updated online into userData via the Rule Resources manager.
-4. **Swapping the core**: edit `src/shared/core-manifest.json` `bundledCoreVersion` + `coreArchiveSha256` (per-platform archive sha; the value equals the official release REST API asset digest), then `npm run fetch:core -- --force`. One-liner to read the digests:
-   ```bash
-   gh api repos/SagerNet/sing-box/releases/tags/v<version> --jq '.assets[]|select(.name|test("(linux-amd64.tar.gz|windows-amd64.zip|darwin-amd64.tar.gz|darwin-arm64.tar.gz)$"))|{name,digest}'
-   ```
-   The digest looks like `sha256:<hex>` and can be pasted **as-is** into `coreArchiveSha256` (`fetch:core` strips the `sha256:` prefix before comparing). `libcronet` is managed separately by `cronetVersion` and need not change with the core (unless the official core's ABI changes). When swapping, confirm the binary's `Tags` include `with_naive_outbound` (prerequisite for naive support).
+1. **可执行权限**：macOS / Linux 的 `sing-box` 与 helper 需可执行权限（`chmod +x`）。
+2. **文件大小**：`sing-box` 可执行文件较大（约 65–77 MB/平台），会影响安装包大小；故不入库、由 `npm run fetch:core` 现拉现打（见文首说明与下「换核」）。
+3. **更新**：GeoIP/GeoSite 数据（`data/*.srs`）需定期更新以获得最新路由规则；运行期亦可经规则资源管理在线更新到 userData。
+4. **换核**：改 `src/shared/core-manifest.json` 的 `bundledCoreVersion` + `coreArchiveSha256`（4 平台压缩包 sha，
+   值 = 官方 release REST API 的 asset digest，一行取：
+   `gh api repos/SagerNet/sing-box/releases/tags/v<新版本> --jq '.assets[]|select(.name|test("(linux-amd64.tar.gz|windows-amd64.zip|darwin-amd64.tar.gz|darwin-arm64.tar.gz)$"))|{name,digest}'`，
+   digest 形如 `sha256:<hex>`，**可原样填入** coreArchiveSha256，`fetch:core` 会自动 strip `sha256:` 前缀后比对），
+   再 `npm run fetch:core -- --force` 拉新核（无需手动下载/替换二进制；不入库）。`libcronet` 独立按 `cronetVersion`
+   管理，换核不必同步（除非官方核 ABI 变更）。换核须确认二进制 `Tags` 含 `with_naive_outbound`（naive 支持前提）。
 
-## sing-box version
+## sing-box 版本
 
-Current: **1.14.0-alpha.34** (SagerNet official release; `Tags` include `with_naive_outbound`).
+当前使用的 sing-box 版本：**1.14.0-alpha.34**（SagerNet 官方 release，`Tags` 含 `with_naive_outbound`）
 
-Downloads: https://github.com/SagerNet/sing-box/releases
+下载地址：https://github.com/SagerNet/sing-box/releases
