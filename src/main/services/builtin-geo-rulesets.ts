@@ -195,6 +195,9 @@ export async function seedBuiltinRuleSets(opts?: {
     if (!reason) continue;
     try {
       if (!fssync.existsSync(src)) continue; // 出厂文件缺失（异常打包）→ 跳过，由网络更新兜底
+      // src 本身损坏（404/空文件污染打包）→ 跳过：seed 只校验 dest，不校验 src 会把坏文件原样种进运行时目录，
+      // 之后 route builder isValidSrsFile(dest) 失败 → 智能/全局模式真悬空引用。校验 src 魔数，坏的留给网络更新兜底。
+      if (!isValidSrsFile(src)) continue;
       await fsp.mkdir(runtimeDir, { recursive: true });
       const tmp = `${dest}.seed-${process.pid}-${seedCounter++}`;
       await fsp.copyFile(src, tmp);

@@ -612,7 +612,13 @@ export function buildRouteConfig(
     // 私有/本地**域名**直连（geosite-private，补 ip_cidr 的域名盲区，如路由器后台域）。geosite-private 由
     // BUILTIN_GEO_RULESETS 随包 bundle + 自动更新 fswatch 热加载；仅在本地 .srs 有效时加规则，缺失则跳过
     // （不引用不存在的 rule_set，避免 FATAL）——与上面 getLocalGeoRuleSets 的缺失即跳过一致。
-    if (isValidSrsFile(path.join(getRuntimeRulesDir(), 'geosite-private.srs'))) {
+    // **必须 proxyMode !== 'direct'**：下方 rule_set 定义注入块受 `proxyMode !== 'direct'` 门控，direct 模式整块跳过、
+    // 不注入 geosite-private 的本地定义；若此处仍引用，则成悬空引用被末尾剪枝，误报「geosite-private 缺少本地副本」
+    // （实为模式门控不对称，文件并不缺）。direct 模式本就 final:direct，私网域名无需此规则——故与定义块对齐门控。
+    if (
+      proxyMode !== 'direct' &&
+      isValidSrsFile(path.join(getRuntimeRulesDir(), 'geosite-private.srs'))
+    ) {
       rules.push({ rule_set: 'geosite-private', action: 'route', outbound: 'direct' });
     }
   }
