@@ -10,7 +10,7 @@ import {
 import { LogManager } from './LogManager';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
-import { resolveAutoLanguage } from '../../shared/language';
+import { mt, setMainLanguage } from '../i18n';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
@@ -101,9 +101,8 @@ export class TrayManager implements ITrayManager {
   private selectedServerId: string | null = null;
   private proxyMode: ProxyMode = 'smart';
   private proxyModeType: ProxyModeType = 'systemProxy';
-  // 应用内语言设置，由渲染进程通过 IPC 同步过来（App mount 即发实际语言）；此为渲染端同步到达前的初值。
-  // 用 getPreferredSystemLanguages 真实跟随系统（绝不用 app.getLocale——恒返 app bundle locale=en，与系统脱钩）。
-  private currentLanguage: string = resolveAutoLanguage(app.getPreferredSystemLanguages?.() ?? []);
+  // 语言：托盘文案经 mt() 走主进程 i18n 中央语言持有点（index.ts 启动按系统偏好初始化 + APP_SET_LANGUAGE 同步），
+  // 故本类不再自持 currentLanguage——setLanguage 只负责同步持有点并触发重渲染。
 
   // 回调函数
   private onStartProxy?: () => void;
@@ -271,17 +270,9 @@ export class TrayManager implements ITrayManager {
    * 设置应用语言（由主进程根据渲染进程 IPC 调用）
    */
   setLanguage(lang: string): void {
-    this.currentLanguage = lang;
+    setMainLanguage(lang); // 同步主进程 i18n 持有点（mt() 据此取文案）
     // 重新渲染菜单以应用新语言
     this.updateTrayMenu(this.isProxyRunning);
-  }
-
-  /**
-   * 获取本地化字符串（主进程托盘菜单用）
-   * 根据应用语言配置决定显示中文还是英文
-   */
-  private t(zh: string, en: string): string {
-    return this.currentLanguage.startsWith('zh') ? zh : en;
   }
 
   /**
@@ -305,13 +296,13 @@ export class TrayManager implements ITrayManager {
     let statusLabel: string;
     let statusState: 'connected' | 'disconnected' | 'error';
     if (data.hasError) {
-      statusLabel = this.t('连接异常', 'Connection Error');
+      statusLabel = mt('trayStatusError');
       statusState = 'error';
     } else if (data.isProxyRunning) {
-      statusLabel = this.t('已连接', 'Connected');
+      statusLabel = mt('trayStatusConnected');
       statusState = 'connected';
     } else {
-      statusLabel = this.t('已断开', 'Disconnected');
+      statusLabel = mt('trayStatusDisconnected');
       statusState = 'disconnected';
     }
 
@@ -329,7 +320,7 @@ export class TrayManager implements ITrayManager {
         latency !== undefined
           ? latency !== null
             ? ` [${latency}ms]`
-            : ` [${this.t('超时', 'Timeout')}]`
+            : ` [${mt('trayTimeout')}]`
           : '';
       // 超长只截「名字」，保「（协议）[延迟]」完整——延迟是选节点的关键信息，不应被尾部截断吃掉。
       const suffix = `（${proto}）${latencyStr}`;
@@ -346,7 +337,7 @@ export class TrayManager implements ITrayManager {
 
     // 「直连」置顶项（全局直连哨兵，#73）：与首页节点选择同概念、同步；选中即 proxy-selector→direct（热切换）。
     serverSubmenu.push({
-      label: this.t('直连', 'Direct'),
+      label: mt('trayDirect'),
       type: 'radio' as const,
       checked: isDirectSelection(data.selectedServerId),
       click: () => this.handleSelectServer(DIRECT_SERVER_ID),
@@ -355,7 +346,7 @@ export class TrayManager implements ITrayManager {
 
     if (data.servers.length === 0) {
       serverSubmenu.push({
-        label: this.t('未配置服务器', 'No Servers Configured'),
+        label: mt('trayNoServers'),
         enabled: false,
       });
       serverSubmenu.push({ type: 'separator' });
@@ -368,11 +359,7 @@ export class TrayManager implements ITrayManager {
         // 多来源：每个订阅/自建/组网一个子菜单
         for (const g of groups) {
           serverSubmenu.push({
-            label: g.isMesh
-              ? this.t('组网', 'Mesh')
-              : g.isManual
-                ? this.t('自建节点', 'Custom Nodes')
-                : g.name,
+            label: g.isMesh ? mt('trayMesh') : g.isManual ? mt('trayCustomNodes') : g.name,
             submenu: g.servers.map(buildServerItem),
           });
         }
@@ -382,15 +369,15 @@ export class TrayManager implements ITrayManager {
 
     // 添加"管理服务器"选项
     serverSubmenu.push({
-      label: this.t('管理服务器', 'Manage Servers'),
+      label: mt('trayManageServers'),
       click: () => this.handleManageServers(),
     });
 
     // 代理模式标签映射
     const proxyModeLabels: Record<ProxyMode, string> = {
-      global: this.t('全局代理', 'Global Proxy'),
-      smart: this.t('智能分流', 'Smart Routing'),
-      direct: this.t('直连模式', 'Direct Connection'),
+      global: mt('trayGlobalProxy'),
+      smart: mt('traySmartRouting'),
+      direct: mt('trayDirectMode'),
     };
 
     // 构建代理模式子菜单
@@ -405,9 +392,9 @@ export class TrayManager implements ITrayManager {
 
     // 接管方式（systemProxy/tun/manual）子菜单——无需打开主窗口即可切换
     const proxyModeTypeLabels: Record<ProxyModeType, string> = {
-      systemProxy: this.t('系统代理', 'System Proxy'),
-      tun: this.t('TUN 网卡', 'TUN'),
-      manual: this.t('仅本地', 'Local Only'),
+      systemProxy: mt('traySystemProxy'),
+      tun: mt('trayTun'),
+      manual: mt('trayLocalOnly'),
     };
     const proxyModeTypeSubmenu: MenuItemConstructorOptions[] = (
       ['systemProxy', 'tun', 'manual'] as ProxyModeType[]
@@ -426,13 +413,11 @@ export class TrayManager implements ITrayManager {
       },
       { type: 'separator' },
       {
-        label: this.t('打开主窗口', 'Open Main Window'),
+        label: mt('trayOpenMainWindow'),
         click: () => this.handleShowWindow(),
       },
       {
-        label: data.isProxyRunning
-          ? this.t('禁用代理', 'Disable Proxy')
-          : this.t('启用代理', 'Enable Proxy'),
+        label: data.isProxyRunning ? mt('trayDisableProxy') : mt('trayEnableProxy'),
         click: () => {
           if (data.isProxyRunning) {
             this.handleStopProxy();
@@ -443,32 +428,32 @@ export class TrayManager implements ITrayManager {
       },
       { type: 'separator' },
       {
-        label: this.t('选择服务器', 'Select Server'),
+        label: mt('traySelectServer'),
         submenu: serverSubmenu,
       },
       {
-        label: this.t('接管方式', 'Takeover'),
+        label: mt('trayTakeover'),
         submenu: proxyModeTypeSubmenu,
       },
       {
-        label: this.t('分流策略', 'Routing'),
+        label: mt('trayRouting'),
         submenu: proxyModeSubmenu,
       },
       { type: 'separator' },
       {
-        label: this.t('进入轻量模式', 'Enter Lightweight Mode'),
+        label: mt('trayLightweightMode'),
         click: () => this.handleLightweightMode(),
       },
       {
-        label: this.t('进入隐私模式', 'Enter Privacy Mode'),
+        label: mt('trayPrivacyMode'),
         click: () => this.handleEnterPrivacyMode(),
       },
       {
-        label: this.t('打开设置', 'Open Settings'),
+        label: mt('trayOpenSettings'),
         click: () => this.handleOpenSettings(),
       },
       {
-        label: this.t('检查更新', 'Check for Updates'),
+        label: mt('trayCheckUpdates'),
         click: () => this.handleCheckUpdate(),
       },
       { type: 'separator' },
@@ -479,7 +464,7 @@ export class TrayManager implements ITrayManager {
       },
       { type: 'separator' },
       {
-        label: this.t('退出', 'Quit'),
+        label: mt('trayQuit'),
         click: () => this.handleQuit(),
       },
     ]);
@@ -727,9 +712,9 @@ export class TrayManager implements ITrayManager {
    */
   private getSpeedTestLabel(): string {
     if (this.isSpeedTesting) {
-      return this.t('测速中...', 'Testing Speed...');
+      return mt('trayTestingSpeed');
     }
-    return this.t('服务器测速', 'Speed Test');
+    return mt('traySpeedTest');
   }
 
   /**
@@ -774,9 +759,9 @@ export class TrayManager implements ITrayManager {
     if (!this.tray) return;
 
     const tooltips: Record<TrayIconState, string> = {
-      idle: this.t('FlowZ - 未连接', 'FlowZ - Disconnected'),
-      connecting: this.t('FlowZ - 连接中...', 'FlowZ - Connecting...'),
-      connected: this.t('FlowZ - 已连接', 'FlowZ - Connected'),
+      idle: mt('trayTooltipDisconnected'),
+      connecting: mt('trayTooltipConnecting'),
+      connected: mt('trayTooltipConnected'),
     };
 
     const tooltip = tooltips[this.currentState];

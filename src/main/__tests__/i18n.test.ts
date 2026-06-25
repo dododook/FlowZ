@@ -5,15 +5,10 @@
 jest.mock('electron', () => ({ app: {} }));
 
 import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from '../../shared/language';
-import { mt, setMainLanguage, getMainLanguage, type MainMessageKey } from '../i18n';
+import { mt, setMainLanguage, getMainLanguage, MAIN_MESSAGE_KEYS } from '../i18n';
 
-const KEYS: MainMessageKey[] = [
-  'proxyErrorTitle',
-  'proxyErrorBody',
-  'helperDisabledTitle',
-  'helperDisabledBody',
-  'tailscaleAuthBody',
-];
+// 自动覆盖全部文案键（通知 + 托盘 + 对话框 + 未来新增），无需手维护清单。
+const KEYS = MAIN_MESSAGE_KEYS;
 
 afterEach(() => setMainLanguage(DEFAULT_LANGUAGE)); // 复位模块级语言
 
