@@ -64,9 +64,9 @@ export function AppearanceSettings() {
     localStorage.setItem('app-language', choice);
     i18n.changeLanguage(effective);
     api.config.setLanguage(effective).catch(console.error);
-    toast.success(
-      t('settings.appearance.languageUpdated', { lng: NATIVE_NAMES[effective] ?? effective })
-    );
+    // 用切换后的【实际语言码】强制解析提示文案（lng 是 i18next 保留选项=强制解析语言，必须是语言码而非显示名；
+    // languageUpdated 各 locale 是自描述的「已切换为X」，故提示恒以目标语言显示）。
+    toast.success(t('settings.appearance.languageUpdated', { lng: effective }));
   };
 
   return (
