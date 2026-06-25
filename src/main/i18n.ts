@@ -276,6 +276,164 @@ const MESSAGES = {
     ru: 'FlowZ — Подключено',
     fa: 'FlowZ — متصل',
   },
+
+  // —— 提权 helper 授权对话框（index.ts）：按钮 ——
+  btnCancel: {
+    'zh-CN': '取消',
+    'zh-TW': '取消',
+    'en-US': 'Cancel',
+    ru: 'Отмена',
+    fa: 'لغو',
+  },
+  btnRepairStart: {
+    'zh-CN': '修复并启动',
+    'zh-TW': '修復並啟動',
+    'en-US': 'Repair & start',
+    ru: 'Исправить и запустить',
+    fa: 'تعمیر و راه‌اندازی',
+  },
+  btnInstallStart: {
+    'zh-CN': '安装并启动',
+    'zh-TW': '安裝並啟動',
+    'en-US': 'Install & start',
+    ru: 'Установить и запустить',
+    fa: 'نصب و راه‌اندازی',
+  },
+  btnUseUac: {
+    'zh-CN': '用 UAC 启动',
+    'zh-TW': '用 UAC 啟動',
+    'en-US': 'Use UAC',
+    ru: 'Запустить через UAC',
+    fa: 'راه‌اندازی با UAC',
+  },
+  btnUseSystemAuth: {
+    'zh-CN': '用系统授权启动',
+    'zh-TW': '用系統授權啟動',
+    'en-US': 'Use system auth',
+    ru: 'С системной авторизацией',
+    fa: 'با احراز هویت سیستم',
+  },
+  btnOpenSystemSettings: {
+    'zh-CN': '打开系统设置',
+    'zh-TW': '開啟系統設定',
+    'en-US': 'Open System Settings',
+    ru: 'Открыть системные настройки',
+    fa: 'باز کردن تنظیمات سیستم',
+  },
+  btnStartThisSession: {
+    'zh-CN': '本次直接启动',
+    'zh-TW': '本次直接啟動',
+    'en-US': 'Start this session',
+    ru: 'Запустить сейчас',
+    fa: 'راه‌اندازی این بار',
+  },
+
+  // —— 对话框：标题 ——
+  dlgWinRepairServiceMsg: {
+    'zh-CN': '修复 Windows 提权服务？',
+    'zh-TW': '修復 Windows 提權服務？',
+    'en-US': 'Repair privileged service?',
+    ru: 'Исправить привилегированную службу?',
+    fa: 'سرویس ممتاز تعمیر شود؟',
+  },
+  dlgWinInstallServiceMsg: {
+    'zh-CN': '安装 Windows 提权服务？',
+    'zh-TW': '安裝 Windows 提權服務？',
+    'en-US': 'Install privileged service?',
+    ru: 'Установить привилегированную службу?',
+    fa: 'سرویس ممتاز نصب شود؟',
+  },
+  dlgMacBgOffMsg: {
+    'zh-CN': '提权助手的「允许在后台」被系统关闭',
+    'zh-TW': '提權助手的「允許在背景」被系統關閉',
+    'en-US': 'Helper "Allow in Background" is off',
+    ru: 'У помощника отключено «Разрешить в фоне»',
+    fa: 'گزینه «اجازه در پس‌زمینه» دستیار خاموش است',
+  },
+  dlgMacRepairHelperMsg: {
+    'zh-CN': '修复提权助手？',
+    'zh-TW': '修復提權助手？',
+    'en-US': 'Repair privileged helper?',
+    ru: 'Исправить привилегированный помощник?',
+    fa: 'دستیار ممتاز تعمیر شود؟',
+  },
+  dlgMacInstallHelperMsg: {
+    'zh-CN': '安装提权助手？',
+    'zh-TW': '安裝提權助手？',
+    'en-US': 'Install privileged helper?',
+    ru: 'Установить привилегированный помощник?',
+    fa: 'دستیار ممتاز نصب شود؟',
+  },
+
+  // —— 对话框：详情（长段落） ——
+  dlgWinRepairDetail: {
+    'zh-CN':
+      '提权服务已安装但未就绪（服务未运行或版本不符）。修复将重装服务，仅需授权一次（UAC）；也可本次用 UAC 启动。',
+    'zh-TW':
+      '提權服務已安裝但未就緒（服務未執行或版本不符）。修復將重裝服務，僅需授權一次（UAC）；也可本次用 UAC 啟動。',
+    'en-US':
+      'The privileged service is installed but not ready. Repair reinstalls it (one UAC prompt); or start with UAC this time.',
+    ru: 'Привилегированная служба установлена, но не готова. Восстановление переустановит её (один запрос UAC); либо запустите через UAC сейчас.',
+    fa: 'سرویس ممتاز نصب شده اما آماده نیست. تعمیر آن را دوباره نصب می‌کند (یک بار درخواست UAC)؛ یا این بار با UAC راه‌اندازی کنید.',
+  },
+  dlgWinInstallDetail: {
+    'zh-CN':
+      '安装后 Windows TUN 模式启停代理免每次 UAC（装服务需管理员授权一次）；也可本次用 UAC 启动。',
+    'zh-TW':
+      '安裝後 Windows TUN 模式啟停代理免每次 UAC（裝服務需管理員授權一次）；也可本次用 UAC 啟動。',
+    'en-US':
+      'After install, Windows TUN start/stop no longer needs UAC each time (installing the service needs one admin prompt); or start with UAC this time.',
+    ru: 'После установки запуск/остановка TUN в Windows больше не требует UAC каждый раз (установка службы требует одного запроса администратора); либо запустите через UAC сейчас.',
+    fa: 'پس از نصب، شروع/توقف TUN در ویندوز دیگر هر بار به UAC نیاز ندارد (نصب سرویس یک بار درخواست مدیر دارد)؛ یا این بار با UAC راه‌اندازی کنید.',
+  },
+  dlgMacBgOffDetail: {
+    'zh-CN':
+      '请在「系统设置 > 通用 > 登录项与扩展」重新打开 FlowZ 的「允许在后台」开关，然后回到 FlowZ 重新点击启动即可（届时免授权直接走提权助手）。\n「本次直接启动」会以系统管理员授权方式运行（弹一次密码框），不依赖后台开关；但之后每次启停都需授权，建议尽快去系统设置打开开关。',
+    'zh-TW':
+      '請在「系統設定 > 一般 > 登入項目與擴充功能」重新打開 FlowZ 的「允許在背景」開關，然後回到 FlowZ 重新點擊啟動即可（屆時免授權直接走提權助手）。\n「本次直接啟動」會以系統管理員授權方式執行（彈一次密碼框），不依賴背景開關；但之後每次啟停都需授權，建議盡快去系統設定打開開關。',
+    'en-US':
+      'Open System Settings → General → Login Items & Extensions and turn the "Allow in Background" toggle back on for FlowZ, then return to FlowZ and start again (no authorization needed then).\n"Start this session" runs with system administrator authorization (one password prompt) and does not depend on the toggle; each start/stop will prompt afterwards, so re-enabling the toggle is recommended.',
+    ru: 'Откройте «Системные настройки → Основные → Объекты входа и расширения» и снова включите переключатель «Разрешить в фоне» для FlowZ, затем вернитесь в FlowZ и запустите снова (тогда авторизация не нужна).\n«Запустить сейчас» работает с авторизацией системного администратора (один запрос пароля) и не зависит от переключателя; после этого каждый запуск/остановка будет запрашивать пароль, поэтому рекомендуется снова включить переключатель.',
+    fa: 'به «تنظیمات سیستم ← عمومی ← موارد ورود و افزونه‌ها» بروید و کلید «اجازه در پس‌زمینه» را برای FlowZ دوباره روشن کنید، سپس به FlowZ بازگردید و دوباره راه‌اندازی کنید (آنگاه به احراز هویت نیازی نیست).\n«راه‌اندازی این بار» با احراز هویت مدیر سیستم اجرا می‌شود (یک بار درخواست رمز) و به این کلید وابسته نیست؛ اما پس از آن هر شروع/توقف درخواست رمز می‌کند، بنابراین روشن کردن دوباره کلید توصیه می‌شود.',
+  },
+  dlgMacRepairNoteOff: {
+    'zh-CN':
+      '\n注意：若系统设置「允许在后台」开关已被关闭，此修复不会恢复该开关；请到「系统设置 > 通用 > 登录项与扩展」手动重新开启。',
+    'zh-TW':
+      '\n注意：若系統設定「允許在背景」開關已被關閉，此修復不會恢復該開關；請到「系統設定 > 一般 > 登入項目與擴充功能」手動重新開啟。',
+    'en-US':
+      '\nNote: if the "Allow in Background" toggle was turned off in System Settings, this repair will NOT restore it; re-enable it manually under System Settings → General → Login Items & Extensions.',
+    ru: '\nПримечание: если переключатель «Разрешить в фоне» был выключен в системных настройках, это восстановление НЕ включит его; включите его вручную в «Системные настройки → Основные → Объекты входа и расширения».',
+    fa: '\nتوجه: اگر کلید «اجازه در پس‌زمینه» در تنظیمات سیستم خاموش شده باشد، این تعمیر آن را بازنمی‌گرداند؛ آن را به‌صورت دستی در «تنظیمات سیستم ← عمومی ← موارد ورود و افزونه‌ها» دوباره فعال کنید.',
+  },
+  dlgMacRepairPathMismatchDetail: {
+    'zh-CN':
+      '检测到应用位置已变更，提权助手仍指向旧路径而无法生效。修复将重新登记当前路径，仅需授权一次；也可本次用系统授权启动。',
+    'zh-TW':
+      '偵測到應用位置已變更，提權助手仍指向舊路徑而無法生效。修復將重新登記目前路徑，僅需授權一次；也可本次用系統授權啟動。',
+    'en-US':
+      'The app was moved and the helper still points to the old path. Repair re-registers the current path (one authorization); or start with system auth this time.',
+    ru: 'Приложение было перемещено, а помощник всё ещё указывает на старый путь. Восстановление заново зарегистрирует текущий путь (одна авторизация); либо запустите с системной авторизацией сейчас.',
+    fa: 'برنامه جابه‌جا شده و دستیار هنوز به مسیر قدیمی اشاره می‌کند. تعمیر مسیر فعلی را دوباره ثبت می‌کند (یک بار احراز هویت)؛ یا این بار با احراز هویت سیستم راه‌اندازی کنید.',
+  },
+  dlgMacRepairUpgradeDetail: {
+    'zh-CN':
+      '提权助手需要更新到新版本（功能改进）。修复将重新安装，仅需授权一次；也可本次用系统授权启动。',
+    'zh-TW':
+      '提權助手需要更新到新版本（功能改進）。修復將重新安裝，僅需授權一次；也可本次用系統授權啟動。',
+    'en-US':
+      'The privileged helper needs updating to a newer version. Repair reinstalls it (one authorization); or start with system auth this time.',
+    ru: 'Привилегированный помощник нужно обновить до новой версии. Восстановление переустановит его (одна авторизация); либо запустите с системной авторизацией сейчас.',
+    fa: 'دستیار ممتاز باید به نسخه جدیدتری به‌روزرسانی شود. تعمیر آن را دوباره نصب می‌کند (یک بار احراز هویت)؛ یا این بار با احراز هویت سیستم راه‌اندازی کنید.',
+  },
+  dlgMacInstallDetail: {
+    'zh-CN': '安装后 TUN 模式启停代理免每次系统授权；也可本次用系统授权启动。',
+    'zh-TW': '安裝後 TUN 模式啟停代理免每次系統授權；也可本次用系統授權啟動。',
+    'en-US':
+      'After install, TUN start/stop no longer needs system authorization each time; or start with system auth this time.',
+    ru: 'После установки запуск/остановка TUN больше не требует системной авторизации каждый раз; либо запустите с системной авторизацией сейчас.',
+    fa: 'پس از نصب، شروع/توقف TUN دیگر هر بار به احراز هویت سیستم نیاز ندارد؛ یا این بار با احراز هویت سیستم راه‌اندازی کنید.',
+  },
 } satisfies Record<string, Record<SupportedLanguage, string>>;
 
 /** 主进程文案键（自 MESSAGES 自动派生，无需手维护 union）。 */

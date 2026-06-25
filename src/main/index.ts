@@ -214,7 +214,7 @@ let ipInfoService: IpInfoService | null = null;
 let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
 let helperManager: IPrivilegedHelper | null = null;
-let currentLanguage = 'zh-CN'; // 渲染端 APP_SET_LANGUAGE 同步，供主进程 native dialog 文案选语言
+let currentLanguage = 'zh-CN'; // 渲染端 APP_SET_LANGUAGE 同步的最近语言；经 setMainLanguage 喂主进程 i18n（mt() 据此取文案，含空值保留旧值的兜底）
 
 /**
  * helper 引导对话框（注入 ProxyManager.setHelperGate，由 start() 在 darwin+TUN+helper 未就绪+未 dismiss
@@ -230,22 +230,17 @@ async function promptHelperGate(
     mainWindow.show();
     mainWindow.focus();
   }
-  const zh = currentLanguage.toLowerCase().startsWith('zh');
   if (process.platform === 'win32') {
     // Windows：无「允许在后台」概念（backgroundDisabled 恒 false）。needsRepair(已装未就绪) → 修复；未装 → 安装。
     // 任一路径仅弹一次 UAC（装服务需管理员授权）；「用 UAC 启动」= 本次回退 buildWindowsUacLaunchCommand（每次 UAC）。
     if (hs.needsRepair) {
       const { response } = await dialog.showMessageBox({
         type: 'question',
-        buttons: zh
-          ? ['修复并启动', '用 UAC 启动', '取消']
-          : ['Repair & start', 'Use UAC', 'Cancel'],
+        buttons: [mt('btnRepairStart'), mt('btnUseUac'), mt('btnCancel')],
         defaultId: 0,
         cancelId: 2,
-        message: zh ? '修复 Windows 提权服务？' : 'Repair privileged service?',
-        detail: zh
-          ? '提权服务已安装但未就绪（服务未运行或版本不符）。修复将重装服务，仅需授权一次（UAC）；也可本次用 UAC 启动。'
-          : 'The privileged service is installed but not ready. Repair reinstalls it (one UAC prompt); or start with UAC this time.',
+        message: mt('dlgWinRepairServiceMsg'),
+        detail: mt('dlgWinRepairDetail'),
       });
       if (response === 2) return 'abort';
       if (response === 0) await helperManager.install().catch(() => {});
@@ -253,15 +248,11 @@ async function promptHelperGate(
     }
     const { response } = await dialog.showMessageBox({
       type: 'question',
-      buttons: zh
-        ? ['安装并启动', '用 UAC 启动', '取消']
-        : ['Install & start', 'Use UAC', 'Cancel'],
+      buttons: [mt('btnInstallStart'), mt('btnUseUac'), mt('btnCancel')],
       defaultId: 0,
       cancelId: 2,
-      message: zh ? '安装 Windows 提权服务？' : 'Install privileged service?',
-      detail: zh
-        ? '安装后 Windows TUN 模式启停代理免每次 UAC（装服务需管理员授权一次）；也可本次用 UAC 启动。'
-        : 'After install, Windows TUN start/stop no longer needs UAC each time (installing the service needs one admin prompt); or start with UAC this time.',
+      message: mt('dlgWinInstallServiceMsg'),
+      detail: mt('dlgWinInstallDetail'),
     });
     if (response === 2) return 'abort';
     if (response === 0) await helperManager.install().catch(() => {});
@@ -276,15 +267,11 @@ async function promptHelperGate(
     //  - 取消。
     const { response } = await dialog.showMessageBox({
       type: 'question',
-      buttons: zh
-        ? ['打开系统设置', '本次直接启动', '取消']
-        : ['Open System Settings', 'Start this session', 'Cancel'],
+      buttons: [mt('btnOpenSystemSettings'), mt('btnStartThisSession'), mt('btnCancel')],
       defaultId: 0,
       cancelId: 2,
-      message: zh ? '提权助手的「允许在后台」被系统关闭' : 'Helper "Allow in Background" is off',
-      detail: zh
-        ? '请在「系统设置 > 通用 > 登录项与扩展」重新打开 FlowZ 的「允许在后台」开关，然后回到 FlowZ 重新点击启动即可（届时免授权直接走提权助手）。\n「本次直接启动」会以系统管理员授权方式运行（弹一次密码框），不依赖后台开关；但之后每次启停都需授权，建议尽快去系统设置打开开关。'
-        : 'Open System Settings → General → Login Items & Extensions and turn the "Allow in Background" toggle back on for FlowZ, then return to FlowZ and start again (no authorization needed then).\n"Start this session" runs with system administrator authorization (one password prompt) and does not depend on the toggle; each start/stop will prompt afterwards, so re-enabling the toggle is recommended.',
+      message: mt('dlgMacBgOffMsg'),
+      detail: mt('dlgMacBgOffDetail'),
     });
     if (response === 0) {
       await shell.openExternal(LOGIN_ITEMS_SETTINGS_URL).catch(() => {});
@@ -303,26 +290,15 @@ async function promptHelperGate(
     //  - pathMismatch：应用被移动，plist 烧录路径失效；
     //  - 否则（!ready）：多为协议版本升级（如 v2→v3），已装 helper 需重装到新版本。
     // 诚实化：此「修复」=重装，**不会**恢复系统设置里「允许在后台」开关；若开关被关需到系统设置手动开启（Bug2 文案）。
-    const noteOff = zh
-      ? '\n注意：若系统设置「允许在后台」开关已被关闭，此修复不会恢复该开关；请到「系统设置 > 通用 > 登录项与扩展」手动重新开启。'
-      : '\nNote: if the "Allow in Background" toggle was turned off in System Settings, this repair will NOT restore it; re-enable it manually under System Settings → General → Login Items & Extensions.';
     const detail =
-      (zh
-        ? hs.pathMismatch
-          ? '检测到应用位置已变更，提权助手仍指向旧路径而无法生效。修复将重新登记当前路径，仅需授权一次；也可本次用系统授权启动。'
-          : '提权助手需要更新到新版本（功能改进）。修复将重新安装，仅需授权一次；也可本次用系统授权启动。'
-        : hs.pathMismatch
-          ? 'The app was moved and the helper still points to the old path. Repair re-registers the current path (one authorization); or start with system auth this time.'
-          : 'The privileged helper needs updating to a newer version. Repair reinstalls it (one authorization); or start with system auth this time.') +
-      noteOff;
+      (hs.pathMismatch ? mt('dlgMacRepairPathMismatchDetail') : mt('dlgMacRepairUpgradeDetail')) +
+      mt('dlgMacRepairNoteOff');
     const { response } = await dialog.showMessageBox({
       type: 'question',
-      buttons: zh
-        ? ['修复并启动', '用系统授权启动', '取消']
-        : ['Repair & start', 'Use system auth', 'Cancel'],
+      buttons: [mt('btnRepairStart'), mt('btnUseSystemAuth'), mt('btnCancel')],
       defaultId: 0,
       cancelId: 2,
-      message: zh ? '修复提权助手？' : 'Repair privileged helper?',
+      message: mt('dlgMacRepairHelperMsg'),
       detail,
     });
     if (response === 2) return 'abort'; // 取消：不启动
@@ -332,15 +308,11 @@ async function promptHelperGate(
   // 未安装 → 安装并启动
   const { response } = await dialog.showMessageBox({
     type: 'question',
-    buttons: zh
-      ? ['安装并启动', '用系统授权启动', '取消']
-      : ['Install & start', 'Use system auth', 'Cancel'],
+    buttons: [mt('btnInstallStart'), mt('btnUseSystemAuth'), mt('btnCancel')],
     defaultId: 0,
     cancelId: 2,
-    message: zh ? '安装提权助手？' : 'Install privileged helper?',
-    detail: zh
-      ? '安装后 TUN 模式启停代理免每次系统授权；也可本次用系统授权启动。'
-      : 'After install, TUN start/stop no longer needs system authorization each time; or start with system auth this time.',
+    message: mt('dlgMacInstallHelperMsg'),
+    detail: mt('dlgMacInstallDetail'),
   });
   if (response === 2) return 'abort'; // 取消：不启动
   if (response === 0) await helperManager.install().catch(() => {}); // 装好后 start 走 helper 零提权
