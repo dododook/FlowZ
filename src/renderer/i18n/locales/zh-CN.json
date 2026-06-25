@@ -1434,6 +1434,7 @@
     "expireTime": "到期时间:",
     "autoUpdate": "自动更新",
     "autoUpdateDesc": "启动时自动更新订阅节点",
+    "autoUpdateRestartHint": "开启后，订阅更新有节点变动时会重启代理、短暂断流。",
     "userAgent": "自定义 User-Agent",
     "userAgentPlaceholder": "默认 {{ua}}",
     "userAgentDesc": "拉取订阅用的 User-Agent，留空用默认。",

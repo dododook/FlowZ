@@ -1434,6 +1434,7 @@
     "expireTime": "Expires:",
     "autoUpdate": "Auto Update",
     "autoUpdateDesc": "Auto-update subscription nodes on startup",
+    "autoUpdateRestartHint": "When on, subscription updates that change nodes restart the proxy (brief disconnect).",
     "userAgent": "Custom User-Agent",
     "userAgentPlaceholder": "Default: {{ua}}",
     "userAgentDesc": "User-Agent for fetching the subscription; leave empty for the default.",

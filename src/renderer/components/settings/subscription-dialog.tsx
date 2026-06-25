@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Link as LinkIcon, Edit, Activity } from 'lucide-react';
+import { Loader2, Link as LinkIcon, Edit, Activity, AlertTriangle } from 'lucide-react';
 import type { SubscriptionConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '@/lib/format';
@@ -35,7 +35,7 @@ export function SubscriptionDialog({
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [autoUpdate, setAutoUpdate] = useState(true); // 新增订阅默认开启自动更新（否则「启动自动更新」总开关无意义）
+  const [autoUpdate, setAutoUpdate] = useState(false); // 新增订阅默认【关闭】自动更新：避免订阅刷新带来节点变动触发重启断流，由用户按需手动开启（开启时下方提示重启代价）
   const [userAgent, setUserAgent] = useState('');
   const [appVersion, setAppVersion] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -65,7 +65,7 @@ export function SubscriptionDialog({
       } else {
         setName('');
         setUrl('');
-        setAutoUpdate(true); // 新增订阅默认开启自动更新（否则「启动自动更新」总开关无意义）
+        setAutoUpdate(false); // 新增订阅默认【关闭】自动更新（见上：避免无谓重启断流，按需手动开启）
         setUserAgent('');
       }
     }
@@ -193,6 +193,13 @@ export function SubscriptionDialog({
             </div>
             <Switch id="sub-auto-update" checked={autoUpdate} onCheckedChange={setAutoUpdate} />
           </div>
+          {/* 开启自动更新即提示重启代价（订阅刷新带来节点变动会重启代理、短暂断流） */}
+          {autoUpdate && (
+            <p className="flex items-start gap-1.5 px-1 text-[0.8rem] text-warning">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+              <span>{t('sub.autoUpdateRestartHint')}</span>
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
