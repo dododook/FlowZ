@@ -3,7 +3,9 @@
  * 负责 sing-box 进程的生命周期管理和配置生成
  */
 
-import { BrowserWindow, Notification, shell, powerMonitor } from 'electron';
+import { BrowserWindow, shell, powerMonitor } from 'electron';
+import { notifyUser } from '../notify-user';
+import { mt } from '../i18n';
 import { spawn, ChildProcess } from 'child_process';
 import { system32, powershellPath } from '../utils/win-system32';
 import * as fs from 'fs/promises';
@@ -5019,13 +5021,12 @@ exit 0
     try {
       const hs = await this.helperManager.getStatus().catch(() => null);
       if (!hs?.backgroundDisabled) return;
-      if (!Notification.isSupported()) return;
-      const n = new Notification({
-        title: 'FlowZ 提权助手被系统关闭',
-        body: '「允许在后台」中本应用的提权助手被关闭，TUN 自动启动失败。请在「系统设置 > 通用 > 登录项与扩展」重新打开；点按本通知可直接打开设置。',
-      });
-      n.on('click', () => void shell.openExternal(LOGIN_ITEMS_SETTINGS_URL).catch(() => {}));
-      n.show();
+      // 经 notifyUser 统一出口：受桌面通知总开关管控 + isSupported 守卫内置。文案走 main i18n（5 语）。
+      notifyUser(
+        mt('helperDisabledTitle'),
+        mt('helperDisabledBody'),
+        () => void shell.openExternal(LOGIN_ITEMS_SETTINGS_URL).catch(() => {})
+      );
     } catch {
       /* 通知失败不影响终态 */
     }
@@ -5804,19 +5805,13 @@ exit 0
     }
     // ① 自动开浏览器
     void shell.openExternal(safeUrl).catch(() => {});
-    // ② 系统通知（无窗口依赖，托盘态/窗口关闭也送达）；点击再开一次浏览器。
-    try {
-      if (Notification.isSupported()) {
-        const n = new Notification({
-          title: `Tailscale: ${server.name}`,
-          body: '在浏览器中完成登录授权以加入网络',
-        });
-        n.on('click', () => void shell.openExternal(safeUrl!).catch(() => {}));
-        n.show();
-      }
-    } catch {
-      /* 通知失败不阻断登录流程 */
-    }
+    // ② 系统通知（无窗口依赖，托盘态/窗口关闭也送达）；点击再开一次浏览器。经 notifyUser 统一出口（受总开关管控）。
+    //    标题含 TS 节点名是功能必需（指明哪个节点要登录）；TS 是用户自建组网身份，非代理节点域名/IP。文案走 main i18n（5 语）。
+    notifyUser(
+      `Tailscale: ${server.name}`,
+      mt('tailscaleAuthBody'),
+      () => void shell.openExternal(safeUrl).catch(() => {})
+    );
     // ③ 推渲染端（提示条记录用，降级为可关闭普通 toast，非 Infinity——浏览器已自动打开）。
     //    带 serverId（NIT③）：与 Phase1 + AUTH_OK 用同一 serverId 作 toast id，dismiss 精确命中本节点。
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {

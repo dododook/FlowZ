@@ -350,6 +350,8 @@
       "minimizeToTrayTitle": "最小化到系统托盘",
       "autoLightweightMode": "自动轻量模式",
       "autoLightweightModeDesc": "闲置 10 分钟后关闭界面释放内存，仅托盘驻留，代理不中断；唤出界面即恢复。",
+      "desktopNotifications": "桌面通知",
+      "desktopNotificationsDesc": "代理出现严重错误时弹系统通知。关闭后不再弹任何桌面通知。",
       "autoCheckUpdate": "启动时自动检查更新",
       "rememberWindowSize": "记忆调整后的窗口大小",
       "enableIPv6": "启用 IPv6",

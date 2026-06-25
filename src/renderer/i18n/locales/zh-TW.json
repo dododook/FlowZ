@@ -350,6 +350,8 @@
       "minimizeToTrayTitle": "最小化到系統匣",
       "autoLightweightMode": "自動輕量模式",
       "autoLightweightModeDesc": "閒置 10 分鐘後關閉介面釋放記憶體，僅系統匣常駐，代理不中斷；喚出介面即恢復。",
+      "desktopNotifications": "桌面通知",
+      "desktopNotificationsDesc": "代理發生嚴重錯誤時彈系統通知。關閉後不再彈任何桌面通知。",
       "autoCheckUpdate": "啟動時自動檢查更新",
       "rememberWindowSize": "記憶調整後的視窗大小",
       "enableIPv6": "啟用 IPv6",

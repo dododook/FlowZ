@@ -350,6 +350,8 @@
       "minimizeToTrayTitle": "Minimize to System Tray",
       "autoLightweightMode": "Auto lightweight mode",
       "autoLightweightModeDesc": "After 10 min idle, closes the window to free memory and stays in the tray; the proxy keeps running. Reopening restores it.",
+      "desktopNotifications": "Desktop notifications",
+      "desktopNotificationsDesc": "Show a system notification when the proxy hits a serious error. Turning this off silences all desktop notifications.",
       "autoCheckUpdate": "Check for updates on startup",
       "rememberWindowSize": "Remember window size",
       "enableIPv6": "Enable IPv6",

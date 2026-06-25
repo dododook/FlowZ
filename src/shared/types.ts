@@ -353,6 +353,7 @@ export interface UserConfig {
   minimizeToTray: boolean;
   autoCheckUpdate: boolean;
   autoLightweightMode: boolean;
+  desktopNotifications?: boolean; // 桌面通知总开关（默认开）：当前仅严重错误事件发系统通知，关闭则一概不发
   autoUpdateSubscriptionOnStart: boolean; // 订阅自动更新总开关（启动补更陈旧订阅 + 运行期周期更新）
   subscriptionUpdateIntervalHours?: number; // 订阅自动更新周期/陈旧阈值（小时），默认 12
   subscriptionUpdateViaProxy?: boolean; // 订阅更新是否经代理（默认 false=直连，避免冷启动鸡生蛋 + 订阅地址被墙时再开）

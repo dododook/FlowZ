@@ -10,6 +10,8 @@ import { createSystemProxyManager, SystemProxyBase } from './services/SystemProx
 import { createSystemDnsManager, SystemDnsBase } from './services/SystemDnsManager';
 import { localProxyPort } from '../shared/proxy-ports';
 import { resourceManager } from './services/ResourceManager';
+import { notifyUser, setDesktopNotificationsEnabled } from './notify-user';
+import { mt, setMainLanguage } from './i18n';
 import { SubscriptionService } from './services/SubscriptionService';
 import { registerPrivacyHandlers } from './ipc/handlers/privacy-handlers';
 import {
@@ -61,6 +63,7 @@ import { initUserDataPath } from './utils/paths';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../shared/constants';
 import { effectiveLogLevel } from '../shared/log-level';
+import { resolveAutoLanguage } from '../shared/language';
 
 // ── 启动计时探针（真机量化用，纯日志、零行为改动）─────────────────────────────
 // 从「本模块加载」到「窗口首次可见」的各阶段 ms，window-shown 时一行汇总到 app.log（[startup-timing]）。
@@ -947,6 +950,17 @@ if (gotTheLock) {
     // 记录应用启动日志
     logManager.addLog('info', 'Application started', 'Main');
 
+    // Windows toast 前置：设 AppUserModelID（与 electron-builder appId 一致），提升 portable 版通知可靠性（无 NSIS 注册时）。
+    if (process.platform === 'win32') app.setAppUserModelId('com.flowz.app');
+    // 主进程 i18n 初值按系统偏好（渲染端 APP_SET_LANGUAGE 同步到达前的桌面通知语言；与 TrayManager 初值口径一致）。
+    setMainLanguage(resolveAutoLanguage(getPreferredSystemLanguagesSafe()));
+    // 桌面通知总开关初始同步（运行期变更由 config-change-handler 同步）。await 确保 enabled 在后续启动步骤
+    // （含 proxy 自动连接，error 通知的唯一来源）前就绪——此刻 proxy 未启动，error 不会触发，无竞态；读配置毫秒级。
+    await configManager
+      .loadConfig()
+      .then((c) => setDesktopNotificationsEnabled(c.desktopNotifications))
+      .catch(() => {});
+
     // 启动期系统代理 marker 恢复：上次会话崩溃/强杀/断电导致 disableProxy 未执行时 marker 残留，
     // 实查系统代理仍指向我们（127.0.0.1:<记录端口>，或 host 匹配兜 mac socks 端口差异）则拆除，
     // 防用户重启后代理指向死端口断网。指向校验防 stomp 用户自配的本地代理；
@@ -1240,6 +1254,9 @@ if (gotTheLock) {
     // 故此处只需处理：核心回滚 → 放弃恢复并清理系统代理。崩溃不触发换节点（换节点交给心跳连通性检测）。
     proxyManager.on('error', async (error: { message: string; code?: number }) => {
       logManager.addLog('error', `Proxy error: ${error.message}`, 'Main');
+      // 严重错误桌面通知（受总开关管控）。正文用通用本地化文案（main i18n，5 语），不透传 error.message——
+      // 后者可能含端点地址；通知进系统通知中心/锁屏可见，避免泄漏节点身份。详情引导用户回应用内日志查看。
+      notifyUser(mt('proxyErrorTitle'), mt('proxyErrorBody'));
       // 发生错误时，更新托盘显示为"连接异常"
       updateTrayMenuState(false, true);
 
@@ -1451,6 +1468,7 @@ if (gotTheLock) {
     const { ipcMain } = require('electron');
     ipcMain.handle(IPC_CHANNELS.APP_SET_LANGUAGE, (_: any, lang: string) => {
       currentLanguage = lang || currentLanguage;
+      setMainLanguage(currentLanguage); // 主进程 i18n（桌面通知等）同步语言
       if (trayManager) {
         trayManager.setLanguage(lang);
       }

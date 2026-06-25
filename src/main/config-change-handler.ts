@@ -17,6 +17,7 @@ import type { AutoSwitchService } from './services/AutoSwitchService';
 import type { CoreUpdateScheduler } from './services/CoreUpdateScheduler';
 import { mainEventEmitter, MAIN_EVENTS } from './ipc/main-events';
 import { effectiveLogLevel } from '../shared/log-level';
+import { setDesktopNotificationsEnabled } from './notify-user';
 
 /** 注入依赖：服务单例/可变引用 getter（call-time 取值）+ index.ts 闭包/函数（注入防循环依赖）。 */
 export interface ConfigChangeDeps {
@@ -55,6 +56,11 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
       const lvl =
         changedConfig?.logLevel ?? (await configManager.loadConfig().catch(() => null))?.logLevel;
       logManager.setLogLevel(effectiveLogLevel(lvl || 'info', getPrivacyMode()));
+
+      // 0b. 桌面通知总开关热同步（changedConfig 即最新整份配置；缺省视为开）。
+      setDesktopNotificationsEnabled(
+        (changedConfig as { desktopNotifications?: boolean } | undefined)?.desktopNotifications
+      );
 
       // 1. 更新托盘菜单
       const isRunning = proxyManager?.getStatus().running ?? false;

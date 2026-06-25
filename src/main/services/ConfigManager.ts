@@ -876,6 +876,7 @@ export class ConfigManager implements IConfigManager {
       minimizeToTray: true,
       autoCheckUpdate: true, // 默认启用启动时自动检查更新
       autoLightweightMode: false, // 默认不启用自动轻量模式
+      desktopNotifications: true, // 桌面通知总开关，默认开（仅严重错误事件发通知）
       autoUpdateSubscriptionOnStart: true, // 默认启用订阅自动更新（启动补更陈旧订阅 + 周期更新）
       subscriptionUpdateIntervalHours: 12, // 订阅自动更新周期/陈旧阈值（小时）
       subscriptionUpdateViaProxy: false, // 默认直连拉取订阅

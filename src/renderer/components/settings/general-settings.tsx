@@ -17,7 +17,8 @@ type ToggleField =
   | 'autoCheckUpdate'
   | 'autoLightweightMode'
   | 'rememberWindowSize'
-  | 'autoPrivacyMode';
+  | 'autoPrivacyMode'
+  | 'desktopNotifications';
 
 export function GeneralSettings() {
   const { t } = useTranslation();
@@ -133,6 +134,15 @@ export function GeneralSettings() {
             <Switch
               checked={config.autoLightweightMode}
               onCheckedChange={(c) => handleToggle('autoLightweightMode', c)}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.general.desktopNotifications')}
+            description={t('settings.general.desktopNotificationsDesc')}
+          >
+            <Switch
+              checked={config.desktopNotifications !== false}
+              onCheckedChange={(c) => handleToggle('desktopNotifications', c)}
             />
           </SettingsRow>
           <SettingsRow
