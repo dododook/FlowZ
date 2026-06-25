@@ -10,7 +10,7 @@
     "dist/**/*",
     "package.json"
   ],
-  "electronLanguages": ["zh-CN", "en-US"],
+  "electronLanguages": ["zh-CN", "zh-TW", "en-US", "ru", "fa"],
   "asar": true,
   "win": {
     "target": [
