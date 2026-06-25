@@ -214,7 +214,7 @@ let ipInfoService: IpInfoService | null = null;
 let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
 let helperManager: IPrivilegedHelper | null = null;
-let currentLanguage = 'zh-CN'; // 渲染端 APP_SET_LANGUAGE 同步的最近语言；经 setMainLanguage 喂主进程 i18n（mt() 据此取文案，含空值保留旧值的兜底）
+let currentLanguage = 'zh-CN'; // 渲染端 APP_SET_LANGUAGE 同步的最近语言；经 setMainLanguage 喂主进程 i18n（mt() 据此取文案）。空值由 handler 的 lang||currentLanguage 兜底保留旧值（不传空给 setMainLanguage）
 
 /**
  * helper 引导对话框（注入 ProxyManager.setHelperGate，由 start() 在 darwin+TUN+helper 未就绪+未 dismiss

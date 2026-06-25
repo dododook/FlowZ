@@ -113,7 +113,7 @@ const MESSAGES = {
     'zh-TW': '自建節點',
     'en-US': 'Custom Nodes',
     ru: 'Свои узлы',
-    fa: 'نُدهای سفارشی',
+    fa: 'گره‌های سفارشی',
   },
   trayManageServers: {
     'zh-CN': '管理服务器',
@@ -370,7 +370,7 @@ const MESSAGES = {
     'zh-CN':
       '提权服务已安装但未就绪（服务未运行或版本不符）。修复将重装服务，仅需授权一次（UAC）；也可本次用 UAC 启动。',
     'zh-TW':
-      '提權服務已安裝但未就緒（服務未執行或版本不符）。修復將重裝服務，僅需授權一次（UAC）；也可本次用 UAC 啟動。',
+      '提權服務已安裝但未就緒（服務未執行或版本不符）。修復將重新安裝服務，僅需授權一次（UAC）；也可本次用 UAC 啟動。',
     'en-US':
       'The privileged service is installed but not ready. Repair reinstalls it (one UAC prompt); or start with UAC this time.',
     ru: 'Привилегированная служба установлена, но не готова. Восстановление переустановит её (один запрос UAC); либо запустите через UAC сейчас.',
