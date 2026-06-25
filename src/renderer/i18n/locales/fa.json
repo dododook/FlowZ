@@ -431,6 +431,7 @@
       "dark": "تیره",
       "system": "سیستم",
       "language": "زبان",
+      "languageAuto": "خودکار (پیرو سیستم)",
       "themeUpdated": "پوسته به‌روزرسانی شد",
       "languageUpdated": "به فارسی تغییر یافت"
     },

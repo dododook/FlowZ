@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import {
@@ -13,31 +14,59 @@ import i18n from '@/i18n';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/ipc';
 import { SettingsRow } from './settings-row';
+import {
+  AUTO_LANGUAGE,
+  SUPPORTED_LANGUAGES,
+  migrateLanguageCode,
+  resolveEffectiveLanguage,
+} from '../../../shared/language';
 
-// 语言列表：每项以「母语自名」展示，便于使用者识别（不随界面语言翻译）。
-// 新增语言时在此追加一项，并在 src/renderer/i18n/index.ts 注册对应 resources。
-const LANGUAGE_OPTIONS = [
-  { value: 'zh-CN', label: '简体中文' },
-  { value: 'zh-TW', label: '繁體中文' },
-  { value: 'en-US', label: 'English' },
-  { value: 'ru', label: 'Русский' },
-  { value: 'fa-IR', label: 'فارسی' },
-];
+// 各语言「母语自名」（不随界面语言翻译，便于使用者识别）。新增语言时在此与 i18n resources 同步追加。
+const NATIVE_NAMES: Record<string, string> = {
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  'en-US': 'English',
+  ru: 'Русский',
+  fa: 'فارسی',
+};
+
+// 实际语言按各自母语名排序（auto 另置首位、不参与排序）。
+const REAL_LANGUAGE_OPTIONS = SUPPORTED_LANGUAGES.map((v) => ({
+  value: v,
+  label: NATIVE_NAMES[v],
+})).sort((a, b) => a.label.localeCompare(b.label));
+
+/** main→preload 经 additionalArguments 注入的 OS 偏好语言（auto 解析用）。 */
+function getSystemLanguages(): string[] {
+  const sl = (window as unknown as { electron?: { systemLanguages?: string[] } }).electron
+    ?.systemLanguages;
+  return Array.isArray(sl) ? sl : [];
+}
 
 export function AppearanceSettings() {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
+  // 语言「选择」（auto 或具体码），驱动下拉显示；与 i18n.language（解析后的实际语言）区分。默认 auto。
+  const [langChoice, setLangChoice] = useState<string>(
+    () => migrateLanguageCode(localStorage.getItem('app-language')) ?? AUTO_LANGUAGE
+  );
 
   const handleThemeChange = (value: string) => {
     setTheme(value as 'light' | 'dark' | 'system');
     toast.success(t('settings.appearance.themeUpdated'));
   };
 
-  const handleLanguageChange = (value: string) => {
-    i18n.changeLanguage(value);
-    localStorage.setItem('app-language', value);
-    api.config.setLanguage(value).catch(console.error);
-    toast.success(t('settings.appearance.languageUpdated', { lng: value }));
+  const handleLanguageChange = (choice: string) => {
+    // 选 auto → 按系统偏好解析出实际语言；选具体码 → 即该码。i18n 与 main 都用「实际语言」（main 托盘/对话框
+    // 用 startsWith('zh') 判断，不能收到 'auto'）；localStorage 存「选择」（auto/具体）供下拉回显。
+    const effective = resolveEffectiveLanguage(choice, getSystemLanguages());
+    setLangChoice(choice);
+    localStorage.setItem('app-language', choice);
+    i18n.changeLanguage(effective);
+    api.config.setLanguage(effective).catch(console.error);
+    toast.success(
+      t('settings.appearance.languageUpdated', { lng: NATIVE_NAMES[effective] ?? effective })
+    );
   };
 
   return (
@@ -57,13 +86,15 @@ export function AppearanceSettings() {
           />
         </SettingsRow>
         <SettingsRow label={t('settings.appearance.language')} stacked>
-          <Select value={i18n.language} onValueChange={handleLanguageChange}>
+          <Select value={langChoice} onValueChange={handleLanguageChange}>
             <SelectTrigger className="max-w-xs">
               <SelectValue />
             </SelectTrigger>
             {/* 固定 max-h-96：避免 radix popper 按可用高度算 max-h 造成顶部项命中死区 */}
             <SelectContent className="max-h-96">
-              {LANGUAGE_OPTIONS.map((opt) => (
+              {/* 自动（跟随系统）置首位且为默认 */}
+              <SelectItem value={AUTO_LANGUAGE}>{t('settings.appearance.languageAuto')}</SelectItem>
+              {REAL_LANGUAGE_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>

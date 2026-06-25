@@ -483,6 +483,26 @@ if (process.platform === 'darwin') {
   });
 }
 
+/**
+ * OS 偏好语言（有序，BCP47）——i18n「自动跟随系统」用。优先 getPreferredSystemLanguages（Electron 17+，
+ * 返回 OS 设置里的偏好语言列表）；缺失则回退 getSystemLocale（单值）。绝不用 app.getLocale（恒返 app bundle locale=en）。
+ */
+function getPreferredSystemLanguagesSafe(): string[] {
+  try {
+    const langs = app.getPreferredSystemLanguages?.();
+    if (Array.isArray(langs) && langs.length > 0) return langs;
+  } catch {
+    /* 忽略，回退 */
+  }
+  try {
+    const loc = app.getSystemLocale?.();
+    if (loc) return [loc];
+  } catch {
+    /* 忽略 */
+  }
+  return [];
+}
+
 async function createWindow(forceShow = false) {
   // macOS 需要设置应用菜单以启用 Cmd+C/V/X/A 等快捷键
   if (process.platform === 'darwin') {
@@ -572,6 +592,11 @@ async function createWindow(forceShow = false) {
       nodeIntegration: false,
       sandbox: false,
       devTools: isDevelopment, // 仅在开发环境启用开发者工具，生产环境禁用（除非特殊需求）
+      // OS 偏好语言注入 preload（同步、无 IPC 时序问题）：供 i18n「自动跟随系统」解析。
+      //   app.getLocale() 恒返 app bundle locale=en（与系统脱钩，代码多处实证），故必须用 getPreferredSystemLanguages。
+      additionalArguments: [
+        `--flowz-sys-langs=${JSON.stringify(getPreferredSystemLanguagesSafe())}`,
+      ],
     },
     // macOS：集成式窗口（红绿灯内嵌 + sidebar 半透材质）
     ...(isMac && {

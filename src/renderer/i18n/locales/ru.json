@@ -431,6 +431,7 @@
       "dark": "Тёмная",
       "system": "Системная",
       "language": "Язык",
+      "languageAuto": "Авто (системный)",
       "themeUpdated": "Тема обновлена",
       "languageUpdated": "Переключено на русский"
     },

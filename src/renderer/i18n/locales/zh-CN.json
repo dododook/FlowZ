@@ -431,6 +431,7 @@
       "dark": "深色",
       "system": "跟随系统",
       "language": "语言",
+      "languageAuto": "自动（跟随系统）",
       "themeUpdated": "主题已更新",
       "languageUpdated": "已切换为简体中文"
     },

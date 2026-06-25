@@ -431,6 +431,7 @@
       "dark": "Dark",
       "system": "System",
       "language": "Language",
+      "languageAuto": "Auto (follow system)",
       "themeUpdated": "Theme updated",
       "languageUpdated": "Switched to English"
     },

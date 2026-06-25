@@ -10,6 +10,7 @@ import {
 import { LogManager } from './LogManager';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
+import { resolveAutoLanguage } from '../../shared/language';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
@@ -100,8 +101,9 @@ export class TrayManager implements ITrayManager {
   private selectedServerId: string | null = null;
   private proxyMode: ProxyMode = 'smart';
   private proxyModeType: ProxyModeType = 'systemProxy';
-  // 应用内语言设置，由渲染进程通过 IPC 同步过来，默认跟随系统
-  private currentLanguage: string = app.getLocale?.() || 'zh-CN';
+  // 应用内语言设置，由渲染进程通过 IPC 同步过来（App mount 即发实际语言）；此为渲染端同步到达前的初值。
+  // 用 getPreferredSystemLanguages 真实跟随系统（绝不用 app.getLocale——恒返 app bundle locale=en，与系统脱钩）。
+  private currentLanguage: string = resolveAutoLanguage(app.getPreferredSystemLanguages?.() ?? []);
 
   // 回调函数
   private onStartProxy?: () => void;

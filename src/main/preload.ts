@@ -6,12 +6,30 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 /**
+ * OS 偏好语言（有序）：主进程经 webPreferences.additionalArguments 注入 `--flowz-sys-langs=<JSON>`。
+ * 同步可读、无 IPC 时序问题，供 i18n 初始化「自动跟随系统」用（app.getLocale 恒返 en、不可用）。
+ */
+function readSystemLanguages(): string[] {
+  const PREFIX = '--flowz-sys-langs=';
+  const arg = process.argv.find((a) => a.startsWith(PREFIX));
+  if (!arg) return [];
+  try {
+    const v = JSON.parse(arg.slice(PREFIX.length));
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * 暴露给渲染进程的 Electron API
  */
 const electronAPI = {
   platform: process.platform,
   // CPU 架构（'x64'/'arm64'/...）：渲染层 TLS spoof 等按 arch 门控的特性用（ARM64 不支持）。
   arch: process.arch,
+  // OS 偏好语言（有序，BCP47）：i18n「自动」解析用；空数组=未注入/取不到。
+  systemLanguages: readSystemLanguages(),
   ipcRenderer: {
     /**
      * 调用主进程方法

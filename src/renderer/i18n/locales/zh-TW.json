@@ -431,6 +431,7 @@
       "dark": "深色",
       "system": "跟隨系統",
       "language": "語言",
+      "languageAuto": "自動（跟隨系統）",
       "themeUpdated": "主題已更新",
       "languageUpdated": "已切換為繁體中文"
     },

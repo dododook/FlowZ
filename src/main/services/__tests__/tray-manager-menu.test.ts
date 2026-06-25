@@ -17,7 +17,12 @@ const buildFromTemplate = jest.fn((tpl: any[]) => {
 const imgStub: any = { resize: () => imgStub, isEmpty: () => false };
 
 jest.mock('electron', () => ({
-  app: { getLocale: () => 'zh-CN', isPackaged: false },
+  // currentLanguage 初值改用 getPreferredSystemLanguages（getLocale 恒返 app bundle locale=en 不可用）→ mock 返中文偏好。
+  app: {
+    getLocale: () => 'zh-CN',
+    getPreferredSystemLanguages: () => ['zh-Hans-CN'],
+    isPackaged: false,
+  },
   BrowserWindow: class {},
   Tray: class {
     setToolTip = jest.fn();
