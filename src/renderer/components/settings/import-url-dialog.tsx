@@ -16,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Link, Server, Check, X, Edit2 } from 'lucide-react';
 import { parseProtocolUrl, addServerFromUrl } from '@/bridge/api-wrapper';
+import { isSupportedShareUrl } from '@shared/protocol-url-schemes';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -42,26 +43,6 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
 
-  const isValidUrl = (u: string) => {
-    return (
-      u.startsWith('vless://') ||
-      u.startsWith('vmess://') ||
-      u.startsWith('trojan://') ||
-      u.startsWith('hysteria2://') ||
-      u.startsWith('hy2://') ||
-      u.startsWith('ss://') ||
-      u.startsWith('anytls://') ||
-      u.startsWith('tuic://') ||
-      u.startsWith('http2://') ||
-      u.startsWith('naive+https://') ||
-      u.startsWith('socks5://') ||
-      u.startsWith('socks://') ||
-      u.startsWith('s5://') ||
-      u.startsWith('http://') ||
-      u.startsWith('https://')
-    );
-  };
-
   const handleParseUrl = async () => {
     const input = url.trim();
     if (!input) {
@@ -85,7 +66,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
     const failed: { line: string; error: string }[] = [];
 
     for (const line of lines) {
-      if (!isValidUrl(line)) {
+      if (!isSupportedShareUrl(line)) {
         failed.push({ line, error: t('importUrl.invalidProtocol', 'Unsupported protocol') });
         continue;
       }
@@ -205,7 +186,7 @@ export function ImportUrlDialog({ open, onOpenChange, onImportSuccess }: ImportU
     setEditingIndex(null);
   };
 
-  const hasAnyValidUrl = url.split(/\r?\n/).some((l) => isValidUrl(l.trim()));
+  const hasAnyValidUrl = url.split(/\r?\n/).some((l) => isSupportedShareUrl(l.trim()));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

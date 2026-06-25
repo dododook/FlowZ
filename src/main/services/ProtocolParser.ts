@@ -20,6 +20,7 @@ import type {
   LogLevel,
 } from '../../shared/types';
 import { normalizeDuration } from '../../shared/duration';
+import { isSupportedShareUrl } from '../../shared/protocol-url-schemes';
 import type { LogManager } from './LogManager';
 
 export interface IProtocolParser {
@@ -66,24 +67,7 @@ export class ProtocolParser implements IProtocolParser {
    * 检查 URL 是否为支持的协议
    */
   isSupported(url: string): boolean {
-    return (
-      url.startsWith('vless://') ||
-      url.startsWith('trojan://') ||
-      url.startsWith('hysteria2://') ||
-      url.startsWith('hy2://') ||
-      url.startsWith('ss://') ||
-      url.startsWith('anytls://') ||
-      url.startsWith('tuic://') ||
-      url.startsWith('naive://') ||
-      url.startsWith('http2://') ||
-      url.startsWith('naive+https://') ||
-      url.startsWith('vmess://') ||
-      url.startsWith('socks5://') ||
-      url.startsWith('socks://') ||
-      url.startsWith('s5://') ||
-      url.startsWith('http://') ||
-      url.startsWith('https://')
-    );
+    return isSupportedShareUrl(url);
   }
 
   /**
