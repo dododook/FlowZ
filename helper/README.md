@@ -1,25 +1,23 @@
-# FlowZ macOS 提权 helper
+# FlowZ macOS privilege helper
 
-macOS 下 TUN 模式需以 root 运行 sing-box。未签名应用无法用 `SMJobBless`/`SMAppService`，
-默认每次启停 sing-box（含切节点重启）都会弹 `osascript` 管理员授权框。
+[English](README.md) · [中文](README.zh-CN.md)
 
-本 helper 是一个 **root LaunchDaemon**（Go 静态二进制，无第三方依赖）：
+On macOS, TUN mode requires sing-box to run as root. An unsigned app can't use `SMJobBless` / `SMAppService`, so by default every sing-box start/stop (including the restart on a node switch) pops an `osascript` admin-authorization dialog.
 
-- 用户一次性安装（osascript 授权一次），即注册为开机自启的 root 守护进程。
-- app（普通用户）经 token 鉴权的 unix socket 驱动它启停 sing-box —— 之后**全程零授权框**。
-- 未安装时自动回退到 PR-M1 的 root 看护脚本（osascript，启动一次授权，停止/退出/崩溃免授权）。
+This helper is a **root LaunchDaemon** (a static Go binary, no third-party deps):
 
-## 协议与安全
+- The user installs it **once** (a single `osascript` authorization), registering it as a root daemon that starts on boot.
+- The app (a normal user) drives sing-box start/stop over a **token-authenticated unix socket** — **no further dialogs after that**.
+- When not installed, it falls back to the PR-M1 root guardian script (`osascript`: one authorization on start; stop / quit / crash need none).
 
-见 `helper.go` 顶部注释。要点：token 是主安全边界；sing-box 路径安装时锁定（`--singbox`）；
-配置文件限制在 app 数据目录（`--confdir`）内。
+## Protocol & security
 
-## 构建
+See the comment block at the top of `helper.go`. Key points: the token is the primary security boundary; the sing-box path is locked at install time (`--singbox`); config files are confined to the app data directory (`--confdir`).
+
+## Build
 
 ```bash
-npm run build:helper          # 交叉编译 arm64 + x64 → resources/mac-*/com.flowz.helper
+npm run build:helper          # cross-compile arm64 + x64 → resources/mac-*/com.flowz.helper
 ```
 
-构建产物随 `electron-builder` 的 `extraResources`（`resources/mac-${arch}` → `mac`）打进 app 包，
-运行时位于 `<App>/Contents/Resources/mac/com.flowz.helper`，安装时复制到
-`/Library/PrivilegedHelperTools/com.flowz.helper`。
+The output is bundled into the app via electron-builder `extraResources` (`resources/mac-${arch}` → `mac`), lives at runtime under `<App>/Contents/Resources/mac/com.flowz.helper`, and is copied to `/Library/PrivilegedHelperTools/com.flowz.helper` on install.

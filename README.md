@@ -1,161 +1,189 @@
 <div align="center">
 
-<img src="docs/banner.png" width="100%" alt="FlowZ — 简洁现代的跨平台代理客户端，基于 sing-box，所见即所得" />
+<img src="docs/banner.png" width="100%" alt="FlowZ — a clean, modern cross-platform proxy client built on sing-box, WYSIWYG" />
 
 [![release](https://img.shields.io/github/v/release/dododook/FlowZ?style=flat-square&color=0E98A4&label=release)](https://github.com/dododook/FlowZ/releases)
 [![sing-box](https://img.shields.io/badge/sing--box-1.14-0E98A4?style=flat-square)](https://github.com/SagerNet/sing-box)
-[![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-安装)
+[![platform](https://img.shields.io/badge/platform-Windows%20·%20macOS%20·%20Linux-0E98A4?style=flat-square)](#-installation)
 [![license](https://img.shields.io/badge/license-MIT-0E98A4?style=flat-square)](LICENSE.txt)
 [![stars](https://img.shields.io/github/stars/dododook/FlowZ?style=flat-square&color=0E98A4)](https://github.com/dododook/FlowZ/stargazers)
 
+**English** · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [فارسی](README.fa.md)
+
 </div>
 
-> 原作者开源地址：https://github.com/zhangjh/FlowZ
+> Original open-source project: https://github.com/zhangjh/FlowZ
 
-主打：**配置简单 · 规则明确 · 切换不断流 · 一次授权零提权**。
-
----
-
-## 🌟 核心亮点
-
-- **一次授权，永久零提权** — macOS root daemon / Windows 系统服务，装一次后 TUN 启停 · 切节点 · 退出全程免授权。
-- **改规则不断流** — 编辑已启用规则的匹配值经 local rule-set 热重载**即时生效、连接零中断**；只有结构变更才重启（去抖合并、只重启一次）。
-- **任意协议，内核即权威** — 粘贴 sing-box outbound JSON（如 **Snell**）即用，保存时实时探测当前内核兼容性；官方核不支持的协议可**手动换用第三方 fork 内核**，FlowZ 自动识别 fork 并停用在线更新以保护它。
-- **组网开箱即用** — WireGuard / **WARP（一键匿名注册）** / **Tailscale（浏览器交互登录）** 作为一等节点，可选中 · 分流 · 热切。
-- **退出零残留** — 跨平台清理 sing-box 进程 / 虚拟网卡 / 系统代理，崩溃 · 注销 · 关机都兜底。
-- **sing-box 1.14 原生管理面** — 内置 1.14 内核，原生 gRPC 管理 API + 可选官方 dashboard 面板。
+Built around: **simple setup · clear rules · uninterrupted switching · authorize once, zero re-prompts**.
 
 ---
 
-## ✨ 功能特性
+## 🌟 Highlights
 
-**协议**
-- 代理：VLESS / VMess / Trojan / Shadowsocks / Hysteria2 / TUIC / AnyTLS / **NaiveProxy** / SOCKS / HTTP / SSH
-- 组网：**WireGuard** / **Cloudflare WARP** / **Tailscale**
-- **自定义协议 + 换核扩展**：粘贴 sing-box outbound JSON（如 **Snell**），保存时「内核即权威」实时探测兼容性；官方核不支持的协议可手动替换为支持它的第三方 fork 内核（FlowZ 自动识别 fork、停用在线更新以防覆盖）
-
-**核心**
-- sing-box 1.14 统一内核，随包内置（Windows / macOS arm64+x64 / Linux）
-- 抗封增强：**TLS Fragment**（全局）/ ECH / Multiplex / httpupgrade / **Shadow-TLS**（可附加于 SS2022 等协议）/ **Hysteria2 端口跳跃**（订阅自动识别，部分附手动开关）
-- **Block QUIC**（节点无关）：reject 代理向 QUIC/UDP 443，逼浏览器回退 TCP，解决节点 UDP relay 不通导致的网页卡顿
-- **WebRTC 防泄露**（仅 TUN）：off / 走代理 / 阻断，三档可选
-
-**代理模式与接管**
-- **TUN 透明代理** + **系统代理模式** + 仅本地代理
-- 路由模式：全局 / 智能（自动分流，推荐）/ 直连
-- **无缝热切换节点**：selector 热切，默认优雅不断流；可选「切换时中断现有连接」
-- 代理链（前置代理）
-
-**组网 / Mesh**
-- WireGuard / WARP / Tailscale 作为 endpoint 节点，与普通代理一视同仁（可选中、可分流、可热切）
-- **WARP 一键注册**：匿名注册设备即用，删除节点时机会式注销、不留孤儿
-- **Tailscale 交互登录**：无需 authKey，点登录走浏览器授权，登录态求真、过期自动提示
-- **允许访问外网**开关：组网节点既可只通内网、也可当全量出口
-- **反向 mesh**（需 TUN + helper）：本机作子网路由 / 被组网内其它设备访问
-
-**路由规则**
-- **单条规则多条件组合**：域名 / IP / 端口 / 进程 / geosite / geoip / 规则集 等 15 类，OR/AND 组合
-- **规则资源体系**：内置 geosite/geoip 精选清单 + 远程 `.srs`/`.json` 规则集下载与定期更新
-- **改规则值零重启**：编辑已启用规则的匹配值（如往域名清单加一条）经 local rule-set 热重载即时生效、连接不中断；增删 / 排序 / 改策略等结构变更才重启（去抖合并，连改多条只重启一次）
-- **应用分流**：按进程名 / 路径指定 代理 / 直连 / 阻止
-- 列表搜索 + 拖拽排序（置顶 / 置底 / 上下移 / 键盘无障碍）+ 必填备注名 + 悬浮展开完整规则
-
-**DNS 与分流**
-- **FakeIP** 加速 + 按地区分流（国内直连 / 回国反向）
-- **DNS 接管**：TUN 模式接管系统 DNS，崩溃安全兜底
-- DoH 上游、节点域名防回流、隐私 DoH 泄漏拦截
-
-**订阅**
-- 订阅链接导入（sing-box JSON 与常见分享格式）
-- 自动更新调度（**默认开启**）：启动补更陈旧订阅 + 周期巡检 + 失败指数退避 + 「经代理更新」开关，更新**不打断当前连接**
-- 节点稳定指纹对账：订阅更新保留本地 id / 选中节点，连接零中断
-- **GitHub 镜像加速**：内核 / 规则资源 / 面板等 GitHub 下载可走 gh-proxy 镜像
-
-**界面与体验**
-- **Conduit 设计系统**：token 驱动双主题（亮 / 暗）+ 自托管字体，视觉统一
-- 五语言：简体中文 / 繁體中文 / English / Русский / فارسی（含 RTL）
-- 连接拓扑 · 实时流量统计与测速 · 出口 IP 展示
-- **隐私保护模式**（密码锁，scrypt 哈希存独立文件、不入配置）
-- **自动空闲模式**（系统真实输入空闲触发轻量 / 隐私模式）
-- **macOS 菜单栏常驻**：关窗即从程序坞隐去、仅留菜单栏，点菜单栏 / Spotlight 唤回
-- 开机自启 + 自动连接 + 静默启动
-
-**管理与诊断**
-- **sing-box 1.14 原生 gRPC 管理 API**（取代 clash_api）：状态 / 连接 / 分组 / 节点热切统一走原生面
-- **官方 sing-box 面板集成**（opt-in 逃生舱）：开关开启后由内核在 `/dashboard/` serve 官方面板，给高级用户全功能入口
-- **诊断报告导出**：一键采集脱敏诊断信息，便于排障
-
-**系统与可靠性**
-- **零授权提权链**：macOS root daemon · Windows LocalSystem 服务 + 命名管道 / socket · token 鉴权
-- **退出零残留**：跨平台清理进程 / 虚拟网卡 / 系统代理注册表，崩溃 · 注销 · 关机兜底
-- 自动更新：完整性校验 + 启动预检 + 失败自动回滚 + 问题版本跳过
-- 跨平台：Windows / macOS（Apple Silicon + Intel）/ Linux
+- **Authorize once, never again** — a macOS root daemon / Windows system service is installed a single time; afterwards starting/stopping TUN, switching nodes, and quitting are all prompt-free.
+- **Edit rules without dropping connections** — changing the match values of an already-enabled rule takes effect **instantly with zero interruption** via local rule-set hot-reload; only structural changes restart the core (debounced, restarted only once).
+- **Any protocol, the core is the source of truth** — paste a sing-box outbound JSON (e.g. **Snell**) and it just works; compatibility is probed against the running core on save. For protocols the official core doesn't support, you can **manually swap in a third-party fork core** — FlowZ detects the fork and disables online updates to protect it.
+- **Mesh out of the box** — WireGuard / **WARP (one-click anonymous registration)** / **Tailscale (interactive browser login)** are first-class nodes you can select, route, and hot-switch.
+- **No leftovers on exit** — cross-platform cleanup of the sing-box process / virtual adapter / system proxy, with fallbacks for crash, logout, and shutdown.
+- **sing-box 1.14 native management** — bundled 1.14 core, native gRPC management API plus an optional official dashboard panel.
 
 ---
 
-## 🖼 界面预览
+## ✨ Features
 
-> 截图为内置 demo 数据，非真实订阅 / 节点。
+**Protocols**
+- Proxy: VLESS / VMess / Trojan / Shadowsocks / Hysteria2 / TUIC / AnyTLS / **NaiveProxy** / SOCKS / HTTP / SSH
+- Mesh: **WireGuard** / **Cloudflare WARP** / **Tailscale**
+- **Custom protocol + core swap**: paste a sing-box outbound JSON (e.g. **Snell**); on save, "the core is the source of truth" probes live compatibility. For protocols the official core lacks, manually replace it with a third-party fork core that supports them (FlowZ auto-detects forks and disables online updates to avoid overwriting them).
 
-### 首页 · 连接总览
-所见即所得的连接状态、节点切换、实时速率与连接拓扑。亮 / 暗双主题：
+**Core**
+- sing-box 1.14 unified core, bundled per-platform (Windows / macOS arm64+x64 / Linux)
+- Anti-censorship: **TLS Fragment** (global) / ECH / Multiplex / httpupgrade / **Shadow-TLS** (stackable on SS2022 and others) / **Hysteria2 port hopping** (auto-detected from subscriptions, some with manual toggles)
+- **Block QUIC** (node-agnostic): reject proxy-bound QUIC/UDP 443 to force browsers back to TCP, fixing page stalls caused by nodes whose UDP relay is unreachable
+- **WebRTC leak protection** (TUN only): off / via proxy / block
 
-| 浅色主题 | 深色主题 |
+**Proxy modes & takeover**
+- **TUN transparent proxy** + **system-proxy mode** + local-only proxy
+- Route modes: Global / Smart (auto-split, recommended) / Direct
+- **Seamless node hot-switch**: selector hot-switch, graceful by default with no dropped connections; optional "interrupt existing connections on switch"
+- Proxy chains (upstream proxy)
+
+**Mesh**
+- WireGuard / WARP / Tailscale as endpoint nodes, treated exactly like ordinary proxies (selectable, routable, hot-switchable)
+- **WARP one-click registration**: anonymous device registration, opportunistic de-registration on node deletion (no orphans)
+- **Tailscale interactive login**: no authKey needed — click login, authorize in the browser; login state is verified and expiry is surfaced
+- **Allow internet access** toggle: a mesh node can be an intranet-only peer or a full exit
+- **Reverse mesh** (needs TUN + helper): act as a subnet router / be reachable from other devices on the mesh
+
+**Routing rules**
+- **Multi-condition rules**: domain / IP / port / process / geosite / geoip / rule-set and 15 condition types, combined with OR/AND
+- **Rule-resource system**: built-in curated geosite/geoip lists + remote `.srs`/`.json` rule-set download and periodic updates
+- **Editing rule values needs no restart**: changing the match values of an enabled rule (e.g. adding one domain) takes effect live via local rule-set hot-reload; structural changes (add/remove/reorder, change action) restart once (debounced)
+- **App routing**: assign proxy / direct / block by process name or path
+- List search + drag-and-drop ordering (top / bottom / move / keyboard a11y) + required note name + hover to expand the full rule
+
+**DNS & splitting**
+- **FakeIP** acceleration + region-based splitting (domestic-direct / reverse "back-home")
+- **DNS takeover**: TUN mode takes over system DNS with crash-safe fallback
+- DoH upstreams, node-domain anti-loopback, private DoH leak interception
+
+**Subscriptions**
+- Subscription import (sing-box JSON and common share formats)
+- Auto-update scheduling (**on by default**): catch-up for stale subscriptions on startup + periodic checks + exponential backoff + an "update over proxy" toggle; updates **never interrupt the current connection**
+- Stable node fingerprint reconciliation: subscription updates keep local id / selected node, zero connection drop
+- **GitHub mirror acceleration**: core / rule resources / dashboard downloads can route through a gh-proxy mirror
+
+**UI & experience**
+- **Conduit design system**: token-driven dual theme (light / dark) + self-hosted fonts
+- Five languages: Simplified Chinese / Traditional Chinese / English / Русский / فارسی (with RTL)
+- Connection topology · live traffic stats & speed tests · exit-IP display
+- **Privacy mode** (password lock; scrypt hash stored in a separate file, not in config)
+- **Auto-idle mode** (real system input idle triggers lightweight / privacy mode)
+- **macOS menu-bar resident**: closing the window hides it from the Dock, leaving only the menu bar; reopen from the menu bar / Spotlight
+- Launch on boot + auto-connect + silent start
+
+**Management & diagnostics**
+- **sing-box 1.14 native gRPC management API** (replacing clash_api): status / connections / groups / node hot-switch all go through the native plane
+- **Official sing-box dashboard integration** (opt-in escape hatch): when enabled, the core serves the official panel at `/dashboard/` for power users
+- **Diagnostic report export**: one-click redacted diagnostic collection for troubleshooting
+
+**System & reliability**
+- **Zero-prompt privilege chain**: macOS root daemon · Windows LocalSystem service + named pipe / socket · token auth
+- **No leftovers on exit**: cross-platform cleanup of processes / virtual adapters / system-proxy registry, with crash / logout / shutdown fallbacks
+- Auto-update: integrity verification + startup pre-check + automatic rollback on failure + skip known-bad versions
+- Cross-platform: Windows / macOS (Apple Silicon + Intel) / Linux
+
+---
+
+## 🖼 Screenshots
+
+> Screenshots use built-in demo data, not real subscriptions / nodes. The UI shown is the Chinese build; layout is identical across languages.
+
+### Home · Connection overview
+WYSIWYG connection status, node switching, live rates and connection topology. Light / dark dual theme:
+
+| Light | Dark |
 |:---:|:---:|
 | <img src="docs/screenshots/home-light.webp" width="100%"> | <img src="docs/screenshots/home-dark.webp" width="100%"> |
 
-### 节点与订阅
-订阅一键导入、节点卡片管理、协议标识、批量测速与排序：
+### Nodes & subscriptions
+One-click subscription import, node-card management, protocol badges, batch speed tests and ordering:
 
 <img src="docs/screenshots/servers.webp" width="100%">
 
-### 应用分流 · 路由规则
-按应用一键指定 代理 / 直连 / 阻止；规则支持多条件组合（域名 / IP / 端口 / 进程 / geosite 等 15 类，OR/AND）+ 拖拽排序 + 改值零重启：
+### App routing · Routing rules
+Assign proxy / direct / block per app; rules support multi-condition combinations (domain / IP / port / process / geosite and 15 types, OR/AND) + drag ordering + zero-restart value edits:
 
-| 应用分流 | 路由规则 |
+| App routing | Routing rules |
 |:---:|:---:|
 | <img src="docs/screenshots/app-routing.webp" width="100%"> | <img src="docs/screenshots/rules.webp" width="100%"> |
 
-### 规则资源
-内置 geosite/geoip 精选清单 + 远程 `.srs` 规则集下载与定期更新：
+### Rule resources
+Built-in curated geosite/geoip lists + remote `.srs` rule-set download and periodic updates:
 
 <img src="docs/screenshots/rule-resources.webp" width="100%">
 
-### 连接诊断 · 实时日志
-逐连接速率 / 规则命中 / 节点链；分级实时日志：
+### Connection diagnostics · Live logs
+Per-connection rate / rule hit / node chain; leveled live logs:
 
-| 连接信息 | 实时日志 |
+| Connections | Logs |
 |:---:|:---:|
 | <img src="docs/screenshots/connections.webp" width="100%"> | <img src="docs/screenshots/logs.webp" width="100%"> |
 
-### 设置 · 一次授权零提权
-精细设置；**装一次提权 helper / 服务后，TUN 模式启停免每次授权**（Windows 一次 UAC / macOS 一次密码）：
+### Settings · Authorize once, zero re-prompts
+Fine-grained settings; **after installing the privilege helper / service once, starting/stopping TUN needs no further authorization** (one UAC on Windows / one password on macOS):
 
 <img src="docs/screenshots/settings.webp" width="100%">
 
 ---
 
-## 📋 系统要求
+## ⚠️ Known Limitations & Behavior Notes
 
-| 平台 | 要求 |
-|------|------|
-| Windows | Windows 10（1809+）/ Windows 11，x64 |
-| macOS | macOS 11 (Big Sur)+，Apple Silicon 或 Intel |
-| Linux | x86_64，AppImage / `.deb`（TUN 模式需 `pkexec` 一次性授权 setcap） |
+Please read this before opening an issue — the following are **by design, not bugs**.
+
+### A brief reconnect (~1s) on structural config changes is expected
+The underlying sing-box core has **no API to add/remove an outbound or reload its full config at runtime** (its Clash-compatible API only switches among already-loaded nodes; `PUT /configs` is a no-op). FlowZ therefore splits changes into two classes:
+
+- **Live, zero-interruption** — connections never drop:
+  - Switching the selected node (selector hot-switch).
+  - Editing the *match values* of an already-enabled rule (e.g. adding a domain to its list) — applied via local rule-set hot-reload.
+- **~1s core restart** (debounced; multiple quick edits are coalesced into one, connections drop briefly then resume automatically):
+  - Adding / removing / reordering rules, or changing a rule's action / target.
+  - Switching route mode (Global / Smart / Direct), changing local ports or TUN/inbound settings.
+  - Editing a node that is currently referenced, or a subscription update that introduces **new referenced nodes**.
+
+This restart is fast and connections come back on their own. **Please don't file issues about a brief blip when changing these settings** — it is inherent to how sing-box applies structural changes.
+
+### Other expected behaviors
+- **Tailscale: one node per device.** All Tailscale accounts share `100.64.0.0/10`; multiple Tailscale nodes would overwrite each other.
+- **NaiveProxy needs the Cronet library** on Linux/Windows (fetched at build time). If it's missing, naive nodes are auto-skipped — other protocols are unaffected; if a selected node is naive you'll get an explicit notice.
+- **System-proxy mode can't fully control DNS or block QUIC leaks.** Only TUN mode takes over system DNS and can reject proxy-bound QUIC. Use TUN if you need leak-proof DNS / QUIC.
+- **Block QUIC affects proxy-bound QUIC only.** Nodes that dial over QUIC (hysteria2 / tuic / naive) are unaffected — it rejects UDP 443 destined for the proxy to push browsers back to TCP.
+- **macOS "FlowZ is damaged"** on an unsigned build → clear the quarantine attribute: `xattr -cr /Applications/FlowZ.app`.
 
 ---
 
-## 📥 安装
+## 📋 System Requirements
 
-从 [Releases](https://github.com/dododook/FlowZ/releases) 下载最新版本。
-
-| 平台 | 安装 |
+| Platform | Requirement |
 |------|------|
-| **Windows** | 运行 `.exe` 安装包，或免安装 `portable.exe` |
-| **macOS** | 打开 `.dmg` 拖入「应用程序」；arm64 / Intel 均随发布提供（Intel 版 naive 开箱即用） |
-| **Linux** | `AppImage` 直接运行，或安装 `.deb` |
+| Windows | Windows 10 (1809+) / Windows 11, x64 |
+| macOS | macOS 11 (Big Sur)+, Apple Silicon or Intel |
+| Linux | x86_64, AppImage / `.deb` (TUN mode needs a one-time `pkexec` setcap authorization) |
 
-macOS 若提示「软件已损坏」，移除隔离属性即可：
+---
+
+## 📥 Installation
+
+Download the latest build from [Releases](https://github.com/dododook/FlowZ/releases).
+
+| Platform | Install |
+|------|------|
+| **Windows** | Run the `.exe` installer, or the portable `portable.exe` |
+| **macOS** | Open the `.dmg` and drag to Applications; arm64 / Intel are both published (naive works out of the box on Intel) |
+| **Linux** | Run the `AppImage` directly, or install the `.deb` |
+
+If macOS reports "FlowZ is damaged", clear the quarantine attribute:
 
 ```bash
 xattr -cr /Applications/FlowZ.app
@@ -163,90 +191,90 @@ xattr -cr /Applications/FlowZ.app
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-1. **添加节点** —「服务器」页选协议填信息，或在「订阅」导入订阅链接。
-2. **选模式** — 首页选路由模式（默认 智能 / 自动分流）；不用 TUN 可在设置切「系统代理模式」。
-3. **启用代理** — 首页点「启用代理」。
-4. **（可选）配规则** —「路由规则」加自定义规则 / 引用规则集；「应用分流」按应用指定策略。
+1. **Add a node** — pick a protocol on the "Servers" page, or import a subscription link under "Subscriptions".
+2. **Pick a mode** — choose a route mode on the home page (default: Smart / auto-split); if you don't want TUN, switch to "system-proxy mode" in Settings.
+3. **Enable the proxy** — click "Enable proxy" on the home page.
+4. **(Optional) Configure rules** — add custom rules / referenced rule-sets under "Routing rules"; assign per-app policy under "App routing".
 
 ---
 
-## 🛠 从源码构建
+## 🛠 Build from Source
 
 ```bash
 git clone https://github.com/dododook/FlowZ.git
 cd FlowZ
 npm install
 
-npm run dev            # 开发（Vite + Electron 热重载）
-npm run build          # 编译主进程 + 渲染端
+npm run dev            # development (Vite + Electron hot reload)
+npm run build          # compile main process + renderer
 
-npm run package:win    # Windows 安装包 + 便携版
-npm run package:mac    # macOS（arm64 + x64，含交叉编译 root helper）
-npm run package:linux  # Linux（AppImage + deb）
+npm run package:win    # Windows installer + portable
+npm run package:mac    # macOS (arm64 + x64, incl. cross-compiled root helper)
+npm run package:linux  # Linux (AppImage + deb)
 ```
 
-- `package:mac` / `package:win` 会先 `build:helper`（Go 交叉编译提权 helper），再打包。
-- NaiveProxy 的 cronet 库由 `npm run fetch:cronet` 在打包时拉取（见下「NaiveProxy 说明」）。
+- `package:mac` / `package:win` run `build:helper` first (Go cross-compile of the privilege helper) before packaging.
+- NaiveProxy's Cronet library is fetched at packaging time by `npm run fetch:cronet` (see "NaiveProxy notes" below).
 
 ---
 
-## 🛡 进阶说明
+## 🛡 Advanced Notes
 
-### 无缝切换节点
-默认 **selector 热切换**：切节点不重启内核、现有连接保留至自然关闭、新连接走新节点（优雅不断流）。高级设置「**切换时中断现有连接**」（默认关）开启后强制断开重建。**编辑已启用规则的匹配值**经 local rule-set 热重载零重启生效；跨模式 / 端口 / TUN / 规则结构（增删 / 排序 / 改策略）等改动才重启（多次改动去抖合并、只重启一次）。
+### Seamless node switching
+**Selector hot-switch** by default: switching nodes doesn't restart the core, existing connections live until they close naturally, and new connections use the new node (graceful, no drops). The "**interrupt existing connections on switch**" advanced option (off by default) forces a disconnect/rebuild. **Editing the match values of an enabled rule** takes effect with zero restart via local rule-set hot-reload; cross-mode / port / TUN / structural rule changes (add/remove/reorder/change action) trigger a restart (multiple edits debounced into one).
 
-### 组网 / Mesh
-WireGuard / WARP / Tailscale 作为 endpoint 节点接入，和普通代理一样可选中、可被规则指向、可热切。
+### Mesh
+WireGuard / WARP / Tailscale join as endpoint nodes and behave like ordinary proxies — selectable, rule-targetable, hot-switchable.
 
-- **WARP**：一键匿名注册即用；纯出口节点，可加多个作备选 / failover（一次激活一个）。
-- **Tailscale**：账号制，点「登录」走浏览器授权（也支持 authKey）；同一设备**只支持一个 Tailscale 节点**——所有账号共用 `100.64.0.0/10` 网段，多个会互相覆盖。
-- **允许访问外网**：开 = 当全量出口；关 = 只通组网内网段。
-- **反向 mesh**（需 TUN + helper）：建真内核接口，让本机可被组网内其它设备访问 / 作子网路由；默认关（用户态只出不进，零提权）。
+- **WARP**: one-click anonymous registration; pure exit node, add several as backup / failover (one active at a time).
+- **Tailscale**: account-based, click "login" for browser authorization (authKey also supported); **only one Tailscale node per device** — all accounts share `100.64.0.0/10`, multiple would overwrite each other.
+- **Allow internet access**: on = full exit; off = intranet-only.
+- **Reverse mesh** (needs TUN + helper): create a real kernel interface so this machine is reachable from other mesh devices / acts as a subnet router; off by default (userspace is egress-only, zero privilege).
 
-### Block QUIC（高级设置）
-对**代理向 QUIC（UDP 443）**执行 reject、逼浏览器回退 TCP，解决「节点 UDP relay 不通导致网页卡顿 / 断流」。**节点无关**；hysteria2 / tuic / naive 等以 QUIC 拨号的节点**自身拨号不受影响**。默认关。
+### Block QUIC (advanced)
+Rejects **proxy-bound QUIC (UDP 443)** to push browsers back to TCP, fixing "page stalls / drops caused by unreachable node UDP relay". **Node-agnostic**; nodes that dial over QUIC themselves (hysteria2 / tuic / naive) are **not affected**. Off by default.
 
-### 抗封增强
-- **TLS Fragment**（全局开关）：切分 TLS ClientHello，规避基于 SNI 的 DPI 阻断。对所有 TCP-TLS 节点生效；hysteria2 / tuic / naive 自动排除。
-- **ECH / Multiplex / httpupgrade / Hysteria2 端口跳跃**：从 **sing-box JSON 订阅自动识别并生效**（Multiplex 对 reality+vision 节点自动跳过；端口跳跃支持多段范围）。
+### Anti-censorship
+- **TLS Fragment** (global toggle): splits the TLS ClientHello to evade SNI-based DPI blocking. Applies to all TCP-TLS nodes; hysteria2 / tuic / naive are auto-excluded.
+- **ECH / Multiplex / httpupgrade / Hysteria2 port hopping**: **auto-detected from the sing-box JSON subscription** (Multiplex auto-skipped for reality+vision nodes; port hopping supports multiple ranges).
 
-### sing-box 官方面板（opt-in）
-设置开启后，内核会在管理 API 监听口的 `/dashboard/` 提供官方 sing-box 面板。**仅在代理运行时可用**，与代理模式 / 路由模式无关。首次需联网下载面板资源（可走 GitHub 镜像加速）。
+### Official sing-box dashboard (opt-in)
+When enabled in Settings, the core serves the official sing-box panel at `/dashboard/` on the management API port. **Available only while the proxy is running**, independent of proxy / route mode. The panel assets are downloaded on first use (can route through the GitHub mirror).
 
-### ⚠️ NaiveProxy（naive）核心库说明
-naive 出站底层走 **Chromium 的 Cronet 网络库**以获得与浏览器一致的指纹，各平台链接方式不同：
-- **Linux / Windows**：cronet 走**动态库**（`libcronet.so` / `libcronet.dll`），由 `npm run fetch:cronet` 从 [SagerNet/cronet-go](https://github.com/SagerNet/cronet-go/releases) 拉取并随安装包打入（体积大，不入库、打包时拉取）。
-- **macOS（arm64 与 x64）**：cronet 由 sing-box 内核**静态编入**（CGO），naive **开箱即用、无需外部库**。
+### ⚠️ NaiveProxy (naive) core library
+naive's outbound uses **Chromium's Cronet network library** for browser-identical fingerprints; linking differs per platform:
+- **Linux / Windows**: Cronet is a **dynamic library** (`libcronet.so` / `libcronet.dll`), fetched from [SagerNet/cronet-go](https://github.com/SagerNet/cronet-go/releases) by `npm run fetch:cronet` and bundled into the installer (large; not committed, fetched at build time).
+- **macOS (arm64 and x64)**: Cronet is **statically linked** into the sing-box core (CGO); naive **works out of the box, no external library**.
 
-> 缺少 cronet 的平台 / 架构上，naive 节点会被**自动跳过**（不影响其它协议；若选中的正是 naive 节点会明确提示）。
+> On platforms/architectures lacking Cronet, naive nodes are **auto-skipped** (other protocols unaffected; you'll get a clear notice if the selected node is naive).
 
 ---
 
-## 🔧 技术栈
+## 🔧 Tech Stack
 
 - **Electron 42** + **React 19** + TypeScript
-- **sing-box 1.14**（代理内核，多平台随包内置）
-- 管理面：sing-box 1.14 **原生 gRPC API**（取代 clash_api）
-- Tailwind CSS + Radix UI · **Conduit 设计系统**（token 驱动双主题 + 自托管字体）
-- Vite（构建）/ electron-builder（打包）
-- Go（macOS 提权 helper · Windows 提权服务）
+- **sing-box 1.14** (proxy core, bundled per-platform)
+- Management: sing-box 1.14 **native gRPC API** (replacing clash_api)
+- Tailwind CSS + Radix UI · **Conduit design system** (token-driven dual theme + self-hosted fonts)
+- Vite (build) / electron-builder (packaging)
+- Go (macOS privilege helper · Windows privilege service)
 
 ---
 
-## 📄 开源协议
+## 📄 License
 
 MIT License
 
 ---
 
-## ⚠️ 免责声明
+## ⚠️ Disclaimer
 
-本软件仅供学习与研究使用。请遵守当地法律法规。使用本软件所产生的任何后果由使用者自行承担。
+This software is for learning and research only. Comply with your local laws and regulations. You bear all consequences of using this software.
 
 ---
 
-## ⭐ Star 趋势
+## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=dododook/FlowZ&type=Date)](https://star-history.com/#dododook/FlowZ&Date)

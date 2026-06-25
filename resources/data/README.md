@@ -1,65 +1,44 @@
-# GeoIP 和 GeoSite 数据文件
+# GeoIP & GeoSite data files
 
-## 文件说明
+[English](README.md) · [中文](README.zh-CN.md)
 
-这个目录包含 sing-box 使用的地理位置和域名分类数据文件：
+Bundled sing-box rule-sets (`.srs`, binary format) used for routing. They ship **inside the repo** so smart-split, app-routing, and region-splitting work **offline — no startup download, no FATAL on a 404 source**. These are the factory seed: at runtime they're copied to `<userData>/rules/` and can be refreshed online via the in-app Rule Resources manager (auto-update + fswatch hot-reload).
 
-- `geoip-cn.srs` - 中国 IP 地址段数据（sing-box rule-set 格式）
-- `geosite-cn.srs` - 中国域名列表（sing-box rule-set 格式）
-- `geosite-geolocation-!cn.srs` - 非中国域名列表（sing-box rule-set 格式）
+The authoritative list lives in `src/main/services/builtin-geo-rulesets.ts` (`BUILTIN_GEO_RULESETS`). Current set — **28 files (7 geoip + 21 geosite)**:
 
-## 用途
+- **China baseline (3)** — `geoip-cn` · `geosite-cn` · `geosite-geolocation-!cn`. Source: SagerNet [sing-geoip](https://github.com/SagerNet/sing-geoip) / [sing-geosite](https://github.com/SagerNet/sing-geosite) (rule-set branch).
+- **App-routing presets** — `geosite-*` for popular apps (youtube, netflix, tiktok, telegram, twitter, instagram, openai, anthropic, category-ai-!cn, google, github, spotify, steam, epicgames, riot, disney) plus `geoip-*` for a few (netflix, telegram, twitter). Source: [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) (`@sing`).
+- **Region splitting (Iran / Russia)** — `geosite-category-ir` · `geosite-category-ru` · `geoip-ir` · `geoip-ru`. Source: MetaCubeX/meta-rules-dat.
+- **Private / LAN** — `geoip-private` · `geosite-private` (local/intranet direct).
 
-这些文件用于智能分流模式，帮助 sing-box 决定哪些流量应该通过代理，哪些应该直连：
+> Committed: these `.srs` files. Not committed: the `sing-box` binary, `libcronet.*`, `dashboard/` (see `../README.md`).
 
-- **智能分流模式**: 中国 IP 和域名直连，其他通过代理
-- **自定义规则**: 可以基于这些数据创建更复杂的路由规则
+## Usage
 
-## 数据来源
+- **Smart-split mode**: CN IPs/domains go direct, the rest through the proxy.
+- **App routing**: per-app proxy / direct / block, backed by the app-routing geo sets.
+- **Region splitting**: domestic-direct / reverse "back-home" using the region geo sets.
+- **Custom rules**: reference any tag via `res:builtin:<tag>` or `rule_set` in a route rule.
 
-这些文件来自 sing-box 官方的 rule-set 仓库：
-- https://github.com/SagerNet/sing-geoip
-- https://github.com/SagerNet/sing-geosite
+## Updating
 
-## 更新
-
-建议定期更新这些文件以获得最新的 IP 和域名数据。可以从以下地址下载：
+Built-in sets refresh in-app (Rule Resources → update; auto-update is on by default). To refresh a single file manually from the official source, e.g.:
 
 ```bash
-# GeoIP 中国
 curl -L -o geoip-cn.srs https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip-cn.srs
-
-# GeoSite 中国
-curl -L -o geosite-cn.srs https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite-cn.srs
-
-# GeoSite 非中国
-curl -L -o geosite-geolocation-\!cn.srs https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite-geolocation-\!cn.srs
 ```
 
-## 在 sing-box 配置中使用
+## Using a rule-set in a sing-box config
 
 ```json
 {
   "route": {
     "rule_set": [
-      {
-        "tag": "geoip-cn",
-        "type": "local",
-        "format": "binary",
-        "path": "/path/to/geoip-cn.srs"
-      },
-      {
-        "tag": "geosite-cn",
-        "type": "local",
-        "format": "binary",
-        "path": "/path/to/geosite-cn.srs"
-      }
+      { "tag": "geoip-cn", "type": "local", "format": "binary", "path": "/path/to/geoip-cn.srs" },
+      { "tag": "geosite-cn", "type": "local", "format": "binary", "path": "/path/to/geosite-cn.srs" }
     ],
     "rules": [
-      {
-        "rule_set": ["geoip-cn", "geosite-cn"],
-        "outbound": "direct"
-      }
+      { "rule_set": ["geoip-cn", "geosite-cn"], "outbound": "direct" }
     ]
   }
 }

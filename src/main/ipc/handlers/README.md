@@ -1,73 +1,60 @@
-# IPC 处理器
+# IPC handlers
 
-本目录包含所有 IPC 处理器的实现，用于处理渲染进程发送的请求。
+[English](README.md) · [中文](README.zh-CN.md)
 
-## 已实现的处理器
+This directory holds the IPC handlers that service requests from the renderer. Each module exports a `registerXxxHandlers(...)` function; `index.ts` wires them up in the main process. Channel names are centralized as constants in [`src/shared/ipc-channels.ts`](../../../shared/ipc-channels.ts) (`IPC_CHANNELS.*`) — that file is the source of truth for exact channel strings.
 
-### 配置管理 (config-handlers.ts)
-- `config:get` - 获取用户配置
-- `config:save` - 保存用户配置
-- `config:updateMode` - 更新代理模式
-- `config:getValue` - 获取配置值
-- `config:setValue` - 设置配置值
+## Handler modules
 
-### 服务器管理 (server-handlers.ts)
-- `server:parseUrl` - 解析服务器 URL
-- `server:addFromUrl` - 从 URL 添加服务器
-- `server:add` - 添加服务器
-- `server:update` - 更新服务器
-- `server:delete` - 删除服务器
-- `server:getAll` - 获取所有服务器
+| Module | Responsibility |
+|---|---|
+| `config-handlers.ts` | Read/save user config, proxy mode, get/set individual values |
+| `server-handlers.ts` | Parse / add / update / delete nodes, add-from-URL |
+| `subscription-handlers.ts` | Import & update subscriptions, scheduling |
+| `proxy-handlers.ts` | Start/stop proxy, mode switch, node hot-switch, speed test |
+| `rules-handlers.ts` | Custom routing rules CRUD + ordering |
+| `rule-resource-handlers.ts` | Rule-set (`.srs`) download / catalog / auto-update |
+| `log-handlers.ts` | Get/clear logs, set level, live `event:logReceived` broadcast |
+| `system-handlers.ts` | System integration (system proxy, paths, OS bits) |
+| `helper-handlers.ts` | Privilege helper install / status |
+| `core-update-handlers.ts` | sing-box core update & staging |
+| `update-handlers.ts` | App auto-update |
+| `version-handlers.ts` | App / core version info |
+| `diagnostic-handlers.ts` | Diagnostic report collect / export |
+| `ipinfo-handlers.ts` | Exit-IP / geo lookup |
+| `privacy-handlers.ts` | Privacy / lightweight mode, password lock |
+| `autostart-handlers.ts` | Launch on boot |
+| `backup-handlers.ts` | Config backup / restore |
 
-### 日志管理 (log-handlers.ts)
-- `logs:get` - 获取日志条目
-- `logs:clear` - 清空日志
-- `logs:setLevel` - 设置日志级别
+## Registering (main process)
 
-#### 日志事件推送
-日志处理器会自动监听 LogManager 的日志事件，并通过 IPC 事件发送器广播到所有渲染进程：
-- 事件通道: `event:logReceived`
-- 事件数据: `LogEntry` 对象，包含时间戳、级别、消息、来源和可选的堆栈信息
-- 日志级别过滤: 只有满足当前日志级别的日志才会被广播
-
-## 使用方式
-
-### 在主进程中注册处理器
+Each module exposes a `registerXxxHandlers(...)`; they're imported and called from `index.ts`. For example:
 
 ```typescript
-import { registerConfigHandlers, registerServerHandlers, registerLogHandlers } from './ipc/handlers';
-import { ConfigManager } from '../services/ConfigManager';
-import { ProtocolParser } from '../services/ProtocolParser';
-import { LogManager } from '../services/LogManager';
+import { registerConfigHandlers, registerServerHandlers, registerLogHandlers /* … */ } from './ipc/handlers';
 
-const configManager = new ConfigManager();
-const protocolParser = new ProtocolParser();
-const logManager = new LogManager();
-
-// 注册处理器
 registerConfigHandlers(configManager);
 registerServerHandlers(protocolParser, configManager);
 registerLogHandlers(logManager);
+// … the remaining registerXxxHandlers
 ```
 
-### 在渲染进程中调用
+## Calling (renderer)
 
 ```typescript
-// 调用 IPC 方法
 const logs = await window.ipcRenderer.invoke('logs:get', { limit: 100 });
 
-// 监听日志事件
-window.ipcRenderer.on('event:logReceived', (event, log) => {
+window.ipcRenderer.on('event:logReceived', (_event, log) => {
   console.log('New log:', log);
 });
 ```
 
-## 事件广播机制
+## Event broadcast
 
-日志事件使用 `IpcEventEmitter` 进行广播，确保所有打开的窗口都能接收到日志更新：
+Events (e.g. live logs) use `IpcEventEmitter` to reach every open window:
 
-1. 主窗口创建时，通过 `ipcEventEmitter.registerWindow(mainWindow)` 注册
-2. LogManager 触发 'log' 事件时，日志处理器调用 `broadcastEvent()` 广播到所有窗口
-3. 渲染进程通过 `ipcRenderer.on()` 监听 `event:logReceived` 事件接收日志
+1. On window creation, `ipcEventEmitter.registerWindow(mainWindow)` registers it.
+2. When a service emits (e.g. LogManager's `log` event), the handler calls `broadcastEvent()` to fan out to all windows.
+3. The renderer subscribes via `ipcRenderer.on('event:logReceived', …)`.
 
-这种机制支持多窗口场景，所有窗口都能实时接收日志更新。
+This supports multi-window scenarios — all windows receive updates in real time. Log events are filtered by the current log level before broadcast.
