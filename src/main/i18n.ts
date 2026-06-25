@@ -42,21 +42,18 @@ const MESSAGES: Record<MainMessageKey, Record<SupportedLanguage, string>> = {
     fa: 'پروکسی متوقف شد. برای جزئیات FlowZ را باز کنید.',
   },
   helperDisabledTitle: {
-    'zh-CN': 'FlowZ 提权助手被系统关闭',
-    'zh-TW': 'FlowZ 提權助手被系統關閉',
-    'en-US': 'FlowZ helper disabled by the system',
-    ru: 'Помощник FlowZ отключён системой',
-    fa: 'دستیار FlowZ توسط سیستم غیرفعال شد',
+    'zh-CN': 'FlowZ 提权助手被关闭',
+    'zh-TW': 'FlowZ 提權助手被關閉',
+    'en-US': 'FlowZ helper disabled',
+    ru: 'Помощник FlowZ отключён',
+    fa: 'دستیار FlowZ غیرفعال شد',
   },
   helperDisabledBody: {
-    'zh-CN':
-      '「允许在后台」中本应用的提权助手被关闭，TUN 自动启动失败。请在「系统设置 > 通用 > 登录项与扩展」重新打开；点按本通知可直接打开设置。',
-    'zh-TW':
-      '「允許在背景」中本應用的提權助手被關閉，TUN 自動啟動失敗。請在「系統設定 > 一般 > 登入項目與擴充功能」重新打開；點按本通知可直接打開設定。',
-    'en-US':
-      "FlowZ's privileged helper was turned off in Login Items, so TUN could not start automatically. Re-enable it under System Settings > General > Login Items & Extensions; click this notification to open settings.",
-    ru: 'Привилегированный помощник FlowZ отключён в «Объектах входа», поэтому TUN не запустился автоматически. Включите его снова в «Системные настройки → Основные → Объекты входа и расширения»; нажмите это уведомление, чтобы открыть настройки.',
-    fa: 'دستیار ممتاز FlowZ در «موارد ورود» خاموش شده است، بنابراین TUN به‌طور خودکار اجرا نشد. آن را از مسیر «تنظیمات سیستم» بخش «عمومی» و سپس «موارد ورود و افزونه‌ها» دوباره فعال کنید؛ برای باز کردن تنظیمات روی این اعلان کلیک کنید.',
+    'zh-CN': 'TUN 无法自动启动，点此打开设置重新开启。',
+    'zh-TW': 'TUN 無法自動啟動，點此打開設定重新開啟。',
+    'en-US': "TUN can't auto-start. Click to open settings and re-enable.",
+    ru: 'TUN не запускается автоматически. Нажмите, чтобы открыть настройки.',
+    fa: 'TUN به‌طور خودکار اجرا نمی‌شود. برای باز کردن تنظیمات کلیک کنید.',
   },
   tailscaleAuthBody: {
     'zh-CN': '在浏览器中完成登录授权以加入网络',
