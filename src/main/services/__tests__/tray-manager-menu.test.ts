@@ -48,6 +48,7 @@ jest.mock('../ResourceManager', () => ({
 }));
 
 import { TrayManager, type TrayMenuData } from '../TrayManager';
+import { setMainLanguage } from '../../i18n';
 
 const makeLogger = () => ({ addLog: jest.fn() }) as any;
 
@@ -77,6 +78,9 @@ beforeEach(() => {
   lastTemplate = [];
   buildFromTemplate.mockClear();
   getTrayIconPath.mockClear();
+  // 托盘文案改走主进程 i18n（mt 读中央语言持有点）。真机由 index.ts 启动按系统偏好初始化；
+  // 测试显式设中文（对应本套 mock 的 zh-Hans-CN 系统偏好），以断言中文标签。
+  setMainLanguage('zh-CN');
 });
 
 describe('TrayManager 菜单状态映射 (#75)', () => {
