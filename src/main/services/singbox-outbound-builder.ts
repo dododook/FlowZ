@@ -771,6 +771,7 @@ export function buildOutbounds(
   // 进入 nodeTags → proxy-selector / rule-sel / route，与普通节点一视同仁（clash_api 热切换已实测兼容）。
   pendingEndpoints.length = 0;
   const nodeTags: string[] = [];
+  let systemWgCount = 0; // 多 System WG 唯一内核接口名计数（防多个 system:true WG 都叫 flowz-wg 撞名致核 FATAL）。
 
   if (config) {
     // 生成【全部】节点的 Outbound：selector 需要列出所有可切换节点；detour 前置节点亦在 config.servers
@@ -820,6 +821,13 @@ export function buildOutbounds(
           if (downgradeMeshToGvisor) {
             ep.system = false; // 非 TUN：降级 userspace gVisor 栈（零提权可跑）
             delete ep.name; // gVisor 无内核接口名
+          } else if (ep.name) {
+            // 多个 system:true WG 唯一内核接口名：首个保留 flowz-wg（常见单节点不变），其余追加序号——否则两张
+            // 内核接口都叫 flowz-wg → sing-box 建第二张时撞名 FATAL（整核起不来）。序号计数保证唯一（与 id 无关，
+            // 避免 id 前缀碰撞）；flowz-wg-N 仍落在 helper ifaceAllowed 的 flowz- 白名单内。MeshExitRouteManager 只
+            // 托管 flowz-ts，不依赖 flowz-wg 名，故重命名安全。
+            if (systemWgCount > 0) ep.name = `flowz-wg-${systemWgCount}`;
+            systemWgCount++;
           }
           pendingEndpoints.push(ep);
           nodeTags.push(tag);

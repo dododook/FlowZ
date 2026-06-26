@@ -44,8 +44,12 @@ const idMap = (servers: ServerConfig[]): Map<string, string> =>
 // 下发**（macOS utun 名动态、刻意不设，builder 平台门控本身正确）。Linux/Win CI 是非 darwin 故 name 断言过，macOS CI
 // 是 darwin 则 name=undefined → 断言挂。本文件无 darwin 专属断言，强制非 darwin 让接口名断言跨 CI host 确定。
 const __realPlatform = process.platform;
-beforeEach(() => Object.defineProperty(process, 'platform', { value: 'win32', configurable: true }));
-afterEach(() => Object.defineProperty(process, 'platform', { value: __realPlatform, configurable: true }));
+beforeEach(() =>
+  Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+);
+afterEach(() =>
+  Object.defineProperty(process, 'platform', { value: __realPlatform, configurable: true })
+);
 
 describe('buildOutbounds — 基础装配 + 载体', () => {
   it('单节点：节点出站 + proxy-selector(default=节点) + direct + block；载体空', () => {
@@ -222,6 +226,36 @@ describe('buildOutbounds — endpoint + 门控', () => {
     // default 的 EEXIST、被 setRoutes 善后删掉、停核 unsetRoutes 不回填 → 断网，由 ProxyManager 的「全局 default 存/
     // 停核补回」安全网兜底。
     expect(ep.peers![0].allowed_ips).toEqual(['10.8.0.0/24', '0.0.0.0/0', '::/0']);
+  });
+
+  it('多个 System WG → 内核接口名唯一（首个 flowz-wg，其余 flowz-wg-N，防两张内核接口撞名致核 FATAL）', () => {
+    const mkWg = (id: string, name: string): ServerConfig =>
+      ({
+        id,
+        name,
+        protocol: 'wireguard',
+        address: `${id}.example.com`,
+        port: 51820,
+        wireguardSettings: {
+          privateKey: 'pk',
+          peerPublicKey: 'pub',
+          localAddress: ['10.0.0.2/32'],
+          reverseMesh: true,
+        },
+      }) as unknown as ServerConfig;
+    const a = mkWg('wa', 'WG-A');
+    const b = mkWg('wb', 'WG-B');
+    const r = buildOutbounds(
+      a,
+      cfg([a, b]),
+      idMap([a, b]),
+      deps({ systemInterfaceAvailable: true })
+    );
+    const epA = r.pendingEndpoints.find((e) => e.tag === 'WG-A')!;
+    const epB = r.pendingEndpoints.find((e) => e.tag === 'WG-B')!;
+    expect(epA.name).toBe('flowz-wg'); // 首个保留默认名（常见单节点不变）
+    expect(epB.name).toBe('flowz-wg-1'); // 次个唯一化
+    expect(epA.name).not.toBe(epB.name);
   });
 
   it('Phase2 Tailscale reverseMesh=true + exitNode → system_interface=true + 固定名 + exit_node 下发（出口路由由 MeshExitRouteManager 托管）', () => {
