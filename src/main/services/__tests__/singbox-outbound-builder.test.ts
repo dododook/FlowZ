@@ -48,6 +48,14 @@ const wgServer = (over: Partial<ServerConfig> = {}): ServerConfig =>
     ...over,
   }) as unknown as ServerConfig;
 
+// CI 决定性（gate≠CI 的 host-OS 依赖）：WG `name` / TS `system_interface_name` 固定接口名**仅非 macOS 下发**（macOS
+// utun 名动态、刻意不设）。macOS CI 是 darwin 则 name=undefined → 断言挂。强制非 darwin 让接口名断言跨 host 确定。
+// 本文件内自设 platform 的用例（跨平台导入降级 ~L490 / shouldEmitTlsEngine 显式传 platform）各自 restore 到捕获的
+// orig，不受此 beforeEach 影响。
+const __realPlatform = process.platform;
+beforeEach(() => Object.defineProperty(process, 'platform', { value: 'win32', configurable: true }));
+afterEach(() => Object.defineProperty(process, 'platform', { value: __realPlatform, configurable: true }));
+
 describe('buildWireGuardEndpoint', () => {
   it('最小配置 → keepalive 兜 25s / allowed_ips 全量 / mtu 兜 1408 / system:false', () => {
     const ep = buildWireGuardEndpoint(wgServer(), 'WG');

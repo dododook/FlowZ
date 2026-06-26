@@ -40,6 +40,13 @@ const cfg = (servers: ServerConfig[], over: Partial<UserConfig> = {}): UserConfi
 const idMap = (servers: ServerConfig[]): Map<string, string> =>
   new Map(servers.map((s) => [s.id, s.name]));
 
+// CI 决定性（gate≠CI 的 host-OS 依赖）：WG/TS endpoint 的固定接口名（name / system_interface_name）**仅在非 macOS
+// 下发**（macOS utun 名动态、刻意不设，builder 平台门控本身正确）。Linux/Win CI 是非 darwin 故 name 断言过，macOS CI
+// 是 darwin 则 name=undefined → 断言挂。本文件无 darwin 专属断言，强制非 darwin 让接口名断言跨 CI host 确定。
+const __realPlatform = process.platform;
+beforeEach(() => Object.defineProperty(process, 'platform', { value: 'win32', configurable: true }));
+afterEach(() => Object.defineProperty(process, 'platform', { value: __realPlatform, configurable: true }));
+
 describe('buildOutbounds — 基础装配 + 载体', () => {
   it('单节点：节点出站 + proxy-selector(default=节点) + direct + block；载体空', () => {
     const servers = [vless('s1', '香港')];
