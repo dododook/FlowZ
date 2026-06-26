@@ -41,7 +41,11 @@ export function planMeshExitRoute(
   const ts = (config.servers || []).find((s) => s.protocol?.toLowerCase() === 'tailscale');
   if (!ts) return null;
   if (!meshUsesSystemInterface(ts)) return null;
-  if (!meshNodeCarriesFullTunnel(ts)) return null; // = 设了 exit_node（TS allowInternet 由 exitNode 派生）
+  if (!meshNodeCarriesFullTunnel(ts)) return null; // allowInternet（新建表单由 exitNode 派生）
+  // 还须 exit_node **实际设了**：meshNodeCarriesFullTunnel 只看 allowInternet，而 buildTailscaleEndpoint 仅在 exitNode
+  // 非空时才下发 exit_node。旧/导入配置可能 allowInternet=true 但 exitNode 为空（ConfigManager 不重派生）→ 装了出口
+  // 路由却无 exit peer 转发 → 默认流量黑洞且无 direct 兜底。故与 endpoint 下发口径对齐：exitNode 为空则不托管。
+  if (!ts.tailscaleSettings?.exitNode?.trim()) return null;
   const cidrs = [...EXIT_DEFAULT_V4, ...(enableIPv6 ? EXIT_DEFAULT_V6 : [])];
   return { iface: TS_SYSTEM_INTERFACE_NAME, cidrs };
 }

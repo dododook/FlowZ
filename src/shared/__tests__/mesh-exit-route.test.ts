@@ -60,6 +60,12 @@ describe('planMeshExitRoute（不依赖全局选中：exit-capable TS 即装，�
     expect(planMeshExitRoute(cfg([tsNode({ allowInternet: false })], 'ts1'), false)).toBeNull();
   });
 
+  it('TS System + allowInternet=true 但 exitNode 为空(旧/导入配置)→ null(无 exit peer,不装路由防黑洞)', () => {
+    expect(
+      planMeshExitRoute(cfg([tsNode({ allowInternet: true, exitNode: '' })], 'ts1'), false)
+    ).toBeNull();
+  });
+
   it('WG System + 全隧道 → null(sing-box 按 allowed_ips 自装,FlowZ 不重复;本函数只管 TS)', () => {
     expect(planMeshExitRoute(cfg([wgNode({})], 'wg1'), false)).toBeNull();
   });

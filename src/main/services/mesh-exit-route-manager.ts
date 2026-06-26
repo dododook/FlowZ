@@ -47,6 +47,7 @@ export class MeshExitRouteManager {
   private pending: { config: UserConfig; enableIPv6: boolean } | null = null; // 最新待对齐目标(latest-wins)。
   private baselineUtuns: Set<string> | null = null; // macOS 起核前的 utun 基线(时序 diff 锚点)。
   private windowsMetricTimer: ReturnType<typeof setInterval> | null = null; // Windows：flowz-ts metric 周期巡检定时器。
+  private windowsMetricFailureLogged = false; // Windows：持久降权失败是否已报过一次(防每 15s 刷屏,成功复位)。
 
   constructor(
     private readonly getHelper: () => IPrivilegedHelper | null,
@@ -170,6 +171,17 @@ export class MeshExitRouteManager {
   }
 
   /**
+   * 崩溃 / giveUp 等非正常拆除（走 ProxyManager.cleanup() 而非 stopInner→clear()）的同步内存态复位。内核接口随进程
+   * 销毁、其路由已自动消失，故无需发删命令；但**必须清掉残留态**，否则：① macOS/Linux 残留的 `installed` 会让下次
+   * reconcile 的 cidr 去重误判「已装」而跳过 apply → 出口路由不再装（自愈后静默黑洞）；② Windows 的 15s 巡检定时器泄漏、
+   * 持续 spawn powershell。clear()（正常停核）已含同款 stop；本方法是崩溃腿的补漏，同步、不发命令、绝不抛。
+   */
+  resetState(): void {
+    this.installed = null;
+    this.stopWindowsMetricWatch();
+  }
+
+  /**
    * 一轮巡检：读 flowz-ts 两族接口 metric（只读、非提权直跑 Get-NetIPInterface），任一不是 WIN_TS_DEMOTED_METRIC
    * （初次/AutomaticMetric/被 TS 重连重建复位）→ 经 helper（SYSTEM）补设两族。
    * **关键（真机踩坑）**：AutomaticMetric 时 InterfaceMetric **读出为空**（join 得 `,` 或 `''`）——这**正是**需要降权
@@ -191,11 +203,15 @@ export class MeshExitRouteManager {
     }
     if (out === 'NONE') return; // flowz-ts 接口不存在（未就绪）→ 下轮再试
     const metrics = out.split(',').map((s) => s.trim()); // 空表示 AutomaticMetric（需降权,非「未就绪」）
-    if (metrics.every((m) => m === String(WIN_TS_DEMOTED_METRIC))) return; // 两族都已达标
+    if (metrics.every((m) => m === String(WIN_TS_DEMOTED_METRIC))) {
+      this.windowsMetricFailureLogged = false; // 已达标(含外部手动设)→ 复位失败标记
+      return;
+    }
     const helper = this.getHelper();
     if (!helper) return;
     const res = await helper.setInterfaceMetric(TS_SYSTEM_INTERFACE_NAME, WIN_TS_DEMOTED_METRIC);
     if (res.ok) {
+      this.windowsMetricFailureLogged = false; // 成功 → 复位失败标记（下次再失败重新报一次）
       this.log(
         'info',
         `Windows TS 出口:flowz-ts 接口 metric 降权为 ${WIN_TS_DEMOTED_METRIC}(两族;原 ${metrics.join('/')})—— 其 exit 0/0 让位物理网卡,直连/DNS 回物理`
@@ -205,6 +221,14 @@ export class MeshExitRouteManager {
       this.log(
         'warn',
         'Windows TS 出口:当前 helper 不支持 iface-metric(需重装 helper);否则 flowz-ts 0/0 会抢直连/bootstrap DNS 致解析失败'
+      );
+    } else if (!this.windowsMetricFailureLogged) {
+      // 其它持久失败（PowerShell 未找到 / Set-NetIPInterface 拒绝 / 权限）：仍每 15s 重试（可能自愈），但**报一次**
+      // 诊断（首次失败即报、成功后复位），避免静默——否则 flowz-ts 0/0 持续抢 bootstrap DNS 而无任何信号。
+      this.windowsMetricFailureLogged = true;
+      this.log(
+        'warn',
+        `Windows TS 出口:flowz-ts metric 降权失败(每 15s 重试中,flowz-ts 0/0 可能仍抢直连/bootstrap DNS): ${res.error || '未知'}`
       );
     }
   }

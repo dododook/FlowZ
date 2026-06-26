@@ -898,7 +898,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     // 出口路由托管：选中的全局出口 = TS System + 承载全隧道 → 在其内核接口装 exit 拆半默认路由
     // （sing-box 不为 exit_node 装,真机实证）。fire-and-forget：内部轮询等 TS 接口出现、绝不抛、不阻塞启动。
-    void this.meshExitRoute.reconcile(config, !!config.enableIPv6);
+    // 仅 TUN 模式有 System 内核接口；非 TUN（系统代理）下 System 节点已降级 gVisor、无 flowz-ts，托管纯属无用功
+    // （Windows 会每 15s 空转 spawn powershell 读 NONE）。停核时 clear() 已拆旧路由，故此处直接跳过即可。
+    if (config.proxyModeType === 'tun') {
+      void this.meshExitRoute.reconcile(config, !!config.enableIPv6);
+    }
 
     // 系统代理单一写者收口（拆双轨）：systemProxy 模式 → 置系统代理（marker + 防自指在 SystemProxyManager 内，
     // 杜绝把自己当原始保存致 disable restore 死端口）；TUN/manual 模式 → 反向清掉可能残留的系统代理
@@ -1167,6 +1171,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     }
     // macOS TUN 模式：即使 singboxProcess 为 null，也可能有后台进程在运行
     if (!this.singboxProcess && !this.singboxPid) {
+      // 崩溃/外部死亡后停核：主核已不在，文末那条 restore 会被本早退跳过。若 system WG 全隧道用裸 0/0 删了 en0 全局
+      // 默认路由而 sing-tun unsetRoutes 未回填，在此补回（restore 自身幂等 + savedDefaultGateway 门控，无关场景 no-op）。
+      await this.restoreDefaultRouteIfMissing();
       return;
     }
 
@@ -1517,7 +1524,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           );
           this.emit('node-hot-switched', isAccountBasedProtocol(target?.protocol));
           // 全局出口热切换（不重启）→ 对齐出口路由托管：切到/切离 TS System+exit 时装/清拆半默认路由。
-          void this.meshExitRoute.reconcile(newConfig, !!newConfig.enableIPv6);
+          // 仅 TUN 模式（非 TUN 下 System 降级 gVisor、无内核接口，见起核处同款门控）。
+          if (newConfig.proxyModeType === 'tun') {
+            void this.meshExitRoute.reconcile(newConfig, !!newConfig.enableIPv6);
+          }
         }
         return;
       }
@@ -4657,6 +4667,9 @@ exit 0
   private cleanup(): void {
     this.stopLogFileWatcher();
     this.stopHealthCheck();
+    // 崩溃/giveUp 走本路径而非 stopInner→meshExitRoute.clear()：复位出口托管内存态（残留 installed 会让下次 reconcile
+    // 去重误判「已装」跳过 apply → 出口路由不再装；Windows 巡检定时器会泄漏）。同步、内核接口随进程已销毁无需删命令。
+    this.meshExitRoute.resetState();
     this.singboxProcess = null;
     this.pid = null;
     this.singboxPid = null;
