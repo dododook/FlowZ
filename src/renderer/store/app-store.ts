@@ -12,6 +12,7 @@ import type {
   InvalidNodeInfo,
 } from '../../shared/types';
 import type { UpdateInfo } from '../../shared/types/update';
+import type { TailscaleStatusPeer } from '../../shared/tailscale-status';
 import { api } from '../ipc';
 import { toast } from 'sonner';
 import i18n from '../i18n';
@@ -98,6 +99,10 @@ interface AppState {
   // 实时携带，由 setTailscaleIps 写入；供节点卡片「组网信息」popover 展示内网 IP，消「要登录控制台才看得到」黑盒。
   tailscaleIps: Record<string, string[]>;
 
+  // Tailscale 对端列表（serverId → peers）。L2 状态流(EVENT_TAILSCALE_STATUS)/主动拉(TAILSCALE_GET_STATUS) 携带，
+  // 供出口节点下拉(仅列 exitNodeOption=true) + 组网信息 popover。新鲜度看 connectionStatus.proxyCore.running（断开→陈旧灰显）。
+  tailscalePeers: Record<string, TailscaleStatusPeer[]>;
+
   // Privacy Protection Mode
   isPrivacyMode: boolean;
 
@@ -144,6 +149,8 @@ interface AppState {
   setTailscaleAuthUrl: (serverId: string, url: string) => void;
   // Tailscale 内网 IP 单条覆盖（self.tailscaleIPs），由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleIps: (serverId: string, ips: string[]) => void;
+  // Tailscale 对端列表单条覆盖（serverId → peers），由 EVENT_TAILSCALE_STATUS / TAILSCALE_GET_STATUS 驱动。
+  setTailscalePeers: (serverId: string, peers: TailscaleStatusPeer[]) => void;
 
   // Server Management Actions
   deleteServer: (serverId: string) => Promise<void>;
@@ -180,6 +187,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
   tailscaleAuthUrls: {},
   tailscaleIps: {},
+  tailscalePeers: {},
   isPrivacyMode: false,
   helperStatus: null,
   availableAppUpdate: null,
@@ -459,6 +467,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       const prev = s.tailscaleIps[serverId];
       const unchanged = prev?.length === ips.length && prev.every((ip, i) => ip === ips[i]);
       return unchanged ? {} : { tailscaleIps: { ...s.tailscaleIps, [serverId]: ips } };
+    });
+  },
+  // 内容未变则不重建表（状态流多帧、peers 常不变 → 省无谓重渲染）。逐元素逐字段比较（对齐 setTailscaleIps，
+  // 零字符串分配、首差即短路；不依赖分隔符在 hostName 中不出现这一隐含前提）。
+  setTailscalePeers: (serverId, peers) => {
+    const same = (a: TailscaleStatusPeer, b: TailscaleStatusPeer): boolean =>
+      a.hostName === b.hostName &&
+      a.ip === b.ip &&
+      a.online === b.online &&
+      a.exitNode === b.exitNode &&
+      a.exitNodeOption === b.exitNodeOption &&
+      a.active === b.active;
+    set((s) => {
+      const prev = s.tailscalePeers[serverId];
+      const unchanged = prev?.length === peers.length && prev.every((p, i) => same(p, peers[i]));
+      return unchanged ? {} : { tailscalePeers: { ...s.tailscalePeers, [serverId]: peers } };
     });
   },
 

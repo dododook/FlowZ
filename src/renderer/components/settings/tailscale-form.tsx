@@ -22,7 +22,8 @@ import { tailscaleLoginUiState } from './server-list-helpers';
 import { FormButtons } from './shared/form-buttons';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { SwitchField } from './shared/switch-field';
-import { MeshOptionsSection } from './shared/mesh-fields';
+import { ExitNodeField } from './shared/exit-node-field';
+import { AccessModeField, SubnetReachabilitySwitch } from './shared/mesh-fields';
 import { InfoTooltip } from './shared/info-tooltip';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
@@ -124,7 +125,9 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
       protocol: 'tailscale' as const,
       tailscaleSettings: {
         authKey: values.authKey?.trim() || undefined,
-        allowInternet: values.allowInternet,
+        // allowInternet（TS 全隧道意图）由「是否选了出口节点」派生：选了=经 exit 全量出网；无=仅 mesh/子网。
+        // exit_node≠0/0，与 reverseMesh(system) 正交（见 meshNodeCarriesFullTunnel 协议口径 + 设计 §3）。
+        allowInternet: !!values.exitNode?.trim(),
         reverseMesh: values.reverseMesh,
         alwaysRouteSubnets: values.alwaysRouteSubnets,
         exitNode: values.exitNode?.trim() || undefined,
@@ -149,8 +152,6 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
     await onSubmit(config);
   };
 
-  const allowInternet = form.watch('allowInternet');
-  const reverseMesh = form.watch('reverseMesh');
   // 立即登录按钮（Phase 2）门控：填了 authKey → 走预授权、不需交互登录 → 隐藏按钮。
   const authKeyValue = form.watch('authKey');
 
@@ -286,64 +287,36 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                   </div>
                 </FieldSpan>
               ) : null)}
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="exitNode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-1.5">
-                      {t('servers.tsExitNode', 'Exit Node (optional)')}
-                      <InfoTooltip content={t('servers.tsExitNodeDescFull')} />
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="100.x.y.z / hostname"
-                        {...field}
-                        disabled={!allowInternet || reverseMesh}
-                      />
-                    </FormControl>
-                    <FormDescription>{t('servers.tsExitNodeDesc')}</FormDescription>
-                    <p className="text-xs text-muted-foreground">
-                      {t('servers.tsExitNodeControlHint')}
-                    </p>
-                    {(reverseMesh || !allowInternet) && (
-                      <p className="text-sm text-amber-600 dark:text-amber-500">
-                        {reverseMesh
-                          ? t(
-                              'servers.tsReverseMeshHint',
-                              'Reverse-mesh (system) mode: exit node ignored; this node only reaches the tailnet / routed subnets and is reachable from peers (subnet router).'
-                            )
-                          : t(
-                              'servers.tsAllowInternetOffHint',
-                              'Internet access off: exit node ignored; this node only reaches the tailnet / routed subnets.'
-                            )}
-                      </p>
-                    )}
-                    {allowInternet && !reverseMesh && !exitNodeValue?.trim() && (
-                      <p className="text-sm text-amber-600 dark:text-amber-500">
-                        {t(
-                          'servers.tsFullTunnelNoExitWarn',
-                          'Full-tunnel is on but no exit node selected — Tailscale needs an exit node to egress, otherwise internet traffic is black-holed. Set the exit node above.'
-                        )}
-                      </p>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
           </FieldGrid>
         </FormSection>
 
-        {/* 出口选项（默认展开）：经出口节点时是否直连本地 LAN。exitNode 非空才出现该开关。
-            reverseMesh 下 exitNode 已失效 → 该开关同步禁用（!allowInternet 同理）。 */}
-        {exitNodeValue?.trim() && (
-          <FormSection
-            title={t('servers.tsExitOptions', 'Exit node options')}
-            collapsible
-            defaultOpen
-          >
+        {/* 接入与出口（常显）：接入模式（用户态/System）+ 出口节点。出口两模式可用（exit_node≠0/0 不触发 F4），
+            故不再受 reverseMesh/allowInternet 门控；allowInternet 由「是否选了出口」在 handleSubmit 派生。 */}
+        <FormSection title={t('servers.accessAndExit', 'Access & exit')}>
+          <AccessModeField control={form.control} />
+          <FormField
+            control={form.control}
+            name="exitNode"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('servers.tsExitNode', 'Exit node')}</FormLabel>
+                <FormControl>
+                  <ExitNodeField
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    serverId={serverConfig?.id}
+                  />
+                </FormControl>
+                {!exitNodeValue?.trim() && (
+                  <FormDescription>
+                    {t('servers.tsExitNodeNoneHint', '未选出口：仅可访问内网 / tailnet')}
+                  </FormDescription>
+                )}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {exitNodeValue?.trim() && (
             <SwitchField
               control={form.control}
               name="exitNodeAllowLanAccess"
@@ -352,22 +325,17 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                 'servers.tsExitNodeAllowLanDesc',
                 'When using an exit node, still reach the local LAN directly instead of routing it through the exit.'
               )}
-              disabled={!allowInternet || reverseMesh}
             />
-          </FormSection>
-        )}
+          )}
+        </FormSection>
 
-        {/* 子网路由（组网）：mesh 三开关（共享件）+ 接受/录入路由子网。 */}
+        {/* 子网路由（组网，折叠）：子网恒可达开关 + 接受/录入路由子网。 */}
         <FormSection
           title={t('servers.tsSubnetRouting', 'Subnet routing (mesh)')}
           collapsible
           defaultOpen={false}
         >
-          <MeshOptionsSection
-            control={form.control}
-            protocol="tailscale"
-            reverseMesh={reverseMesh}
-          />
+          <SubnetReachabilitySwitch control={form.control} protocol="tailscale" />
           <SwitchField
             control={form.control}
             name="acceptRoutes"
@@ -389,7 +357,6 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                 <FormControl>
                   <Input placeholder="192.168.50.0/24, 10.0.0.0/24" {...field} />
                 </FormControl>
-                <FormDescription>{t('servers.tsRoutesDesc')}</FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -446,9 +413,6 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                         'Subnets this node makes reachable to the tailnet (subnet router). Comma-separated.'
                       )}
                     </FormDescription>
-                    <p className="text-xs text-muted-foreground">
-                      {t('servers.tsAdvertiseRoutesControlHint')}
-                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -482,9 +446,6 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                         'ACL tags this node advertises to the tailnet (tag:*). Comma-separated.'
                       )}
                     </FormDescription>
-                    <p className="text-xs text-muted-foreground">
-                      {t('servers.tsAdvertiseTagsControlHint')}
-                    </p>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -518,11 +479,6 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                   'servers.tsSshServerDesc',
                   'Run a Tailscale SSH server on this node (tailnet:22, access governed by ACLs).'
                 )}
-                hint={
-                  <p className="text-xs text-muted-foreground">
-                    {t('servers.tsSshServerControlHint')}
-                  </p>
-                }
               />
             </FieldSpan>
             {/* P4b tailnet 按名解析并入「高级」：accept_search_domain + preferred_by 强联动，与 doh.pub/google

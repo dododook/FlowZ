@@ -28,6 +28,7 @@ import type {
   InvalidNodeInfo,
 } from '../../shared/types';
 import type { WarpWireGuardDraft } from '../../shared/warp';
+import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
 
 /**
  * 代理控制 API
@@ -150,16 +151,7 @@ export const proxyApi = {
    * 取代 1.13 的「轮询 state 目录 + AUTH_OK」启发式：登录成功（Running/Starting）、需登录（NeedsLogin+authURL）、
    * 过期（expired）全由此流驱动，与日志等级无关。
    */
-  onTailscaleStatus(
-    listener: (data: {
-      serverId: string;
-      backendState: string;
-      loggedIn: boolean;
-      authURL?: string;
-      tailscaleIPs: string[];
-      expired: boolean;
-    }) => void
-  ): () => void {
+  onTailscaleStatus(listener: (data: TailscaleStatusEvent) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, listener);
   },
 
@@ -338,6 +330,14 @@ export const serverApi = {
   },
 
   /**
+   * L2：主动拉各 TS 节点状态末帧(self IP/peers) + 新鲜度(connected)。
+   * 治本「状态流 push-only-on-change、无 pull、渲染端错过推送即永久陈旧」：挂载/出口表单打开即拉当前态。
+   */
+  async tailscaleGetStatus(): Promise<TailscaleStatusSnapshot> {
+    return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_GET_STATUS);
+  },
+
+  /**
    * 切换服务器
    */
   async switch(serverId: string): Promise<void> {
@@ -370,6 +370,17 @@ export const serverApi = {
    */
   async registerWarp(licenseKey?: string): Promise<WarpWireGuardDraft> {
     return ipcClient.invoke(IPC_CHANNELS.WARP_REGISTER, { licenseKey });
+  },
+
+  /**
+   * 对已注册 WARP 节点原地应用 WARP+ license（升级免重建）。token 服务端按 serverId 取、不经渲染端。
+   * 无 warpDevice 凭据的旧节点返 { ok:false, error:'no-credentials' }（渲染端置灰 + 提示重建）。
+   */
+  async applyWarpLicense(
+    serverId: string,
+    license: string
+  ): Promise<{ ok: boolean; warpPlus?: boolean; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.WARP_APPLY_LICENSE, { serverId, license });
   },
 
   /**

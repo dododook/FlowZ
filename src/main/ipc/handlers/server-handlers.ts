@@ -210,4 +210,28 @@ export function registerServerHandlers(
       return draft;
     }
   );
+
+  // 对已注册 WARP 节点原地应用 WARP+ license（升级免重建）。token 一律服务端按 serverId 取，不经渲染端回传；
+  // 无 warpDevice 凭据的旧节点返 no-credentials（渲染端置灰 + 提示重建）。
+  registerIpcHandler<
+    { serverId: string; license: string },
+    { ok: boolean; warpPlus?: boolean; error?: string }
+  >(
+    IPC_CHANNELS.WARP_APPLY_LICENSE,
+    async (_event: IpcMainInvokeEvent, args: { serverId: string; license: string }) => {
+      const config = await configManager.loadConfig();
+      const dev = config.servers.find((s) => s.id === args.serverId)?.wireguardSettings?.warpDevice;
+      if (!dev?.deviceId || !dev?.token) return { ok: false, error: 'no-credentials' };
+      try {
+        const { warpPlus } = await new WarpService(logManager).applyLicense(
+          dev.deviceId,
+          dev.token,
+          args.license
+        );
+        return { ok: true, warpPlus };
+      } catch (e: any) {
+        return { ok: false, error: e?.message ?? String(e) };
+      }
+    }
+  );
 }

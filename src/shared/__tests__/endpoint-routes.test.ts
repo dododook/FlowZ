@@ -228,61 +228,97 @@ describe('Phase 2: system 内核接口（reverseMesh）', () => {
     it('TS 缺字段 → false', () => expect(meshUsesSystemInterface(ts())).toBe(false));
     it('非组网协议 → false', () =>
       expect(meshUsesSystemInterface({ protocol: 'vless' } as any)).toBe(false));
+    it('WARP（warpDevice）即便 reverseMesh=true 也 → false（anycast 出口恒 gVisor，防 Connect: resource busy FATAL）', () => {
+      const warp = wg([], true, true);
+      warp.wireguardSettings = {
+        ...(warp.wireguardSettings as any),
+        warpDevice: { deviceId: 'd', token: 't' },
+      };
+      expect(meshUsesSystemInterface(warp)).toBe(false);
+    });
+    it('旧 WARP（无 warpDevice，端点 *.cloudflareclient.com）即便 reverseMesh=true 也 → false（按端点域名鲁棒兜底）', () => {
+      const warp = wg([], true, true);
+      warp.address = 'engage.cloudflareclient.com';
+      expect(meshUsesSystemInterface(warp)).toBe(false);
+    });
   });
 
-  describe('meshNodeCarriesFullTunnel（= 允许外网 且非 system）', () => {
-    it('on + 非 system → true', () => expect(meshNodeCarriesFullTunnel(wg([], true))).toBe(true));
-    it('on + system → false（结论A：system 恒 specific-only，不承载 0/0）', () =>
-      expect(meshNodeCarriesFullTunnel(wg([], true, true))).toBe(false));
-    it('off + 非 system → false', () =>
+  describe('meshNodeCarriesFullTunnel（= 允许外网，与接入模式正交；system WG 经预折半 catch-all 承载全隧道）', () => {
+    it('WG on + 非 system(gVisor) → true', () =>
+      expect(meshNodeCarriesFullTunnel(wg([], true))).toBe(true));
+    it('WG on + system → true（system WG 也承载：catch-all 用预折半 0/1+128/1，不删全局 default）', () =>
+      expect(meshNodeCarriesFullTunnel(wg([], true, true))).toBe(true));
+    it('WG off + 非 system → false', () =>
       expect(meshNodeCarriesFullTunnel(wg([], false))).toBe(false));
-    it('off + system → false', () =>
+    it('WG off + system → false', () =>
       expect(meshNodeCarriesFullTunnel(wg([], false, true))).toBe(false));
-    it('TS on + system → false', () =>
-      expect(meshNodeCarriesFullTunnel(ts([], true, true))).toBe(false));
+    it('TS on + system → true（exit_node 经 MeshExitRouteManager ifscope 托管，不碰全局 default）', () =>
+      expect(meshNodeCarriesFullTunnel(ts([], true, true))).toBe(true));
+    it('TS on + 非 system → true', () =>
+      expect(meshNodeCarriesFullTunnel(ts([], true))).toBe(true));
+    it('TS off + system → false（关外网=不承载，与模式无关）', () =>
+      expect(meshNodeCarriesFullTunnel(ts([], false, true))).toBe(false));
+    it('TS off + 非 system → false', () =>
+      expect(meshNodeCarriesFullTunnel(ts([], false))).toBe(false));
   });
 
-  describe('wireguardPeerAllowedIps（system → specific-only，恒去 0/0）', () => {
-    it('system + 具体段（即便 on）→ 仅具体段，不注入 0/0', () => {
-      expect(wireguardPeerAllowedIps(wg(['10.8.0.0/24'], true, true))).toEqual(['10.8.0.0/24']);
+  describe('wireguardPeerAllowedIps（全隧道注入裸 0/0；system WG 同样——预折半证伪，断网由安全网兜）', () => {
+    it('system + 具体段 + on → 具体段 ∪ 全网段', () => {
+      expect(wireguardPeerAllowedIps(wg(['10.8.0.0/24'], true, true))).toEqual([
+        '10.8.0.0/24',
+        '0.0.0.0/0',
+        '::/0',
+      ]);
     });
     it('system + 具体段 + off → 仅具体段', () => {
       expect(wireguardPeerAllowedIps(wg(['10.8.0.0/24'], false, true))).toEqual(['10.8.0.0/24']);
     });
-    it('system + 含 catch-all 的列表 → 剥离 0/0 仅留具体段', () => {
+    it('system + 含 catch-all 的列表 + on → 去重后具体段 ∪ 全网段', () => {
       expect(wireguardPeerAllowedIps(wg(['0.0.0.0/0', '::/0', '10.8.0.0/24'], true, true))).toEqual(
-        ['10.8.0.0/24']
+        ['10.8.0.0/24', '0.0.0.0/0', '::/0']
       );
     });
-    it('system + 无具体段 → null（同 off+空，空 allowed_ips=FATAL 不可发射）', () => {
-      expect(wireguardPeerAllowedIps(wg([], true, true))).toBeNull();
+    it('system + 无具体段 + on → 仅全网段（承载全隧道、可发射）', () => {
+      expect(wireguardPeerAllowedIps(wg([], true, true))).toEqual(['0.0.0.0/0', '::/0']);
+    });
+    it('gVisor + 无具体段 + on → 全网段', () => {
+      expect(wireguardPeerAllowedIps(wg([], true))).toEqual(['0.0.0.0/0', '::/0']);
     });
   });
 
-  describe('isMeshNodeUnroutable（system + 无具体段）', () => {
-    it('WG system + 无具体段 → true（不可发射）', () => {
-      expect(isMeshNodeUnroutable(wg([], true, true))).toBe(true);
+  describe('isMeshNodeUnroutable（system WG 全隧道有预折半 → 可发射）', () => {
+    it('WG system + 无具体段 + on → false（预折半即非空 allowed_ips，承载全隧道、可发射）', () => {
+      expect(isMeshNodeUnroutable(wg([], true, true))).toBe(false);
     });
-    it('WG system + 有具体段 → false', () => {
+    it('WG system + 有具体段 → false（子网段可发射）', () => {
       expect(isMeshNodeUnroutable(wg(['10.8.0.0/24'], true, true))).toBe(false);
     });
+    it('WG system + off + 无具体段 → true（不可发射）', () => {
+      expect(isMeshNodeUnroutable(wg([], false, true))).toBe(true);
+    });
+    it('gVisor + on + 无具体段 → false（承载 0/0，可发射）', () => {
+      expect(isMeshNodeUnroutable(wg([], true))).toBe(false);
+    });
   });
 
-  describe('meshSelectedExitFallsBackToDirect（system 节点选中为主 → 兜底，即便 allowInternet=on）', () => {
+  describe('meshSelectedExitFallsBackToDirect（system WG 经预折半承载全隧道→不回退；off 才回退）', () => {
     const cfg = (server: ServerConfig, proxyMode: string): UserConfig =>
       ({ proxyMode, servers: [server], selectedServerId: server.id }) as any;
-    it('smart + 选中 system WG(on+具体段) → true（system 不承载 0/0，海外须回退避黑洞）', () => {
+    it('smart + 选中 system WG(on+具体段) → false（system WG 经预折半承载全隧道，不回退）', () => {
       expect(meshSelectedExitFallsBackToDirect(cfg(wg(['10.8.0.0/24'], true, true), 'smart'))).toBe(
-        true
+        false
       );
     });
-    it('global + 选中 system TS(on) → true', () => {
+    it('smart + 选中 gVisor WG(on) → false（gVisor 承载全隧道，不回退）', () => {
+      expect(meshSelectedExitFallsBackToDirect(cfg(wg([], true), 'smart'))).toBe(false);
+    });
+    it('global + 选中 system TS(on) → false（exit_node 承载全隧道，不回退）', () => {
       expect(
         meshSelectedExitFallsBackToDirect(cfg(ts(['192.168.9.0/24'], true, true), 'global'))
-      ).toBe(true);
+      ).toBe(false);
     });
-    it('smart + 选中 非 system on WG → false（仍承载 0/0，不回退）', () => {
-      expect(meshSelectedExitFallsBackToDirect(cfg(wg([], true), 'smart'))).toBe(false);
+    it('global + 选中 system WG(off) → true（关外网=不承载，回退避黑洞）', () => {
+      expect(meshSelectedExitFallsBackToDirect(cfg(wg([], false, true), 'global'))).toBe(true);
     });
   });
 });

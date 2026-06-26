@@ -120,15 +120,9 @@ export class WarpService {
     const licenseKey = opts?.licenseKey?.trim();
     if (licenseKey && token && result.deviceId) {
       try {
-        const acct = await this.request(
-          'PUT',
-          `${base}/reg/${result.deviceId}/account`,
-          { ...headers, Authorization: `Bearer ${token}` },
-          JSON.stringify({ license: licenseKey })
-        );
-        result.warpPlus = !!acct?.warp_plus;
-        result.license = acct?.license || result.license;
-        this.log('info', `WARP+ license 已应用（warp_plus=${result.warpPlus}）`);
+        const acct = await this.applyLicense(result.deviceId, token, licenseKey);
+        result.warpPlus = acct.warpPlus;
+        result.license = acct.license || result.license;
       } catch (e: any) {
         this.log('warn', `WARP+ license 应用失败（降级免费版）: ${e?.message ?? e}`);
       }
@@ -157,6 +151,39 @@ export class WarpService {
       // （与 privateKey 同信任类、同脱敏）。无 token 时存空串——register 应返 token，缺则后续删除按「无凭据」跳过入队。
       warpDevice: { deviceId: result.deviceId, token: token || '' },
     };
+  }
+
+  /**
+   * 对**已注册设备**应用 WARP+ license（PUT /reg/{deviceId}/account）。**升级免重新注册**：license 是对设备所属
+   * 账户打补丁、不新建设备，故能原地把免费 WARP 升级为 WARP+。需设备 token（Bearer 鉴权，来自注册时落盘的
+   * wireguardSettings.warpDevice）→ **无 token 的旧节点无法升级**（须删了重建）。同 register 的 TLS1.2/okhttp 指纹。
+   * 失败抛错（调用方据此提示）；不做「降级」——CF 不暴露设备级退回免费的接口，降级走删节点（自动注销、释放 license 名额）。
+   */
+  async applyLicense(
+    deviceId: string,
+    token: string,
+    license: string
+  ): Promise<{ warpPlus: boolean; license: string }> {
+    if (!deviceId || !token) throw new Error('缺少设备凭据（deviceId/token）');
+    const key = license.trim();
+    if (!key) throw new Error('license 为空');
+    const base = `${WARP_API_BASE}/${WARP_API_VERSION}`;
+    const headers = {
+      'User-Agent': WARP_USER_AGENT,
+      'CF-Client-Version': WARP_CLIENT_VERSION,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    };
+    const acct = await this.request(
+      'PUT',
+      `${base}/reg/${deviceId}/account`,
+      headers,
+      JSON.stringify({ license: key })
+    );
+    const warpPlus = !!acct?.warp_plus;
+    this.log('info', `WARP+ license 已应用（${deviceId.slice(0, 8)}…，warp_plus=${warpPlus}）`);
+    return { warpPlus, license: acct?.license || key };
   }
 
   /**

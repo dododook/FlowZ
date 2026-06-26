@@ -35,10 +35,12 @@ export const IPC_CHANNELS = {
   SERVER_GET_ALL: 'server:getAll',
   SERVER_SPEED_TEST: 'server:speedTest',
   WARP_REGISTER: 'warp:register', // Cloudflare WARP 设备注册 → 生成 WireGuard 草稿
+  WARP_APPLY_LICENSE: 'warp:applyLicense', // 对已注册 WARP 节点原地应用 WARP+ license（升级免重建）
   TAILSCALE_LOGIN: 'tailscale:login', // 按需瞬态登录核：拉起登录专用 sing-box 取交互登录 URL（Phase 2）
   TAILSCALE_LOGIN_CANCEL: 'tailscale:loginCancel', // 取消某节点在飞的瞬态登录核（用户手动取消）
   TAILSCALE_LOGOUT: 'tailscale:logout', // 退出登录：清该节点 state 目录（持久会话）；保留节点配置/authKey
   TAILSCALE_STATE_EXISTS: 'tailscale:stateExists', // 批量查 TS 节点 state 目录存在性（不起核判「登录过没」）：代理关时登录态缓存未命中的兜底
+  TAILSCALE_GET_STATUS: 'tailscale:getStatus', // L2：主动拉各 TS 节点状态末帧(self IP/peers) + 新鲜度(connected)。治本「状态流 push-only 无 pull、渲染端错过推送即陈旧」
 
   // 订阅管理
   SUBSCRIPTION_ADD: 'subscription:add',

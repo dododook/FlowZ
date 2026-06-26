@@ -42,6 +42,8 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
   const { t } = useTranslation();
   // 精确订阅本节点 IP：任一节点 IP 更新不波及其余卡片（整表订阅会全卡片重渲染）。EMPTY 模块级常量保引用稳定。
   const tailscaleIps = useAppStore((s) => s.tailscaleIps[server.id] ?? EMPTY);
+  // 新鲜度：代理未运行 → 内网IP 是「上次已知」缓存值（L2 主动拉 TAILSCALE_GET_STATUS），标陈旧而非当真 live。
+  const proxyRunning = useAppStore((s) => s.connectionStatus?.proxyCore?.running ?? false);
   // 非组网协议（vless 等）不显此 icon。
   if (!isEndpointProtocol(server.protocol)) return null;
 
@@ -72,6 +74,13 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
             <div className="font-medium text-foreground">{t('servers.meshInfoIntranetIp')}</div>
             <div className="break-all font-mono">
               {ips.length > 0 ? ips.join(', ') : t('servers.meshInfoNotAssigned')}
+              {/* 「上次已知」仅对 Tailscale：其内网IP 来自 STATUS 流缓存、停代理时确为陈旧。WG/WARP 的内网IP 是
+                  静态 config(localAddress)、永不陈旧，故不标（isAccountBasedProtocol=仅 Tailscale）。 */}
+              {ips.length > 0 && !proxyRunning && isAccountBasedProtocol(server.protocol) && (
+                <span className="ms-1 font-sans text-muted-foreground">
+                  · {t('servers.meshInfoLastKnown', 'last known')}
+                </span>
+              )}
             </div>
           </div>
           <div>

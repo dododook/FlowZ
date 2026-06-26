@@ -7,6 +7,10 @@
  * 完全兼容（gRPC 只按 service/method 名 + 字段号对齐，消息类型名不参与 wire）。字段号对齐 sing-box
  * 1.14.0-alpha.32 grpcurl 反射；升级核时若变以反射为准重核。
  *
+ * TailscaleEndpointStatus 的 peers 不在顶层：对端按归属用户分组在 userGroups(f7).peers(f5)，
+ * 顶层另有 exitNode(f8)=当前选中出口。peer 的 exitNodeOption(f7)=是否广告可当出口（出口下拉判据）。
+ * 上述 userGroups/peers/exitNode 字段号 + 嵌套结构经 1.14.0-alpha.34 真核 live wire 实测核对（strict proto-loader 解析通过）。
+ *
  * 认证（P0 修复）：api service 注入了 secret（= config.clashApiSecret）时，daemon/server.go 会对每个 RPC 校验
  * metadata `authorization: "Bearer <secret>"`（缺失/不符 → Unauthenticated）。本客户端经 call credentials 把 Bearer
  * 注入到所有 unary + stream 调用；secret 为空时退化为不带 metadata（免认证，本地调试/旧核）。
@@ -19,9 +23,12 @@
  */
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { TailscaleStatusPeer } from '../../shared/tailscale-status';
+import { isIpv4 } from '../../shared/ip';
 
 const PROTO_SRC = `
 syntax = "proto3";
@@ -42,11 +49,20 @@ message TailscaleEndpointStatus {
   string backendState = 2;
   string authURL = 3;
   TailscalePeer self = 6;
+  repeated TailscaleUserGroup userGroups = 7;
+  TailscalePeer exitNode = 8;
 }
+// 对端节点按归属用户(owner/sharee)分组。FlowZ 只需把各组 peers 摊平成一张表(flattenTailscalePeers)，
+// 分组元信息(userID/displayName 等)不展示。endpoint.f4=account / f5=tailnet 名(字符串)刻意不映射(proto-loader 跳过)。
+message TailscaleUserGroup { repeated TailscalePeer peers = 5; }
 message TailscalePeer {
   string hostName = 1;
+  string os = 3;
   repeated string tailscaleIPs = 4;
   bool online = 5;
+  bool exitNode = 6;
+  bool exitNodeOption = 7;
+  bool active = 8;
   int64 keyExpiry = 11;
   string stableID = 12;
   bool expired = 13;
@@ -122,13 +138,26 @@ message SelectOutboundRequest {
 message CloseConnectionRequest { string id = 1; }
 `;
 
-export interface TailscaleSelf {
+// self 与对端 peer 同构（同一 TailscalePeer 消息）。exitNode/exitNodeOption/active 对 self 通常为空。
+export interface TailscalePeer {
   hostName?: string;
+  os?: string;
   tailscaleIPs?: string[];
   online?: boolean;
+  exitNode?: boolean; // 当前被本节点选作出口
+  exitNodeOption?: boolean; // 广告了可当出口（候选资格，是否能进出口下拉的判据）
+  active?: boolean; // 近期有活跃直连/流量
   keyExpiry?: string; // longs=String：unix 秒
   stableID?: string;
   expired?: boolean;
+}
+
+// 保留别名兼容既有 self 引用（self 即一个 TailscalePeer）。
+export type TailscaleSelf = TailscalePeer;
+
+// 对端按归属用户分组的容器（仅承载 peers，分组元信息 FlowZ 不用 → 不映射其它字段）。
+export interface TailscaleUserGroup {
+  peers?: TailscalePeer[];
 }
 
 export interface TailscaleEndpointStatus {
@@ -136,6 +165,48 @@ export interface TailscaleEndpointStatus {
   backendState: string; // NoState | NeedsLogin | Starting | Running | ...
   authURL: string;
   self?: TailscaleSelf;
+  userGroups?: TailscaleUserGroup[]; // 对端按 owner 分组；摊平见 flattenTailscalePeers
+  exitNode?: TailscalePeer; // 当前选中的出口节点（peer 形态；endpoint.f8）
+}
+
+/**
+ * 把 userGroups 各组 peers 摊平成一张去重列表（按 stableID 去重，无 stableID 时按 hostName+首个 IP）。
+ * sing-box 把对端按归属用户分组下发（同一台机器不会跨组重复，但跨组去重是廉价护栏）。
+ * 纯数据变换，无副作用，供主进程/单测复用。
+ */
+export function flattenTailscalePeers(status: TailscaleEndpointStatus): TailscalePeer[] {
+  const seen = new Set<string>();
+  const out: TailscalePeer[] = [];
+  for (const g of status.userGroups || []) {
+    for (const p of g.peers || []) {
+      const key = p.stableID || `${p.hostName || ''}|${(p.tailscaleIPs || [])[0] || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/** peer 的内网 IP：首个 IPv4(100.x)，无则首个 IP，再无则空串。用 shared/ip 的严格 isIpv4（非 'contains .' 启发，抗 wire 漂移）。 */
+function pickPeerIp(p: { tailscaleIPs?: string[] }): string {
+  const ips = p.tailscaleIPs || [];
+  return ips.find(isIpv4) || ips[0] || '';
+}
+
+/**
+ * 摊平 endpoint 状态为 lean peer 列表（EVENT_TAILSCALE_STATUS / TAILSCALE_GET_STATUS 载荷用）。
+ * peers 来自 userGroups，**天然排除 self**（self 是 endpoint.self 独立字段，不进 userGroups）。纯函数，供单测。
+ */
+export function toTailscaleStatusPeers(ep: TailscaleEndpointStatus): TailscaleStatusPeer[] {
+  return flattenTailscalePeers(ep).map((p) => ({
+    hostName: p.hostName || '',
+    ip: pickPeerIp(p),
+    online: p.online === true,
+    exitNode: p.exitNode === true,
+    exitNodeOption: p.exitNodeOption === true,
+    active: p.active === true,
+  }));
 }
 
 // clash 等价方法消息（longs=String → int64/uint64 字段均为 string；enums=String → type 为 'NEW'|'UPDATE'|'CLOSED'）。
@@ -221,9 +292,26 @@ export interface SingBoxApiEndpoint {
 let serviceCtor: grpc.ServiceClientConstructor | null = null;
 function getServiceCtor(): grpc.ServiceClientConstructor {
   if (serviceCtor) return serviceCtor;
-  const protoPath = path.join(os.tmpdir(), 'flowz-started-service.proto');
-  // proto 内容恒定（内嵌 PROTO_SRC）：已存在即跳过写盘，免每次冷启动重复落盘临时文件（内容一致，幂等）。
-  if (!fs.existsSync(protoPath)) fs.writeFileSync(protoPath, PROTO_SRC);
+  // 文件名内嵌 PROTO_SRC 内容哈希：proto 演进（加 peers/userGroups 等字段）后文件名随之变 → 必写新文件，
+  // 不会被旧版本残留的同名临时 proto 顶替（否则升级后新字段静默解不出——「已存在即跳过写」对内容变更不安全）。
+  const protoHash = crypto.createHash('sha1').update(PROTO_SRC).digest('hex').slice(0, 12);
+  const protoPath = path.join(os.tmpdir(), `flowz-started-service-${protoHash}.proto`);
+  if (!fs.existsSync(protoPath)) {
+    // 原子落盘：写进程私有临时文件再 rename（POSIX rename 原子、覆盖同内容无害）。否则主核与瞬态登录核
+    // 并发首连时 existsSync→writeFileSync 非原子，loadSync 可能读到半截 proto 抛错（review）。内容由 hash 钉死，
+    // 并发写同字节，rename 竞争时落后者 EEXIST(Win)/被覆盖(POSIX) → 清掉自己的临时文件即可。
+    const tmp = `${protoPath}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, PROTO_SRC);
+    try {
+      fs.renameSync(tmp, protoPath);
+    } catch {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* 已被清理/抢先，忽略 */
+      }
+    }
+  }
   const def = protoLoader.loadSync(protoPath, {
     keepCase: true,
     longs: String,

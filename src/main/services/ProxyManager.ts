@@ -24,6 +24,7 @@ import { ProxyErrorCode } from '../../shared/types';
 import type { ILogManager } from './LogManager';
 import { HelperManager } from './HelperManager';
 import type { IPrivilegedHelper } from './IPrivilegedHelper';
+import { MeshExitRouteManager } from './mesh-exit-route-manager';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
@@ -31,6 +32,7 @@ import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
+import { parseDefaultGateway, parseScutilRouter } from '../../shared/default-route';
 import {
   isIpv4Host,
   isIpv6Host,
@@ -65,6 +67,7 @@ import {
   meshAlwaysRoutesSubnets,
   endpointForcedRouteCidrs,
 } from '../../shared/endpoint-routes';
+import { resolveStartRetryBudget } from '../../shared/start-retry-policy';
 import {
   classifyCoreBuild,
   decideCoreOverride,
@@ -76,7 +79,12 @@ import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
 import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
 import { buildTailscaleLoginConfig, tailscaleEndpointInRunningCore } from './tailscale-login-core';
-import { SingBoxApiClient, type TailscaleEndpointStatus } from './singbox-api-client';
+import {
+  SingBoxApiClient,
+  toTailscaleStatusPeers,
+  type TailscaleEndpointStatus,
+} from './singbox-api-client';
+import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
 import { reconcileTreeOwnership } from './runtime-ownership';
 import {
   getUserDataPath,
@@ -215,6 +223,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 提权 helper（macOS=HelperManager / Windows=WindowsServiceHelper，装一次后免提权启停）；未注入/未就绪
   // 则回退平台提权路径（macOS osascript 看护脚本 / Windows 每次 UAC）。按 process.platform 在 index.ts 装配。
   private helperManager: IPrivilegedHelper | null = null;
+  // 出口路由托管（System 模式 TS exit_node 的出网拆半默认路由；sing-box 不为 exit_node 装路由,真机实证）。
+  // 起核就绪后 reconcile、停核 clear。helper 经 accessor 懒读(可能晚于本字段初始化)。
+  private readonly meshExitRoute = new MeshExitRouteManager(
+    () => this.helperManager,
+    (level, message) => this.logToManager(level, message)
+  );
+  // macOS 停核断网安全网：起核前快照系统全局默认路由网关（en0 default 的 gateway IPv4）。system WG 全隧道（裸 0/0）
+  // 撞该 default 的 EEXIST → sing-tun setRoutes 善后误删、停核 unsetRoutes 不回填 → 断网。停核后若检测 default 缺失，
+  // 经 helper `route add -inet default <gw>` 补回。null=未捕获（非 macOS / 无网关 / 读失败）→ 停核不补。
+  private savedDefaultGateway: string | null = null;
   // 系统代理单一写者（注入 index.ts 的同一 singleton，与 IPC handler/tray 共享 originalSettings/marker 状态）。
   // 拆双轨：ProxyManager 不再内联 networksetup/reg，统一经此调用 enableProxy/disableProxy（带 marker + 防自指）。
   private systemProxyManager: ISystemProxyManager | null = null;
@@ -343,6 +361,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // sing-box 1.14 管理 API：统一管理面客户端（Tailscale 状态订阅 + clash 等价方法）+ 其 api service 端口（clash 端口 +1，独立共存）。
   private tailscaleApiClient: SingBoxApiClient | null = null;
   private tailscaleApiPort = 0;
+  // L2 可靠性：Tailscale 状态末帧缓存（serverId → 末帧）。状态流 push-only-on-change、无心跳、无 pull，
+  // 渲染端错过推送即永久陈旧（内网IP「尚未分配」/peers 拿不到）→ 缓存末帧供 TAILSCALE_GET_STATUS 主动拉。
+  // 内存态（跨渲染端重挂存活；非持久化——跨 app 重启后此缓存空、待首帧 STATUS 重填，store 侧亦不持久化 ips/peers）。
+  // connected 由 getStatus().running 实时判，故停代理不清缓存（保留「上次已知」供下拉，仅标陈旧）；删/改名节点的
+  // 幽灵条目由 getTailscaleStatusSnapshot 读路径按当前 config 过滤（Map 本身不剪枝，按节点数有界）。
+  private tailscaleStatusCache = new Map<string, TailscaleStatusEvent>();
   private lastLogMessage: string = '';
   private lastLogCount: number = 0;
   private lastLogTime: number = 0;
@@ -719,11 +743,19 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.lastStartReadyRetries = 0;
 
     // 5. 启动 sing-box 进程（issue #159 的 wintun 适配器释放门控已下沉至 startSingBoxProcess 顶部，覆盖每次重试腿 + helper/UAC 两支路）
+    // 双 TUN 竞态（mesh redesign R3）：system_interface（reverseMesh）节点在 TUN 模式下会建第二张内核 TUN。
+    //   配置变更重启时主 TUN + 这张接口同时 stop→start，旧两张接口在内核侧释放慢，start 腿撞「TUN 初始化未完成」
+    //   启动期退出（macOS 双 utun 抢占）。默认 2 次/指数退避 ~6s 窗口太短打不过释放 → 卡停需手动重启（真机 app.log 实证）。
+    //   含 system 节点时放宽为多次 + 恒定短间隔（非指数）。释放靠两条：① 每个失败腿在抛 CoreStartRetryError 前
+    //   best-effort stopCore 停掉起不来的核（startSingBoxProcess 失败分支，跨平台；win32 另有顶部 waitForOwnTunAdapter-
+    //   Released 门控）；② 恒定 3s × N 次重试给内核留足异步回收双 utun/适配器的时间 → start 自愈。次数/间隔以 Mac
+    //   真机释放时序为准（Task #6 校准）。
+    const startRetryBudget = resolveStartRetryBudget(isTunMode, config.servers);
     const runStartWithRetry = (): Promise<void> =>
       retry(() => this.startSingBoxProcess(startGen), {
-        maxRetries: 2,
-        delay: 2000,
-        exponentialBackoff: true,
+        maxRetries: startRetryBudget.maxRetries,
+        delay: startRetryBudget.delay,
+        exponentialBackoff: startRetryBudget.exponentialBackoff,
         shouldRetry: (error) => {
           // issue #176：被更新的 start/stop 接管（CoreStartSupersededError）→ 绝不重试（接管方拥有生命周期）。
           if (error instanceof CoreStartSupersededError) {
@@ -815,6 +847,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         },
       });
 
+    // 出口路由托管（macOS）：起核前快照 utun 基线 → 起核后用时序 diff 精确定位 sing-box 的 TS 内核接口
+    // （比纯地址反推稳，不误命中 Tailscale.app utun，用户实证建议）。非 macOS no-op。
+    await this.meshExitRoute.snapshotBaseline();
+    // macOS 停核断网安全网：与上面同属「起核前快照」——记录系统全局默认路由网关，供停核后检测被 sing-tun
+    // setRoutes EEXIST 善后误删的 default 并补回（system WG 全隧道场景）。必须在 sing-box 起核前跑。非 macOS no-op。
+    await this.captureDefaultRoute();
+
     // T2 libcronet 启动失败冷路径闭环：起核失败且命中 cronet 缺库 FATAL（linux/win）→ strong（hash 强校验）
     // 重拷 → 若 restored 则整体重启内核一次（一次性 cronetHealAttempted 闸，防抖动循环）→ 仍失败/未恢复 →
     // 抛原错误（带可读文案，由 start() 收口落终态），不再重试。mac 无独立库不进此分支。
@@ -856,6 +895,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (readyRetries > 0) {
       this.logToManager('info', `sing-box 经 ${readyRetries} 次就绪重试后启动成功`);
     }
+
+    // 出口路由托管：选中的全局出口 = TS System + 承载全隧道 → 在其内核接口装 exit 拆半默认路由
+    // （sing-box 不为 exit_node 装,真机实证）。fire-and-forget：内部轮询等 TS 接口出现、绝不抛、不阻塞启动。
+    void this.meshExitRoute.reconcile(config, !!config.enableIPv6);
 
     // 系统代理单一写者收口（拆双轨）：systemProxy 模式 → 置系统代理（marker + 防自指在 SystemProxyManager 内，
     // 杜绝把自己当原始保存致 disable restore 死端口）；TUN/manual 模式 → 反向清掉可能残留的系统代理
@@ -1016,6 +1059,65 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
+   * macOS 停核断网安全网（捕获腿）：起核前快照系统全局默认路由网关，存 savedDefaultGateway。best-effort——读失败/
+   * 无网关一律静默不抛（绝不阻塞起核）。仅 darwin（非 macOS no-op）。
+   */
+  private async captureDefaultRoute(): Promise<void> {
+    if (process.platform !== 'darwin') return;
+    const execFileAsync = require('util').promisify(require('child_process').execFile);
+    try {
+      const { stdout } = await execFileAsync('route', ['-n', 'get', 'default'], { timeout: 4000 });
+      const gw = parseDefaultGateway(String(stdout));
+      if (gw) {
+        this.savedDefaultGateway = gw;
+        this.logToManager('info', `已记录系统默认路由网关 ${gw}（停核安全网）`);
+      }
+    } catch {
+      /* best-effort：读不到默认路由不阻塞起核，停核也就不补回 */
+    }
+  }
+
+  /**
+   * macOS 停核断网安全网（补回腿）：停核后若系统全局默认路由缺失（system WG 全隧道用裸 0/0 撞 EEXIST → sing-tun
+   * setRoutes 善后误删、unsetRoutes 不回填），经 helper `route add -inet default <gw>` 补回起核前快照的网关。
+   * default 仍在 → no-op。best-effort——绝不抛（停核拆除路径不可被它打断）。仅 darwin（非 macOS no-op）。
+   */
+  private async restoreDefaultRouteIfMissing(): Promise<void> {
+    if (process.platform !== 'darwin') return;
+    if (!this.savedDefaultGateway) return;
+    const execFileAsync = require('util').promisify(require('child_process').execFile);
+    try {
+      const { stdout } = await execFileAsync('route', ['-n', 'get', 'default'], { timeout: 4000 });
+      if (parseDefaultGateway(String(stdout))) return; // default 仍在 → 无需补回（不记日志）
+    } catch {
+      /* route get 抛错多为 default 已不存在（返非零）→ 落补回腿（若实为读失败而 default 在，下方 route add 无害失败被忽略） */
+    }
+    // 补回网关取 **configd 当前值**（scutil State，不受路由表被删影响）→ 会话中途换网（192.168.5.1→192.168.x.x）
+    // 也准确；scutil 读不到才回退到起核快照值。修起核快照可能陈旧的局限（用户实证关切）。
+    let gw = this.savedDefaultGateway;
+    try {
+      const { stdout } = await execFileAsync(
+        'sh',
+        ['-c', "echo 'show State:/Network/Global/IPv4' | scutil"],
+        { timeout: 4000 }
+      );
+      const cur = parseScutilRouter(String(stdout));
+      if (cur) gw = cur;
+    } catch {
+      /* scutil 读失败 → 用起核快照网关兜底 */
+    }
+    try {
+      await this.helperManager?.restoreDefaultRoute(gw);
+      this.logToManager(
+        'info',
+        `停核后系统默认路由缺失，经 helper 补回 ${gw}（当前网关；sing-tun setRoutes EEXIST 善后误删、unsetRoutes 不回填）`
+      );
+    } catch {
+      /* best-effort：补回失败不阻塞停核拆除 */
+    }
+  }
+
+  /**
    * 停止代理。issue #176 单飞外壳：begin/end 包住全程（含内部早退），令在飞期到来的去抖重启置待决而非并发；
    * 真实停止逻辑在 stopInner。stop 是终态 → endLifecycleOp('stop') 在回到 idle 时丢弃待决重启（停止优先）。
    */
@@ -1029,6 +1131,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   private async stopInner(opts?: { quitting?: boolean }): Promise<void> {
+    // 出口路由托管清理：趁内核接口还在先删 exit 拆半默认路由（best-effort、绝不抛）。幂等,若已无则 no-op。
+    await this.meshExitRoute.clear();
     // Phase 2：停止/退出语境一并杀掉残留的瞬态登录核（无孤儿进程）。放早退之前——列表直接点登录时
     // 主核未运行，下方 `!singboxProcess && !singboxPid` 会早退，故在此先收瞬态核。
     this.killAllTailscaleLoginCores();
@@ -1082,6 +1186,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     } finally {
       this.stopping = false;
     }
+    // macOS 停核断网安全网（补回腿）：放在最后——sing-box 已完全退出（sing-tun unsetRoutes 已跑），此刻若检测全局
+    // default 缺失即补回起核前快照的网关。best-effort、绝不抛，不扰动上方已调试好的拆除时序。非 macOS no-op。
+    await this.restoreDefaultRouteIfMissing();
   }
 
   /**
@@ -1409,6 +1516,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             (s) => s.id === this.currentConfig?.selectedServerId
           );
           this.emit('node-hot-switched', isAccountBasedProtocol(target?.protocol));
+          // 全局出口热切换（不重启）→ 对齐出口路由托管：切到/切离 TS System+exit 时装/清拆半默认路由。
+          void this.meshExitRoute.reconcile(newConfig, !!newConfig.enableIPv6);
         }
         return;
       }
@@ -5891,14 +6000,37 @@ exit 0
     const loggedIn =
       (ep.backendState === 'Running' || ep.backendState === 'Starting') &&
       ep.self?.expired !== true;
-    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, {
+    // L3：lean 对端列表（纯映射函数：含 self 排除 / IPv4 优先 / 出口三态，见 singbox-api-client，已单测）。
+    // 「当前出口」由 peers 中 exitNode=true 那台体现，不另带事件级字段。
+    const peers = toTailscaleStatusPeers(ep);
+    const payload: TailscaleStatusEvent = {
       serverId,
       backendState: ep.backendState,
       loggedIn,
       authURL: includeAuthURL ? ep.authURL || undefined : undefined,
       tailscaleIPs: ep.self?.tailscaleIPs || [],
       expired: ep.self?.expired === true,
-    });
+      peers, // L3：对端列表（含 exitNodeOption 候选判据），供出口下拉 + 组网信息 popover
+    };
+    // L2：缓存末帧供 TAILSCALE_GET_STATUS 主动拉 + 渲染端重挂兜底（治本陈旧）。
+    this.tailscaleStatusCache.set(serverId, payload);
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_STATUS, payload);
+  }
+
+  /**
+   * L2：主动拉 Tailscale 状态快照（TAILSCALE_GET_STATUS 入口）。返回各节点缓存末帧 + 新鲜度。
+   * 治本「状态流无 pull、渲染端错过推送即永久陈旧」：渲染端挂载/出口表单打开即拉当前态，不干等下一帧推送。
+   * connected = 主核在运行（=状态流 live）；false 时 statuses 为「上次已知」陈旧值（渲染端据此灰显动态位）。
+   */
+  getTailscaleStatusSnapshot(): TailscaleStatusSnapshot {
+    // 仅返回当前 config 在册的 TS 节点：删/改名节点的缓存条目不外泄给渲染端（防幽灵条目重灌 store）。
+    const liveIds = new Set((this.currentConfig?.servers || []).map((s) => s.id));
+    return {
+      connected: this.getStatus().running,
+      statuses: Array.from(this.tailscaleStatusCache.values()).filter((s) =>
+        liveIds.has(s.serverId)
+      ),
+    };
   }
 
   /**

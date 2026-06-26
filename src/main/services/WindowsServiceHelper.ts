@@ -40,7 +40,7 @@ const SUPPORT_DIR = path.join(process.env.ProgramData || 'C:\\ProgramData', 'Flo
 const ERROR_SERVICE_DOES_NOT_EXIST = 1060;
 /** 与 helper-win 的 protoVersion 对应。Windows 独立谱系：v1 = ping/version/status/start/stop/cleanup/freeport。 */
 const MIN_USABLE_PROTO = 1;
-const EXPECTED_PROTO = 1;
+const EXPECTED_PROTO = 5; // v5：iface-metric=PowerShell 全路径+两族(IPv6)。v4=PS单族/v3=netsh(不生效)。proto<5 仍可 TUN，升级温和提示。
 
 export class WindowsServiceHelper implements IPrivilegedHelper {
   /** 装/卸互斥期返回最近稳定快照，避免 TOCTOU 半态（对齐 HelperManager.lastStableStatus）。 */
@@ -224,6 +224,47 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     } catch {
       return false;
     }
+  }
+
+  /** 经服务(SYSTEM)在内核接口装/删路由（出口托管）。proto<2 旧服务回 ERR unknown → {ok:false}。 */
+  async routeAdd(iface: string, cidrs: string[]): Promise<{ ok: boolean; error?: string }> {
+    return this.route('route-add', iface, cidrs);
+  }
+  async routeDel(iface: string, cidrs: string[]): Promise<{ ok: boolean; error?: string }> {
+    return this.route('route-del', iface, cidrs);
+  }
+  private async route(
+    cmd: 'route-add' | 'route-del',
+    iface: string,
+    cidrs: string[]
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!cidrs.length) return { ok: true };
+    try {
+      const resp = await this.sendCommand([cmd, iface, cidrs.join(',')], 5000);
+      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /**
+   * 经服务(SYSTEM)把内核接口的接口 metric 设高（proto v3）。Windows System TS 出口根治：tsnet 给 flowz-ts 装的
+   * exit 0/0 metric=0 会抢过物理网卡、把直连/bootstrap DNS 灌进 TS 出口 → SERVFAIL；降权 flowz-ts 后其 0/0 输给
+   * 以太网、直连回物理，出口经 sing-box 内部转发不受影响（真机实证）。proto<3 旧服务回 ERR unknown → {ok:false}
+   * （调用方降级，提示重装 helper）。
+   */
+  async setInterfaceMetric(iface: string, metric: number): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const resp = await this.sendCommand(['iface-metric', iface, String(metric)], 5000);
+      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** No-op：sing-tun setRoutes EEXIST 误删 en0 全局 default 的 bug 仅 macOS，Windows 不需要补回默认路由。 */
+  async restoreDefaultRoute(_gateway: string): Promise<{ ok: boolean; error?: string }> {
+    return { ok: true };
   }
 
   /** 经服务杀掉所有 sing-box（含孤儿），零提权。 */

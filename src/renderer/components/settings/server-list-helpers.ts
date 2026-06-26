@@ -8,6 +8,7 @@ import {
   isEndpointProtocol,
   meshNodeCarriesFullTunnel,
 } from '../../../shared/endpoint-routes';
+import { isWarpServer } from '../../../shared/warp';
 
 export type ServerConfigWithId = ServerConfig;
 export type ViewMode = 'card' | 'list';
@@ -107,10 +108,8 @@ export const getTransportLabel = (server: ServerConfigWithId): string => {
   return server.network || 'tcp';
 };
 
-/** WARP 节点（一键生成的 wireguard，端点为 Cloudflare WARP relay）。无需持久标记，按端点域名判，缺则不显示。 */
-export const isWarpNode = (s: ServerConfigWithId): boolean =>
-  s.protocol?.toLowerCase() === 'wireguard' &&
-  (s.address || '').toLowerCase().includes('cloudflareclient.com');
+/** WARP 节点（一键生成的 wireguard，端点为 Cloudflare WARP relay）。鲁棒判定单一真值 → shared isWarpServer。 */
+export const isWarpNode = (s: ServerConfigWithId): boolean => isWarpServer(s);
 
 /**
  * Tailscale 节点是否「需登录」（Phase 1：真实登录态驱动，非静态 !authKey）。

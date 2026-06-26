@@ -54,7 +54,16 @@ import (
 //
 //	属主归还登录用户，根治跨提权态属主冲突（root 跑写 root 600 → 登录用户跑读不了 → endpoint post-start FATAL）。
 //	协议命令不变、纯行为增强；旧 v5 helper 仍可用 TUN，仅本根治需 v6 → app 据 proto 检测「可升级」温和提示重装。
-const protoVersion = "6"
+//
+// v7：加 route-add/route-del 命令——在 System 内核接口（flowz-ts/flowz-wg/utunN）装/清 ifscope 拆半默认路由
+//
+//	（sing-box 不为 TS exit_node 装出口路由，真机实证）。
+//
+// v8：加 default-restore 命令——system WG 全隧道（裸 0/0）会撞 en0 全局 default 的 EEXIST，被 sing-tun setRoutes
+//
+//	善后误删、停核 unsetRoutes 不回填 → Mac 停核后断网。app 侧在停核后检测全局 default 缺失则经本命令 `route add
+//	-inet default <gw>` 补回（best-effort）。proto<8 无此命令 → 回 ERR unknown，断网安全网失效但 TUN 正常。
+const protoVersion = "8"
 
 var (
 	singboxBin string // 安装时锁定的 sing-box 路径
@@ -204,6 +213,26 @@ func cfgAllowed(cfg string) bool {
 	return strings.HasPrefix(clean, base)
 }
 
+// route-add/route-del 安全约束：仅允许 FlowZ 自己的内核接口名 + macOS 动态 utunN，杜绝任意接口注入。
+func ifaceAllowed(s string) bool {
+	if s == "flowz-ts" || s == "flowz-wg" {
+		return true
+	}
+	if !strings.HasPrefix(s, "utun") {
+		return false
+	}
+	rest := s[4:]
+	if rest == "" || len(rest) > 3 {
+		return false
+	}
+	for _, c := range rest {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // TERM→等≤5s→KILL 收割 child：先给 sing-box 优雅窗口（拆 utun/路由/DNS），超时未退则强杀。
 // 必须不持 mu 调用（最长阻塞 5s，持锁会饿死所有 socket 命令），且调用方须先在持锁状态把 child 摘成 nil（收割权独占）。
 // 实际信号只经 c.Process 发出：Wait() 收割后 Signal/Kill 返回 ErrProcessDone 不发信号 → 天然防 PID 复用误杀。
@@ -297,6 +326,48 @@ func handle(conn net.Conn) {
 		_ = exec.Command("/usr/bin/pkill", "-9", "-f", singboxBin+" run").Run()
 		child, childDone = nil, nil
 		fmt.Fprintln(conn, "OK cleaned")
+	case "route-add", "route-del":
+		// proto v7：出口托管在 System 内核接口上装/清 ifscope 拆半默认路由（sing-box 不为 TS exit_node 装、
+		// 真机实证）。约束：iface 白名单（flowz-ts/flowz-wg/utunN）+ net.ParseCIDR 校验，杜绝注入。
+		// ifscope 作用域到该接口 → 只服务绑该接口的 dialer，不抢主表默认路由（与主 TUN 共存）。幂等 best-effort，
+		// add 忽略 file-exists、delete 忽略 not-in-table；最终由 app 侧 netstat 校验。
+		iface := strings.TrimSpace(readLine(r))
+		cidrsLine := strings.TrimSpace(readLine(r))
+		if !ifaceAllowed(iface) {
+			fmt.Fprintln(conn, "ERR iface-denied")
+			break
+		}
+		op := "add"
+		if cmd == "route-del" {
+			op = "delete"
+		}
+		for _, c := range strings.Split(cidrsLine, ",") {
+			c = strings.TrimSpace(c)
+			if c == "" {
+				continue
+			}
+			if _, _, err := net.ParseCIDR(c); err != nil {
+				continue // 非法 CIDR 跳过（防注入）
+			}
+			args := []string{"-n", op}
+			if strings.Contains(c, ":") {
+				args = append(args, "-inet6")
+			}
+			args = append(args, "-ifscope", iface, "-net", c, "-interface", iface)
+			_ = exec.Command("/sbin/route", args...).Run()
+		}
+		fmt.Fprintln(conn, "OK route")
+	case "default-restore":
+		// proto v8：补回被 sing-tun setRoutes EEXIST 善后误删的 en0 全局默认路由（system WG 全隧道场景，停核后断网）。
+		// 行3=网关 IPv4（app 起核前快照 `route -n get default` 得到）。约束：net.ParseIP+To4 校验，杜绝注入任意参数。
+		// best-effort：app 仅在检测到全局 default 缺失时才调本命令；若 default 已存在则 `route add` 无害失败、忽略。
+		gw := strings.TrimSpace(readLine(r))
+		if ip := net.ParseIP(gw); ip == nil || ip.To4() == nil {
+			fmt.Fprintln(conn, "ERR bad-gateway")
+			break
+		}
+		_ = exec.Command("/sbin/route", "-n", "add", "-inet", "default", gw).Run()
+		fmt.Fprintln(conn, "OK default-restore")
 	case "freeport":
 		// 按端口（root lsof）定位 LISTEN 持有者：是 sing-box 才 kill -9，否则回报占用者名字（不杀）。
 		// 彻底摆脱 app 侧 cmdline 匹配，覆盖「外部 / 旧 app 路径 / 改过 singboxBin 路径」的 9090 占用者（L2）。

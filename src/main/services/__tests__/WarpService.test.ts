@@ -97,6 +97,30 @@ describe('WarpService.register → draft.warpDevice', () => {
   });
 });
 
+describe('WarpService.applyLicense（原地升级 WARP+，免重新注册）', () => {
+  it('PUT /{version}/reg/{id}/account + Bearer token + body{license} → 返回 warp_plus', async () => {
+    const calls = installHttps([
+      { statusCode: 200, body: JSON.stringify({ warp_plus: true, license: 'LIC' }) },
+    ]);
+    const r = await new WarpService().applyLicense('dev-1', 'tok-1', 'LIC-KEY');
+    expect(r.warpPlus).toBe(true);
+    expect(calls[0].options.method).toBe('PUT');
+    expect(calls[0].options.path).toBe('/v0a2158/reg/dev-1/account');
+    expect(calls[0].options.headers.Authorization).toBe('Bearer tok-1');
+  });
+  it('缺 deviceId / token → 抛错且不发网络（无凭据）', async () => {
+    const calls = installHttps([]);
+    await expect(new WarpService().applyLicense('', 'tok', 'LIC')).rejects.toThrow();
+    await expect(new WarpService().applyLicense('dev', '', 'LIC')).rejects.toThrow();
+    expect(calls.length).toBe(0);
+  });
+  it('空 license → 抛错（不发网络）', async () => {
+    const calls = installHttps([]);
+    await expect(new WarpService().applyLicense('dev', 'tok', '   ')).rejects.toThrow();
+    expect(calls.length).toBe(0);
+  });
+});
+
 describe('WarpService.unregister', () => {
   it('204 → done，且发 DELETE /{version}/reg/{deviceId} + Bearer', async () => {
     const calls = installHttps([{ statusCode: 204 }]);

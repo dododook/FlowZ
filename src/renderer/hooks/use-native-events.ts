@@ -17,6 +17,7 @@ import type {
   ProxyErrorCode,
   InvalidNodeInfo,
 } from '../../shared/types';
+import type { TailscaleStatusEvent } from '../../shared/tailscale-status';
 
 // 定义事件数据类型
 interface NativeEventData {
@@ -48,16 +49,9 @@ interface NativeEventData {
     transient?: boolean;
     serverId?: string;
   };
-  // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（取代 1.13 的 state 目录/stdout 启发式）：
-  // loggedIn=Running||Starting；authURL=NeedsLogin 时的交互登录 URL；tailscaleIPs=内网 IP；expired=key 过期。
-  tailscaleStatus: {
-    serverId: string;
-    backendState: string;
-    loggedIn: boolean;
-    authURL?: string;
-    tailscaleIPs: string[];
-    expired: boolean;
-  };
+  // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（取代 1.13 的 state 目录/stdout 启发式）。
+  // = 共享 TailscaleStatusEvent（含 self IP / peers / exitNode，L2/L3）；单一真值防 duck-typing 漂移。
+  tailscaleStatus: TailscaleStatusEvent;
   // 启动前属主归一删掉某节点 root 残留 state（登录态失效）→ 渲染端清缓存 + 登录态（review #4）。
   tailscaleStateCleared: { serverId: string };
   systemProxyResidual: { proxy: string };
@@ -295,6 +289,8 @@ function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
   // 内网 IP（self.tailscaleIPs）入 store，组网卡 popover 据此显示。
   useAppStore.getState().setTailscaleIps(data.serverId, data.tailscaleIPs || []);
+  // L4：对端列表入 store，供出口节点下拉 + 组网信息 popover（peers 已排除 self，由 userGroups 摊平）。
+  useAppStore.getState().setTailscalePeers(data.serverId, data.peers || []);
   // NeedsLogin 且核给出 authURL → 登录 toast（与瞬态核 AUTH_URL 共用 showTsLoginToast，固定 id 供翻 Running 时
   // dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
   if (data.backendState === 'NeedsLogin' && data.authURL) {
@@ -404,4 +400,26 @@ export function useNativeEventListeners() {
   useNativeEvent('speedTestResult', handleSpeedTestResult);
   useNativeEvent('coreBaselineWarning', handleCoreBaselineWarning);
   useNativeEvent('helperUpgradeable', handleHelperUpgradeable);
+
+  // L2 治本：挂载即主动拉一次 Tailscale 状态末帧 → 填 store（self IP + peers），不干等下一帧推送。
+  // 根治「状态流 push-only-on-change、无心跳、渲染端错过那一帧即永久陈旧」（内网IP「尚未分配」/peers 拿不到）。
+  // 只填显示数据(IP/peers)；登录态走自有缓存(tailscaleLoginStates)不在此掺和。connected=false 时 statuses 为
+  // 上次已知陈旧值，仍填入——UI 据 connectionStatus.proxyCore.running 决定是否灰显，不在数据层丢可用性。
+  useEffect(() => {
+    let cancelled = false;
+    void api.server
+      .tailscaleGetStatus()
+      .then((snap) => {
+        if (cancelled || !snap?.statuses) return;
+        const store = useAppStore.getState();
+        for (const st of snap.statuses) {
+          store.setTailscaleIps(st.serverId, st.tailscaleIPs || []);
+          store.setTailscalePeers(st.serverId, st.peers || []);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 }

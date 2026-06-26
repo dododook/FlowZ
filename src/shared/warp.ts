@@ -19,6 +19,25 @@ export const WARP_DEFAULT_ENDPOINT_PORT = 2408;
 export const WARP_MTU = 1280;
 export const WARP_ALLOWED_IPS = ['0.0.0.0/0', '::/0'];
 
+/** WARP 端点域名锚点：注册响应给出的 endpoint 均属此域（engage / 162.159.x 走 *.cloudflareclient.com）。 */
+export const WARP_ENDPOINT_DOMAIN = 'cloudflareclient.com';
+
+/**
+ * 判定 WireGuard 节点是否为 Cloudflare WARP。**鲁棒**：新节点带自删凭据 `warpDevice`，但**旧/导入的 WARP 节点无此标记**
+ * → 必须同时按端点域名（`*.cloudflareclient.com`）兜底，否则旧 WARP 漏判（真机实证：旧 WARP 节点 `warpDevice` 缺失，
+ * 致接入模式/子网路由该隐藏未隐藏、且 system 误判可触发 `Connect: resource busy`）。供 builder 接入模式否决
+ * （meshUsesSystemInterface）、WG 表单只读/隐藏组网、列表角标共用单一真值。
+ */
+export function isWarpServer(server: {
+  protocol?: string;
+  address?: string;
+  wireguardSettings?: { warpDevice?: unknown } | null;
+}): boolean {
+  if (server.protocol?.toLowerCase() !== 'wireguard') return false;
+  if (server.wireguardSettings?.warpDevice) return true;
+  return (server.address || '').toLowerCase().includes(WARP_ENDPOINT_DOMAIN);
+}
+
 /** 注册请求体（POST /reg）。tos = RFC3339Nano UTC 时间戳（ToS 接受时间）；install_id/fcm_token 传空可注册。 */
 export function buildRegisterBody(
   publicKeyB64: string,

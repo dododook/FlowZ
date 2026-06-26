@@ -13,6 +13,8 @@ import {
   meshUsesSystemInterface,
   wireguardPeerAllowedIps,
   isMeshNodeUnroutable,
+  TS_SYSTEM_INTERFACE_NAME,
+  WG_SYSTEM_INTERFACE_NAME,
 } from '../../shared/endpoint-routes';
 import { parseWsEarlyData } from '../../shared/ws-early-data';
 import { normalizeDuration } from '../../shared/duration';
@@ -51,9 +53,11 @@ export function shouldEmitTlsEngine(
   return false;
 }
 
-/** 组网节点「不承载全隧道」的原因短语，供诊断 warn 复用（Phase2 system 内核接口 vs 关外网）。 */
-function meshNonFullTunnelReason(server: ServerConfig): string {
-  return meshUsesSystemInterface(server) ? 'system 内核接口模式' : '已关闭外网访问';
+/** 组网节点「不承载全隧道」的原因短语，供诊断 warn 复用。 */
+function meshNonFullTunnelReason(): string {
+  // 与 meshNodeCarriesFullTunnel 对齐:全隧道能力 = 允许外网,与接入模式正交(system 不再禁,出口路由托管)。
+  // 故唯一不承载原因 = 关外网。
+  return '已关闭外网访问';
 }
 
 /** 节点是否可用：naive 需要 libcronet 核心库，缺库时不可用（会被跳过、分流/选中回退到 selector）。 */
@@ -107,14 +111,22 @@ export function buildWireGuardEndpoint(
   // route.default_domain_resolver——后者的「单 DNS server 时可省略」豁免更脆弱，且 1.14 deprecation 走向是
   // 域名 dial 必须显式 resolver。peer 级 domain_resolver 内核不接受（实测 FATAL unknown field），故放 endpoint 顶层。
   const needsResolver = !!domainResolverTag && !isIpLiteral(server.address);
+  const usesSystemInterface = meshUsesSystemInterface(server);
   return {
     type: 'wireguard',
     tag,
     ...(needsResolver ? { domain_resolver: domainResolverTag } : {}),
-    // Phase 2：reverseMesh=true → system:true（真内核 WG 接口，反向可达）；缺省 false=userspace gVisor。
-    // 此时 allowed_ips 已由 wireguardPeerAllowedIps 收为 specific-only（结论A）。system:true 需 helper 提权，
-    // 由连接闸门/校验确保仅 helper 活跃时该节点 reverseMesh 才成立（见 server-completeness）。
-    system: meshUsesSystemInterface(server),
+    // Phase 2：reverseMesh=true → system:true（真内核 WG 接口，反向可达 / 全隧道出口）；缺省 false=userspace gVisor。
+    // 全隧道时 allowed_ips 含 0/0（wireguardPeerAllowedIps）→ sing-box 按 allowed_ips 装接口作用域 0/0 路由、内核接口出口。
+    // system:true 需 helper 提权，由连接闸门/校验确保仅 helper 活跃时该节点 reverseMesh 才成立（见 server-completeness）。
+    // WG 内核接口名 = `name`（sing-box 1.14 wireguard endpoint 字段；TS 端点用 `system_interface_name`，两协议
+    // 对应键不同——sing-box check 实证：WG 端点下 interface_name/system_interface_name 均 FATAL `unknown field`，
+    // 唯 `name` 通过）：固定名供出口托管/清理定位。
+    system: usesSystemInterface,
+    // 固定名仅非 macOS 下发（macOS utun 名动态、不接受自定义名）；macOS 按 localAddress 反查接口。
+    ...(usesSystemInterface && process.platform !== 'darwin'
+      ? { name: WG_SYSTEM_INTERFACE_NAME }
+      : {}),
     mtu: s.mtu && s.mtu > 0 ? s.mtu : 1408,
     address: s.localAddress,
     private_key: s.privateKey,
@@ -642,9 +654,10 @@ export function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingB
   if (controlUrl) ep.control_url = controlUrl;
   const hostname = ts.hostname?.trim();
   if (hostname) ep.hostname = hostname;
-  // exit_node（全隧道，等价 WG 的 allowed_ips 含 0/0）仅在节点「承载全隧道」时下发：关外网→不下发；
-  // **Phase 2 system:true→也不下发**（结论A：内核接口恒 specific-only、永不当全局出口）。节点仍承载
-  // tailnet/routes 段（force-route）。meshNodeCarriesFullTunnel = 允许外网 且非 system。
+  // exit_node 仅在节点「承载全隧道」时下发：关外网→不下发。**TS 的 exit_node 与 system 模式正交**——exit_node
+  // 是 tailnet 层概念（选 peer 经 tailnet 出），不落 0/0 OS 默认路由，故不触发结论A 的 0/0 冲突，system:true 下也下发
+  // （与 WG 0/0 受 system 约束不同；见 meshNodeCarriesFullTunnel 协议口径 + docs/design/mesh-mode-exit-redesign.md）。
+  // 节点仍承载 tailnet/routes 段（force-route）。system_interface 由下方 meshUsesSystemInterface 单独下发。
   const exitNode = meshNodeCarriesFullTunnel(server) ? ts.exitNode?.trim() : undefined;
   if (exitNode) {
     ep.exit_node = exitNode;
@@ -666,7 +679,14 @@ export function buildTailscaleEndpoint(server: ServerConfig, tag: string): SingB
   }
   // Phase 2：reverseMesh=true → system_interface=true（真 TUN，反向可达/作 subnet router）；需 helper 提权，
   // 由连接闸门/校验确保仅 helper 活跃时成立。缺省省略=tsnet 用户态、零提权。
-  if (meshUsesSystemInterface(server)) ep.system_interface = true;
+  // 下发固定 system_interface_name：① 出口托管(MeshExitRouteManager)按此名在内核接口装 exit 拆半默认路由
+  //（sing-box 只装 tailnet+子网、不装 exit 0/0，真机实证）；② 起停/清理按名精确定位。见 mesh-exit-route.ts。
+  if (meshUsesSystemInterface(server)) {
+    ep.system_interface = true;
+    // macOS 内核 utun 名由内核动态分配、不接受自定义名（设了可能 FATAL）→ 仅非 macOS 下发固定名；
+    // macOS 出口托管按接口地址（tailnet 100.x）反查接口名，不依赖固定名（用户实证 utunXX 动态）。
+    if (process.platform !== 'darwin') ep.system_interface_name = TS_SYSTEM_INTERFACE_NAME;
+  }
   return ep;
 }
 
@@ -772,14 +792,16 @@ export function buildOutbounds(
         continue;
       }
       // Phase 2：reverseMesh(system:true 内核接口)需提权——仅 TUN 模式 + helper 下可行。非提权路径（系统代理 /
-      // preflight / 测速）跳过不发射（同 isMeshNodeUnroutable 跳过路径），避免 sing-box 创建内核接口失败致启动 FATAL；
-      // 选中它时其死引用由 fixRouteDeadReferences 兜底改写 selector。各平台 system 行为真机另验（设计 §11.7）。
-      if (meshUsesSystemInterface(server) && !deps.systemInterfaceAvailable) {
+      // preflight / 测速）**不再跳过、改为降级 gVisor 发射**：userspace 栈零提权可跑 → 该节点在系统代理模式下仍可用
+      //（作 gVisor 出口），与 UI「非 TUN 时接入模式显示/按 gVisor」一致（修：非 TUN 下 endpoint 不生成、节点不可用）。
+      // system:true 仅在 systemInterfaceAvailable(TUN+helper)时下发；下方按此 flag 把已构造的 endpoint 改回 gVisor。
+      const downgradeMeshToGvisor =
+        meshUsesSystemInterface(server) && !deps.systemInterfaceAvailable;
+      if (downgradeMeshToGvisor) {
         deps.log(
-          'warn',
-          `跳过组网节点「${server.name}」：反向 mesh(system 内核接口)需 TUN 模式 + 提权 helper，当前模式不支持`
+          'info',
+          `组网节点「${server.name}」：当前非 TUN 模式，按 gVisor（用户态栈）发射（System 内核接口需 TUN + 提权 helper）`
         );
-        continue;
       }
       // WireGuard：endpoint（非 outbound）。建进 pendingEndpoints，tag 仍入 nodeTags 参与选择器/路由。
       if (server.protocol.toLowerCase() === 'wireguard') {
@@ -794,14 +816,17 @@ export function buildOutbounds(
         }
         try {
           // #58：域名 server 的 WG endpoint 需 dial 级 domain_resolver，与普通协议同档（getNodeResolverTag dial）。
-          pendingEndpoints.push(
-            buildWireGuardEndpoint(server, tag, getNodeResolverTag(config, 'dial'))
-          );
+          const ep = buildWireGuardEndpoint(server, tag, getNodeResolverTag(config, 'dial'));
+          if (downgradeMeshToGvisor) {
+            ep.system = false; // 非 TUN：降级 userspace gVisor 栈（零提权可跑）
+            delete ep.name; // gVisor 无内核接口名
+          }
+          pendingEndpoints.push(ep);
           nodeTags.push(tag);
           // 不承载全隧道但有具体段（关外网 或 Phase2 system 内核接口）：节点可用、仅承载列表网段（不当默认
           // 出网）。warn 进诊断报告，便于排查「选它却不出网」。
           if (!meshNodeCarriesFullTunnel(server)) {
-            const why = meshNonFullTunnelReason(server);
+            const why = meshNonFullTunnelReason();
             deps.log(
               'warn',
               `组网节点「${server.name}」${why}：仅路由其指定网段，不承载默认出网流量`
@@ -824,12 +849,17 @@ export function buildOutbounds(
       if (server.protocol.toLowerCase() === 'tailscale') {
         const ts = server.tailscaleSettings;
         try {
-          pendingEndpoints.push(buildTailscaleEndpoint(server, tag));
+          const ep = buildTailscaleEndpoint(server, tag);
+          if (downgradeMeshToGvisor) {
+            ep.system_interface = false; // 非 TUN：降级 tsnet 用户态栈（零提权）
+            delete ep.system_interface_name;
+          }
+          pendingEndpoints.push(ep);
           nodeTags.push(tag);
-          // 节点不承载全隧道（关外网 或 Phase2 system 内核接口）但填了 exitNode：exit_node 已被
-          // buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
+          // TS 不承载全隧道（=关外网；system 模式不再失效 exit_node，见 meshNodeCarriesFullTunnel 协议口径）但填了
+          // exitNode：exit_node 已被 buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
           if (!meshNodeCarriesFullTunnel(server) && ts?.exitNode?.trim()) {
-            const why = meshNonFullTunnelReason(server);
+            const why = meshNonFullTunnelReason();
             deps.log(
               'warn',
               `组网节点「${server.name}」${why}：已忽略 exit_node，仅访问 tailnet / 子网路由`

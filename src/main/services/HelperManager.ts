@@ -35,8 +35,9 @@ const SOCKET_PATH = `${SYSTEM_SUPPORT}/helper.sock`;
 /** 与 helper.go 的 protoVersion 对应。**分级**（v5 起）：proto ≥ MIN_USABLE 即 TUN 功能齐全（可用，不报需修复）；
  *  MIN_USABLE ≤ proto < EXPECTED → upgradeable（旧版仍能 TUN，仅温和提示可升级、不强制重装）；proto < MIN_USABLE 才 needsRepair。
  *  v3=SIGTERM 收割 child；v4=freeport；v5=install-core（root 写受保护目录持久化内核 + 哈希校验防 TOCTOU）；
- *  v6=chownRuntimeDirs（root 跑的 sing-box 退出后归还 tailscale/dashboard/ui 属主给登录用户，根治跨提权态属主冲突）。 */
-const EXPECTED_PROTO = '6';
+ *  v6=chownRuntimeDirs（root 跑的 sing-box 退出后归还 tailscale/dashboard/ui 属主给登录用户，根治跨提权态属主冲突）；
+ *  v7=route-add/route-del（出口托管 ifscope 拆半默认路由）；v8=default-restore（停核补回被 EEXIST 善后误删的全局 default）。 */
+const EXPECTED_PROTO = '8';
 const MIN_USABLE_PROTO = 4;
 /** launchctl 加载态探测缓存 TTL：getStatus 被首页/设置页高频轮询，避免每次都 spawn launchctl。 */
 const LOADED_PROBE_TTL_MS = 10_000;
@@ -329,6 +330,46 @@ export class HelperManager implements IPrivilegedHelper {
     } catch {
       return false;
     }
+  }
+
+  /** 经 helper(root) 在内核接口装/删受约束路由（出口托管）。proto<7 旧 helper 回 ERR unknown → {ok:false}。 */
+  async routeAdd(iface: string, cidrs: string[]): Promise<{ ok: boolean; error?: string }> {
+    return this.route('route-add', iface, cidrs);
+  }
+  async routeDel(iface: string, cidrs: string[]): Promise<{ ok: boolean; error?: string }> {
+    return this.route('route-del', iface, cidrs);
+  }
+  private async route(
+    cmd: 'route-add' | 'route-del',
+    iface: string,
+    cidrs: string[]
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!cidrs.length) return { ok: true };
+    try {
+      const resp = await this.sendCommand([cmd, iface, cidrs.join(',')], 5000);
+      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** 经 helper(root, v8) 补回被 sing-tun setRoutes EEXIST 善后误删的 en0 全局默认路由（停核后断网安全网）。
+   *  proto<8 旧 helper 回 ERR unknown → {ok:false}。 */
+  async restoreDefaultRoute(gateway: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const resp = await this.sendCommand(['default-restore', gateway], 5000);
+      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** No-op：接口 metric 降权是 Windows 出口托管根治手段（无 ifscope）；macOS 用 `route -ifscope` 作用域隔离，不需要。 */
+  async setInterfaceMetric(
+    _iface: string,
+    _metric: number
+  ): Promise<{ ok: boolean; error?: string }> {
+    return { ok: true };
   }
 
   /** 经 helper 以 root 杀掉所有 sing-box（含外部 osascript 路径遗留的孤儿），零提权。 */

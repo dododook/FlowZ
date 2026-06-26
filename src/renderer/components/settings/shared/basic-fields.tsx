@@ -20,8 +20,16 @@ import {
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
 
-/** 服务器地址（host/IP）。 */
-export function AddressField({ control, t }: { control: AnyControl; t: TFn }) {
+/** 服务器地址（host/IP）。readOnly：WARP 等注册生成的连接参数只展示不可改。 */
+export function AddressField({
+  control,
+  t,
+  readOnly,
+}: {
+  control: AnyControl;
+  t: TFn;
+  readOnly?: boolean;
+}) {
   return (
     <FormField
       control={control}
@@ -30,9 +38,14 @@ export function AddressField({ control, t }: { control: AnyControl; t: TFn }) {
         <FormItem>
           <FormLabel>{t('servers.serverAddress')}</FormLabel>
           <FormControl>
-            <Input placeholder="example.com" {...field} />
+            <Input
+              placeholder="example.com"
+              {...field}
+              readOnly={readOnly}
+              className={readOnly ? 'cursor-default opacity-70' : undefined}
+            />
           </FormControl>
-          <FormDescription>{t('servers.serverAddressDesc')}</FormDescription>
+          {!readOnly && <FormDescription>{t('servers.serverAddressDesc')}</FormDescription>}
           <FormMessage />
         </FormItem>
       )}
@@ -48,10 +61,12 @@ export function PortField({
   control,
   t,
   placeholder,
+  readOnly,
 }: {
   control: AnyControl;
   t: TFn;
   placeholder: string;
+  readOnly?: boolean;
 }) {
   return (
     <FormField
@@ -66,6 +81,8 @@ export function PortField({
               placeholder={placeholder}
               {...field}
               value={field.value ?? ''}
+              readOnly={readOnly}
+              className={readOnly ? 'cursor-default opacity-70' : undefined}
               onChange={(e) =>
                 field.onChange(
                   e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 0
@@ -73,7 +90,7 @@ export function PortField({
               }
             />
           </FormControl>
-          <FormDescription>{t('servers.portDesc')}</FormDescription>
+          {!readOnly && <FormDescription>{t('servers.portDesc')}</FormDescription>}
           <FormMessage />
         </FormItem>
       )}

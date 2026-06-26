@@ -16,6 +16,7 @@ import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
 import { tailscaleStateExists } from '../../services/tailscale-state';
 import type { StatsService } from '../../services/StatsService';
+import type { TailscaleStatusSnapshot } from '../../../shared/tailscale-status';
 
 /**
  * 托盘状态更新回调
@@ -179,5 +180,11 @@ export function registerProxyHandlers(
       }
       return out;
     }
+  );
+
+  // L2：主动拉各 TS 节点状态末帧 + 新鲜度。治本「状态流 push-only-on-change、无心跳、无 pull、渲染端错过推送即
+  // 永久陈旧」（内网IP「尚未分配」/peers 拿不到）：渲染端挂载/出口表单打开即拉缓存末帧，不干等下一帧推送。无入参。
+  registerIpcHandler<void, TailscaleStatusSnapshot>(IPC_CHANNELS.TAILSCALE_GET_STATUS, async () =>
+    proxyManager.getTailscaleStatusSnapshot()
   );
 }

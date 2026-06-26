@@ -17,12 +17,17 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
-import { MeshOptionsSection } from './shared/mesh-fields';
+import { AccessModeField, SubnetReachabilitySwitch } from './shared/mesh-fields';
+import { SwitchField } from './shared/switch-field';
 import { InfoTooltip } from './shared/info-tooltip';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { parseWgQuickConf } from '../../../shared/wg-quick';
+import { isWarpServer } from '../../../shared/warp';
+import { toast } from 'sonner';
+import { api } from '@/ipc/api-client';
+import { Loader2 } from 'lucide-react';
 // 全网段由「允许访问外网」开关接管，列表只显示/录入具体段——剥离/判定复用 shared 单一真值，避免字面量漂移。
 import { stripCatchAll, hasCatchAll } from '../../../shared/endpoint-routes';
 
@@ -67,6 +72,8 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
   const wireguardFormSchema = createWireGuardSchema(t);
   const [confText, setConfText] = useState('');
   const [confError, setConfError] = useState('');
+  const [licenseInput, setLicenseInput] = useState('');
+  const [applyingLicense, setApplyingLicense] = useState(false);
 
   const form = useForm<WireGuardFormValues>({
     resolver: zodResolver(wireguardFormSchema),
@@ -167,24 +174,50 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
   };
 
   const allowInternet = form.watch('allowInternet');
-  const reverseMesh = form.watch('reverseMesh');
+  // WARP 节点：接口参数由注册返回，仅展示不可改；鲁棒判定（含旧无 warpDevice 标记的 WARP，按端点域名兜底）。
+  const isWarp = serverConfig ? isWarpServer(serverConfig) : false;
+  // 原地升级 WARP+ 需注册时落盘的 deviceId+token（Bearer）：旧节点无 warpDevice → 无凭据，置灰提示重建。
+  const hasWarpCreds = !!serverConfig?.wireguardSettings?.warpDevice?.token;
+  const handleApplyLicense = async () => {
+    if (!serverConfig?.id || !licenseInput.trim()) return;
+    setApplyingLicense(true);
+    try {
+      const res = await api.server.applyWarpLicense(serverConfig.id, licenseInput.trim());
+      if (res.ok) {
+        toast.success(
+          res.warpPlus
+            ? t('servers.warpPlusApplied', 'WARP+ applied')
+            : t(
+                'servers.warpPlusMaybeFree',
+                'License submitted, but still free — check the license key.'
+              )
+        );
+        if (res.warpPlus) setLicenseInput('');
+      } else {
+        toast.error(
+          `${t('servers.warpPlusApplyFailed', 'Failed to apply WARP+')}${res.error ? `: ${res.error}` : ''}`
+        );
+      }
+    } catch (e) {
+      toast.error(
+        `${t('servers.warpPlusApplyFailed', 'Failed to apply WARP+')}: ${e instanceof Error ? e.message : e}`
+      );
+    } finally {
+      setApplyingLicense(false);
+    }
+  };
   const hasSpecificRoutes = stripCatchAll(splitTextList(form.watch('allowedIPs'))).length > 0;
-  // 「不承载全隧道」时的网段提示文案（仅在 reverseMesh || !allowInternet 时渲染）：无具体段=警告无流量；
-  // system=反向 mesh 说明；否则=关外网说明。选择移出 JSX 保渲染体扁平。
+  // 路由范围提示，仅在「关外网（不承载全隧道）」时渲染。System(reverseMesh) 现也能承载全隧道——保留 0/0 且出口路由
+  // 经接口作用域路由托管（macOS ifscope / Linux 独立表，非主表）→ 故不再因 reverseMesh 报「绝不承载全隧道」。
   const meshRoutesHint = !hasSpecificRoutes
     ? t(
         'servers.allowInternetOffNoRoutes',
-        '⚠ This node currently carries no traffic (no subnets listed). Add a subnet, or turn internet access on (non-system mode).'
+        '⚠ This node currently carries no traffic (no subnets listed). Add a subnet, or turn on internet access.'
       )
-    : reverseMesh
-      ? t(
-          'servers.reverseMeshRoutesHint',
-          'Reverse-mesh (system) mode: routes only the subnets above and is reachable from peers; never carries the full tunnel.'
-        )
-      : t(
-          'servers.allowInternetOffHint',
-          'Internet access off: this node only routes the subnets listed above.'
-        );
+    : t(
+        'servers.allowInternetOffHint',
+        'Internet access off: this node only routes the subnets listed above.'
+      );
 
   return (
     <Form {...form}>
@@ -197,6 +230,8 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         {/* 基础：仅连接必填（地址/端口/私钥/对端公钥/本地地址）。 */}
         <FormSection title={t('servers.basic', 'Basic')}>
           <FieldGrid cols={2}>
+            {/* WARP 的服务器地址/端口可改（Cloudflare 端点可换：engage / 162.159.x、备用端口 2408/500/1701/4500）；
+                密钥/接口地址/reserved 才是注册身份，保持只读。 */}
             <AddressField control={form.control} t={t} />
             <PortField control={form.control} t={t} placeholder="51820" />
             <FieldSpan>
@@ -207,11 +242,19 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                   <FormItem>
                     <FormLabel>{t('servers.wgPrivateKey', 'Private Key')}</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="base64 private key" {...field} />
+                      <Input
+                        type="password"
+                        placeholder="base64 private key"
+                        {...field}
+                        readOnly={isWarp}
+                        className={isWarp ? 'cursor-default opacity-70' : undefined}
+                      />
                     </FormControl>
-                    <FormDescription>
-                      {t('servers.wgPrivateKeyDesc', 'Local interface private key (base64)')}
-                    </FormDescription>
+                    {!isWarp && (
+                      <FormDescription>
+                        {t('servers.wgPrivateKeyDesc', 'Local interface private key (base64)')}
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -224,7 +267,12 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 <FormItem>
                   <FormLabel>{t('servers.wgPeerPublicKey', 'Peer Public Key')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="base64 peer public key" {...field} />
+                    <Input
+                      placeholder="base64 peer public key"
+                      {...field}
+                      readOnly={isWarp}
+                      className={isWarp ? 'cursor-default opacity-70' : undefined}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -237,11 +285,18 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                 <FormItem>
                   <FormLabel>{t('servers.wgLocalAddress', 'Interface Address')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="10.0.0.2/32, fd00::2/128" {...field} />
+                    <Input
+                      placeholder="10.0.0.2/32, fd00::2/128"
+                      {...field}
+                      readOnly={isWarp}
+                      className={isWarp ? 'cursor-default opacity-70' : undefined}
+                    />
                   </FormControl>
-                  <FormDescription>
-                    {t('servers.wgLocalAddressDesc', 'Local tunnel address(es), comma-separated')}
-                  </FormDescription>
+                  {!isWarp && (
+                    <FormDescription>
+                      {t('servers.wgLocalAddressDesc', 'Local tunnel address(es), comma-separated')}
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -249,70 +304,127 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
           </FieldGrid>
         </FormSection>
 
-        {/* 组网选项（默认折叠）：mesh 三开关（共享件）+ 路由子网（Allowed IPs）。 */}
-        <FormSection
-          title={t('servers.wgMeshOptions', 'Mesh options')}
-          collapsible
-          defaultOpen={false}
-        >
-          <MeshOptionsSection
+        {/* 接入与出口（常显）：接入模式选择器 + 全隧道出口开关。WARP=Cloudflare anycast 出口，恒 gVisor 全隧道、
+            不可作子网路由器 → 隐藏接入模式选择器（无 System 选项）。 */}
+        <FormSection title={t('servers.accessAndExit', 'Access & exit')}>
+          {!isWarp && <AccessModeField control={form.control} />}
+          <SwitchField
             control={form.control}
-            protocol="wireguard"
-            reverseMesh={reverseMesh}
-          />
-          <FormField
-            control={form.control}
-            name="allowedIPs"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="flex items-center gap-1.5">
-                  {t('servers.wgAllowedIPs', 'Routed subnets')}
-                  <InfoTooltip content={t('servers.wgAllowedIPsDescFull')} />
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder={t(
-                      'servers.wgAllowedIPsPlaceholder',
-                      '留空=全隧道；或 10.8.0.0/24'
-                    )}
-                    {...field}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'servers.wgAllowedIPsDesc',
-                    'Subnets (CIDR) to route through this node. Empty = full tunnel.'
-                  )}
-                </FormDescription>
-                {(reverseMesh || !allowInternet) && (
-                  <p className="text-sm text-amber-600 dark:text-amber-500">{meshRoutesHint}</p>
-                )}
-                <FormMessage />
-              </FormItem>
+            name="allowInternet"
+            label={t('servers.wgFullTunnel', 'Route all internet via this node')}
+            tooltip={t(
+              'servers.wgFullTunnelDesc',
+              'All internet egresses via this WireGuard node (this node is the exit); off = only route the subnets below.'
             )}
           />
         </FormSection>
 
-        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-          {/* 粘贴 wg-quick .conf 自动填充（可选；手写为主）——.conf 导入归高级。 */}
-          <div className="space-y-2 rounded-md border border-dashed p-3">
-            <FormLabel>
-              {t('servers.wgImportConf', 'Import from wg-quick .conf (optional)')}
-            </FormLabel>
-            <Textarea
-              rows={4}
-              placeholder={
-                '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0, ::/0'
-              }
-              value={confText}
-              onChange={(e) => setConfText(e.target.value)}
-              className="font-mono text-xs"
+        {/* WARP+（仅 WARP 节点）：原地应用 license 升级（PUT /reg/{id}/account），免重新注册。需注册时落盘的
+            warpDevice 凭据（token）；旧节点无凭据 → 置灰提示重建。降级无干净接口，走「删节点 + 重加免费版」。 */}
+        {isWarp && (
+          <FormSection title="WARP+">
+            {hasWarpCreds ? (
+              <div className="space-y-2">
+                <Input
+                  placeholder={t('servers.warpLicense', 'WARP+ license key')}
+                  value={licenseInput}
+                  onChange={(e) => setLicenseInput(e.target.value)}
+                  className="font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={applyingLicense || !licenseInput.trim()}
+                  onClick={handleApplyLicense}
+                >
+                  {applyingLicense && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {t('servers.warpApplyPlus', 'Apply WARP+')}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'servers.warpApplyPlusDesc',
+                    'Upgrade in place (no re-register). To downgrade, delete this node and add a free one.'
+                  )}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-amber-600 dark:text-amber-500">
+                {t(
+                  'servers.warpPlusLegacyHint',
+                  'This WARP node has no stored credentials (legacy) — to use WARP+, delete it and re-create.'
+                )}
+              </p>
+            )}
+          </FormSection>
+        )}
+
+        {/* 子网路由（默认折叠）：子网恒可达开关 + 路由子网（Allowed IPs）。WARP=anycast 出口、无内网段、不可作
+            子网路由器 → 整段隐藏。 */}
+        {!isWarp && (
+          <FormSection
+            title={t('servers.wgMeshOptions', 'Subnet routing')}
+            collapsible
+            defaultOpen={false}
+          >
+            <SubnetReachabilitySwitch control={form.control} protocol="wireguard" />
+            <FormField
+              control={form.control}
+              name="allowedIPs"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-1.5">
+                    {t('servers.wgAllowedIPs', 'Routed subnets')}
+                    <InfoTooltip content={t('servers.wgAllowedIPsDescFull')} />
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t(
+                        'servers.wgAllowedIPsPlaceholder',
+                        '留空=全隧道；或 10.8.0.0/24'
+                      )}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'servers.wgAllowedIPsDesc',
+                      'Subnets (CIDR) to route through this node. Empty = full tunnel.'
+                    )}
+                  </FormDescription>
+                  {!allowInternet && (
+                    <p className="text-sm text-amber-600 dark:text-amber-500">{meshRoutesHint}</p>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-            {confError && <p className="text-sm text-destructive">{confError}</p>}
-            <Button type="button" variant="outline" size="sm" onClick={handleParseConf}>
-              {t('servers.wgParseAndFill', 'Parse & fill')}
-            </Button>
-          </div>
+          </FormSection>
+        )}
+
+        <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
+          {/* 粘贴 wg-quick .conf 自动填充（可选；手写为主）——解析会覆盖私钥/对端公钥/接口地址/AllowedIPs 等全部字段。
+              WARP 节点参数是 Cloudflare 注册产出（含自删凭据），导入 .conf 会冲掉其身份 → 对 WARP 隐藏此入口。 */}
+          {!isWarp && (
+            <div className="space-y-2 rounded-md border border-dashed p-3">
+              <FormLabel>
+                {t('servers.wgImportConf', 'Import from wg-quick .conf (optional)')}
+              </FormLabel>
+              <Textarea
+                rows={4}
+                placeholder={
+                  '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0, ::/0'
+                }
+                value={confText}
+                onChange={(e) => setConfText(e.target.value)}
+                className="font-mono text-xs"
+              />
+              {confError && <p className="text-sm text-destructive">{confError}</p>}
+              <Button type="button" variant="outline" size="sm" onClick={handleParseConf}>
+                {t('servers.wgParseAndFill', 'Parse & fill')}
+              </Button>
+            </div>
+          )}
           <FormField
             control={form.control}
             name="preSharedKey"

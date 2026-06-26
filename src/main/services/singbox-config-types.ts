@@ -267,6 +267,11 @@ export interface SingBoxEndpoint {
   ephemeral?: boolean;
   advertise_routes?: string[];
   system_interface?: boolean;
+  // 固定内核接口名（仅 system=true 时下发）：出口托管按此名装/清 exit 拆半默认路由 + 精确定位。
+  // TS 端点用 system_interface_name；WG 端点用 `name`（两协议对应键不同——sing-box 1.14 check 实证：WG 端点下
+  // interface_name/system_interface_name 均 FATAL `unknown field`，唯 `name` 通过）。
+  system_interface_name?: string;
+  name?: string;
   // 1.14 新增（P4a，sing-box check 实证 alpha.32）：
   //  advertise_tags = Listable[string]（ACL 标签，向 tailnet 广告本机标签；按标签授权场景）。
   //  ssh_server = badoption（bool 或 {enabled:bool}，唯一合法键 enabled）：节点跑 Tailscale SSH（tailnet:22，ACL 控权）。

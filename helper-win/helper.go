@@ -39,9 +39,25 @@ import (
 )
 
 // 协议版本：app 经 `version` 命令读取，与内置期望值不符则提示「修复/重装 helper」。
-// Windows helper 是独立谱系（与 macOS v1-v5 不共享版本号空间）：v1 = ping/version/status/start/stop/cleanup/freeport。
-// 无 install-core（macOS 专属 proto v5）。
-const protoVersion = "1"
+// Windows helper 是独立谱系（与 macOS v1-v5 不共享版本号空间）：v1 = ping/version/status/start/stop/cleanup/freeport；
+// v2 = route-add/route-del（出口托管）；v3 = iface-metric（netsh，已证不可靠）；v4 = iface-metric 改 PowerShell
+// Set-NetIPInterface（netsh store=active 未关 AutomaticMetric 设了不生效，真机实证）；v5 = PowerShell 全路径 +
+// 两族（无 -AddressFamily，IPv6 的 ::/0 同样会抢，必须一并降权；SYSTEM 服务 PATH 可能找不到 powershell）。
+// 无 install-core（macOS 专属 proto v5，与 Windows 谱系不共享）。
+const protoVersion = "5"
+
+// route-add/route-del 安全约束：仅允许 FlowZ 自己的内核接口名（flowz-ts/flowz-wg/flowz-tun0…），杜绝任意接口注入。
+func ifaceAllowed(s string) bool {
+	if !strings.HasPrefix(s, "flowz-") || len(s) > 24 {
+		return false
+	}
+	for _, c := range s[len("flowz-"):] {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return false
+		}
+	}
+	return true
+}
 
 var (
 	singboxBin string // 安装时锁定的 sing-box 路径
@@ -193,6 +209,68 @@ func handle(conn net.Conn) {
 		n := killAllSingbox(singboxBin)
 		_ = n
 		fmt.Fprintln(conn, "OK cleaned")
+	case "route-add", "route-del":
+		// proto v2：出口托管在 System 内核接口装/清拆半默认路由（netsh，store=active 非持久、重启自清）。
+		// 约束：iface 白名单（flowz-*）+ net.ParseCIDR 校验。幂等 best-effort，最终由 app 侧校验。
+		// Windows 无 ifscope；靠 per-interface 路由 + 内核 metric 选路（与主 TUN 的冲突属真机验证项 #3858）。
+		iface := strings.TrimSpace(readLine(r))
+		cidrsLine := strings.TrimSpace(readLine(r))
+		if !ifaceAllowed(iface) {
+			fmt.Fprintln(conn, "ERR iface-denied")
+			break
+		}
+		op := "add"
+		if cmd == "route-del" {
+			op = "delete"
+		}
+		for _, c := range strings.Split(cidrsLine, ",") {
+			c = strings.TrimSpace(c)
+			if c == "" {
+				continue
+			}
+			if _, _, err := net.ParseCIDR(c); err != nil {
+				continue
+			}
+			fam := "ipv4"
+			if strings.Contains(c, ":") {
+				fam = "ipv6"
+			}
+			_ = exec.Command("netsh", "interface", fam, op, "route",
+				"prefix="+c, "interface="+iface, "store=active").Run()
+		}
+		fmt.Fprintln(conn, "OK route")
+	case "iface-metric":
+		// proto v3：把 FlowZ 内核接口的接口 metric 设高 —— Windows 根治 System TS 出口劫持。
+		// 根因（真机实证）：tsnet 给 flowz-ts 装的 exit 0/0 metric=0，抢过物理网卡 → 把直连/bootstrap DNS
+		// （1.12.12.12/223.5.5.5）灌进 TS 出口、源 IP 变 tailnet → SERVFAIL → 解析不出代理节点 → 全网瘫。
+		// Windows 无 macOS 的 ifscope 作用域，等价手段是降权该接口：metric 设高 → 其 0/0 输给以太网、直连回物理；
+		// tailnet /32 仍按最长前缀命中、出口经 sing-box selector 内部转发给 TS outbound 不依赖这条 OS 0/0。
+		// store=active：非持久（接口每次起核重建、app 侧重新下发），不污染持久配置。约束：iface 白名单 + metric∈[0,65535]。
+		iface := strings.TrimSpace(readLine(r))
+		metricLine := strings.TrimSpace(readLine(r))
+		if !ifaceAllowed(iface) {
+			fmt.Fprintln(conn, "ERR iface-denied")
+			break
+		}
+		metric, err := strconv.Atoi(metricLine)
+		if err != nil || metric < 0 || metric > 65535 {
+			fmt.Fprintln(conn, "ERR bad-metric")
+			break
+		}
+		// 真机实证：`netsh ... set interface metric=N store=active` 不可靠（AutomaticMetric 未关→设了不生效）。改用
+		// PowerShell `Set-NetIPInterface`（用户实证有效，自动关 AutomaticMetric 并持久）。两处加固：
+		//   ① 全路径调 powershell —— SYSTEM 服务 PATH 可能找不到 `powershell`（exec 直接报 not found→设不上）。
+		//   ② 不带 -AddressFamily —— 同时设 IPv4 + IPv6 两族（flowz-ts 若有 ::/0 全隧道出口，IPv6 也会被抢，必须一并降权）。
+		// iface 已过 ifaceAllowed 白名单（flowz- + [a-z0-9-]）→ 单引号字符串无注入；metric 为整数。
+		psExe := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+		psCmd := fmt.Sprintf(
+			"Set-NetIPInterface -InterfaceAlias '%s' -InterfaceMetric %d -ErrorAction Stop",
+			iface, metric)
+		if err := exec.Command(psExe, "-NoProfile", "-NonInteractive", "-Command", psCmd).Run(); err != nil {
+			fmt.Fprintln(conn, "ERR set-metric "+err.Error())
+			break
+		}
+		fmt.Fprintln(conn, "OK iface-metric")
 	case "uninstall":
 		// 自卸载（app 卸载/更新时调用）：收割 child → 派生脱离本进程的 SYSTEM 旁路（停删 FlowZHelper 服务 +
 		// 删 supportDir，含外置的 helper.exe 自身 + helper.token）→ 回 OK → 自退。

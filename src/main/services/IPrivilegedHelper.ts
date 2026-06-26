@@ -40,4 +40,14 @@ export interface IPrivilegedHelper {
   install(): Promise<{ success: boolean; error?: string; status: HelperStatus }>;
   /** 卸载 helper（弹一次系统授权）。 */
   uninstall(): Promise<{ success: boolean; error?: string; status: HelperStatus }>;
+  /** 在指定内核接口装/删受约束路由（出口托管：System 接口拆半默认路由）。proto<7 旧 helper → {ok:false}。 */
+  routeAdd(iface: string, cidrs: string[]): Promise<{ ok: boolean; error?: string }>;
+  routeDel(iface: string, cidrs: string[]): Promise<{ ok: boolean; error?: string }>;
+  /** macOS 安全网：补回被 sing-tun setRoutes EEXIST 善后误删的 en0 全局默认路由（停核后断网）。proto<8 旧 helper →
+   *  {ok:false}。Windows 实现为 no-op（该误删 bug 仅 macOS）。 */
+  restoreDefaultRoute(gateway: string): Promise<{ ok: boolean; error?: string }>;
+  /** Windows 出口托管根治：把内核接口的接口 metric 设高，使 tsnet 给 flowz-ts 装的 exit 0/0 输给物理网卡、不抢
+   *  直连/bootstrap DNS（System TS 出口劫持，真机实证）。proto<3 旧 Windows helper → {ok:false}。macOS/Linux 实现为
+   *  no-op（macOS 用 ifscope 作用域隔离、Linux 用独立表 oif 规则，均不靠接口 metric）。 */
+  setInterfaceMetric(iface: string, metric: number): Promise<{ ok: boolean; error?: string }>;
 }

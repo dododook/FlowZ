@@ -63,7 +63,9 @@ jest.mock('../singbox-api-client', () => {
       apiClients.push(this);
     }
   }
-  return { SingBoxApiClient: FakeSingBoxApiClient };
+  // 保留真实纯函数（toTailscaleStatusPeers/toSelectedExitNode/flattenTailscalePeers，emit 用，无副作用），
+  // 仅覆盖 SingBoxApiClient 为 fake（捕获 onUpdate + spy）。
+  return { ...jest.requireActual('../singbox-api-client'), SingBoxApiClient: FakeSingBoxApiClient };
 });
 
 import { ProxyManager } from '../ProxyManager';

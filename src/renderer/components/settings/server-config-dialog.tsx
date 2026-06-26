@@ -34,7 +34,8 @@ import { WarpPanel } from './warp-panel';
 import { ServerSelectGroups } from './server-select-groups';
 import { FormSection } from './shared/form-layout';
 import { getSortedProtocolOptions } from './shared/protocol-options';
-import { ENDPOINT_PROTOCOLS } from '../../../shared/endpoint-routes';
+import { ENDPOINT_PROTOCOLS, isEndpointProtocol } from '../../../shared/endpoint-routes';
+import { isWarpServer } from '../../../shared/warp';
 import type { ServerConfig, ProtocolType } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -67,6 +68,17 @@ export function ServerConfigDialog({
   const [nameError, setNameError] = useState('');
 
   const isEditing = !!server;
+  // 锁协议**只针对组网节点**（WireGuard/WARP/Tailscale）：协议=组网身份不可变，换协议=删了重建 → 杜绝把
+  // WARP/组网节点误改成代理协议的混淆。代理/自定义节点编辑时仍可改协议（导入填错等需修正，沿用原行为）。
+  const isMeshEdit = isEditing && isEndpointProtocol(server?.protocol);
+  // WARP 节点底层协议是 wireguard，但触发器显示「Cloudflare WARP」而非「WireGuard」（鲁棒判定，含旧无标记节点）。
+  const isWarp = !!server && isWarpServer(server);
+  // 组网节点锁定态触发器显示的标签（不依赖 SelectValue/选项项——下拉已不含组网协议）：WARP / Tailscale / WireGuard。
+  const meshLockedLabel = isWarp
+    ? 'Cloudflare WARP'
+    : server?.protocol?.toLowerCase() === 'tailscale'
+      ? 'Tailscale'
+      : 'WireGuard';
 
   // 重名软检测（非阻塞）：与其它节点同名时给琥珀提示，但不拦保存——后端 generateSingBoxConfig 用
   // getUniqueTag 自动去重 tag（重名不破功能/切换），且订阅天然有同名节点，硬拦会误伤。排除自身（编辑不改名不报）。
@@ -189,19 +201,20 @@ export function ServerConfigDialog({
 
             <div className="space-y-2">
               <Label>{t('servers.protocol')}</Label>
-              <Select value={selectedProtocol} onValueChange={handleProtocolChange}>
+              {/* 组网节点编辑锁协议：disabled 禁打开 + 改值；WARP 显示「Cloudflare WARP」，其余走 SelectValue 显真实协议。 */}
+              <Select
+                value={selectedProtocol}
+                onValueChange={handleProtocolChange}
+                disabled={isMeshEdit}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  {isMeshEdit ? <span>{meshLockedLabel}</span> : <SelectValue />}
                 </SelectTrigger>
                 <SelectContent>
-                  {/* 组网协议（WireGuard/WARP/Tailscale）不从「添加节点」加——统一走组网 tab 顶部「接入组网」区
-                      （批3 一致性，与 tailscale 抽离同口径）。添加流(!isEditing)过滤掉 wireguard、不再显示 WARP 伪协议入口；
-                      编辑现有 WG/WARP 节点(isEditing，WARP 节点 protocol='wireguard')保留 wireguard 选项以正常显示/编辑。 */}
-                  {getSortedProtocolOptions(
-                    t,
-                    i18n.language,
-                    (v) => isEditing || v !== 'wireguard'
-                  ).map((p) => (
+                  {/* 组网协议（WireGuard/WARP/Tailscale）始终不进可选下拉——新增走组网 tab 顶部「接入组网」区；编辑
+                      组网节点时协议被锁定（disabled + 上方 span 显示标签），故下拉永不含 wireguard/tailscale，代理节点
+                      编辑时也无法被改成组网协议（组网↔代理隔离，用户要求）。 */}
+                  {getSortedProtocolOptions(t, i18n.language, (v) => v !== 'wireguard').map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       {p.label}
                     </SelectItem>
@@ -209,7 +222,12 @@ export function ServerConfigDialog({
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
-                {t('servers.selectProtocol', 'Select your proxy server protocol')}
+                {isMeshEdit
+                  ? t(
+                      'servers.protocolLockedOnEdit',
+                      'Protocol cannot be changed when editing — delete and re-add to switch.'
+                    )
+                  : t('servers.selectProtocol', 'Select your proxy server protocol')}
               </p>
             </div>
           </div>

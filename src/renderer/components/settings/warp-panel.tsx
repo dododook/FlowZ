@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, ChevronDown, Cloud } from 'lucide-react';
+import { Loader2, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,6 @@ interface WarpPanelProps {
 export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
   const { t } = useTranslation();
   const [license, setLicense] = useState('');
-  const [showLicense, setShowLicense] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleGenerate = async () => {
@@ -67,26 +66,23 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
         </p>
       </div>
 
-      {/* WARP+ license 默认折叠：多数人用免费版，不暴露增加困惑 */}
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowLicense((v) => !v)}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ChevronDown
-            className={`h-4 w-4 transition-transform ${showLicense ? '' : '-rotate-90'}`}
-          />
-          {t('servers.warpHasPlus', 'Have a WARP+ subscription? (optional)')}
-        </button>
-        {showLicense && (
-          <Input
-            placeholder={t('servers.warpLicense', 'WARP+ license key')}
-            value={license}
-            onChange={(e) => setLicense(e.target.value)}
-            className="mt-2 font-mono text-xs"
-          />
-        )}
+      {/* WARP+ license（可选）：默认可见——留空=免费版；填 license 则注册后直接应用为 WARP+。 */}
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium">
+          {t('servers.warpLicenseLabel', 'WARP+ license key (optional)')}
+        </label>
+        <Input
+          placeholder={t('servers.warpLicense', 'WARP+ license key')}
+          value={license}
+          onChange={(e) => setLicense(e.target.value)}
+          className="font-mono text-xs"
+        />
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'servers.warpLicenseHint',
+            'Leave empty for free WARP; enter a license to register as WARP+.'
+          )}
+        </p>
       </div>
 
       <div className="space-y-1">

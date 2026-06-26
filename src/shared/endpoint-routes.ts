@@ -1,5 +1,6 @@
 import type { ServerConfig, Protocol, UserConfig } from './types';
 import { dedupe, dedupeTrim } from './collections';
+import { isWarpServer } from './warp';
 
 /** sing-box endpoint 协议（顶层 endpoints[]、非 outbound）：WireGuard / Tailscale。单一真值，杜绝多处枚举漂移。 */
 export const ENDPOINT_PROTOCOLS: readonly Protocol[] = ['wireguard', 'tailscale'];
@@ -39,6 +40,12 @@ export function hasCatchAll(cidrs: string[] | undefined): boolean {
 
 /** Tailscale tailnet 自身段（CGNAT）。tailnet peer 的 IP 都在此；不在 bypass-LAN 私网表，故必须 force-route。 */
 export const TAILNET_CGNAT = '100.64.0.0/10';
+
+// System 模式内核接口固定名（下发 sing-box system_interface_name）。出口托管 MeshExitRouteManager
+// 按此名在内核接口装/清 exit 拆半默认路由 + 精确定位（见 mesh-exit-route.ts）。WG 端点名选项待证，
+// 取不到则按隧道 IP 反查（uncertainties #1）。
+export const TS_SYSTEM_INTERFACE_NAME = 'flowz-ts';
+export const WG_SYSTEM_INTERFACE_NAME = 'flowz-wg';
 
 /**
  * 该 endpoint 节点应被「强制路由到自身 tag」的具体 CIDR（userspace；优先于 bypass-LAN、独立于全局选中）。
@@ -147,7 +154,14 @@ export function meshForceRoutedServers(
  */
 export function meshUsesSystemInterface(server: ServerConfig): boolean {
   const p = server.protocol?.toLowerCase();
-  if (p === 'wireguard') return server.wireguardSettings?.reverseMesh === true;
+  if (p === 'wireguard') {
+    // WARP（Cloudflare anycast 出口）不支持组网/反向可达，恒 gVisor——内核接口对它无意义：它不是子网路由器、
+    // 不可被反向访问。且 WARP system:true 会与主 TUN / 另一 System 接口抢内核 utun 资源 →
+    // `post-start endpoint/wireguard[Cloudflare WARP]: Connect: resource busy` FATAL（真机实证，多网卡时必现）。
+    // 用 isWarpServer 鲁棒判定（含旧/导入的无 warpDevice 标记 WARP，按端点域名兜底）→ 无论 reverseMesh 一律否决。
+    if (isWarpServer(server)) return false;
+    return server.wireguardSettings?.reverseMesh === true;
+  }
   if (p === 'tailscale') return server.tailscaleSettings?.reverseMesh === true;
   return false;
 }
@@ -165,13 +179,15 @@ export function isSpeedTestable(server: ServerConfig): boolean {
 }
 
 /**
- * 该组网节点是否承载「全隧道默认出口」(0/0)。= 允许外网 **且非** system 内核接口。
- * 结论A：system:true 恒 specific-only（内核接口若装 0/0 默认路由 → 跨平台环路/冲突，#3756/#3858），
- * 故 system 节点即便 allowInternet=on 也不承载 0/0、永不当全局出口。单一真值：Layer A 注入 0/0、
- * D4/D7 选中兜底、Tailscale exit_node 门控、UI「可作出口」判定共用，避免「allowsInternet 但其实不出网」漂移。
+ * 该组网节点是否承载「全隧道默认出口」（全部出网流量经它）= 允许外网（**与接入模式正交**）。
+ *  - WireGuard/WARP：gVisor 用裸 {0/0,::/0}；**system WG 用预折半 {0/1,128/1,::/1,8000::/1}**（见
+ *    wireguardPeerAllowedIps）——cryptokey 覆盖等同 0/0，但 sing-box 装的是折半 ifscope 路由（像主 TUN 的
+ *    BuildAutoRouteRanges 产物）、不装裸 default → 不触发删 macOS 全局 default（裸 0/0 会删、停核断网，monitor 实证）。
+ *  - Tailscale：exit_node ≠ 0/0，出口由 MeshExitRouteManager 以 ifscope 托管、不碰全局 default。
+ * 单一真值：Layer A(allowed_ips) / D4/D7 选中兜底 / TS exit_node 门控 / UI「可作出口」共用。
  */
 export function meshNodeCarriesFullTunnel(server: ServerConfig): boolean {
-  return meshAllowsInternet(server) && !meshUsesSystemInterface(server);
+  return meshAllowsInternet(server);
 }
 
 /**
@@ -183,13 +199,11 @@ export function meshNodeCarriesFullTunnel(server: ServerConfig): boolean {
  */
 export function wireguardPeerAllowedIps(server: ServerConfig): string[] | null {
   const specific = endpointForcedRouteCidrs(server);
-  // Phase 2 system:true（内核接口）：L1=L2=specific-only，恒去 0/0（结论A），不论 allowInternet。
-  // sing-box 把 allowed_ips 并集同时当 cryptokey 加密集 + OS 路由集（F4 不可拆）→ 含 0/0 会装默认路由致环路。
-  // specific 为空 → null（同 off+空，空 allowed_ips=FATAL，调用方据 null 跳过发射）。
-  if (meshUsesSystemInterface(server)) {
-    return specific.length > 0 ? specific : null;
-  }
-  if (meshAllowsInternet(server)) {
+  // 全隧道意图 → specific ∪ {0/0,::/0}。system WG 也用裸 0/0（cryptokey 需要）——预折半已证伪：sing-tun 落内核前
+  // 把 0/1+128/1 合并回裸 0/0（netstat 实证），照样撞 en0 default 的 EEXIST、被 setRoutes 善后删掉（tun_darwin.go
+  // :451），且 unsetRoutes 停核不回填 → 断网。该断网由 ProxyManager 的「全局 default 存/停核补回」安全网兜底。
+  // off/空 → specific（空则 null，空 allowed_ips=FATAL，调用方据 null 跳过发射）。
+  if (meshNodeCarriesFullTunnel(server)) {
     return dedupe([...specific, ...FULL_TUNNEL_CIDRS]);
   }
   return specific.length > 0 ? specific : null;
