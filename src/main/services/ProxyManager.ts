@@ -351,7 +351,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private probeDirectPort: number | null = null;
   private probeProxyPort: number | null = null;
   // 更新链路统一 inbound `update-in`（socks）的动态端口（每次 start 与探针同批分配）：FlowZ 应用更新检查/下载
-  // + 规则资源下载流量 pin 到此口（订阅/核心链路待后续接入），route 头部钉死按 proxyMode 决策（global/smart→
+  // + 规则资源下载 + 订阅流量 pin 到此口（核心链路待后续接入），route 头部钉死按 proxyMode 决策（global/smart→
   // 经代理 userExitTag，off-mesh 回退 direct；direct→direct）。归属 100% 确定（只有 FlowZ 主动往此口发）→
   // 天然不误伤其它进程。更新网络统一层 §4.3 / Phase 2。
   private updateInPort: number | null = null;

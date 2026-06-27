@@ -108,14 +108,22 @@ export class SubscriptionService {
   private logManager: LogManager;
   // 直连会话：强制 mode:'direct'，无视默认会话/系统代理，供 viaProxy=false 的订阅拉取使用
   private directSession: Session | null = null;
-  // 经代理会话：强制借道本机 sing-box http 入站（127.0.0.1:httpPort），供 viaProxy=true 使用。
-  // 独立于 defaultSession → 不受「更新检查走代理」总开关(mainSessionViaProxy)影响（订阅有独立开关，不应被它静默改写）。
+  // 经代理会话：Phase 2/§8 改 pin 到专用 update-in socks 入站（127.0.0.1:<动态端口>），与应用更新/资源链路统一
+  // 经核 route 头部按 proxyMode 决策（取代原 pin mixed inbound http）。独立于 defaultSession → 不受「更新检查走
+  // 代理」总开关(mainSessionViaProxy)影响（订阅有独立开关 subscriptionUpdateViaProxy）。
   private proxiedSession: Session | null = null;
   private proxiedSessionPort: number | null = null;
+  // update-in inbound 端口读取器（proxyManager.getUpdateInPort）；构造后由 index.ts 注入，未注入/端口不可用 → 退直连。
+  private updateInPortProvider: (() => number | null) | null = null;
 
   constructor(protocolParser: ProtocolParser, logManager: LogManager) {
     this.protocolParser = protocolParser;
     this.logManager = logManager;
+  }
+
+  /** Phase 2/§8：注入 update-in inbound 端口读取器。订阅经代理 pin 此口（socks）。 */
+  setUpdateInPortProvider(provider: () => number | null): void {
+    this.updateInPortProvider = provider;
   }
 
   /** 懒加载强制直连会话（默认会话在代理运行时会走代理，直连拉取须绕开它）。 */
@@ -127,13 +135,13 @@ export class SubscriptionService {
     return s;
   }
 
-  /** 懒加载经代理会话（pin 到本机 http 代理端口）；端口变化时重设。订阅 URL 为外网，loopback 隐式 bypass 不影响。 */
-  private async getProxiedSession(httpPort: number): Promise<Session> {
-    if (this.proxiedSession && this.proxiedSessionPort === httpPort) return this.proxiedSession;
+  /** 懒加载经代理会话（pin 到本机 update-in socks 入站，动态端口）；端口变化时重设。loopback 隐式 bypass。 */
+  private async getProxiedSession(port: number): Promise<Session> {
+    if (this.proxiedSession && this.proxiedSessionPort === port) return this.proxiedSession;
     const s = this.proxiedSession ?? session.fromPartition('flowz-subscription-proxied');
-    await s.setProxy({ proxyRules: `http://127.0.0.1:${httpPort}` });
+    await s.setProxy({ proxyRules: `socks5://127.0.0.1:${port}` });
     this.proxiedSession = s;
-    this.proxiedSessionPort = httpPort;
+    this.proxiedSessionPort = port;
     return s;
   }
 
@@ -515,15 +523,19 @@ export class SubscriptionService {
       return urlObj;
     };
 
-    // viaProxy=true 用 pin 到本机代理端口的独立会话（不受 mainSessionViaProxy 总开关影响）；
-    // 缺 httpPort 时退回默认会话（向后兼容）。viaProxy=false → 强制直连会话。
+    // viaProxy=true → pin 到 update-in socks 入站（动态端口，proxyManager.getUpdateInPort）：与应用更新/资源链路
+    // 统一经核 route 按 proxyMode 决策。端口不可用（核未起/未分配/未注入）→ 退直连（自举友好）。viaProxy=false → 直连。
+    // 注：httpPort 参数已废弃（订阅经代理改走 update-in 端口；保留签名待块1 合并后统一清理调用方），viaProxy 路径不再读它。
+    void httpPort;
     let fetchImpl: typeof net.fetch;
     if (viaProxy) {
-      if (httpPort) {
-        const ps = await this.getProxiedSession(httpPort);
+      const updateInPort = this.updateInPortProvider?.() ?? 0;
+      if (updateInPort > 0) {
+        const ps = await this.getProxiedSession(updateInPort);
         fetchImpl = ps.fetch.bind(ps);
       } else {
-        fetchImpl = net.fetch;
+        const ds = await this.getDirectSession();
+        fetchImpl = ds.fetch.bind(ds);
       }
     } else {
       const ds = await this.getDirectSession();
