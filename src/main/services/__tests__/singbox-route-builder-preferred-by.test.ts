@@ -79,6 +79,7 @@ const depsWithEndpoints = (tags: string[]): RouteConfigDeps => ({
   pendingEndpoints: tags.map((tag) => ({ type: 'wireguard', tag }) as SingBoxEndpoint),
   log: () => {},
   onDegraded: () => {},
+  updateInPort: null,
 });
 
 /** rules 里是否有「preferred_by 含 tag 且 outbound=tag」的归位规则。 */
