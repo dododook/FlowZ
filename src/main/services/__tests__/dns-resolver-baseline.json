@@ -3,12 +3,6 @@
     "dns": {
       "servers": [
         {
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-          "server": "223.5.5.5",
-          "server_port": 53
-        },
-        {
           "tag": "dns-bootstrap",
           "type": "https",
           "server": "223.5.5.5",
@@ -67,7 +61,7 @@
             "cloudflare-dns.com",
             "one.one.one.one"
           ],
-          "server": "dns-bootstrap-udp"
+          "server": "dns-bootstrap"
         },
         {
           "domain_suffix": [
@@ -393,12 +387,6 @@
     "dns": {
       "servers": [
         {
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-          "server": "223.5.5.5",
-          "server_port": 53
-        },
-        {
           "tag": "dns-bootstrap",
           "type": "https",
           "server": "223.5.5.5",
@@ -457,7 +445,7 @@
             "cloudflare-dns.com",
             "one.one.one.one"
           ],
-          "server": "dns-bootstrap-udp"
+          "server": "dns-bootstrap"
         },
         {
           "domain_suffix": [
@@ -756,12 +744,6 @@
     "dns": {
       "servers": [
         {
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-          "server": "223.5.5.5",
-          "server_port": 53
-        },
-        {
           "tag": "dns-bootstrap",
           "type": "https",
           "server": "223.5.5.5",
@@ -815,7 +797,7 @@
             "cloudflare-dns.com",
             "one.one.one.one"
           ],
-          "server": "dns-bootstrap-udp"
+          "server": "dns-bootstrap"
         },
         {
           "domain_suffix": [

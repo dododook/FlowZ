@@ -8,7 +8,9 @@
  * - 退避：单个订阅失败后指数退避（5min→…→上限 6h），避免对故障源高频重试。
  * - 不打断连接：只「落盘 + 通知 UI」，绝不重启代理——运行中的 sing-box 保持其内存配置，
  *   节点增删仅在下次（重）启动或热切换时生效。配合 reconcile 保留 id/选中节点，连接零中断。
- * - 经代理开关：viaProxy 时若代理未运行则本轮跳过（冷启动鸡生蛋），挂起待代理就绪（onProxyStarted）补更。
+ * - 经代理开关：全局三态策略 subscriptionProxyPolicy（follow=按 per-sub updateViaProxy / proxy=全强制经代理 /
+ *   direct=全强制直连）作用于各订阅；经代理订阅若代理未运行则只跳过该订阅（冷启动鸡生蛋），挂起待代理就绪
+ *   （onProxyStarted）补更，直连订阅照常更新。
  */
 
 import type { ConfigManager } from './ConfigManager';
@@ -16,6 +18,7 @@ import type { LogManager } from './LogManager';
 import { SubscriptionService } from './SubscriptionService';
 import type { UserConfig } from '../../shared/types';
 import { localProxyPort } from '../../shared/proxy-ports';
+import { resolveSubscriptionViaProxy } from '../../shared/subscription-proxy';
 import { BackoffTracker } from './backoff-tracker';
 
 export class SubscriptionScheduler {
@@ -27,7 +30,7 @@ export class SubscriptionScheduler {
     SubscriptionScheduler.BACKOFF_BASE_MS,
     SubscriptionScheduler.BACKOFF_MAX_MS
   );
-  private pendingProxyCatchup = false; // viaProxy 但代理未起时跳过的「启动补更」挂起标记，待代理就绪补跑
+  private pendingProxyCatchup = false; // 经代理订阅因代理未起被跳过的挂起标记（启动补更与周期巡检轮均可置位），待代理就绪 onProxyStarted 补跑
   private startupTimer: ReturnType<typeof setTimeout> | null = null; // 启动补更句柄（stop 时清，防 8s 内 stop→start 武装双补更）
 
   private static readonly TICK_MS = 30 * 60_000; // 30 分钟巡检一次
@@ -105,18 +108,8 @@ export class SubscriptionScheduler {
       this.backoff.prune(subIds);
       if (subs.length === 0) return;
 
-      const viaProxy = config.subscriptionUpdateViaProxy === true;
-      // viaProxy 但代理未运行：冷启动鸡生蛋，本轮跳过，挂起待代理就绪后补跑（onProxyStarted）
-      if (viaProxy && !this.getProxyRunning()) {
-        this.pendingProxyCatchup = true;
-        this.logManager.addLog(
-          'info',
-          '订阅更新经代理但代理未运行，本轮跳过（待代理就绪后自动补更）',
-          'SubScheduler'
-        );
-        return;
-      }
-      // 走到这里本轮会真正巡检更新 → 任何挂起的代理就绪补更已被本轮覆盖，清除挂起标记（周期 tick 亦消费之）
+      // per-sub 经代理：求值移进下方循环（每订阅 = 全局策略 subscriptionProxyPolicy 作用于该订阅 updateViaProxy）。
+      // 先乐观清挂起，循环内遇「经代理但代理未起」的订阅再置 true——只跳过这些，直连订阅照常更新（鸡生蛋仅卡经代理项）。
       this.pendingProxyCatchup = false;
 
       const now = Date.now();
@@ -145,11 +138,27 @@ export class SubscriptionScheduler {
         // 退避判断：失败源未到下次可尝试时刻则跳过
         if (!this.backoff.isEligible(sub.id, now)) continue;
 
+        // per-sub 经代理且代理未起：跳过该订阅，挂起待代理就绪后补更（直连订阅不受影响）。
+        // getProxyRunning 现取（非循环前快照）：代理在本轮拉取直连订阅期间就绪时，后续经代理订阅同轮即拉、不必等下个周期 tick。
+        const subViaProxy = resolveSubscriptionViaProxy(
+          config.subscriptionProxyPolicy,
+          sub.updateViaProxy
+        );
+        if (subViaProxy && !this.getProxyRunning()) {
+          this.pendingProxyCatchup = true;
+          this.logManager.addLog(
+            'info',
+            `订阅「${sub.name}」经代理更新但代理未运行，本轮跳过（待代理就绪后自动补更）`,
+            'SubScheduler'
+          );
+          continue;
+        }
+
         try {
           const result = await this.subscriptionService.fetchSubscription(
             sub.url,
             sub.id,
-            viaProxy,
+            subViaProxy,
             localProxyPort(config),
             sub.userAgent ?? config.subscriptionUserAgent
           );

@@ -24,6 +24,8 @@ interface SubscriptionDialogProps {
   onOpenChange: (open: boolean) => void;
   subscription?: SubscriptionConfig;
   onSave: (subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'>) => Promise<void>;
+  // 全局订阅代理策略：'follow' 时本 per-sub 开关可设；'proxy'/'direct' 时被全局覆盖、置灰。
+  subscriptionProxyPolicy?: 'follow' | 'proxy' | 'direct';
 }
 
 export function SubscriptionDialog({
@@ -31,12 +33,14 @@ export function SubscriptionDialog({
   onOpenChange,
   subscription,
   onSave,
+  subscriptionProxyPolicy = 'follow',
 }: SubscriptionDialogProps) {
   const { t } = useTranslation();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [autoUpdate, setAutoUpdate] = useState(false); // 新增订阅默认【关闭】自动更新：避免订阅刷新带来节点变动触发重启断流，由用户按需手动开启（开启时下方提示重启代价）
   const [userAgent, setUserAgent] = useState('');
+  const [updateViaProxy, setUpdateViaProxy] = useState(false); // per-sub 经代理更新（默认关）
   const [appVersion, setAppVersion] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -62,11 +66,13 @@ export function SubscriptionDialog({
         setUrl(subscription.url);
         setAutoUpdate(subscription.autoUpdate);
         setUserAgent(subscription.userAgent ?? '');
+        setUpdateViaProxy(subscription.updateViaProxy ?? false);
       } else {
         setName('');
         setUrl('');
         setAutoUpdate(false); // 新增订阅默认【关闭】自动更新（见上：避免无谓重启断流，按需手动开启）
         setUserAgent('');
+        setUpdateViaProxy(false);
       }
     }
   }, [open, subscription]);
@@ -90,6 +96,8 @@ export function SubscriptionDialog({
         autoUpdate,
         // 非空才写入 userAgent；空则不带该字段（落回全局/默认 UA）。
         ...(trimmedUa ? { userAgent: trimmedUa } : {}),
+        // 仅 true 才写入（默认关 = 不带字段，落回直连）。
+        ...(updateViaProxy ? { updateViaProxy: true } : {}),
       });
       onOpenChange(false);
     } catch {
@@ -200,6 +208,37 @@ export function SubscriptionDialog({
               <span>{t('sub.autoUpdateRestartHint')}</span>
             </p>
           )}
+
+          {/* 经代理更新（per-sub）：仅全局策略为「跟随订阅设置」(follow) 时可设；'proxy'/'direct' 被全局覆盖、置灰 */}
+          <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="sub-via-proxy">{t('sub.updateViaProxy', '经代理更新')}</Label>
+                <InfoTooltip
+                  content={t(
+                    'sub.updateViaProxyDescFull',
+                    '开启后该订阅经运行中的代理拉取（订阅地址被直连封锁时用）；代理未运行时本轮跳过、就绪后自动补更。仅当「更新与测速」的全局「订阅更新经代理」为「跟随订阅设置」时本开关生效。'
+                  )}
+                />
+              </div>
+              <div className="text-[0.8rem] text-muted-foreground">
+                {subscriptionProxyPolicy === 'proxy'
+                  ? t('sub.updateViaProxyOverrideProxy', '已由全局策略覆盖：全部订阅经代理')
+                  : subscriptionProxyPolicy === 'direct'
+                    ? t('sub.updateViaProxyOverrideDirect', '已由全局策略覆盖：全部订阅直连')
+                    : t(
+                        'sub.updateViaProxyDesc',
+                        '该订阅经运行中的代理拉取（代理未运行则就绪后补更）'
+                      )}
+              </div>
+            </div>
+            <Switch
+              id="sub-via-proxy"
+              checked={updateViaProxy}
+              onCheckedChange={setUpdateViaProxy}
+              disabled={subscriptionProxyPolicy !== 'follow'}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>

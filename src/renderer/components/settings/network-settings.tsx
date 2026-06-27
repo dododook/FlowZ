@@ -672,36 +672,55 @@ export function NetworkSettings() {
             />
           </SettingsRow>
           {config.autoUpdateSubscriptionOnStart && (
-            <>
-              <SettingsRow
-                label={t('settings.advanced.subUpdateInterval')}
-                description={t('settings.advanced.subUpdateIntervalDesc')}
-              >
-                {numInput(subInterval, setSubInterval, 'w-[100px]', () => {
-                  const n = parseInt(subInterval, 10);
-                  if (isNaN(n) || n < 1 || n > 168) {
-                    toast.error(t('settings.advanced.subIntervalRange'));
-                    setSubInterval(config.subscriptionUpdateIntervalHours?.toString() || '12');
-                    return;
-                  }
-                  if (n === config.subscriptionUpdateIntervalHours) return; // 无变化不保存
-                  saveConfig({ ...config, subscriptionUpdateIntervalHours: n }).catch(() =>
-                    toast.error(t('common.saveFailed'))
-                  );
-                })}
-              </SettingsRow>
-              <SettingsRow
-                label={t('settings.advanced.subUpdateViaProxy')}
-                description={t('settings.advanced.subUpdateViaProxyDesc')}
-                tooltip={t('settings.advanced.subUpdateViaProxyDescFull')}
-              >
-                <Switch
-                  checked={config.subscriptionUpdateViaProxy === true}
-                  onCheckedChange={(c) => setBool('subscriptionUpdateViaProxy', c)}
-                />
-              </SettingsRow>
-            </>
+            <SettingsRow
+              label={t('settings.advanced.subUpdateInterval')}
+              description={t('settings.advanced.subUpdateIntervalDesc')}
+            >
+              {numInput(subInterval, setSubInterval, 'w-[100px]', () => {
+                const n = parseInt(subInterval, 10);
+                if (isNaN(n) || n < 1 || n > 168) {
+                  toast.error(t('settings.advanced.subIntervalRange'));
+                  setSubInterval(config.subscriptionUpdateIntervalHours?.toString() || '12');
+                  return;
+                }
+                if (n === config.subscriptionUpdateIntervalHours) return; // 无变化不保存
+                saveConfig({ ...config, subscriptionUpdateIntervalHours: n }).catch(() =>
+                  toast.error(t('common.saveFailed'))
+                );
+              })}
+            </SettingsRow>
           )}
+          {/* 订阅代理策略：恒显示（手动更新订阅亦生效，不应被自动更新总开关 gating）；与下方「更新检查走代理」同属更新流量是否走代理 */}
+          <SettingsRow
+            label={t('settings.advanced.subUpdateViaProxy')}
+            description={t('settings.advanced.subUpdateViaProxyDesc')}
+            tooltip={t('settings.advanced.subUpdateViaProxyDescFull')}
+          >
+            <Select
+              value={config.subscriptionProxyPolicy ?? 'follow'}
+              onValueChange={(v) =>
+                saveConfig({
+                  ...config,
+                  subscriptionProxyPolicy: v as 'follow' | 'proxy' | 'direct',
+                }).catch(() => toast.error(t('common.saveFailed')))
+              }
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="follow">
+                  {t('settings.advanced.subProxyPolicyFollow', '跟随订阅设置')}
+                </SelectItem>
+                <SelectItem value="proxy">
+                  {t('settings.advanced.subProxyPolicyProxy', '全部经代理')}
+                </SelectItem>
+                <SelectItem value="direct">
+                  {t('settings.advanced.subProxyPolicyDirect', '全部直连')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsRow>
           {/* 更新检查走代理（L2：与订阅更新同属「更新流量是否走代理」，从连接/流量卡归并至此） */}
           <SettingsRow
             label={t('settings.advanced.mainSessionViaProxy', '更新检查走代理')}

@@ -12,27 +12,19 @@
  * 平台：
  *  - macOS：内核 utun 名动态（用户实证），按 tailnet IP 反查接口名 → helper(root) `route -ifscope`。
  *  - Linux：固定名 flowz-ts → app 自身 `ip route`（已有 CAP_NET_ADMIN），独立表 + oif 规则、不碰 main 表。
- *  - **Windows：降权 flowz-ts 接口 metric（根治，非装路由）**。Windows 上 sing-box 的 tsnet **自己**给 flowz-ts 装
- *    exit 0/0，且 **metric=0** → 抢过物理网卡，把直连/bootstrap DNS（节点域名解析的 1.12.12.12/223.5.5.5）灌进 TS
- *    出口、源 IP 变 tailnet → SERVFAIL → 解析不出代理节点 → **全网瘫（真机实证 2026-06-26，Find-NetRoute 实锤
- *    `1.12.12.12 → ifIndex(flowz-ts) src=100.x`）**。FlowZ 删不掉 tsnet 这条 0/0；Windows 又无 macOS 的 ifscope
- *    作用域。等价根治手段＝**经 helper 把 flowz-ts 接口 metric 设高**（WIN_TS_DEMOTED_METRIC）→ 其 0/0 effective
- *    metric 输给以太网、直连/DNS 回物理；tailnet /32 仍按最长前缀命中；**出口经 sing-box selector 内部转发给 TS
- *    outbound，不依赖这条 OS 0/0**（gVisor 无任何 OS 路由也能出口即证）。降权不破坏出口（真机验：降权后切节点访问全正常）。
+ *  - **Windows：禁 System，本管理器 no-op**。Windows 上 tsnet 会给 flowz-ts 自装 exit 0/0 metric=0、抢直连/
+ *    bootstrap DNS 致全网瘫，且无 ifscope 作用域；曾用周期降权 metric 兜底，但脆弱、有 0–15s 滞后窗口。故 Windows
+ *    直接禁 System（ProxyManager.systemInterfaceAvailable 在 win32 恒 false → mesh 节点强制 gVisor），从源头消除：
+ *    gVisor userspace 栈不建内核接口、不装 0/0、出口经 tsnet 内部转发不依赖 OS 路由。
  */
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { UserConfig } from '../../shared/types';
 import type { IPrivilegedHelper } from './IPrivilegedHelper';
 import { planMeshExitRoute, type MeshExitRoutePlan } from '../../shared/mesh-exit-route';
-import { TS_SYSTEM_INTERFACE_NAME } from '../../shared/endpoint-routes';
+import { meshSystemSupportedOnPlatform } from '../../shared/endpoint-routes';
 
 const execFileAsync = promisify(execFile);
-
-// Windows 根治 System TS 出口劫持：flowz-ts 接口 metric 设到此高值，使 tsnet 装的 exit 0/0 的 effective metric
-// （RouteMetric 0 + 接口 metric）输给物理网卡（以太网约 15、flowz-wg 约 5）→ 直连/bootstrap DNS 回物理网卡。
-// 真机实证此值有效（`Set-NetIPInterface flowz-ts -InterfaceMetric 9000` 后 DNS 恢复、切节点访问全正常）。
-const WIN_TS_DEMOTED_METRIC = 9000;
 
 type LogFn = (level: 'info' | 'warn' | 'error', message: string) => void;
 
@@ -46,8 +38,6 @@ export class MeshExitRouteManager {
   private reconciling = false; // 串行化:起核+切节点的 fire-and-forget 调用不并发抢路由。
   private pending: { config: UserConfig; enableIPv6: boolean } | null = null; // 最新待对齐目标(latest-wins)。
   private baselineUtuns: Set<string> | null = null; // macOS 起核前的 utun 基线(时序 diff 锚点)。
-  private windowsMetricTimer: ReturnType<typeof setInterval> | null = null; // Windows：flowz-ts metric 周期巡检定时器。
-  private windowsMetricFailureLogged = false; // Windows：持久降权失败是否已报过一次(防每 15s 刷屏,成功复位)。
 
   constructor(
     private readonly getHelper: () => IPrivilegedHelper | null,
@@ -99,16 +89,11 @@ export class MeshExitRouteManager {
   }
 
   private async reconcileOnce(config: UserConfig, enableIPv6: boolean): Promise<void> {
+    // 禁 System 的平台（Windows，meshSystemSupportedOnPlatform）：mesh 节点强制 gVisor、无 flowz-ts 内核接口 →
+    // 无出口路由可托管，no-op。
+    if (!meshSystemSupportedOnPlatform(process.platform)) return;
     try {
       const plan = planMeshExitRoute(config, enableIPv6);
-      // Windows：不装 OS 路由（tsnet 自装 exit 0/0），改为周期巡检降权 flowz-ts 接口 metric 根治其 0/0 抢直连/DNS
-      //（根因/机理见类注释「平台」§ Windows）。plan 存在（选/规则指向 TS System+exit）→ 启动巡检；否则停巡检。
-      // 「为何用周期巡检而非一次性」见 startWindowsMetricWatch。
-      if (process.platform === 'win32') {
-        if (plan) this.startWindowsMetricWatch();
-        else this.stopWindowsMetricWatch();
-        return;
-      }
       const desiredKey = plan ? plan.cidrs.join(',') : '';
       const currentKey = this.installed ? this.installed.cidrs.join(',') : '';
       // 注:macOS 接口名动态,desired.iface 是逻辑名(flowz-ts);实际接口在 apply 内反查。仅以 cidrs 判变更。
@@ -125,12 +110,8 @@ export class MeshExitRouteManager {
 
   /** 停核 / teardown：清理已装的出口路由。 */
   async clear(): Promise<void> {
-    // Windows：未装 OS 路由（只周期降 flowz-ts metric）。停核 → 停巡检（flowz-ts 随之销毁，无需还原；下次起核
-    // reconcile 重启巡检）。
-    if (process.platform === 'win32') {
-      this.stopWindowsMetricWatch();
-      return;
-    }
+    // 禁 System 的平台（Windows）：本管理器 no-op（无装过的 OS 路由可清）。
+    if (!meshSystemSupportedOnPlatform(process.platform)) return;
     const cur = this.installed;
     if (!cur) return;
     this.installed = null;
@@ -153,84 +134,12 @@ export class MeshExitRouteManager {
   }
 
   /**
-   * Windows 根治：周期巡检确保 flowz-ts 接口 metric 降权（根因/机理见类注释「平台」§ Windows）。
-   * 用周期巡检而非一次性：① flowz-ts 在连上 tailnet 后数秒才出现，一次性窗口易错过（真机实证「未能设」即此）；
-   * ② TS 自身重连会重建接口、metric 复位，巡检检出后补设；③ 切节点/重启由 reconcile 重启巡检。
-   */
-  private startWindowsMetricWatch(): void {
-    if (this.windowsMetricTimer) return; // 已在巡检
-    void this.ensureWindowsTsMetric(); // 立即一次
-    this.windowsMetricTimer = setInterval(() => void this.ensureWindowsTsMetric(), 15000);
-  }
-
-  private stopWindowsMetricWatch(): void {
-    if (this.windowsMetricTimer) {
-      clearInterval(this.windowsMetricTimer);
-      this.windowsMetricTimer = null;
-    }
-  }
-
-  /**
    * 崩溃 / giveUp 等非正常拆除（走 ProxyManager.cleanup() 而非 stopInner→clear()）的同步内存态复位。内核接口随进程
-   * 销毁、其路由已自动消失，故无需发删命令；但**必须清掉残留态**，否则：① macOS/Linux 残留的 `installed` 会让下次
-   * reconcile 的 cidr 去重误判「已装」而跳过 apply → 出口路由不再装（自愈后静默黑洞）；② Windows 的 15s 巡检定时器泄漏、
-   * 持续 spawn powershell。clear()（正常停核）已含同款 stop；本方法是崩溃腿的补漏，同步、不发命令、绝不抛。
+   * 销毁、其路由已自动消失，故无需发删命令；但**必须清掉残留 `installed`**——否则 macOS/Linux 残留态会让下次
+   * reconcile 的 cidr 去重误判「已装」而跳过 apply → 出口路由不再装（自愈后静默黑洞）。同步、不发命令、绝不抛。
    */
   resetState(): void {
     this.installed = null;
-    this.stopWindowsMetricWatch();
-  }
-
-  /**
-   * 一轮巡检：读 flowz-ts 两族接口 metric（只读、非提权直跑 Get-NetIPInterface），任一不是 WIN_TS_DEMOTED_METRIC
-   * （初次/AutomaticMetric/被 TS 重连重建复位）→ 经 helper（SYSTEM）补设两族。
-   * **关键（真机踩坑）**：AutomaticMetric 时 InterfaceMetric **读出为空**（join 得 `,` 或 `''`）——这**正是**需要降权
-   * 的状态，绝不能当「未就绪」跳过。故用 `$i.Count` 区分「接口不存在(NONE→跳过)」vs「存在但 metric 空/非9000(补设)」。
-   * 达标即跳、不刷屏；proto 过旧 helper 回 `ERR unknown` → 停巡检 + 提示重装。
-   */
-  private async ensureWindowsTsMetric(): Promise<void> {
-    let out: string;
-    try {
-      const { stdout } = await execFileAsync('powershell', [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `$i=@(Get-NetIPInterface -InterfaceAlias '${TS_SYSTEM_INTERFACE_NAME}' -ErrorAction SilentlyContinue); if($i.Count -eq 0){'NONE'}else{$i.InterfaceMetric -join ','}`,
-      ]);
-      out = stdout.trim();
-    } catch {
-      return; // 读失败 → 下轮再试
-    }
-    if (out === 'NONE') return; // flowz-ts 接口不存在（未就绪）→ 下轮再试
-    const metrics = out.split(',').map((s) => s.trim()); // 空表示 AutomaticMetric（需降权,非「未就绪」）
-    if (metrics.every((m) => m === String(WIN_TS_DEMOTED_METRIC))) {
-      this.windowsMetricFailureLogged = false; // 已达标(含外部手动设)→ 复位失败标记
-      return;
-    }
-    const helper = this.getHelper();
-    if (!helper) return;
-    const res = await helper.setInterfaceMetric(TS_SYSTEM_INTERFACE_NAME, WIN_TS_DEMOTED_METRIC);
-    if (res.ok) {
-      this.windowsMetricFailureLogged = false; // 成功 → 复位失败标记（下次再失败重新报一次）
-      this.log(
-        'info',
-        `Windows TS 出口:flowz-ts 接口 metric 降权为 ${WIN_TS_DEMOTED_METRIC}(两族;原 ${metrics.join('/')})—— 其 exit 0/0 让位物理网卡,直连/DNS 回物理`
-      );
-    } else if (res.error && /unknown/i.test(res.error)) {
-      this.stopWindowsMetricWatch(); // 旧 helper 不识别 iface-metric → 停巡检免空转
-      this.log(
-        'warn',
-        'Windows TS 出口:当前 helper 不支持 iface-metric(需重装 helper);否则 flowz-ts 0/0 会抢直连/bootstrap DNS 致解析失败'
-      );
-    } else if (!this.windowsMetricFailureLogged) {
-      // 其它持久失败（PowerShell 未找到 / Set-NetIPInterface 拒绝 / 权限）：仍每 15s 重试（可能自愈），但**报一次**
-      // 诊断（首次失败即报、成功后复位），避免静默——否则 flowz-ts 0/0 持续抢 bootstrap DNS 而无任何信号。
-      this.windowsMetricFailureLogged = true;
-      this.log(
-        'warn',
-        `Windows TS 出口:flowz-ts metric 降权失败(每 15s 重试中,flowz-ts 0/0 可能仍抢直连/bootstrap DNS): ${res.error || '未知'}`
-      );
-    }
   }
 
   private async apply(plan: MeshExitRoutePlan): Promise<void> {

@@ -240,6 +240,8 @@ func handle(conn net.Conn) {
 		}
 		fmt.Fprintln(conn, "OK route")
 	case "iface-metric":
+		// 退役：自 Windows 禁 System（强制 gVisor）起，客户端不再调用本命令；保留仅为兼容已部署的 proto≥3 helper
+		// （删它需强制用户重装）。新客户端 EXPECTED_PROTO 已降回 v1，不再因缺本能力提示升级。
 		// proto v3：把 FlowZ 内核接口的接口 metric 设高 —— Windows 根治 System TS 出口劫持。
 		// 根因（真机实证）：tsnet 给 flowz-ts 装的 exit 0/0 metric=0，抢过物理网卡 → 把直连/bootstrap DNS
 		// （1.12.12.12/223.5.5.5）灌进 TS 出口、源 IP 变 tailnet → SERVFAIL → 解析不出代理节点 → 全网瘫。

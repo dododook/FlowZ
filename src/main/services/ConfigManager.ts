@@ -177,6 +177,10 @@ export class ConfigManager implements IConfigManager {
       // nodeResolverPool(on 多选)+nodeResolverSingle(off 单选)。须在 migrateFakeIpToggle 之后（依赖 dnsConfig 已补齐）。
       await this.migrateNodeResolver(config);
 
+      // 订阅代理策略一次性迁移（已发布布尔字段 subscriptionUpdateViaProxy@4eccd59 → 新三态，幂等、绝不抛）：
+      // 旧 true（订阅经代理，常因订阅地址被墙而开）若不迁移会随字段改名静默退化为直连（被墙订阅拉取失败、无感）。
+      await this.migrateSubscriptionProxyPolicy(config);
+
       // 应用分流默认预设一次性注入（幂等、flag 守卫）：为未配置的内置预设注入默认「代理·跟全局」规则，
       // 并剔除已下线预设（apple/bilibili）的残留。使每张卡片启动即有 rule-sel-app selector → 首次切节点即热切换，
       // 无需先手动触发一次创建规则。仅执行一次（置 appRulesSeeded），之后用户可自由增删不被回灌。
@@ -517,6 +521,16 @@ export class ConfigManager implements IConfigManager {
       throw new Error('proxyModeType must be systemProxy, tun, or manual');
     }
 
+    // subscriptionProxyPolicy（三态可选）sanitize（不 throw，与 dnsTimeoutMs/CIDR 同标准防整配置回落）：
+    // 非 'follow'|'proxy'|'direct' 的脏值（手改 / 损坏备份跨设备导入，见 config-portability）→ 删除该字段，落回默认 follow。
+    // resolveSubscriptionViaProxy 对未知值也会降级 follow，此处提前清洗使持久化不留脏值（saveConfig 亦经本校验）。
+    if (
+      config.subscriptionProxyPolicy !== undefined &&
+      !(['follow', 'proxy', 'direct'] as string[]).includes(config.subscriptionProxyPolicy)
+    ) {
+      delete config.subscriptionProxyPolicy;
+    }
+
     // 验证 tunConfig
     if (!config.tunConfig) {
       throw new Error('tunConfig is required');
@@ -791,6 +805,31 @@ export class ConfigManager implements IConfigManager {
    * 避免每次启动覆盖用户迁移后手动改的值。落盘 await saveConfig().catch（与 F29 同标准：best-effort、失败下次重试、
    * 标记未持久化即未迁移；await 确定迁移与落盘顺序，消除 fire-and-forget 期 currentConfig 读取的理论窗口）。
    */
+  /**
+   * 订阅代理策略迁移：旧布尔 subscriptionUpdateViaProxy（已发布字段 4eccd59）→ 新三态 subscriptionProxyPolicy。
+   * 旧 true（订阅经代理）→ 'proxy'（全部经代理，最贴近旧全局语义）；false/缺省 → 不改（落回默认 follow=直连，语义等价）。
+   * 幂等：仅旧字段存在时执行，消化后 delete 旧字段（不双字段共存）；新装无旧字段直接跳过、不落盘。绝不抛。
+   * 不覆盖已设的新字段（用户升级后又手动改过 policy 的情形）：仅 subscriptionProxyPolicy===undefined 时才写。
+   */
+  private async migrateSubscriptionProxyPolicy(config: UserConfig): Promise<void> {
+    try {
+      const legacy = config as unknown as Record<string, unknown>;
+      if (!('subscriptionUpdateViaProxy' in legacy)) return; // 无旧字段（含新装）：幂等跳过，不落盘
+      if (
+        config.subscriptionProxyPolicy === undefined &&
+        legacy.subscriptionUpdateViaProxy === true
+      ) {
+        config.subscriptionProxyPolicy = 'proxy';
+      }
+      delete legacy.subscriptionUpdateViaProxy; // 消化后删除旧字段
+      await this.saveConfig(config).catch((e) =>
+        this.log('warn', `订阅代理策略迁移后落盘失败（不阻断，下次重试）: ${e}`)
+      );
+    } catch (e) {
+      this.log('warn', `订阅代理策略迁移失败（吞掉，不影响启动）: ${e}`);
+    }
+  }
+
   private async migrateFakeIpToggle(config: UserConfig): Promise<void> {
     try {
       // 缺 dnsConfig：补默认并按模式冻结 effective 值，标记完成（与 createDefaultConfig 同语义但 enableFakeIp 按模式）。
@@ -879,7 +918,7 @@ export class ConfigManager implements IConfigManager {
       desktopNotifications: true, // 桌面通知总开关，默认开（仅严重错误事件发通知）
       autoUpdateSubscriptionOnStart: true, // 默认启用订阅自动更新（启动补更陈旧订阅 + 周期更新）
       subscriptionUpdateIntervalHours: 12, // 订阅自动更新周期/陈旧阈值（小时）
-      subscriptionUpdateViaProxy: false, // 默认直连拉取订阅
+      subscriptionProxyPolicy: 'follow', // 默认跟随各订阅自身设定（per-sub updateViaProxy 默认关=直连）
       mainSessionViaProxy: true, // 更新检查/规则资源默认走代理（运行时）
       rememberWindowSize: true, // 默认启用记忆窗口大小（用户调整后下次沿用；已显式关闭的用户配置不受影响）
       enableIPv6: false, // 默认不启用 IPv6 解析（防假死兜底）

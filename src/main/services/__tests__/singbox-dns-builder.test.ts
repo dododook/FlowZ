@@ -43,8 +43,14 @@ const baseConfig = (servers: ServerConfig[], selectedServerId: string | null): U
   }) as unknown as UserConfig;
 
 const noopLog = () => {};
-const build = (config: UserConfig) =>
-  buildDnsConfig(config, 'proxy-selector', null, buildIdToTagMap(config.servers), noopLog);
+const build = (config: UserConfig) => {
+  const idToTagMap = buildIdToTagMap(config.servers);
+  // 根治 §3.5：tailnet gate 放宽后需 pendingEndpoints 含「已发射」endpoint。模拟 tailscale/wireguard 节点全发射。
+  const pendingEndpoints = config.servers
+    .filter((s) => ['tailscale', 'wireguard'].includes(s.protocol.toLowerCase()))
+    .map((s) => ({ type: s.protocol.toLowerCase(), tag: idToTagMap.get(s.id) }) as never);
+  return buildDnsConfig(config, 'proxy-selector', null, idToTagMap, noopLog, 0, pendingEndpoints);
+};
 
 describe('buildDnsConfig — P4b Tailscale 按名解析', () => {
   it('选中 tailscale 节点 + resolveByName → 注入 dns-tailscale server + preferred_by(最前) + endpoint 引用节点 tag', () => {
@@ -88,9 +94,39 @@ describe('buildDnsConfig — P4b Tailscale 按名解析', () => {
     expect(dns.rules!.some((r) => r.preferred_by)).toBe(false);
   });
 
-  it('选中节点非 tailscale → 不注入（即便存在一个 resolveByName 的非选中 tailscale 节点）', () => {
+  it('根治 §3.5：选中非 tailscale 但有 resolveByName 的 TS 已发射 → 仍注入（gate 放宽=组网即生效，不绑主出口）', () => {
     const other = { id: 'p1', name: 'PlainNode', protocol: 'vless' } as unknown as ServerConfig;
     const dns = build(baseConfig([other, tsNode()], 'p1'));
+    const tsServer = dns.servers.find((s) => s.type === 'tailscale');
+    expect(tsServer).toBeDefined();
+    // 引用那个 resolveByName 的 TS（非选中的 p1），证明不再绑主出口
+    expect(tsServer!.endpoint).toBe('MyMeshNode');
+    expect(dns.rules!.some((r) => r.preferred_by?.includes('dns-tailscale'))).toBe(true);
+  });
+
+  it('根治 §3.5：resolveByName 的 TS 未发射（不在 pendingEndpoints）→ 不注入（防悬空引用 FATAL）', () => {
+    const idToTagMap = buildIdToTagMap([tsNode()]);
+    // 不传 pendingEndpoints（默认 []）= TS endpoint 未发射 → tailnet 解析跳过
+    const dns = buildDnsConfig(baseConfig([tsNode()], 'ts1'), 'proxy-selector', null, idToTagMap, noopLog);
+    expect(dns.servers.find((s) => s.type === 'tailscale')).toBeUndefined();
+    expect(dns.rules!.some((r) => r.preferred_by)).toBe(false);
+  });
+
+  it('根治 §3.5：其它节点已发射但该 TS 自身未发射 → 不注入（gate 按该 TS 的 tag，非「pendingEndpoints 非空」）', () => {
+    const ts = tsNode(); // id=ts1, tag=MyMeshNode
+    const wg = { id: 'w1', name: 'WG', protocol: 'wireguard' } as unknown as ServerConfig;
+    const idToTagMap = buildIdToTagMap([wg, ts]);
+    // pendingEndpoints 非空但只含 wg（模拟 TS 被 system-interface/reverseMesh gate 跳过、未发射）→ 仍须跳过 tailnet 解析
+    const pending = [{ type: 'wireguard', tag: idToTagMap.get('w1') } as never];
+    const dns = buildDnsConfig(
+      baseConfig([wg, ts], 'ts1'),
+      'proxy-selector',
+      null,
+      idToTagMap,
+      noopLog,
+      0,
+      pending
+    );
     expect(dns.servers.find((s) => s.type === 'tailscale')).toBeUndefined();
     expect(dns.rules!.some((r) => r.preferred_by)).toBe(false);
   });
@@ -106,6 +142,20 @@ describe('buildDnsConfig — P4b Tailscale 按名解析', () => {
     const tsServer = dns.servers.find((s) => s.type === 'tailscale');
     // 第一个 MyMeshNode 占基名，选中节点 tag = "MyMeshNode (1)"
     expect(tsServer!.endpoint).toBe('MyMeshNode (1)');
+  });
+});
+
+describe('根治 §3.6：dns-bootstrap-udp 已删 + DoH server 域名解析改 IP-DoH', () => {
+  it('dns.servers 无 dns-bootstrap-udp；DoH server 域名(doh.pub)解析 rule 用 dns-bootstrap(IP-DoH 非 UDP53)', () => {
+    const dns = build(baseConfig([tsNode()], 'ts1'));
+    // ① 历史残留 dns-bootstrap-udp server 已删（positive assertion，防未来回退明文 UDP53、违背「IP-DoH 避免 UDP53」自定设计）
+    expect(dns.servers.some((s) => s.tag === 'dns-bootstrap-udp')).toBe(false);
+    // DoH server 自身域名解析 rule 改指 dns-bootstrap（https IP-DoH，抗 UDP53 劫持）
+    const bootRule = dns.rules!.find(
+      (r) => Array.isArray(r.domain) && (r.domain as string[]).includes('doh.pub')
+    );
+    expect(bootRule).toBeDefined();
+    expect(bootRule!.server).toBe('dns-bootstrap');
   });
 });
 

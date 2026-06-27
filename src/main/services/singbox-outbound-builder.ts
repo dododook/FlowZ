@@ -25,6 +25,7 @@ import {
   effectiveCustomRules,
   effectiveAppRules,
   getNodeResolverTag,
+  getDomesticResolverTag,
 } from './singbox-config-helpers';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 
@@ -989,10 +990,13 @@ export function buildOutbounds(
     );
   }
 
-  // 直连出站
+  // 直连出站。domain_resolver：FakeIP 模式下国内内容（geosite-cn→direct）真实 IP 解析的唯一落点——direct 对 fakeip
+  // 反查域名二次解析时用它（无则回退 route.default_domain_resolver=dns-bootstrap）。根治 §3.2（数据流确证）：显式指
+  // getDomesticResolverTag（race on→dns-node-race 多上游国内 race / off→dns-bootstrap=现状），让国内内容享共用 race server。
   outbounds.push({
     type: 'direct',
     tag: 'direct',
+    domain_resolver: getDomesticResolverTag(config, 'dns-bootstrap'),
   });
 
   // 阻断出站

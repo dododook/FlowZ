@@ -8,6 +8,7 @@ import {
   stripHostBrackets,
   hostToExcludeCidr,
   getNodeResolverTag,
+  getDomesticResolverTag,
   effectiveCustomRules,
   effectiveAppRules,
   getCustomDomesticDnsEndpoint,
@@ -128,6 +129,27 @@ describe('getNodeResolverTag — issue #147：race on→dns-node-race / off→�
     const sysTun = mk({ ...off('system'), proxyModeType: 'tun' });
     expect(getNodeResolverTag(sysTun, 'dial')).toBe('dns-local'); // dial 不受 INV-1
     expect(getNodeResolverTag(sysTun, 'rule')).toBe('dns-node'); // INV-1
+  });
+});
+
+describe('getDomesticResolverTag — 根治 §3.2：race on→dns-node-race（共用 race）/ off→fallback', () => {
+  const mk = (over: Partial<UserConfig>): UserConfig => over as unknown as UserConfig;
+  it('race on（缺省 resolveNodeDomainsAhead）→ dns-node-race（无视 fallback）', () => {
+    expect(getDomesticResolverTag(mk({ dnsConfig: {} as any }), 'dns-bootstrap')).toBe(
+      'dns-node-race'
+    );
+    expect(getDomesticResolverTag(mk({ dnsConfig: {} as any }), 'dns-domestic')).toBe(
+      'dns-node-race'
+    );
+  });
+  it('race off → fallback（FakeIP direct=dns-bootstrap / 非FakeIP region=dns-domestic）', () => {
+    const off = mk({ dnsConfig: { resolveNodeDomainsAhead: false } as any });
+    expect(getDomesticResolverTag(off, 'dns-bootstrap')).toBe('dns-bootstrap');
+    expect(getDomesticResolverTag(off, 'dns-domestic')).toBe('dns-domestic');
+  });
+  it('config/dnsConfig 缺失 → 视作 race on（与 getNodeResolverTag 同口径 !==false）', () => {
+    expect(getDomesticResolverTag(null, 'dns-bootstrap')).toBe('dns-node-race');
+    expect(getDomesticResolverTag(mk({}), 'dns-domestic')).toBe('dns-node-race');
   });
 });
 

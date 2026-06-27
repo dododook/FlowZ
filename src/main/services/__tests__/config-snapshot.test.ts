@@ -588,7 +588,7 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     ).toMatchSnapshot();
   });
 
-  it('DNS lanResolverForDns 注入（systemProxy）→ 锁 dns-lan server + internalResolverTag=dns-lan 三路拆分', () => {
+  it('DNS lanResolverForDns 注入（systemProxy）→ 锁 dns-lan(type:dhcp 动态) + internalResolverTag=dns-lan 三路拆分', () => {
     expect(
       snap(cfg({ servers: [server({})] }), '1.13.0', 'linux', (svc) => {
         svc.lanResolverForDns = '192.168.1.1';

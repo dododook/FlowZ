@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { UserConfig } from '../../../shared/types';
 import { isEndpointProtocol } from '../../../shared/endpoint-routes';
+import { ruleHasProcessCondition } from '../../../shared/config-portability';
 import { registerIpcHandler } from '../ipc-handler';
 import { ConfigManager } from '../../services/ConfigManager';
 import type { RuleResourceManager } from '../../services/RuleResourceManager';
@@ -18,6 +19,8 @@ import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
 export interface BackupFileFormat {
   version: string;
   appVersion: string;
+  // 导出平台（process.platform）。跨平台导入据此 sanitize 进程规则；旧备份无此字段 → 视为同平台、不处理。
+  platform?: NodeJS.Platform;
   exportedAt: string;
   config: UserConfig;
 }
@@ -31,6 +34,8 @@ export interface BackupInfo {
   ruleCount: number;
   ruleSetCount: number;
   appRuleCount: number;
+  // 跨平台导入时被禁用的进程规则数（processName/processPath 平台特定 → enabled=false 保留供重映射）。0/同平台时不返回。
+  crossPlatformDisabledRules?: number;
 }
 
 /**
@@ -52,6 +57,7 @@ export function registerBackupHandlers(
         const backup: BackupFileFormat = {
           version: '1.0',
           appVersion: app.getVersion(),
+          platform: process.platform,
           exportedAt: new Date().toISOString(),
           config,
         };
@@ -124,6 +130,32 @@ export function registerBackupHandlers(
           return { success: false, error: 'invalid_format' };
         }
 
+        // 跨平台导入 sanitize：进程规则（processName/processPath）平台特定（chrome.exe / Google Chrome / chrome），
+        // 跨平台会静默失效 → 禁用而非移除（enabled=false，保留供用户重映射，不静默移除/失效）。
+        // 旧备份无 platform → 视为同平台、不处理。详见 docs/design/config-portability.md §3。
+        const backupPlatform =
+          parsed.version && typeof parsed.platform === 'string'
+            ? (parsed.platform as NodeJS.Platform)
+            : undefined;
+        let crossPlatformDisabledRules = 0;
+        if (
+          backupPlatform &&
+          backupPlatform !== process.platform &&
+          Array.isArray(restoredConfig.customRules)
+        ) {
+          for (const rule of restoredConfig.customRules) {
+            if (rule.enabled !== false && ruleHasProcessCondition(rule)) {
+              rule.enabled = false;
+              crossPlatformDisabledRules++;
+            }
+          }
+          if (crossPlatformDisabledRules > 0) {
+            console.log(
+              `[BackupHandlers] 跨平台导入（${backupPlatform}→${process.platform}）：禁用 ${crossPlatformDisabledRules} 条进程规则（保留供重映射）`
+            );
+          }
+        }
+
         // 通过 ConfigManager 保存（内部会做 validateConfig 校验）
         await configManager.saveConfig(restoredConfig);
 
@@ -160,6 +192,7 @@ export function registerBackupHandlers(
           ruleCount: restoredConfig.customRules?.length ?? 0,
           ruleSetCount: restoredConfig.customRuleSets?.length ?? 0,
           appRuleCount: restoredConfig.appRules?.length ?? 0,
+          crossPlatformDisabledRules: crossPlatformDisabledRules || undefined,
         };
 
         return { success: true, info };

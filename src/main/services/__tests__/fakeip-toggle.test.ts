@@ -54,7 +54,7 @@ function makeConfig(over: Partial<UserConfig> = {}): UserConfig {
     autoLightweightMode: false,
     autoUpdateSubscriptionOnStart: false,
     subscriptionUpdateIntervalHours: 12,
-    subscriptionUpdateViaProxy: false,
+    subscriptionProxyPolicy: 'follow',
     mainSessionViaProxy: true,
     rememberWindowSize: false,
     enableIPv6: false,

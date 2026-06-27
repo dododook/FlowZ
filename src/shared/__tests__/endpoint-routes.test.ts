@@ -3,6 +3,7 @@ import {
   TAILNET_CGNAT,
   meshAllowsInternet,
   meshUsesSystemInterface,
+  meshSystemSupportedOnPlatform,
   meshNodeCarriesFullTunnel,
   wireguardPeerAllowedIps,
   isMeshNodeUnroutable,
@@ -240,6 +241,17 @@ describe('Phase 2: system 内核接口（reverseMesh）', () => {
       const warp = wg([], true, true);
       warp.address = 'engage.cloudflareclient.com';
       expect(meshUsesSystemInterface(warp)).toBe(false);
+    });
+  });
+
+  describe('meshSystemSupportedOnPlatform（Windows 禁 System 单一真值谓词）', () => {
+    it('win32 → false（禁 System，强制 gVisor）', () =>
+      expect(meshSystemSupportedOnPlatform('win32')).toBe(false));
+    it('darwin → true', () => expect(meshSystemSupportedOnPlatform('darwin')).toBe(true));
+    it('linux → true', () => expect(meshSystemSupportedOnPlatform('linux')).toBe(true));
+    it('大小写/undefined 鲁棒：WIN32 → false、undefined → true（非 win32 即支持）', () => {
+      expect(meshSystemSupportedOnPlatform('WIN32')).toBe(false);
+      expect(meshSystemSupportedOnPlatform(undefined)).toBe(true);
     });
   });
 

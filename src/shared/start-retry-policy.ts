@@ -1,5 +1,5 @@
 import type { ServerConfig } from './types';
-import { meshUsesSystemInterface } from './endpoint-routes';
+import { meshUsesSystemInterface, meshSystemSupportedOnPlatform } from './endpoint-routes';
 
 export interface StartRetryBudget {
   /** retry 次数（总尝试 = maxRetries + 1） */
@@ -25,10 +25,15 @@ export interface StartRetryBudget {
  */
 export function resolveStartRetryBudget(
   isTunMode: boolean,
-  servers: ServerConfig[] | undefined
+  servers: ServerConfig[] | undefined,
+  platform: NodeJS.Platform | string | undefined
 ): StartRetryBudget {
+  // Windows 禁 System（meshSystemSupportedOnPlatform）→ reverseMesh 节点强制 gVisor、不建第二张内核 TUN，故无
+  // 双 TUN 释放竞态、无需放宽预算（沿用默认）。仅 macOS/Linux 的 effective system 节点才放宽。
   const hasSystemInterfaceNode =
-    isTunMode && (servers || []).some((s) => meshUsesSystemInterface(s));
+    isTunMode &&
+    meshSystemSupportedOnPlatform(platform) &&
+    (servers || []).some((s) => meshUsesSystemInterface(s));
   return hasSystemInterfaceNode
     ? { maxRetries: 10, delay: 3000, exponentialBackoff: false }
     : { maxRetries: 2, delay: 2000, exponentialBackoff: true };

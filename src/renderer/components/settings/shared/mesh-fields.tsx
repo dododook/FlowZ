@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SwitchField } from './switch-field';
+import { meshSystemSupportedOnPlatform } from '../../../../shared/endpoint-routes';
 
 type MeshProtocol = 'wireguard' | 'tailscale';
 
@@ -38,6 +39,11 @@ export function AccessModeField<TFieldValues extends FieldValues>({
   // proxyModeType==='tun'）。非 TUN 时该节点运行期一律按 gVisor 跑，故此处把选择器**置灰显示 gVisor**——但
   // **不写回 reverseMesh**（disabled 不触发 onChange）→ 存储的 System 意图保留，切回 TUN 自动恢复实际配置。
   const tunMode = useAppStore((s) => s.config?.proxyModeType) === 'tun';
+  // Windows：直接禁 System（只允许 gVisor）。tsnet 在 Windows 给 flowz-ts 自装 exit 0/0 metric=0、抢直连/bootstrap
+  // DNS 致全网瘫，且无 ifscope 作用域可隔离 → System 不可靠；gVisor userspace 栈零提权、不建内核接口、出口经 tsnet
+  // 内部转发即可。故 Windows 一律置灰显示 gVisor（与非 TUN 同样不写回 reverseMesh，存储意图保留）。
+  const isWindows = !meshSystemSupportedOnPlatform(window.electron?.platform);
+  const systemSelectable = tunMode && !isWindows;
   // 同 ExitNodeField：受控 value 编程式变更（form.reset 把 reverseMesh 设为 true→value='system'）时，Radix
   // 隐藏原生 select 会触发一次伪 onValueChange(回退到首项 'userspace')，把刚 reset 的 System 静默打回 gVisor
   // （真机实证：保存 System 后重开/保存又恢复 gVisor）。用户真正打开过下拉才允许写回。
@@ -48,8 +54,8 @@ export function AccessModeField<TFieldValues extends FieldValues>({
       name={'reverseMesh' as FieldPath<TFieldValues>}
       render={({ field }) => {
         const isSystem = field.value === true;
-        // 非 TUN：强制显示 gVisor（有效态），不动存储值；TUN：按实际 reverseMesh 显示。
-        const shownSystem = tunMode && isSystem;
+        // 非 TUN 或 Windows：强制显示 gVisor（有效态），不动存储值；否则按实际 reverseMesh 显示。
+        const shownSystem = systemSelectable && isSystem;
         return (
           <FormItem className="space-y-1.5">
             <FormLabel className="!mt-0 font-normal">
@@ -58,7 +64,7 @@ export function AccessModeField<TFieldValues extends FieldValues>({
             <FormControl>
               <Select
                 value={shownSystem ? 'system' : 'userspace'}
-                disabled={!tunMode}
+                disabled={!systemSelectable}
                 onOpenChange={(open) => {
                   if (open) interacted.current = true;
                 }}
@@ -79,20 +85,25 @@ export function AccessModeField<TFieldValues extends FieldValues>({
               </Select>
             </FormControl>
             <FormDescription>
-              {!tunMode
+              {isWindows
                 ? t(
-                    'servers.accessModeSystemTunOnly',
-                    'System needs TUN mode; in non-TUN it runs as gVisor (your setting is kept and restored when you switch back to TUN).'
+                    'servers.accessModeWindowsGvisorOnly',
+                    'Windows supports gVisor only — runs as a userspace netstack (outbound / access; no kernel interface).'
                   )
-                : isSystem
+                : !tunMode
                   ? t(
-                      'servers.accessModeSystemDesc',
-                      'System: real kernel interface — reachable by other devices, can route for subnets (needs helper + TUN).'
+                      'servers.accessModeSystemTunOnly',
+                      'System needs TUN mode; in non-TUN it runs as gVisor (your setting is kept and restored when you switch back to TUN).'
                     )
-                  : t(
-                      'servers.accessModeUserspaceDesc',
-                      'gVisor userspace netstack — no privileges; outbound / access only.'
-                    )}
+                  : isSystem
+                    ? t(
+                        'servers.accessModeSystemDesc',
+                        'System: real kernel interface — reachable by other devices, can route for subnets (needs helper + TUN).'
+                      )
+                    : t(
+                        'servers.accessModeUserspaceDesc',
+                        'gVisor userspace netstack — no privileges; outbound / access only.'
+                      )}
             </FormDescription>
           </FormItem>
         );
