@@ -19,24 +19,39 @@ import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { powershellPath } from '../utils/win-system32';
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { findSuitableSingboxAsset } from './singbox-asset';
+import { UpdateNetwork } from './UpdateNetwork';
+import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
 
 export class CoreDownloader {
-  // 检查更新/下载用的专用会话：强制 direct——default session 在 mainSessionViaProxy(默认 on) 下被 pin 到 sing-box
-  // http 入站（实测 net.request × http 入站挂死 50s），direct session 让 net.request 直连、由 TUN 透明捕获进 naive
-  // （同 curl 与订阅 getDirectSession，实测可达）；系统代理模式下直连 GitHub 也通。
+  // direct 自举兜底会话（强制 mode:direct）：核下载是自举链路，UpdateNetwork 未注入 / update-in 端口不可用 /
+  // sessionFor 失败时回落此口——绝不回落 default session（mainSessionViaProxy on 时被 pin sing-box http 入站、
+  // net.request 挂死 50s）；TUN 模式 direct 由 OS 层透明捕获，系统代理模式直连 GitHub（实测均可达）。
   private updateDirectSession: Session | null = null;
+  // §8 四链路收口：核更新链路也接入 update-in（socks）。viaProxy（resolveMainSessionViaProxy）时经 update-in→route→
+  // proxy；否则走 direct 兜底（自举）。构造后由 CoreUpdateService 转发、index 装配。
+  private updateNetwork: UpdateNetwork | null = null;
+  private proxyRunningProvider: (() => boolean) | null = null;
+  private updateInPortProvider: (() => number | null) | null = null;
 
   constructor(
     private readonly logManager: LogManager,
-    // 注入配置读取器（仅用于读 ghProxyPrefix 下载镜像）；未配置时解析为 null（保持原 configProvider 缺省语义）。
+    // 注入配置读取器（读 ghProxyPrefix 镜像前缀 + mainSessionViaProxy）；未配置时解析为 null。
     private readonly configProvider: () => Promise<UserConfig | null>
   ) {}
 
-  /** 检查更新/下载的专用会话：强制 direct（复用 SubscriptionService 直连拉订阅的成熟模式）。
-   *  default session 在 mainSessionViaProxy(默认 on) 下会被 pin 到 sing-box http 入站——实测 net.request × http 入站
-   *  挂死 50s；改用 direct session 让 net.request 直连，TUN 模式由 OS 层透明捕获进 naive（同 curl，实测可达），
-   *  系统代理模式则直连 GitHub（你实测直连也通）。下载 asset 的 302 redirect 由 net.request 自动跟随。 */
-  private async getUpdateSession(): Promise<Session> {
+  /** §8：注入更新链路统一会话层 + 代理运行态/update-in 端口读取器（CoreUpdateService 转发，index 装配）。 */
+  setUpdateNetwork(
+    updateNetwork: UpdateNetwork,
+    proxyRunningProvider: () => boolean,
+    updateInPortProvider: () => number | null
+  ): void {
+    this.updateNetwork = updateNetwork;
+    this.proxyRunningProvider = proxyRunningProvider;
+    this.updateInPortProvider = updateInPortProvider;
+  }
+
+  /** direct 自举兜底会话（强制 mode:direct，绕 default session http 入站挂死）。 */
+  private async getDirectSession(): Promise<Session> {
     if (this.updateDirectSession) return this.updateDirectSession;
     const s = session.fromPartition('flowz-core-update-direct');
     await s.setProxy({ mode: 'direct' });
@@ -44,8 +59,33 @@ export class CoreDownloader {
     return s;
   }
 
+  /**
+   * 核更新链路（检查/下载）统一会话。viaProxy（resolveMainSessionViaProxy = running && mainSessionViaProxy!==false）
+   * 且 update-in 端口可用 → 经 update-in（socks→route→proxy）；否则 direct 兜底（自举：核下载恒可达 direct+mirror）。
+   * 恒返回 Session（非 undefined）——核自举绝不回落 default session（http 入站挂死）；sessionFor 失败亦回 direct。
+   */
+  private async updateSession(): Promise<Session> {
+    if (!this.updateNetwork) return this.getDirectSession();
+    let viaProxy = false;
+    let updateInPort = 0;
+    try {
+      const cfg = await this.configProvider();
+      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
+      viaProxy = resolveMainSessionViaProxy(running, cfg?.mainSessionViaProxy);
+      updateInPort = this.updateInPortProvider?.() ?? 0;
+    } catch {
+      viaProxy = false;
+    }
+    if (viaProxy && updateInPort <= 0) viaProxy = false;
+    try {
+      return await this.updateNetwork.sessionFor(viaProxy, updateInPort);
+    } catch {
+      return this.getDirectSession(); // sessionFor/setProxy 失败 → direct 兜底（自举绝不回 default session）
+    }
+  }
+
   async fetchReleases(): Promise<any[]> {
-    const sess = await this.getUpdateSession();
+    const sess = await this.updateSession();
     return new Promise((resolve, reject) => {
       let settled = false;
       const request = net.request({
@@ -148,7 +188,7 @@ export class CoreDownloader {
 
     const tempPath = path.join(app.getPath('temp'), `sing-box-core-update-${Date.now()}${ext}`);
     const file = fs.createWriteStream(tempPath);
-    const sess = await this.getUpdateSession();
+    const sess = await this.updateSession();
     // 下载失败兜底镜像前缀：优先用户配置的 ghProxyPrefix，否则用内置 preset[0]（gh-proxy.org）。
     // 旧硬编码 mirror.ghproxy.com 已停服，复用 shared/gh-proxy 单一权威（同 RuleResourceManager 重试链）。
     let ghPrefix: string | undefined;

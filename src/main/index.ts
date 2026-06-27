@@ -1039,6 +1039,8 @@ if (gotTheLock) {
     );
     // §8 四链路收口：订阅经代理也 pin 到 update-in（socks），与应用更新/资源链路统一经核 route 按 proxyMode 决策。
     subscriptionService.setUpdateInPortProvider(() => proxyManager?.getUpdateInPort() ?? null);
+    // §8 四链路收口：核更新链路（CoreDownloader）也接入 update-in；viaProxy 时经 update-in，否则 direct 兜底（自举）。
+    coreUpdateService.setUpdateNetwork(updateNetwork);
     // 后台预热内核版本缓存（getCoreVersion 写 this.coreVersion）：使「关于」页**首次**进入也命中缓存、
     // 不再临时 spawn `sing-box version` 子进程导致加载转圈。
     // 延后 ~5s 触发（C2）：spawn 50MB sing-box.exe 会再触发一次 AV 扫描，与 Windows portable 冷启动的自解压 + AV

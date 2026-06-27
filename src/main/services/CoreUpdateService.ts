@@ -19,6 +19,7 @@ import { classifyCoreBuild, type CoreBuildKind } from '../../shared/core-build';
 import { CoreUpdateStateStore } from './core-update-state-store';
 import type { StagedCoreInfo, CoreAutoUpdateState } from './core-update-state-store';
 import { CoreDownloader } from './core-downloader';
+import type { UpdateNetwork } from './UpdateNetwork';
 import coreManifest from '../../shared/core-manifest.json';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { system32, powershellPath } from '../utils/win-system32';
@@ -107,6 +108,15 @@ export class CoreUpdateService {
 
   setProxyManager(proxyManager: ProxyManager): void {
     this.proxyManager = proxyManager;
+  }
+
+  /** §8：把更新链路统一会话层转发给 CoreDownloader（核更新链路接入 update-in）；proxyRunning/update-in 端口惰性读 this.proxyManager。 */
+  setUpdateNetwork(updateNetwork: UpdateNetwork): void {
+    this.coreDownloader.setUpdateNetwork(
+      updateNetwork,
+      () => this.proxyManager?.getStatus().running ?? false,
+      () => this.proxyManager?.getUpdateInPort() ?? null
+    );
   }
 
   /** B 块：注入 helper（macOS 持久化内核更新经 helper v5 install-core 写受保护目录）。 */
