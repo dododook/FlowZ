@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Image as ImageIcon } from 'lucide-react';
+import { iconProxySrc } from '../../../shared/icon-proxy';
 import type {
   AppRule,
   CustomAppPreset,
@@ -210,7 +211,14 @@ export function AddCustomAppDialog({
                     <div className="flex items-center gap-3 overflow-hidden">
                       <div className="h-8 w-8 flex items-center justify-center shrink-0">
                         {newAppIconUrl ? (
-                          <img src={newAppIconUrl} className="h-full w-full object-contain" />
+                          <img
+                            src={iconProxySrc(newAppIconUrl)}
+                            className="h-full w-full object-contain"
+                            onError={(e) => {
+                              // 图标代理失败 → 隐藏破图（回退到 emoji 占位由外层 newAppEmoji 兜底）
+                              e.currentTarget.style.visibility = 'hidden';
+                            }}
+                          />
                         ) : (
                           <span className="text-xl">{newAppEmoji}</span>
                         )}

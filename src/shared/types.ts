@@ -359,8 +359,9 @@ export interface UserConfig {
   subscriptionUpdateViaProxy?: boolean; // 订阅更新是否经代理（默认 false=直连，避免冷启动鸡生蛋 + 订阅地址被墙时再开）
   // 全局订阅 UA（被 per-sub subscription.userAgent 覆盖；均缺省时用 `FlowZ/<版本>`）。本期无 UI，手编生效。
   subscriptionUserAgent?: string;
-  // 更新检查/规则资源等主进程请求是否经代理（默认 true=代理运行时借道，更新源全 GitHub、墙内借道更可靠）。
-  // false → 主进程 defaultSession 走 {mode:'system'}。注：TUN 模式 OS 层捕获，false 不能完全直连（probe-direct 深修待真机）。
+  // 更新链路（应用/资源/订阅/核心）是否经代理（默认 true=代理运行时经 update-in 借道，更新源多在 GitHub、
+  // 墙内借道更可靠）；false=强制直连。经 shared/update-proxy#resolveMainSessionViaProxy 求值，Phase 1b 后
+  // 仅控这四条更新链路；不再影响 default session（已回归 Electron 默认跟随系统代理）。
   mainSessionViaProxy?: boolean;
   rememberWindowSize?: boolean; // 记忆调整后的窗口大小
   enableIPv6?: boolean; // 启用系统全局 IPv6 解析及路由 (不建议开启)

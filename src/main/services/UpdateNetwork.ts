@@ -3,8 +3,7 @@ import { session, type Session } from 'electron';
 /**
  * 更新链路统一网络层：资源/应用更新等 main 进程 `net.request` 的会话来源。
  *
- * 取代「裸 net.request 走 default session + index.ts applyMainSessionProxy pin 到 http 入站」——
- * 改用独立 partition 会话：
+ * 取代「裸 net.request 走 default session」——改用独立 partition 会话：
  *  - viaProxy=true → pin 到本机 **socks** 入站。Phase 1 pin mixedPort；Phase 2 改 pin 专用 `update-in`
  *    inbound 动态端口（归属 100% 确定，route 头部钉死按 proxyMode 决策）。net.request 经 socks 不挂死
  *    （Phase 0 V2 实证，docs/design/update-network-unification.md §9）。
@@ -12,8 +11,9 @@ import { session, type Session } from 'electron';
  *
  * 复用 SubscriptionService 的 getDirectSession/getProxiedSession 成熟模式（懒加载 + 端口变化重设——
  * update-in 端口每次核启动重新分配，故必须按端口比对重 pin）。
- * Phase 1 暂保留 default session 的 pin（applyMainSessionProxy 不动）；删除待 Phase 1b 的 default session
- * 完整消费面分析（renderer webContents session 等）。
+ * Phase 1b 已删 default session 的 http 入站 pin；renderer 外部图片（图标库/自定义图标/国旗）亦经
+ * flowz-icon:// 协议下沉本类 update-in，default session 至此无 FlowZ 外部请求消费者（WarpService 走 node
+ * https 自成一路），回归 Electron 默认跟随系统代理。
  */
 export class UpdateNetwork {
   private directSession: Session | null = null;

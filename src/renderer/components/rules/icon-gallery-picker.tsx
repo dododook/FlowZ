@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ruleResourcesApi } from '@/ipc/api-client';
+import { iconProxySrc } from '../../../shared/icon-proxy';
 
 type IconItem = { name: string; url: string };
 
@@ -49,33 +51,9 @@ export function IconGalleryPicker({
     const fetchIcons = async () => {
       setIsLoadingIcons(true);
       try {
-        // 按优先级依次尝试多个 CDN 源（国内网络对 jsdelivr/github 访问不稳定）
-        const fetchWithFallback = async (urls: string[]) => {
-          for (const url of urls) {
-            try {
-              const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-              if (res.ok) return await res.json();
-            } catch {
-              console.warn(`Failed to fetch from ${url}, trying next...`);
-            }
-          }
-          return null; // 所有源均失败时返回 null，不抛异常
-        };
-
-        const [qureData, edcData] = await Promise.all([
-          fetchWithFallback([
-            'https://cdn.jsdelivr.net/gh/Koolson/Qure/Other/QureColor-All.json',
-            'https://fastly.jsdelivr.net/gh/Koolson/Qure/Other/QureColor-All.json',
-            'https://raw.githubusercontent.com/Koolson/Qure/master/Other/QureColor-All.json',
-          ]),
-          fetchWithFallback([
-            'https://cdn.jsdelivr.net/gh/erdongchanyo/icon@main/edc-filter-icon-gallery.json',
-            'https://fastly.jsdelivr.net/gh/erdongchanyo/icon@main/edc-filter-icon-gallery.json',
-            'https://raw.githubusercontent.com/erdongchanyo/icon/main/edc-filter-icon-gallery.json',
-          ]),
-        ]);
-
-        const allIcons = [...(qureData?.icons || []), ...(edcData?.icons || [])];
+        // 图标库拉取下沉主进程经 update-in 统一会话（Phase 1b：renderer 不再直接 fetch 走 default session）。
+        // 多 CDN 源兜底 + 全失败返 [] 由主进程 RuleResourceManager.fetchIconGalleries 处理。
+        const allIcons = await ruleResourcesApi.fetchIconGalleries();
         // 无论是否拿到数据都正常结束，失败时 allIcons 为空数组，UI 会显示手动输入兜底
         _iconGalleryCache = allIcons;
         setIconGalleries(allIcons);
@@ -139,7 +117,15 @@ export function IconGalleryPicker({
                       onSelectIcon(icon.url, icon.name.replace('.png', '').replace(/_/g, ' '))
                     }
                   >
-                    <img src={icon.url} className="h-full w-full object-contain" alt={icon.name} />
+                    <img
+                      src={iconProxySrc(icon.url)}
+                      className="h-full w-full object-contain"
+                      alt={icon.name}
+                      onError={(e) => {
+                        // 图标代理 403(SSRF)/502(拉取失败) → 隐藏破图（缩略图为可选展示，无需占位）
+                        e.currentTarget.style.visibility = 'hidden';
+                      }}
+                    />
                   </Button>
                 ))}
               </>

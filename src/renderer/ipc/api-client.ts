@@ -579,6 +579,10 @@ export const ruleResourcesApi = {
   resetBuiltin(tag: string): Promise<RuleResourceDownloadResult> {
     return ipcClient.invoke(IPC_CHANNELS.RULE_RESOURCES_RESET_BUILTIN, { tag });
   },
+  // 图标库拉取（经主进程 update-in 统一会话，Phase 1b）。全失败返 []，UI 回落手动输入图标 URL。
+  fetchIconGalleries(): Promise<Array<{ name: string; url: string }>> {
+    return ipcClient.invoke(IPC_CHANNELS.RULE_RESOURCES_ICON_GALLERIES);
+  },
   onProgress(listener: (p: RuleResourceProgress) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_RULE_RESOURCE_PROGRESS, listener);
   },

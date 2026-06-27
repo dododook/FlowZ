@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
 import type { InvalidNodeInfo } from '../../../shared/types';
+import { iconProxySrc } from '../../../shared/icon-proxy';
 import { openTailscaleLogin } from '../../lib/tailscale-login';
 import { ServerActions } from './server-actions';
 import { SpeedBadge } from './speed-badge';
@@ -68,7 +69,7 @@ export function ServerCard({
         <div
           className="absolute -end-4 -bottom-4 z-0 h-28 w-28 opacity-[0.08] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.15]"
           style={{
-            backgroundImage: `url('https://flagcdn.com/w160/${countryCode}.png')`,
+            backgroundImage: `url('${iconProxySrc(`https://flagcdn.com/w160/${countryCode}.png`)}')`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',

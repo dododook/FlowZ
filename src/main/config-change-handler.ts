@@ -2,10 +2,9 @@
  * 配置变更监听器 —— 从 index.ts whenReady 抽出（index.ts 拆分 Phase 3 step D）。
  *
  * 监听 MAIN_EVENTS.CONFIG_CHANGED：logLevel 热同步 / 托盘刷新 / 运行中切配置(switchMode 热切换) /
- * 自动换节点开关同步 / 「更新检查走代理」应用 / 内核自动更新 kick。经 deps 注入主进程服务与可变引用
- * （proxyManager/autoSwitchService/coreUpdateScheduler 用 getter 取 call-time 当前值）+ index.ts 内闭包
- * （applyMainSessionProxy）+ index.ts 函数（getPrivacyMode/updateTrayMenuState，注入避免重建 TrayManager 已断的
- * 服务→入口循环依赖）。处理体逐字保留——可变引用经「同名 local const 捕获」保持原文不变。
+ * 自动换节点开关同步 / 内核自动更新 kick。经 deps 注入主进程服务与可变引用
+ * （proxyManager/autoSwitchService/coreUpdateScheduler 用 getter 取 call-time 当前值）+ index.ts 函数
+ * （getPrivacyMode/updateTrayMenuState，注入避免重建 TrayManager 已断的服务→入口循环依赖）。
  * 无 config 快照网（app 生命周期域）；真机冒烟验证（设置页改 logLevel/自动换节点开关/更新走代理 等热生效）。
  */
 
@@ -27,7 +26,6 @@ export interface ConfigChangeDeps {
   getAutoSwitchService: () => AutoSwitchService | null;
   getCoreUpdateScheduler: () => CoreUpdateScheduler | null;
   updateTrayMenuState: (isProxyRunning: boolean, hasError?: boolean) => void;
-  applyMainSessionProxy: () => Promise<void>;
   getPrivacyMode: () => boolean;
 }
 
@@ -42,7 +40,6 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
     getAutoSwitchService,
     getCoreUpdateScheduler,
     updateTrayMenuState,
-    applyMainSessionProxy,
     getPrivacyMode,
   } = deps;
 
@@ -94,10 +91,7 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
         }
       }
 
-      // 4. 应用「更新检查走代理」总开关（mainSessionViaProxy 切换时热生效；幂等）
-      await applyMainSessionProxy();
-
-      // 5. 内核自动更新开关刚开 → kick 一次即时检查（无需等 6h tick）；未开/未 due 自然跳过，幂等
+      // 4. 内核自动更新开关刚开 → kick 一次即时检查（无需等 6h tick）；未开/未 due 自然跳过，幂等
       coreUpdateScheduler?.kick();
     }
   );

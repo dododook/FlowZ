@@ -66,6 +66,7 @@ export const IPC_CHANNELS = {
   RULE_RESOURCES_SET_AUTO_UPDATE: 'ruleResources:setAutoUpdate',
   RULE_RESOURCES_UPDATE_ALL: 'ruleResources:updateAll',
   RULE_RESOURCES_RESET_BUILTIN: 'ruleResources:resetBuiltin',
+  RULE_RESOURCES_ICON_GALLERIES: 'ruleResources:iconGalleries', // 图标库拉取（经 update-in，Phase 1b）
 
   // 日志管理
   LOGS_GET: 'logs:get',

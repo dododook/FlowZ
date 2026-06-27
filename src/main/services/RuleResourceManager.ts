@@ -693,6 +693,38 @@ export class RuleResourceManager {
     }
   }
 
+  /**
+   * 图标库拉取（规则自定义图标选择器）：下沉主进程经 update-in 统一会话（Phase 1b——取代 renderer 直接
+   * fetch 走 default session；删 default session pin 后 manual 接管模式会退化直连）。两个图标库
+   * （QureColor + edc）各多 CDN 源逐个兜底（jsdelivr/fastly/raw），合并 icons；全失败返 [] 优雅降级
+   * （UI 回落手动输入图标 URL）。复用 fetchJson（带超时/OOM 防护 + update-in 会话）。
+   */
+  async fetchIconGalleries(): Promise<Array<{ name: string; url: string }>> {
+    const fetchWithFallback = async (urls: string[]): Promise<any> => {
+      for (const url of urls) {
+        try {
+          return await this.fetchJson(url);
+        } catch {
+          /* 当前源失败，尝试下一个 */
+        }
+      }
+      return null;
+    };
+    const [qure, edc] = await Promise.all([
+      fetchWithFallback([
+        'https://cdn.jsdelivr.net/gh/Koolson/Qure/Other/QureColor-All.json',
+        'https://fastly.jsdelivr.net/gh/Koolson/Qure/Other/QureColor-All.json',
+        'https://raw.githubusercontent.com/Koolson/Qure/master/Other/QureColor-All.json',
+      ]),
+      fetchWithFallback([
+        'https://cdn.jsdelivr.net/gh/erdongchanyo/icon@main/edc-filter-icon-gallery.json',
+        'https://fastly.jsdelivr.net/gh/erdongchanyo/icon@main/edc-filter-icon-gallery.json',
+        'https://raw.githubusercontent.com/erdongchanyo/icon/main/edc-filter-icon-gallery.json',
+      ]),
+    ]);
+    return [...(qure?.icons || []), ...(edc?.icons || [])];
+  }
+
   private async findCatalogItem(id: string): Promise<RuleResourceCatalogItem | undefined> {
     const builtin = findCatalogItem(id);
     if (builtin) return builtin;

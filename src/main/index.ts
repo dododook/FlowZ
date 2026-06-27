@@ -8,8 +8,8 @@ import { ProxyManager } from './services/ProxyManager';
 import { DiagnosticService } from './services/DiagnosticService';
 import { createSystemProxyManager, SystemProxyBase } from './services/SystemProxyManager';
 import { createSystemDnsManager, SystemDnsBase } from './services/SystemDnsManager';
-import { localProxyPort } from '../shared/proxy-ports';
 import { resourceManager } from './services/ResourceManager';
+import { registerIconProtocolSchemes, registerIconProtocol } from './icon-protocol';
 import { notifyUser, setDesktopNotificationsEnabled } from './notify-user';
 import { mt, setMainLanguage } from './i18n';
 import { SubscriptionService } from './services/SubscriptionService';
@@ -897,6 +897,8 @@ async function updateTrayMenuState(isProxyRunning: boolean, hasError?: boolean):
 }
 
 if (gotTheLock) {
+  // app ready 前注册图标代理 scheme（privileged）：renderer 外部图标 <img> 经 flowz-icon:// 由 main update-in 拉取
+  registerIconProtocolSchemes();
   app.whenReady().then(async () => {
     startupMark('whenReady');
     // 初始化服务
@@ -1041,6 +1043,14 @@ if (gotTheLock) {
     subscriptionService.setUpdateInPortProvider(() => proxyManager?.getUpdateInPort() ?? null);
     // §8 四链路收口：核更新链路（CoreDownloader）也接入 update-in；viaProxy 时经 update-in，否则 direct 兜底（自举）。
     coreUpdateService.setUpdateNetwork(updateNetwork);
+    // Phase 1b §8：图标代理协议 flowz-icon:// 也经 update-in（renderer 外部图标 <img> 不再走 default session）。
+    registerIconProtocol({
+      updateNetwork,
+      proxyRunningProvider: () => proxyManager?.getStatus().running ?? false,
+      updateInPortProvider: () => proxyManager?.getUpdateInPort() ?? null,
+      configProvider: () => configManager.loadConfig(),
+      logManager,
+    });
     // 后台预热内核版本缓存（getCoreVersion 写 this.coreVersion）：使「关于」页**首次**进入也命中缓存、
     // 不再临时 spawn `sing-box version` 子进程导致加载转圈。
     // 延后 ~5s 触发（C2）：spawn 50MB sing-box.exe 会再触发一次 AV 扫描，与 Windows portable 冷启动的自解压 + AV
@@ -1266,43 +1276,12 @@ if (gotTheLock) {
       // 2) 系统代理清理同样不在此监听器做：'error' 由 giveUpAutoRestart / handleProcessExit 终态分支发出，
       // 它们在 emit 之前已**同步门控**地调过 ensureSystemProxyCleared（stopping=false 的真终态会清）。此处再调
       // 因前面有 await（核心回滚）会越过 stopping 门控（H-1），且属重复，故删除。
-
-      // 终态错误（放弃自动恢复）不一定走 'stopped' 事件 → 主动解绑主进程会话代理，否则 defaultSession
-      // 仍指向已死的 http://127.0.0.1:<port>，更新检查/规则资源拉取一直失败。幂等：核心已死 → running=false → {mode:'system'}。
-      await applyMainSessionProxy();
     });
 
-    // 主进程 defaultSession 代理总开关 mainSessionViaProxy（默认开）：running ∧ 开关开 → 借道 http 代理；
-    // 否则 → {mode:'system'}（尊重 OS 系统代理、非裸 direct）。每次 config 变更重入幂等。
-    // 注：TUN 模式 OS 层捕获，「关」也不能完全直连（probe-direct 路由深修待真机验证后补）。
-    let lastMainSessionProxyOn: boolean | null = null; // 仅状态翻转时记日志，避免每次 config 保存刷屏
-    const applyMainSessionProxy = async () => {
-      try {
-        const { session } = require('electron');
-        const cfg = await configManager.loadConfig();
-        const running = proxyManager?.getStatus().running ?? false;
-        const on = running && cfg.mainSessionViaProxy !== false;
-        if (on) {
-          const proxyUrl = `http://127.0.0.1:${localProxyPort(cfg)}`;
-          await session.defaultSession.setProxy({
-            proxyRules: proxyUrl,
-            // IPv6 字面量须加方括号才是合法 Chromium bypass 规则（loopback 本就隐式 bypass，[::1] 仅为显式）
-            proxyBypassRules: '127.0.0.1,localhost,[::1]',
-          });
-          if (lastMainSessionProxyOn !== true) {
-            logManager.addLog('info', `Electron 主进程更新检查走代理: ${proxyUrl}`, 'Main');
-          }
-        } else {
-          await session.defaultSession.setProxy({ mode: 'system' });
-          if (lastMainSessionProxyOn === true) {
-            logManager.addLog('info', 'Electron 主进程更新检查恢复直连/系统代理', 'Main');
-          }
-        }
-        lastMainSessionProxyOn = on;
-      } catch (err) {
-        logManager.addLog('warn', `应用主进程会话代理失败: ${err}`, 'Main');
-      }
-    };
+    // 主进程更新链路（应用/资源/订阅/核心）+ renderer 外部图片（图标库/自定义图标/国旗，经 flowz-icon://
+    // 协议）已全迁 UpdateNetwork 专用会话经 update-in 入站；default session 不再 pin FlowZ http 入站，回归
+    // Electron 默认（跟随系统代理）。至此 default session 无 FlowZ 外部请求消费者（WarpService 走 node https
+    // 自成一路、不经 default session）（Phase 1b 删 applyMainSessionProxy）。
 
     proxyManager.on('started', async () => {
       // 托盘刷新（与 on('stopped') 对称，#75）：所有 start 路径最终都汇入此事件——含 switchMode / 节点回退 /
@@ -1323,8 +1302,6 @@ if (gotTheLock) {
       } catch (e) {
         logManager.addLog('warn', `记录内核基线版本失败: ${e}`, 'Main');
       }
-
-      await applyMainSessionProxy();
 
       // 代理就绪后延迟刷新出口 IP（等 selector / 探针 inbound 起来）。direct 走常规 refresh(true)；
       // proxy 出口改走 refreshProxyPostConnect（首连专用更宽退避，覆盖 TS/组网首连隧道未就绪的几秒窗口，
@@ -1363,9 +1340,8 @@ if (gotTheLock) {
       }
     });
 
-    proxyManager.on('stopped', async () => {
+    proxyManager.on('stopped', () => {
       statsService?.stop();
-      await applyMainSessionProxy(); // running=false → {mode:'system'}，恢复主进程会话直连/系统代理
 
       // 停止后重测出口 IP（proxy 置 null，direct 走主进程裸直连）
       void ipInfoService?.refresh(true);
@@ -1373,8 +1349,8 @@ if (gotTheLock) {
       // 正常停止时，重置错误状态
       updateTrayMenuState(false, false);
 
-      // 系统代理清理不在此监听器内做：该回调含 await（applyMainSessionProxy），等执行到这里时 stop() 的
-      // finally 已把 stopping 复位，stopping 门控会被时序绕过 → 重启路径误清并删新会话 marker（C1 的 H-1 回归）。
+      // 系统代理清理不在此监听器内做：emit('stopped') 与 stop() 的 finally（复位 stopping）有时序竞态，
+      // 在此清理会绕过 stopping 门控 → 重启路径误清并删新会话 marker（C1 的 H-1 回归）。
       // 所有「进程不再运行」的路径都已在 ProxyManager 内部**同步门控**地调过 ensureSystemProxyCleared：
       // handleProcessExit（信号死/崩溃终态）、performHealthCheck（达上限）、giveUpAutoRestart、restart 的 start
       // 腿失败、退避 abort；用户主动停止由 IPC/托盘在 stop() 前置清理。故此处删除，避免越过门控。
@@ -1507,7 +1483,6 @@ if (gotTheLock) {
       getAutoSwitchService: () => autoSwitchService,
       getCoreUpdateScheduler: () => coreUpdateScheduler,
       updateTrayMenuState,
-      applyMainSessionProxy,
       getPrivacyMode,
     });
 

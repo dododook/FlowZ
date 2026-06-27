@@ -24,8 +24,8 @@ import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
 
 export class CoreDownloader {
   // direct 自举兜底会话（强制 mode:direct）：核下载是自举链路，UpdateNetwork 未注入 / update-in 端口不可用 /
-  // sessionFor 失败时回落此口——绝不回落 default session（mainSessionViaProxy on 时被 pin sing-box http 入站、
-  // net.request 挂死 50s）；TUN 模式 direct 由 OS 层透明捕获，系统代理模式直连 GitHub（实测均可达）。
+  // sessionFor 失败时回落此口——绝不回落 default session（核更新链路统一经本类专用会话，default session 已
+  // 回归系统代理且 bootstrap 期不可控）；TUN 模式 direct 由 OS 层透明捕获，系统代理模式直连 GitHub（实测均可达）。
   private updateDirectSession: Session | null = null;
   // §8 四链路收口：核更新链路也接入 update-in（socks）。viaProxy（resolveMainSessionViaProxy）时经 update-in→route→
   // proxy；否则走 direct 兜底（自举）。构造后由 CoreUpdateService 转发、index 装配。

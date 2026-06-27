@@ -8,6 +8,7 @@ import { Eye, EyeOff, RotateCw, Globe, ArrowUp, ArrowDown, Activity } from 'luci
 import { useTranslation } from 'react-i18next';
 import type { IpInfo } from '@/bridge/types';
 import { deriveSpineVisual, type SpineState } from './spine-state';
+import { iconProxySrc } from '../../../shared/icon-proxy';
 
 const MASK_KEY = 'flowz:maskIp';
 const MASKED_IP = '••• ••• ••• •••';
@@ -19,7 +20,7 @@ function Flag({ cc }: { cc?: string }) {
     return <Globe className="mt-[3px] h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   return (
     <img
-      src={`https://flagcdn.com/w40/${cc.toLowerCase()}.png`}
+      src={iconProxySrc(`https://flagcdn.com/w40/${cc.toLowerCase()}.png`)}
       alt={cc}
       className="mt-[3px] h-3.5 w-5 shrink-0 rounded-sm object-cover"
       onError={() => setFailed(true)}

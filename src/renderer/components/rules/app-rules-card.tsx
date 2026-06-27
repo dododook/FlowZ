@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { ServerSelectGroups } from '@/components/settings/server-select-groups';
 import { APP_PRESETS, type AppPreset } from '../../../shared/app-rules-preset';
+import { iconProxySrc } from '../../../shared/icon-proxy';
 import type {
   AppRule,
   RuleAction,
@@ -257,7 +258,7 @@ export function AppRulesCard() {
                         {/* Bug 3 修复：基于 React state 条件渲染，避免 onError DOM 操作被重渲染覆盖 */}
                         {preset.iconUrl && !failedIcons.has(preset.id) ? (
                           <img
-                            src={preset.iconUrl}
+                            src={iconProxySrc(preset.iconUrl)}
                             alt=""
                             className="h-full w-full object-contain"
                             loading="lazy"

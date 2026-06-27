@@ -76,4 +76,10 @@ export function registerRuleResourceHandlers(manager: RuleResourceManager): void
     IPC_CHANNELS.RULE_RESOURCES_RESET_BUILTIN,
     async (_e: IpcMainInvokeEvent, args: { tag: string }) => manager.resetBuiltin(args.tag)
   );
+
+  // 图标库拉取（自定义规则图标选择器）：经 update-in 统一会话，取代 renderer 直接 fetch（Phase 1b）
+  registerIpcHandler<void, Array<{ name: string; url: string }>>(
+    IPC_CHANNELS.RULE_RESOURCES_ICON_GALLERIES,
+    async () => manager.fetchIconGalleries()
+  );
 }

@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
 import { isAccountBasedProtocol } from '../../../shared/endpoint-routes';
 import type { InvalidNodeInfo } from '../../../shared/types';
+import { iconProxySrc } from '../../../shared/icon-proxy';
 import { openTailscaleLogin } from '../../lib/tailscale-login';
 import { ServerActions } from './server-actions';
 import { SpeedBadge } from './speed-badge';
@@ -86,7 +87,7 @@ export function ServerRow({
         <div
           className="absolute end-12 top-1/2 -translate-y-1/2 z-0 h-24 w-24 opacity-[0.05] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.1]"
           style={{
-            backgroundImage: `url('https://flagcdn.com/w80/${countryCode}.png')`,
+            backgroundImage: `url('${iconProxySrc(`https://flagcdn.com/w80/${countryCode}.png`)}')`,
             backgroundSize: 'contain',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
