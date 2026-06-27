@@ -31,6 +31,14 @@ const RETRY_DELAY_MS = 1000;
 const POST_CONNECT_MAX_PROBE_ATTEMPTS = 4;
 const POST_CONNECT_RETRY_DELAY_MS = 4000;
 
+// 本地直连出口（direct 链，仅国内端点 myip.ipip.net）专用预算：起核初期其解析器 dns-bootstrap（223.5.5.5 IP-DoH）
+// 易撞 use-of-closed 暂态 → 用更宽重试预算等 DNS 就绪，避免重试耗尽时本地出口空缺（旧实现此时会 fallback 到被
+// 透明分流劫持的国外端点 → 误标境外，已废）。成功路径零影响（IPIP 首跳成功即返回，不触发重试）。
+// 取温和的 3×1s（≈3s）而非更宽：doRefresh 与 proxy 探测并发、共用一次 onUpdate，过宽预算会让 IPIP 偶发首失时
+// 把已成功的代理出口也拖到 direct 重试耗尽才一次性刷新（常规手动/TTL 刷新同样付代价）；3s 既覆盖起核 DNS 抖动、又限拖累。
+const DIRECT_MAX_PROBE_ATTEMPTS = 3;
+const DIRECT_RETRY_DELAY_MS = 1000;
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface ProbeEndpoint {
@@ -104,6 +112,9 @@ export class IpInfoService {
   // 首连专用更宽预算（仅 refreshProxyPostConnect 用）：覆盖 TS/组网首连隧道未就绪的几秒窗口。
   private readonly postConnectMaxAttempts: number;
   private readonly postConnectRetryDelayMs: number;
+  // 本地直连出口（direct 链）专用预算：起核初期 IPIP 解析器 dns-bootstrap 易撞 use-of-closed 暂态，宽预算等就绪。
+  private readonly directMaxAttempts: number;
+  private readonly directRetryDelayMs: number;
 
   constructor(
     private readonly getProbePorts: () => { direct: number; proxy: number } | null,
@@ -114,6 +125,8 @@ export class IpInfoService {
       retryDelayMs?: number;
       postConnectMaxAttempts?: number;
       postConnectRetryDelayMs?: number;
+      directMaxAttempts?: number;
+      directRetryDelayMs?: number;
     }
   ) {
     this.maxAttempts = options?.maxAttempts ?? MAX_PROBE_ATTEMPTS;
@@ -121,6 +134,8 @@ export class IpInfoService {
     this.postConnectMaxAttempts =
       options?.postConnectMaxAttempts ?? POST_CONNECT_MAX_PROBE_ATTEMPTS;
     this.postConnectRetryDelayMs = options?.postConnectRetryDelayMs ?? POST_CONNECT_RETRY_DELAY_MS;
+    this.directMaxAttempts = options?.directMaxAttempts ?? DIRECT_MAX_PROBE_ATTEMPTS;
+    this.directRetryDelayMs = options?.directRetryDelayMs ?? DIRECT_RETRY_DELAY_MS;
   }
 
   getSnapshot(): IpInfoSnapshot {
@@ -244,13 +259,19 @@ export class IpInfoService {
     if (running && ports) {
       // 启动初期隧道/DNS 未就绪 → withRetry 重试（期间 loading 仍 true，界面「获取中」），不闪失败。
       const [d, p] = await Promise.all([
-        this.withRetry(() => this.queryDirectChain((ep) => this.viaProbe(ports.direct, ep))),
+        this.withRetry(
+          () => this.queryDirectChain((ep) => this.viaProbe(ports.direct, ep)),
+          this.directMaxAttempts,
+          this.directRetryDelayMs
+        ),
         this.withRetry(() => this.queryViaProxy(ports.proxy)),
       ]);
+      // 本地出口(direct)探测失败【不】污染全局 error/degraded：它走 direct 出站、与代理路径无关；direct 链改
+      // 单端点 IPIP-only 后失败更频繁，旧的 direct↔全局 error 强耦合会让导流脊误显「外网降级」、即便代理出口正常。
+      // IPIP 单点暂态失败只表现为本地出口「暂不可用」(direct 保留旧值/null)，绝不连累 degraded（#2 修复）。
       if (d) direct = d;
-      else failed = true;
-      // proxy 探测失败【保留旧值】仅标记失败（黄点）：doRefresh 也服务同节点手动刷新/TTL 过期，瞬态网络抖动
-      // 不应清掉有效旧 IP（review MED）。切节点的清旧值由 doRefreshProxy（切节点专用路径）负责，不在此泛化。
+      // 代理出口(proxy)探测失败【保留旧值】仅标记失败（黄点/降级=代理路径信号）：doRefresh 也服务同节点手动刷新/
+      // TTL 过期，瞬态抖动不清有效旧 IP（review MED）。切节点的清旧值由 doRefreshProxy（专用路径）负责，不在此泛化。
       if (p) proxy = p;
       else failed = true;
     } else if (running) {
@@ -306,18 +327,24 @@ export class IpInfoService {
   }
 
   /**
-   * 本地出口链：国内接口(ipip)为主；成功但缺 countryCode（多为境外直连出口，国内库无 ISO 码）→ ip-api
-   * 增补（失败保留国内结果）；国内接口失败 → ip-api 兜底 → ipify 仅 IP 保底。
+   * 本地【直连出口】解析——**单端点**（非「链」，名沿用历史；保留函数封装作「direct 只信国内端点」规矩的单一
+   * 锚点 + 单测点，并为将来加国内备用端点留位）。
+   *
+   * 【只用国内端点 myip.ipip.net】，**绝不** fallback 到国外端点（ip-api/ipify/Cloudflare）：上层旁路由/软路由的
+   * 透明分流会把国外端点劫持走代理出口 → 本地出口被误标为境外（真机实证：起核初期 IPIP 的 dns-bootstrap 撞
+   * use-of-closed → 旧实现 fallback 到 ip-api → 直连出口显示软路由代理 IP，刷新才恢复）。与 EP_CF_TRACE「绝不进
+   * 直连链」同规矩。IPIP 暂态失败交 withRetry 重试（DIRECT_* 宽预算，等 dns-bootstrap 就绪即成功）；成功但缺国别码
+   * （境外直连出口、国内库无 ISO 码）由渲染端 Globe 兜底——不取 ip-api 增补（同样会被劫持给错码/错 IP）。
+   * EP_IPAPI/EP_IPIFY 仅服务 proxy 链（代理出口本就走国外端点测）。
+   *
+   * 取舍：去掉国外 fallback 后，无上层透明分流的环境下若 IPIP 持续不可达（ISP 封/服务故障/人在境外）→ 本地出口
+   * 暂无（旧实现此时有 ip-api/ipify 兜底）。即以「反劫持正确性」换「单点可用性」——宽预算 + IPIP 国内稳定性覆盖
+   * 常态暂态；持续不可达属已知权衡。
    */
   private async queryDirectChain(
     fetch: (ep: ProbeEndpoint) => Promise<IpInfo | null>
   ): Promise<IpInfo | null> {
-    const primary = await fetch(EP_IPIP);
-    if (primary?.countryCode) return primary;
-    const enriched = await fetch(EP_IPAPI);
-    if (enriched) return enriched;
-    if (primary) return primary;
-    return fetch(EP_IPIFY);
+    return fetch(EP_IPIP);
   }
 
   /** 代理出口：经探针端口依次尝试 PROXY_CHAIN，首个成功即返回。 */

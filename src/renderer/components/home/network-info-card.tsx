@@ -103,10 +103,9 @@ export function NetworkInfoCard() {
   const running = connectionStatus?.proxyCore?.running ?? false;
   const loading = ipInfo?.loading ?? false;
 
-  // 导流脊三态。降级=连上但出口 IP 探测异常(error==='fetch_failed'),复用 IP 卡标题黄点的同源信号——
-  // 仅 running 时对脊有意义(未连时 error 是直连探测失败,与代理路径无关)。loading 中暂不判降级,等探测落定。
-  // error 是「本地+代理出口」探测的并集(IpInfoService.doRefresh),故末段琥珀是「出口探测降级」的保守提示,
-  // 非「外网确定不可达」;proxy 探测失败会保留旧 IP 值,故只能靠 error 判降级,不能靠 proxy 是否为空。
+  // 导流脊三态。降级=连上但【代理出口】IP 探测失败(error==='fetch_failed')——running 时 error 仅由代理出口探测
+  // 失败触发（本地出口/direct 失败不再污染 error，见 IpInfoService.doRefresh #2 修复），故 degraded 精确反映代理
+  // 路径降级、非「外网确定不可达」(proxy 探测失败保留旧 IP 值，故靠 error 判而非 proxy 是否为空)。loading 中暂不判，等落定。
   const degraded = running && !!ipInfo?.error && !loading;
   // 探测中（核已起但代理出口 IP 未探到）→ proxyConfirmed=false，使 leg2/Internet 暂不染绿（修「检测中即显 Internet 已通」误导）。
   const proxyConfirmed = running && !!ipInfo?.proxy;
@@ -258,7 +257,7 @@ export function NetworkInfoCard() {
             <p className="text-xs text-muted-foreground">{t('home.localExit')}</p>
             <div className="flex min-w-0 items-start gap-1.5">
               <Flag cc={masked ? undefined : directInfo?.countryCode} />
-              {renderIpValue(directInfo, t('home.ipNoInternet'))}
+              {renderIpValue(directInfo, t('home.ipLocalUnavailable'))}
             </div>
             <p className="truncate text-[11px] text-muted-foreground/70">
               {renderIpSub(directInfo, t('home.directLabel'))}

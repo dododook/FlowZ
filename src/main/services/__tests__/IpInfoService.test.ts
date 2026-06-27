@@ -267,6 +267,8 @@ describe('IpInfoService 传输层', () => {
     retryDelayMs?: number;
     postConnectMaxAttempts?: number;
     postConnectRetryDelayMs?: number;
+    directMaxAttempts?: number;
+    directRetryDelayMs?: number;
   }) {
     const snapshots: IpInfoSnapshot[] = [];
     const svc = new IpInfoService(
@@ -279,6 +281,9 @@ describe('IpInfoService 传输层', () => {
         // post-connect 预算默认与常规分开（首连专用更宽退避）；用例显式传，delay 取 0 免实时间等待。
         postConnectMaxAttempts: opts?.postConnectMaxAttempts ?? 1,
         postConnectRetryDelayMs: opts?.postConnectRetryDelayMs ?? 0,
+        // direct 链预算默认还原单跳（同 maxAttempts）；测 B 宽预算的用例显式传。
+        directMaxAttempts: opts?.directMaxAttempts ?? 1,
+        directRetryDelayMs: opts?.directRetryDelayMs ?? 0,
       }
     );
     return { svc, snapshots };
@@ -314,14 +319,13 @@ describe('IpInfoService 传输层', () => {
 
   it('statusCode !== 200：res.resume 排空 + done(null) → 端点返 null（不发 data/end）', async () => {
     const { svc } = makeService({ running: false });
-    // ipip 403、ipapi 503、ipify 500 → 全链失败 → direct null + error
-    responders = [respondStatus(403), respondStatus(503), respondStatus(500)];
+    // direct 链只测国内端点 ipip（绝不 fallback 国外）→ ipip 403 → direct null + error
+    responders = [respondStatus(403)];
     const snap = await svc.refresh(true);
     expect(snap.direct).toBeNull();
     expect(snap.error).toBe('fetch_failed');
-    // 三跳都触发了 res.resume（排空丢弃释放 socket）
-    expect(calls.length).toBe(3);
-    for (const c of calls) expect(c.res.resume).toHaveBeenCalled();
+    expect(calls.length).toBe(1); // 仅 ipip 一跳
+    expect(calls[0].res.resume).toHaveBeenCalled(); // 触发 res.resume（排空丢弃释放 socket）
   });
 
   it('oversize：body 累计 > 8192 → req.destroy(Error("oversize")) → done(null)', async () => {
@@ -366,13 +370,12 @@ describe('IpInfoService 传输层', () => {
 
   // --- fetchEndpoint 按 ep.parse 分发 ---------------------------------------
 
-  it('fetchEndpoint：json 端点 → 走 parseJson（ip-api success 结构）', async () => {
-    const { svc } = makeService({ running: false });
-    // ipip 返回 ipify 风格只给 ip（无 countryCode）→ queryDirectChain 继续取 ipapi 增补
-    responders = [respondOk(JSON.stringify({ ip: '9.9.9.9' })), respondOk(IPAPI_OK)];
-    const snap = await svc.refresh(true);
-    // 第二跳 ip-api success → parseJson 出 country/countryCode
-    expect(snap.direct).toEqual({ ip: '5.6.7.8', country: 'United States', countryCode: 'US' });
+  it('fetchEndpoint：json 端点 → 走 parseJson（ip-api success 结构；经 proxy 链 CF 失败 fallback 到 ip-api）', async () => {
+    const { svc } = makeService(); // running + ports → proxy 链（direct 链只 ipip，已不走 ip-api）
+    // proxy 链 PROXY_CHAIN=[CF_TRACE, IPAPI, IPIFY]：CF trace 503 → ip-api success → parseJson 出 country/countryCode
+    responders = [respondStatus(503), respondOk(IPAPI_OK)];
+    const snap = await svc.refreshProxy();
+    expect(snap.proxy).toEqual({ ip: '5.6.7.8', country: 'United States', countryCode: 'US' });
   });
 
   it('fetchEndpoint：trace 端点（EP_CF_TRACE）→ 走 parseTrace（proxy 链首跳）', async () => {
@@ -438,19 +441,121 @@ describe('IpInfoService 传输层', () => {
 
   // --- queryDirectChain：主用 ipip，链不含 trace 端点 -----------------------
 
-  it('queryDirectChain：ipip 主用（首跳即 cloudflare 之外的国内接口），且全链不含 trace 端点', async () => {
-    const { svc } = makeService({ running: false });
-    // 让 ipip 缺 countryCode（只 ip）→ 强制走完 ipapi（仍 json）。即便全失败也只会触达 ipip/ipapi/ipify。
-    responders = [
-      respondOk(JSON.stringify({ ip: '9.9.9.9' })),
-      respondStatus(503),
-      respondOk(JSON.stringify({ ip: '9.9.9.9' })),
-    ];
-    await svc.refresh(true);
+  it('queryDirectChain：本地出口只测国内端点 ipip，失败也绝不 fallback 到国外端点（透明分流会劫走误标境外）', async () => {
+    const { svc } = makeService({ running: false, maxAttempts: 2, retryDelayMs: 0 });
+    // ipip 两跳全 503（maxAttempts=2 重试）；绝不触达 ip-api/ipify/cloudflare（旧实现会 fallback 被劫持）
+    responders = [respondStatus(503), respondStatus(503)];
+    const snap = await svc.refresh(true);
     const hosts = calls.map((c) => hostOf(c.options));
-    expect(hosts[0]).toBe('myip.ipip.net'); // 主用国内接口 ipip
-    // 直连链绝不含 cloudflare trace 端点（旁路由透明分流会劫走误标）
+    expect(hosts.every((h) => h === 'myip.ipip.net')).toBe(true); // 全是 ipip（含重试）
+    expect(hosts).not.toContain('ip-api.com');
+    expect(hosts).not.toContain('api.ipify.org');
     expect(hosts).not.toContain('cloudflare.com');
+    expect(snap.direct).toBeNull(); // 国内端点失败 → 暂无，不显错误境外 IP
+  });
+
+  it('queryDirectChain：ipip 成功但缺 countryCode（境外直连出口/国内库无码）→ 返回 ipip 的 IP，不取 ip-api 增补', async () => {
+    const { svc } = makeService({ running: false });
+    responders = [respondOk(JSON.stringify({ ip: '9.9.9.9' }))]; // 只 ipip，只给 ip → 缺 countryCode
+    const snap = await svc.refresh(true);
+    expect(snap.direct?.ip).toBe('9.9.9.9'); // 用 ipip 的 IP（正确直连出口）
+    expect(snap.direct?.countryCode).toBeUndefined(); // 缺码由渲染端 Globe 兜底，不取被劫持的 ip-api 码
+    expect(calls.length).toBe(1); // 不 fallback
+    expect(hostOf(calls[0].options)).toBe('myip.ipip.net');
+  });
+
+  it('B：running 路径 direct 探测用 directMaxAttempts 宽预算（起核初期 ipip 首跳失败 → 重试后成功取到本地出口）', async () => {
+    const { svc } = makeService({ directMaxAttempts: 2, directRetryDelayMs: 0 }); // running + ports
+    // direct(ipip)首跳 503、重试成功；proxy(cloudflare trace)成功。按 host + ipip 调用次序路由。
+    mockGet.mockReset();
+    let ipipN = 0;
+    mockGet.mockImplementation(
+      (options: http.RequestOptions, cb?: (res: FakeRes) => void): FakeReq => {
+        const req = new FakeReq();
+        const res = new FakeRes();
+        const call: Call = { options, req, res };
+        calls.push(call);
+        const host = hostOf(options) ?? '';
+        let responder: Responder | undefined;
+        if (host === 'myip.ipip.net') {
+          responder = ipipN++ === 0 ? respondStatus(503) : respondOk(IPIP_OK);
+        } else if (host === 'cloudflare.com') {
+          responder = respondOk(TRACE_OK);
+        }
+        if (responder) res.statusCode = responder.statusCode;
+        process.nextTick(() => {
+          if (cb) cb(res);
+          if (responder) responder.drive(call);
+        });
+        return req;
+      }
+    );
+    const snap = await svc.refresh(true);
+    expect(snap.direct).toEqual({ ip: '1.2.3.4', country: '中国 北京', countryCode: 'cn' }); // ipip 重试成功
+    const ipipCalls = calls.filter((c) => hostOf(c.options) === 'myip.ipip.net').length;
+    expect(ipipCalls).toBe(2); // 首跳 503 + 重试成功（directMaxAttempts=2 生效；默认 1 则不会重试）
+  });
+
+  it('B 对照：directMaxAttempts=1 → ipip 首跳失败【不】重试 → 本地出口 null（与上例对照证明注入真生效，非走模块默认）', async () => {
+    // 与上例同 mock（ipip 首跳 503、次跳本可成功）但 directMaxAttempts=1：若构造函数忽略注入而用模块默认（4），
+    // 会重试到次跳成功 → direct=IPIP_OK / ipipCalls=2，本断言即失败 → 抓住「注入被忽略」回归。
+    const { svc } = makeService({ directMaxAttempts: 1, directRetryDelayMs: 0 });
+    mockGet.mockReset();
+    let ipipN = 0;
+    mockGet.mockImplementation(
+      (options: http.RequestOptions, cb?: (res: FakeRes) => void): FakeReq => {
+        const req = new FakeReq();
+        const res = new FakeRes();
+        const call: Call = { options, req, res };
+        calls.push(call);
+        const host = hostOf(options) ?? '';
+        let responder: Responder | undefined;
+        if (host === 'myip.ipip.net') {
+          responder = ipipN++ === 0 ? respondStatus(503) : respondOk(IPIP_OK);
+        } else if (host === 'cloudflare.com') {
+          responder = respondOk(TRACE_OK);
+        }
+        if (responder) res.statusCode = responder.statusCode;
+        process.nextTick(() => {
+          if (cb) cb(res);
+          if (responder) responder.drive(call);
+        });
+        return req;
+      }
+    );
+    const snap = await svc.refresh(true);
+    expect(snap.direct).toBeNull(); // 单跳预算：首跳 503 即放弃，不重试
+    expect(calls.filter((c) => hostOf(c.options) === 'myip.ipip.net').length).toBe(1); // 仅 1 跳
+  });
+
+  it('#2：running 下本地出口(direct)失败但代理出口(proxy)成功 → snapshot 无 error（本地出口不污染降级）', async () => {
+    const { svc } = makeService(); // running + ports，direct/proxy 默认单跳
+    mockGet.mockReset();
+    mockGet.mockImplementation(
+      (options: http.RequestOptions, cb?: (res: FakeRes) => void): FakeReq => {
+        const req = new FakeReq();
+        const res = new FakeRes();
+        const call: Call = { options, req, res };
+        calls.push(call);
+        const host = hostOf(options) ?? '';
+        let responder: Responder | undefined;
+        if (host === 'myip.ipip.net') {
+          responder = respondStatus(503); // 本地出口探测失败
+        } else if (host === 'cloudflare.com') {
+          responder = respondOk(TRACE_OK); // 代理出口探测成功
+        }
+        if (responder) res.statusCode = responder.statusCode;
+        process.nextTick(() => {
+          if (cb) cb(res);
+          if (responder) responder.drive(call);
+        });
+        return req;
+      }
+    );
+    const snap = await svc.refresh(true);
+    expect(snap.direct).toBeNull(); // 本地出口暂无（IPIP 失败、不 fallback）
+    expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // 代理出口正常
+    expect(snap.error).toBeUndefined(); // ★ direct 失败【不】触发全局 error → 导流脊不误显降级
   });
 
   it('queryViaProxy：PROXY_CHAIN 首跳 trace 成功即返回，不再试 ip-api/ipify', async () => {
