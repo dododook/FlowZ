@@ -469,6 +469,7 @@ export function ServerPage() {
         onOpenChange={setIsSubDialogOpen}
         subscription={editingSub}
         onSave={handleSaveSubscription}
+        subscriptionProxyPolicy={config?.subscriptionProxyPolicy}
       />
 
       <ImportUrlDialog

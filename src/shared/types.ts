@@ -23,6 +23,7 @@ import type {
 } from './types/protocol-settings';
 
 import type { Rule, CustomRuleSet, RuleResource, AppRule, CustomAppPreset } from './types/rules';
+import type { SubscriptionProxyPolicy } from './subscription-proxy';
 
 // ============================================================================
 // 协议设置子类型（re-export，保持所有现有 import 路径不变）
@@ -139,6 +140,9 @@ export interface SubscriptionConfig {
   // 拉取订阅时的 User-Agent 覆盖（per-sub）。优先级：subscription.userAgent ?? config.subscriptionUserAgent ?? 默认。
   // 默认 `FlowZ/<版本>`（纯中性）。订阅对话框「自定义 User-Agent」输入框可设置本字段。
   userAgent?: string;
+  // 该订阅是否经代理更新（per-sub；默认 false=直连）。仅全局 subscriptionProxyPolicy='follow' 时生效，
+  // 'proxy'/'direct' 时被全局覆盖（忽略本字段）。生效求值见 shared/subscription-proxy#resolveSubscriptionViaProxy。
+  updateViaProxy?: boolean;
   // 订阅流量/到期信息（从 Subscription-UserInfo header 解析）
   userInfo?: {
     upload?: number; // 已上传字节
@@ -356,7 +360,9 @@ export interface UserConfig {
   desktopNotifications?: boolean; // 桌面通知总开关（默认开）：当前仅严重错误事件发系统通知，关闭则一概不发
   autoUpdateSubscriptionOnStart: boolean; // 订阅自动更新总开关（启动补更陈旧订阅 + 运行期周期更新）
   subscriptionUpdateIntervalHours?: number; // 订阅自动更新周期/陈旧阈值（小时），默认 12
-  subscriptionUpdateViaProxy?: boolean; // 订阅更新是否经代理（默认 false=直连，避免冷启动鸡生蛋 + 订阅地址被墙时再开）
+  // 订阅经代理更新的【全局三态策略】（默认 'follow'）：'follow'=按各订阅 per-sub updateViaProxy 决定；
+  // 'proxy'=所有订阅强制经代理（忽略 per-sub）；'direct'=所有订阅强制直连（忽略 per-sub）。求值见 shared/subscription-proxy。
+  subscriptionProxyPolicy?: SubscriptionProxyPolicy;
   // 全局订阅 UA（被 per-sub subscription.userAgent 覆盖；均缺省时用 `FlowZ/<版本>`）。本期无 UI，手编生效。
   subscriptionUserAgent?: string;
   // 更新检查/规则资源等主进程请求是否经代理（默认 true=代理运行时借道，更新源全 GitHub、墙内借道更可靠）。
