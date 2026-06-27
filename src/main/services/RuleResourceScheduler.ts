@@ -17,10 +17,28 @@ import * as path from 'path';
 import type { ConfigManager } from './ConfigManager';
 import type { LogManager } from './LogManager';
 import type { RuleResourceManager } from './RuleResourceManager';
-import type { UserConfig } from '../../shared/types';
+import type { UserConfig, RuleResourceDownloadResult } from '../../shared/types';
 import { getRuleResourcesPath } from '../utils/paths';
 import { BUILTIN_GEO_RULESETS, getRuleSetRuntimeDir, builtinIdFor } from './builtin-geo-rulesets';
 import { BackoffTracker } from './backoff-tracker';
+
+/**
+ * 把规则资源更新结果汇总成日志数据：成功数 + 失败明细（`资源名: errorCode`）。errorCode 在 results 里本就有，
+ * 此前汇总只记「失败 N」把它丢了 → 排查时无从判断 timeout / http 4xx / invalid_content。纯函数，便于单测。
+ */
+export function formatRuleUpdateSummary(results: RuleResourceDownloadResult[]): {
+  ok: number;
+  failed: number;
+  failures: string[];
+} {
+  let ok = 0;
+  const failures: string[] = [];
+  for (const r of results) {
+    if (r.ok) ok++;
+    else failures.push(`${r.name || r.id || '?'}: ${r.errorCode || r.error || 'unknown'}`);
+  }
+  return { ok, failed: failures.length, failures };
+}
 
 export class RuleResourceScheduler {
   private tickTimer: ReturnType<typeof setInterval> | null = null;
@@ -131,21 +149,20 @@ export class RuleResourceScheduler {
       if (staleIds.length === 0) return;
 
       const results = await this.ruleResourceManager.updateMany(staleIds, { silent: true });
-      let ok = 0;
-      let failed = 0;
+      // 退避记账（用 r.id）：成功清退避、失败指数退避。
       for (const r of results) {
-        if (r.ok) {
-          ok++;
-          if (r.id) this.backoff.recordSuccess(r.id);
-        } else {
-          failed++;
-          if (r.id) this.backoff.recordFailure(r.id, now);
-        }
+        if (!r.id) continue;
+        if (r.ok) this.backoff.recordSuccess(r.id);
+        else this.backoff.recordFailure(r.id, now);
       }
+      // 汇总日志带失败明细（资源名: errorCode），原只记「失败 N」无从判断 timeout / http 4xx / invalid_content，
+      // 排查得靠猜（启动补更撞起核初期网络/代理未就绪的暂态尤甚）。
+      const { ok, failed, failures } = formatRuleUpdateSummary(results);
       if (ok > 0 || failed > 0) {
+        const detail = failures.length > 0 ? `（失败: ${failures.join('；')}）` : '';
         this.logManager.addLog(
           'info',
-          `[${reason}] 规则资源自动更新：成功 ${ok}，失败 ${failed}`,
+          `[${reason}] 规则资源自动更新：成功 ${ok}，失败 ${failed}${detail}`,
           'RuleResScheduler'
         );
       }
