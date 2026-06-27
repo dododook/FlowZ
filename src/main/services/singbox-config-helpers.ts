@@ -151,6 +151,16 @@ function effectiveSingleResolverId(dns: DnsConfig | undefined): string {
 /** issue #147：本地 race DNS server 的 tag（race on 时 outbound.domain_resolver / 节点域名 rule1 指它）。单一真值。 */
 export const DNS_NODE_RACE_TAG = 'dns-node-race';
 
+/**
+ * race 总开关单一真值（根治 §3.2）：race on（多上游并发解析）当且仅当 resolveNodeDomainsAhead!==false。
+ * ProxyManager 经 effective config（raceServerPort=0 时 withRaceOff 强制 false）反映 race server 是否就绪，故此谓词
+ * 等价「dns-node-race server 已生成」。getNodeResolverTag / getDomesticResolverTag 共用，杜绝两处 gate 漂移，保证
+ * 「返回 dns-node-race ⟺ server 存在」不变量在两条解析路径一致（防悬空引用 FATAL）。
+ */
+export function isNodeRaceOn(config: UserConfig | null | undefined): boolean {
+  return config?.dnsConfig?.resolveNodeDomainsAhead !== false;
+}
+
 export function getNodeResolverTag(
   config: UserConfig | null | undefined,
   ctx: 'dial' | 'rule'
@@ -158,7 +168,7 @@ export function getNodeResolverTag(
   // issue #147：race on（resolveNodeDomainsAhead !== false）→ 指本地 race server（多上游并发，dial 与 rule 同 tag）。
   // 仅 race server 就绪时 config 才为 on（ProxyManager 用 raceServerPort 算 effective config；snapshot/preflight/诊断
   // 等未就绪路径恒 off，不引用 dns-node-race，防 FATAL）。off → 单上游（nodeResolverSingle，逃生/降级，与旧档位等价）。
-  if (config?.dnsConfig?.resolveNodeDomainsAhead !== false) {
+  if (isNodeRaceOn(config)) {
     return DNS_NODE_RACE_TAG;
   }
   const single = effectiveSingleResolverId(config?.dnsConfig);
@@ -169,6 +179,24 @@ export function getNodeResolverTag(
   }
   // 'ali' / 自定义（自定义 server 见 Task#5）/ 缺省：忠实保留两路径各自基线解析器，逐字节回现状。
   return ctx === 'dial' ? 'dns-bootstrap' : 'dns-domestic';
+}
+
+/**
+ * 国内内容域名解析器 → server tag（根治 2026-06-28，对称 getNodeResolverTag；设计 dns-route-subsystem-overhaul §3.2）。
+ * race on（resolveNodeDomainsAhead!==false，ProxyManager 经 effective config 反映 race server 就绪）→ 共用本地 race
+ *   server（dns-node-race，多上游国内 DoH，与节点域名同一 server/上游池/预算）；off/未就绪 → fallback（调用点现状单上游）。
+ * 数据流（子代理确证）：FakeIP 模式国内内容真实解析唯一落在 direct 出口的 default_domain_resolver（fallback=dns-bootstrap）；
+ *   非 FakeIP 模式落在 region-local geosite-cn dns rule（fallback=dns-domestic）。两处 race on 共用同一 race server。
+ * 绝不在 off/未就绪返回 dns-node-race（防悬空引用 FATAL），与 getNodeResolverTag 同口径。
+ */
+export function getDomesticResolverTag(
+  config: UserConfig | null | undefined,
+  fallback: string
+): string {
+  if (isNodeRaceOn(config)) {
+    return DNS_NODE_RACE_TAG;
+  }
+  return fallback;
 }
 
 /**

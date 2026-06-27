@@ -23,7 +23,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -115,12 +115,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -240,6 +234,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -694,7 +689,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -774,12 +769,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -881,6 +870,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -1288,7 +1278,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
 }
 `;
 
-exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线） DNS lanResolverForDns 注入（systemProxy）→ 锁 dns-lan server + internalResolverTag=dns-lan 三路拆分 1`] = `
+exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线） DNS lanResolverForDns 注入（systemProxy）→ 锁 dns-lan(type:dhcp 动态) + internalResolverTag=dns-lan 三路拆分 1`] = `
 {
   "config": {
     "dns": {
@@ -1311,7 +1301,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -1402,12 +1392,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       ],
       "servers": [
         {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
-        {
           "path": "/dns-query",
           "server": "223.5.5.5",
           "server_port": 443,
@@ -1448,10 +1432,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "fakeip",
         },
         {
-          "server": "192.168.1.1",
-          "server_port": 53,
           "tag": "dns-lan",
-          "type": "udp",
+          "type": "dhcp",
         },
       ],
       "strategy": "ipv4_only",
@@ -1497,6 +1479,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -1928,7 +1911,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -2018,12 +2001,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -2144,6 +2121,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -2574,7 +2552,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -2654,12 +2632,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -2742,6 +2714,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -3174,7 +3147,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -3237,12 +3210,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -3327,6 +3294,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -3758,7 +3726,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -3801,12 +3769,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -3886,6 +3848,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -4317,7 +4280,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -4360,12 +4323,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -4445,6 +4402,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -4883,7 +4841,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -4926,12 +4884,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -5011,6 +4963,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -5441,7 +5394,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -5521,12 +5474,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -5641,6 +5588,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -6071,7 +6019,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -6151,12 +6099,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -6263,6 +6205,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -6693,7 +6636,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -6783,12 +6726,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -6916,6 +6853,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -7346,7 +7284,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -7426,12 +7364,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -7532,6 +7464,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -7962,7 +7895,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -8042,12 +7975,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -8142,6 +8069,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -8632,7 +8560,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -8712,12 +8640,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -8802,6 +8724,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -9208,7 +9131,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -9288,12 +9211,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -9378,6 +9295,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -9808,7 +9726,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -9888,12 +9806,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -9978,6 +9890,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -10381,7 +10294,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -10461,12 +10374,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -10556,6 +10463,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -10989,7 +10897,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -11069,12 +10977,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -11164,6 +11066,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -11596,7 +11499,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -11676,12 +11579,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -11778,6 +11675,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -12222,7 +12120,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -12302,12 +12200,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -12392,6 +12284,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -12822,7 +12715,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -12902,12 +12795,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -13002,6 +12889,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -13451,7 +13339,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -13531,12 +13419,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -13630,6 +13512,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -14060,7 +13943,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -14140,12 +14023,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -14230,6 +14107,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -14660,7 +14538,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -14740,12 +14618,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -14855,6 +14727,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -15289,7 +15162,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -15369,12 +15242,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -15484,6 +15351,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -15933,7 +15801,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -16013,12 +15881,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -16118,6 +15980,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -16562,7 +16425,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -16642,12 +16505,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -16747,6 +16604,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -17192,7 +17050,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -17272,12 +17130,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -17362,6 +17214,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -17792,7 +17645,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -17872,12 +17725,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -17962,6 +17809,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -18399,7 +18247,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -18479,12 +18327,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -18569,6 +18411,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -19006,7 +18849,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -19086,12 +18929,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -19176,6 +19013,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -19579,7 +19417,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -19659,12 +19497,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -19832,6 +19664,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -20267,7 +20100,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -20347,12 +20180,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -20447,6 +20274,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },
@@ -20878,7 +20706,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "cloudflare-dns.com",
             "one.one.one.one",
           ],
-          "server": "dns-bootstrap-udp",
+          "server": "dns-bootstrap",
         },
         {
           "domain_suffix": [
@@ -20958,12 +20786,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
       ],
       "servers": [
-        {
-          "server": "223.5.5.5",
-          "server_port": 53,
-          "tag": "dns-bootstrap-udp",
-          "type": "udp",
-        },
         {
           "path": "/dns-query",
           "server": "223.5.5.5",
@@ -21075,6 +20897,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
       },

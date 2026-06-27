@@ -2593,7 +2593,9 @@ done
         this.lanResolverForDns,
         idToTagMap,
         (level, message) => this.logToManager(level, message),
-        this.raceServerPort
+        this.raceServerPort,
+        // 根治 §3.5：传本轮发射的 endpoint，供 tailnet 按名解析 gate 确认目标 TS endpoint 已发射（防悬空引用 FATAL）。
+        this.pendingEndpoints
       ),
       inbounds: buildInbounds(config, resolvedIps, {
         probeDirectPort: this.probeDirectPort,

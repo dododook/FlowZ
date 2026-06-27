@@ -18,6 +18,7 @@ import {
   shouldForceRouteSubnets,
   collectRuleTargetedServerIds,
   meshForceRoutedServers,
+  meshNodeCarriesFullTunnel,
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
 import { dedupe } from '../../shared/collections';
@@ -557,6 +558,18 @@ export function buildRouteConfig(
     // 跨 endpoint 去重：同一 CIDR 被多个 endpoint 声明（如两个 Tailscale 节点都含 tailnet 100.64.0.0/10，
     // 或两个 WG 节点 allowedIPs 重叠），sing-box 路由首条命中 → 后者静默失效。按 config.servers 顺序，
     // 先声明者占有该段（隐式优先级），后者重复段跳过 + 累计告警，杜绝「无声误路由到另一节点」。
+    // 试点（design §14）：endpoint 自声明归位（preferred_by）替代手动 ip_cidr force-route。
+    // sing-box 源码确证（2026-06-28，核 SagerNet/sing-box + wireguard-go）裁定 WG 关外网用 / WG 全隧道与 TS 不用：
+    //  · WG 关外网（allowedIPs 无 0/0）：PreferredAddress = endpoint.Lookup = peer allowed_ips（wireguard/endpoint.go），
+    //    与 ip_cidr(endpointForcedRouteCidrs) 镜像等价 + config 静态即就绪 → 安全，用 preferred_by。
+    //  · WG 全隧道（含 0/0）：wireguard-go allowedips trie 的 root cidr=0、commonBits>=0 恒真 → Lookup(任意 IP，含
+    //    fake IP) 恒返回 peer → PreferredAddress 恒 true → preferred_by **会抢全局**。故全隧道刻意不走 preferred_by、
+    //    改 ip_cidr（endpointForcedRouteCidrs 已去 0/0）；!meshNodeCarriesFullTunnel 闸门即此。（真机曾误判「全隧道 WG
+    //    不抢全局」是因全局出口恰为该 WG、抢与不抢结果一致不可区分，非 0/0 不构成 preference——源码确证 0/0 会抢。）
+    //  · TS：PreferredAddress = routePrefixes.Contains（tailscale/endpoint.go），routePrefixes 由 onReconfig 在控制面
+    //    同步后才填（运行时动态 + 就绪窗口），内容是实际 netmap peer/accepted routes（≠ 静态 100.64/10）→ 起核窗口 nil
+    //    返 false、组网段不归位（真机：exit 出网正常但组网 IP/NAT 异常）。故 TS 必走 ip_cidr 静态。
+    const TS_PREFERRED_BY_TRIAL = false;
     const claimedCidrs = new Set<string>();
     let forceRouteConflicts = 0;
     for (const s of config.servers) {
@@ -565,6 +578,16 @@ export function buildRouteConfig(
       // alwaysRouteSubnets=false 且未 engaged（未选中、无规则指向）→ 跳过其 force-route：纯作可选出口，
       // 网段不强加给全局。注意只 gate route.rules，peer.allowed_ips 不变 → 被选中时网段仍可达（engaged→此处放行）。
       if (!shouldForceRouteSubnets(s, config.selectedServerId, ruleTargetedServerIds)) continue;
+      // preferred_by 适用：非全隧道 +（WG 恒 | TS 试点开）。endpoint 自声明 allowed_ips/routePrefixes 归位、免手动 cidr。
+      const proto = s.protocol?.toLowerCase();
+      const usePreferredBy =
+        !meshNodeCarriesFullTunnel(s) &&
+        (proto === 'wireguard' || (proto === 'tailscale' && TS_PREFERRED_BY_TRIAL));
+      if (usePreferredBy) {
+        rules.push({ preferred_by: [tag], action: 'route', outbound: tag });
+        continue;
+      }
+      // 否则（全隧道节点 / TS 试点未开）：手动 ip_cidr force-route（现状，去 0/0 + 跨节点 first-match 去重 + 重复告警）。
       const cidrs = endpointForcedRouteCidrs(s).filter((c) => {
         if (claimedCidrs.has(c)) {
           forceRouteConflicts++;

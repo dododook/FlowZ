@@ -19,11 +19,17 @@ import {
   getRuleSetRuntimeDir as getRuntimeRulesDir,
   isValidSrsFile,
 } from './builtin-geo-rulesets';
-import type { SingBoxDnsConfig, SingBoxDnsServer, SingBoxDnsRule } from './singbox-config-types';
+import type {
+  SingBoxDnsConfig,
+  SingBoxDnsServer,
+  SingBoxDnsRule,
+  SingBoxEndpoint,
+} from './singbox-config-types';
 import {
   isIpv4Host,
   isIpv6Host,
   getNodeResolverTag,
+  getDomesticResolverTag,
   DNS_NODE_RACE_TAG,
   effectiveCustomRules,
   DOMESTIC_BANK_AND_STOCK_DOMAINS,
@@ -48,21 +54,7 @@ const withDotPrefix = (d: string): string[] => [d, `.${d}`];
 // 不会取此前缀；与 ProxyManager.usedTags 内置保留 tag 同理为内部固定 tag）。
 const TS_NAME_DNS_TAG = 'dns-tailscale';
 
-/**
- * 「选中的 mesh tailscale 节点」的 endpoint tag，供按名解析 DNS server 引用。直接读 buildIdToTagMap 产出的
- * idToTagMap（id→唯一 tag 单一真值），不再复刻去重循环——杜绝与 ProxyManager 侧推导漂移（tag 须逐字节一致，
- * 否则 sing-box FATAL）。非选中 / 选中节点非 tailscale → null。
- */
-function selectedTailscaleEndpointTag(
-  config: UserConfig,
-  idToTagMap: Map<string, string>
-): string | null {
-  const selectedId = config.selectedServerId;
-  if (!selectedId) return null;
-  const selected = config.servers.find((s) => s.id === selectedId);
-  if (!selected || selected.protocol.toLowerCase() !== 'tailscale') return null;
-  return idToTagMap.get(selectedId) ?? null;
-}
+// selectedTailscaleEndpointTag 已删（根治 §3.5）：tailnet gate 放宽后由 tsResolveNode 内联 idToTagMap.get 定位，不再绑选中。
 
 /** 内网 / 反向解析后缀（非 .local 组播）：内网域 .lan / .home.arpa + 反查 .arpa。 */
 const INTERNAL_DNS_SUFFIXES = ['.arpa', '.lan', '.home.arpa'];
@@ -76,7 +68,10 @@ export function buildDnsConfig(
   log: DnsLogFn,
   // issue #147：本地 race DNS server 端口（>0 = race 就绪）。生成 dns-node-race server（节点域名 domain_resolver/rule1
   // 指它，getNodeResolverTag）。=0（off/起失败/snapshot/preflight）不生成，节点域名走单上游（getNodeResolverTag 同步降级）。
-  raceServerPort = 0
+  raceServerPort = 0,
+  // 根治 §3.5：本轮实际发射的 endpoint（buildOutbounds 产出）。tailnet 按名解析 gate 用它确认目标 TS endpoint 已发射，
+  // 避免引用未发射 endpoint 致 FATAL。缺省 []（snapshot/preflight 等无 endpoint 上下文 → tailnet 解析不生成）。
+  pendingEndpoints: SingBoxEndpoint[] = []
 ): SingBoxDnsConfig {
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
 
@@ -140,13 +135,6 @@ export function buildDnsConfig(
   //   它绕过 TUN 不是靠 DNS detour，而是靠 route 规则把 223.5.5.5:443 直连放行（见 generateRouteConfig）。
   //   关键路径（节点域名 / doh.pub / default_domain_resolver）均以它为 resolver，免疫 UDP 53 限速/劫持/投毒。
   const dnsServers: SingBoxDnsServer[] = [
-    {
-      // 引导解析：专门用于解析代理节点的 IP 解析器（UDP，最稳健）
-      tag: 'dns-bootstrap-udp',
-      type: 'udp',
-      server: '223.5.5.5',
-      server_port: 53,
-    },
     {
       // 引导解析（DoH over IP）：关键路径的解析器。server 已是 IP，无需 domain_resolver。
       // 相比 UDP 53，对运营商的 UDP 53 限速/劫持/投毒免疫，避免节点域名解析失败导致断流。
@@ -228,11 +216,16 @@ export function buildDnsConfig(
   }
 
   // 方案B：DNS 接管把系统 DNS 改成公网 8.8.8.8 后，dns-local(type:local) 解不了内网域名(.lan/.home.arpa/内网域)、
-  // 反查(.arpa) 与 captive portal。接管激活且读到内网 LAN 解析器(私网 IPv4)时，建 dns-lan(udp:53 指向它)，把这些
-  // 域名重定向到它解析；其 :53 由 generateRouteConfig rule C 直连放行(防被 hijack-dns 抢走成环)。
+  // 反查(.arpa) 与 captive portal。接管激活且读到内网 LAN 解析器(私网 IPv4)时，建 dns-lan 把这些域名重定向到它解析。
+  // type:'dhcp'(interface 省略=auto，靠 route.auto_detect_interface)：从 DHCP 动态拿当前网关下发的 DNS——
+  //   ① 换网络(默认接口变)经 InterfaceMonitor 自动重 fetch、跟随新网关，无需重生成 config/重启核(修原硬编码 LAN IP
+  //      换网络后指向旧网关失效)；② dhcp 读 DHCP lease 而非系统 resolver，DNS 接管后系统 DNS 被改成受控 IP 也不影响
+  //      (仍拿真实 LAN DNS，优于 type:local)；③ dhcp 用 LocalDialer 直连、不经 route hijack(rule C 的 LAN IP 放行
+  //      退化为首跳冗余兜底)。lanResolver 探测仍保留：决定是否建 dns-lan(无 LAN 解析器=无内网 DNS) + rule C 放行。
+  //   真机验(macOS 接管)：换网络后 dhcp 跟随新网关解内网域名、不成环；sing-box check 已确认 dhcp transport 已编译。
   const lanResolver = lanResolverForDns;
   if (lanResolver) {
-    dnsServers.push({ tag: 'dns-lan', type: 'udp', server: lanResolver, server_port: 53 });
+    dnsServers.push({ tag: 'dns-lan', type: 'dhcp' });
   }
   // Q1 死循环防护（**仅 Windows**）：Win TUN 的 strict_route(WFP) 把所有 :53 逼进 TUN；type:local 经 svchost(Win DNS
   // 客户端，不在 route 直连进程白名单)发出的查询 → 进 TUN → hijack-dns → 命中 dns-local 规则 → 又 svchost → ∞。
@@ -311,7 +304,9 @@ export function buildDnsConfig(
   if (foreign.isDomain) bootstrapDomains.push(foreign.server);
   dnsRules.push({
     domain: dedupe(bootstrapDomains),
-    server: 'dns-bootstrap-udp',
+    // 根治 §3.6：DoH server 自身域名解析统一用 dns-bootstrap（IP-DoH 抗 UDP53 劫持），删原 dns-bootstrap-udp 历史残留
+    // （明文 UDP53，违背同段「引入 IP-DoH 避免 UDP53」自定设计；删前全仓库唯一消费点即此）。
+    server: 'dns-bootstrap',
   } as SingBoxDnsRule);
 
   // 解决 mDNS 和本地反向解析导致的 context deadline exceeded 超时问题。
@@ -459,7 +454,11 @@ export function buildDnsConfig(
           return isValidSrsFile(path.join(runtimeDir, fileName));
         });
         // region-local 与其余侧各自的解析器（reverse 翻转）。
-        const localResolver = region.reverse ? 'dns-remote' : 'dns-domestic';
+        // 根治 §3.2：正向（默认 CN）region-local（geosite-cn 国内内容）解析改走 getDomesticResolverTag（race on→共用
+        // dns-node-race 多上游 / off→dns-domestic）。reverse（回国）不动（国内域名经回国节点 dns-remote，逻辑特殊）。
+        const localResolver = region.reverse
+          ? 'dns-remote'
+          : getDomesticResolverTag(config, 'dns-domestic');
         const fallthroughResolver = region.reverse ? 'dns-domestic' : 'dns-remote';
         if (localGeo.length > 0) {
           dnsRules.push({
@@ -489,22 +488,26 @@ export function buildDnsConfig(
     }
   }
 
-  // P4b ⭐tailnet 按名解析（仅选中此 mesh tailscale 节点为主出口时生效）：注入 tailscale DNS server +
-  // preferred_by 规则。preferred_by 让 tailnet search domain / MagicDNS 短名自动归位到此节点解析——
-  // 替代硬编码后缀。与 doh.pub/google **并存**：仅 preferred_by 命中的 tailnet 名走 dns-tailscale，
-  // 其余域名规则/final 不变（preferred_by 规则置于尾部 catch-all 之前，不影响既有分流字节）。
-  // accept_search_domain 与 preferred_by 强联动：accept_search_domain 提供短名解析能力，preferred_by 决定
-  // 哪些名字优先归它——故二者同开同关（resolveByName 一个开关同时拉起 server.accept_search_domain + 规则）。
+  // P4b ⭐tailnet 按名解析：注入 tailscale DNS server + preferred_by 规则。preferred_by 让 tailnet search domain /
+  // MagicDNS 短名自动归位到此节点解析——替代硬编码后缀。与 doh.pub/google **并存**：仅 preferred_by 命中的 tailnet 名走
+  // dns-tailscale，其余域名规则/final 不变（preferred_by 规则置于尾部 catch-all 之前，不影响既有分流字节）。
+  // accept_search_domain 与 preferred_by 强联动：故二者同开同关（resolveByName 一个开关同时拉起 server + 规则）。
+  // 根治 §3.5：gate 放宽到「resolveByName 开 + 该 TS endpoint 已发射（pendingEndpoints）」——**不再绑 selectedServerId===
+  // 此TS（主出口）**。TS 仅组网/子网路由、用别的节点出网时，MagicDNS 短名访问 tailnet 设备照常生效；preferred_by 只命中
+  // tailnet 名，非主出口注入不干扰主出口 DNS。优先选中的 TS（若它 resolveByName 开且发射），否则第一个候选。
   const tsResolveNode = (() => {
-    const selectedId = config.selectedServerId;
-    if (!selectedId) return null;
-    const sel = config.servers.find((s) => s.id === selectedId);
-    if (!sel || sel.protocol.toLowerCase() !== 'tailscale') return null;
-    if (!sel.tailscaleSettings?.resolveByName) return null;
-    return sel;
+    const emittedTags = new Set(pendingEndpoints.map((e) => e.tag));
+    const candidates = config.servers.filter(
+      (s) =>
+        s.protocol.toLowerCase() === 'tailscale' &&
+        s.tailscaleSettings?.resolveByName &&
+        emittedTags.has(idToTagMap.get(s.id) ?? '')
+    );
+    if (candidates.length === 0) return null;
+    return candidates.find((s) => s.id === config.selectedServerId) ?? candidates[0];
   })();
   if (tsResolveNode) {
-    const epTag = selectedTailscaleEndpointTag(config, idToTagMap);
+    const epTag = idToTagMap.get(tsResolveNode.id) ?? null;
     if (epTag) {
       dnsServers.push({
         tag: TS_NAME_DNS_TAG,

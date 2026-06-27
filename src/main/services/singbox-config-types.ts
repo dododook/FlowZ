@@ -307,6 +307,10 @@ export interface SingBoxRouteRule {
   inbound?: string | string[]; // sing-box 1.13+
   action?: string; // logical 子规则为纯 matcher 无 action；default/logical 外层显式设 'route'
   outbound?: string;
+  // preferred_by（1.11+；route rule matcher）：按 outbound/endpoint tag 反查其 PreferredAddress/PreferredDomain
+  //（WG=peer allowed_ips Lookup / TS=routePrefixes + MagicDNS）命中即路由到该 outbound。块 0c 试点用它让 endpoint
+  // 自声明归位、替代手动 ip_cidr（限非全隧道节点；全隧道含 0/0 会令 PreferredAddress 恒 true 抢全局，仍走 ip_cidr）。
+  preferred_by?: string[];
   sniffer?: string[];
   rewrite_target?: boolean; // sing-box 1.12+
   timeout?: string;

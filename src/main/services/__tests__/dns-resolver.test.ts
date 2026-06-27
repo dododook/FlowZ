@@ -260,7 +260,7 @@ describe('Q1 Windows takeover：消除 type:local 死循环（dns-local 改路�
     expect(bankToLocal).toBe(false);
   });
 
-  it('Win+takeover+有 LAN 解析器：内网/captive→dns-lan，银行→dns-domestic，dns-lan server + rule C 直连放行', () => {
+  it('Win+takeover+有 LAN 解析器：内网/captive→dns-lan，银行→dns-domestic，dns-lan(dhcp 动态)+ rule C 直连放行', () => {
     setPlatform('win32');
     const pm = new ProxyManager();
     (pm as any).lanResolverForDns = '192.168.5.1';
@@ -268,8 +268,9 @@ describe('Q1 Windows takeover：消除 type:local 死循环（dns-local 改路�
     expect(lanRule(cfg)?.server).toBe('dns-lan');
     expect(captiveRule(cfg)?.server).toBe('dns-lan');
     expect(bankRule(cfg)?.server).toBe('dns-domestic');
+    // dns-lan 改 type:'dhcp'(动态跟随网关，不再硬编码 lanResolver IP)；lanResolver 仍决定是否建 dns-lan + rule C 放行
     expect(
-      (cfg.dns.servers as AnyCfg[]).some((s) => s.tag === 'dns-lan' && s.server === '192.168.5.1')
+      (cfg.dns.servers as AnyCfg[]).some((s) => s.tag === 'dns-lan' && s.type === 'dhcp')
     ).toBe(true);
     expect(hasRouteDirect(cfg, '192.168.5.1/32')).toBe(true);
   });
