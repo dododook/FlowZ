@@ -3,7 +3,7 @@
  * 通过 GitHub API 检查新版本并支持下载
  */
 
-import { app, shell, BrowserWindow, dialog, net } from 'electron';
+import { app, shell, BrowserWindow, dialog, net, type Session } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LogManager } from './LogManager';
@@ -18,6 +18,9 @@ import type { UserConfig } from '../../shared/types';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { findSuitableUpdateAsset } from './update-asset';
+import { UpdateNetwork } from './UpdateNetwork';
+import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
+import { localProxyPort } from '../../shared/proxy-ports';
 import {
   buildWindowsUpdateVbs,
   buildLinuxAppImageScript,
@@ -46,6 +49,10 @@ export class UpdateService {
   // #60：注入配置读取器（仅用于读 ghProxyPrefix 下载镜像前缀），构造后注入。未配置→null（直连，旧行为）。
   // 与 CoreUpdateService.configProvider / CoreDownloader 同口径——App 自更新与内核/资源下载共用同一 gh 加速前缀。
   private configProvider: (() => Promise<UserConfig | null>) | null = null;
+  // Phase 1（更新网络统一层 §8）：更新链路统一会话层 + 代理运行态读取器，构造后由 index.ts 注入。
+  // 未注入 → updateSession 返回 undefined（net.request 回落 default session，旧行为兜底）。
+  private updateNetwork: UpdateNetwork | null = null;
+  private proxyRunningProvider: (() => boolean) | null = null;
 
   constructor(logManager: LogManager) {
     this.logManager = logManager;
@@ -63,6 +70,34 @@ export class UpdateService {
   /** #60：注入配置读取器（读 ghProxyPrefix）。仿 CoreUpdateService.setConfigProvider，构造后由 index.ts 注入。 */
   setConfigProvider(provider: () => Promise<UserConfig | null>): void {
     this.configProvider = provider;
+  }
+
+  /** Phase 1：注入更新链路统一会话层 + 代理运行态读取器（index.ts 装配）。 */
+  setUpdateNetwork(updateNetwork: UpdateNetwork, proxyRunningProvider: () => boolean): void {
+    this.updateNetwork = updateNetwork;
+    this.proxyRunningProvider = proxyRunningProvider;
+  }
+
+  /**
+   * Phase 1：更新链路（检查/下载）统一会话。读 config(mainSessionViaProxy/mixedPort) + proxyRunning，
+   * 经 resolveMainSessionViaProxy 决定经代理（socks 入站）还是直连；未注入 updateNetwork → undefined
+   * （net.request 回落 default session，旧行为兜底）。读 config 失败 → 直连兜底（自举友好，绝不抛）。
+   */
+  private async updateSession(): Promise<Session | undefined> {
+    if (!this.updateNetwork) return undefined;
+    let viaProxy = false;
+    let mixedPort = 7890;
+    try {
+      const cfg = this.configProvider ? await this.configProvider() : null;
+      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
+      viaProxy = resolveMainSessionViaProxy(running, cfg?.mainSessionViaProxy);
+      if (cfg) mixedPort = localProxyPort(cfg);
+    } catch {
+      viaProxy = false; // 读 config 失败 → 直连兜底
+    }
+    // sessionFor 内部 setProxy 极罕见可能 reject；兜底 undefined（回落 default session）守住「绝不抛」契约——
+    // fetchReleases/downloadWithHardening 不因会话初始化异常而非常规失败。
+    return this.updateNetwork.sessionFor(viaProxy, mixedPort).catch(() => undefined);
   }
 
   /** 读用户配置的 GitHub 加速前缀（规范化）。未配置/读失败 → undefined（直连兜底，不抛）。 */
@@ -634,11 +669,13 @@ export class UpdateService {
   // ========== 私有方法 ==========
 
   private async fetchReleases(): Promise<any[]> {
+    const sess = await this.updateSession();
     return new Promise((resolve, reject) => {
       let settled = false;
       const request = net.request({
         method: 'GET',
         url: `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`,
+        session: sess,
       });
       // 单点收口：防 request/response 双错误源重复 settle；clear timeout；之后任何回调都 no-op。
       const finish = (err: Error | null, val?: any[]) => {
@@ -789,6 +826,7 @@ export class UpdateService {
     // #60：先解析用户 ghProxyPrefix（async），供 handleError 兜底镜像拼接用——与 CoreDownloader.downloadFile 同口径
     // （在 Promise executor 外 await 配置，闭包内用解析后的同步值）。未配置 → undefined（ghMirrorUrl 回落内置 preset[0]）。
     const ghPrefix = await this.resolveGhPrefix();
+    const sess = await this.updateSession();
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(destPath);
       let downloadedBytes = 0;
@@ -833,6 +871,7 @@ export class UpdateService {
       const request = net.request({
         url: url,
         method: 'GET',
+        session: sess,
       });
       request.setHeader('User-Agent', APP_USER_AGENT);
 

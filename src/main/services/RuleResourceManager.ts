@@ -2,7 +2,7 @@
  * 规则资源管理：下载/校验/清单维护 + 动态资源库刷新 + GitHub 加速。
  * .srs 普遍 <1MB → 下载到内存校验魔数后原子落盘。并发池 3，批末一次性保存配置（避免逐项 saveConfig 互相覆盖）。
  */
-import { net } from 'electron';
+import { net, type Session } from 'electron';
 import * as fs from 'fs/promises';
 import * as fssync from 'fs';
 import * as path from 'path';
@@ -37,6 +37,9 @@ import {
   findBuiltin,
 } from './builtin-geo-rulesets';
 import { enumerateResourceRefs, isResourceReferenced } from '../../shared/rule-resource-refs';
+import { UpdateNetwork } from './UpdateNetwork';
+import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
+import { localProxyPort } from '../../shared/proxy-ports';
 
 const IDLE_TIMEOUT_MS = 15_000;
 const OVERALL_TIMEOUT_MS = 120_000;
@@ -58,6 +61,39 @@ export class RuleResourceManager {
     private readonly broadcastConfigChanged: (config: UserConfig) => void,
     private readonly notifyCoreReload: (config: UserConfig) => void
   ) {}
+
+  // Phase 1（更新网络统一层 §8）：更新链路统一会话层 + 代理运行态读取器，构造后由 index.ts 注入。
+  // 未注入 → updateSession 返回 undefined（net.request 回落 default session，旧行为兜底）。
+  private updateNetwork: UpdateNetwork | null = null;
+  private proxyRunningProvider: (() => boolean) | null = null;
+
+  /** Phase 1：注入更新链路统一会话层 + 代理运行态读取器（index.ts 装配）。 */
+  setUpdateNetwork(updateNetwork: UpdateNetwork, proxyRunningProvider: () => boolean): void {
+    this.updateNetwork = updateNetwork;
+    this.proxyRunningProvider = proxyRunningProvider;
+  }
+
+  /**
+   * Phase 1：资源下载统一会话。读 config(mainSessionViaProxy/mixedPort) + proxyRunning，经
+   * resolveMainSessionViaProxy 决定经代理（socks 入站）还是直连；未注入 → undefined（net.request 回落
+   * default session，旧行为兜底）。读 config 失败 → 直连兜底（绝不抛）。
+   */
+  private async updateSession(): Promise<Session | undefined> {
+    if (!this.updateNetwork) return undefined;
+    let viaProxy = false;
+    let mixedPort = 7890;
+    try {
+      const cfg = await this.configManager.loadConfig();
+      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
+      viaProxy = resolveMainSessionViaProxy(running, cfg.mainSessionViaProxy);
+      mixedPort = localProxyPort(cfg);
+    } catch {
+      viaProxy = false; // 读 config 失败 → 直连兜底
+    }
+    // sessionFor 内部 setProxy 极罕见可能 reject；兜底 undefined 守住 fetchBuffer/fetchJson 的「永不 reject」契约
+    // （其失败一律归一为 {ok:false}/reject('...')，不因会话初始化异常逃逸）。
+    return this.updateNetwork.sessionFor(viaProxy, mixedPort).catch(() => undefined);
+  }
 
   // 串行化所有 load-modify-save，防并发批次/删除/setGhProxy 在 load→save 窗口内交错丢写（review P2-1）
   private saveChain: Promise<unknown> = Promise.resolve();
@@ -533,10 +569,11 @@ export class RuleResourceManager {
     }
   }
 
-  private fetchBuffer(
+  private async fetchBuffer(
     url: string,
     onChunk?: (received: number, total: number | null) => void
   ): Promise<FetchResult> {
+    const sess = await this.updateSession();
     return new Promise((resolve) => {
       let settled = false;
       const done = (v: FetchResult) => {
@@ -549,7 +586,7 @@ export class RuleResourceManager {
       let received = 0;
       let total: number | null = null;
       const chunks: Buffer[] = [];
-      const req = net.request({ url, redirect: 'follow' });
+      const req = net.request({ url, redirect: 'follow', session: sess });
       req.setHeader('User-Agent', APP_USER_AGENT);
 
       let encoded = false; // 响应被压缩（content-encoding）→ data 为解压字节，content-length 是压缩长度，跳过比对
@@ -699,9 +736,10 @@ export class RuleResourceManager {
     return items;
   }
 
-  private fetchJson(url: string): Promise<any> {
+  private async fetchJson(url: string): Promise<any> {
+    const sess = await this.updateSession();
     return new Promise((resolve, reject) => {
-      const req = net.request({ url, redirect: 'follow' });
+      const req = net.request({ url, redirect: 'follow', session: sess });
       req.setHeader('User-Agent', APP_USER_AGENT);
       req.setHeader('Accept', 'application/vnd.github+json');
       const chunks: Buffer[] = [];
