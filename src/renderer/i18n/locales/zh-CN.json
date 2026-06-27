@@ -597,6 +597,8 @@
         "importSuccessDesc": "已恢复 {{servers}} 个节点、{{subs}} 个订阅、{{rules}} 条规则",
         "importFail": "导入失败",
         "importInvalidFile": "文件格式无效，请选择正确的 FlowZ 备份文件",
+        "crossPlatformRulesDisabled": "跨平台导入：{{count}} 条进程规则（按进程名匹配）已禁用，需在规则页重新适配当前平台的进程名",
+        "meshImportHint": "导入了 {{count}} 个组网节点：多设备使用同一身份（主机名/认证密钥）可能在 tailnet 冲突，建议改主机名或重新登录",
         "importConfirmTitle": "确认恢复配置",
         "importConfirmDesc": "此操作将完全覆盖当前的节点、订阅和规则配置，且无法撤销。请确认您已了解风险后再继续。",
         "importConfirmBtn": "确认覆盖恢复"

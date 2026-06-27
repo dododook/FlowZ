@@ -597,6 +597,8 @@
         "importSuccessDesc": "已還原 {{servers}} 個節點、{{subs}} 個訂閱、{{rules}} 條規則",
         "importFail": "匯入失敗",
         "importInvalidFile": "檔案格式無效，請選擇正確的 FlowZ 備份檔案",
+        "crossPlatformRulesDisabled": "跨平台匯入：{{count}} 條進程規則（按進程名匹配）已停用，需在規則頁重新適配目前平台的進程名",
+        "meshImportHint": "匯入了 {{count}} 個組網節點：多裝置使用同一身分（主機名/認證金鑰）可能在 tailnet 衝突，建議改主機名或重新登入",
         "importConfirmTitle": "確認還原設定",
         "importConfirmDesc": "此操作將完全覆蓋目前的節點、訂閱和規則設定，且無法復原。請確認您已了解風險後再繼續。",
         "importConfirmBtn": "確認覆蓋還原"

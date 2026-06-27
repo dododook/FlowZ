@@ -93,6 +93,20 @@ export function BackupRestoreSection() {
             rules: result.info.ruleCount,
           }),
         });
+        // 跨平台导入：进程规则（按进程名匹配）平台特定，已禁用——提示在规则页重映射当前平台进程名。
+        if (result.info.crossPlatformDisabledRules) {
+          toast.warning(
+            t('settings.advanced.backup.crossPlatformRulesDisabled', {
+              count: result.info.crossPlatformDisabledRules,
+            })
+          );
+        }
+        // 含组网节点：多设备使用同一身份（主机名/认证密钥）可能在 tailnet 冲突，提示改名/重登。
+        if (result.info.meshServerCount > 0) {
+          toast.warning(
+            t('settings.advanced.backup.meshImportHint', { count: result.info.meshServerCount })
+          );
+        }
       } else if (result.error === 'cancelled') {
         // user cancelled file picker — do nothing
       } else if (result.error === 'invalid_json' || result.error === 'invalid_format') {

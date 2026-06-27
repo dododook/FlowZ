@@ -888,6 +888,8 @@ export interface BackupInfo {
   ruleCount: number;
   ruleSetCount: number;
   appRuleCount: number;
+  // 跨平台导入时被禁用的进程规则数（processName/processPath 平台特定）。同后端 BackupInfo。
+  crossPlatformDisabledRules?: number;
 }
 
 /**

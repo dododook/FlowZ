@@ -597,6 +597,8 @@
         "importSuccessDesc": "Restored {{servers}} nodes, {{subs}} subscriptions, {{rules}} rules",
         "importFail": "Import failed",
         "importInvalidFile": "Invalid file. Please select a valid FlowZ backup file.",
+        "crossPlatformRulesDisabled": "Cross-platform import: {{count}} process rule(s) disabled (process names are platform-specific). Re-map them to this platform's process names in Rules.",
+        "meshImportHint": "Imported {{count}} mesh node(s): using the same identity (hostname/auth key) on multiple devices may conflict in the tailnet. Consider changing the hostname or re-logging in.",
         "importConfirmTitle": "Confirm Restore",
         "importConfirmDesc": "This will completely overwrite your current nodes, subscriptions, and rules. This action cannot be undone. Please confirm before proceeding.",
         "importConfirmBtn": "Confirm & Restore"
