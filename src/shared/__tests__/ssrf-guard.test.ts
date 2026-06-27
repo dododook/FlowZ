@@ -1,4 +1,4 @@
-import { isPrivateIp, assertHostAllowed } from '../ssrf-guard';
+import { isPrivateIp, isFlowzFakeIp, assertHostAllowed } from '../ssrf-guard';
 
 describe('isPrivateIp — IPv4', () => {
   it('私网/回环/link-local/CGNAT/通配 → BLOCK', () => {
@@ -114,5 +114,64 @@ describe('assertHostAllowed — DNS rebinding 防护（注入 lookup）', () => 
     await expect(assertHostAllowed(new URL('https://mixed.example.com/'), lookup)).rejects.toThrow(
       /已拒绝/
     );
+  });
+
+  it('域名解析到 FakeIP + exemptFakeIp=true（经代理）→ 放行（核按域名重解析真实）', async () => {
+    const v6 = async () => [{ address: 'fc00::57' }];
+    await expect(
+      assertHostAllowed(new URL('https://subscribe.example.com/sub'), v6, true)
+    ).resolves.toBeUndefined();
+    const v4 = async () => [{ address: '198.18.0.1' }];
+    await expect(
+      assertHostAllowed(new URL('https://subscribe.example.com/sub'), v4, true)
+    ).resolves.toBeUndefined();
+  });
+
+  it('域名解析到 FakeIP + exemptFakeIp=false（直连，默认）→ 拒（防本机内网 SSRF）', async () => {
+    const v6 = async () => [{ address: 'fc00::57' }];
+    await expect(
+      assertHostAllowed(new URL('https://subscribe.example.com/sub'), v6)
+    ).rejects.toThrow(/已拒绝/);
+  });
+
+  it('字面 FakeIP（https://[fc00::57]）即便 exemptFakeIp=true → 拒（字面 IP 无域名反查，不豁免）', async () => {
+    await expect(
+      assertHostAllowed(new URL('https://[fc00::57]/sub'), neverCalled, true)
+    ).rejects.toThrow(/已拒绝/);
+  });
+
+  it('真实 ULA（fd00::/8）非 FakeIP + exemptFakeIp=true → 仍拒（豁免只覆盖 FakeIP 段）', async () => {
+    const lookup = async () => [{ address: 'fd00::1' }];
+    await expect(
+      assertHostAllowed(new URL('https://evil.example.com/sub'), lookup, true)
+    ).rejects.toThrow(/已拒绝/);
+  });
+
+  it('FakeIP + 真内网 混合 + exemptFakeIp=true → 拒（真内网仍命中）', async () => {
+    const lookup = async () => [{ address: 'fc00::57' }, { address: '10.0.0.5' }];
+    await expect(
+      assertHostAllowed(new URL('https://mixed2.example.com/'), lookup, true)
+    ).rejects.toThrow(/已拒绝/);
+  });
+});
+
+describe('isFlowzFakeIp — FlowZ FakeIP 假段（198.18.0.0/15 + fc00::/18）', () => {
+  it('FakeIP v4（198.18/15）+ v6（fc00::/18）→ true', () => {
+    expect(isFlowzFakeIp('198.18.0.1')).toBe(true);
+    expect(isFlowzFakeIp('198.19.255.255')).toBe(true);
+    expect(isFlowzFakeIp('fc00::57')).toBe(true);
+    expect(isFlowzFakeIp('fc00:3fff::1')).toBe(true); // /18 上界内
+  });
+
+  it('FakeIP 段外（真内网 / 真 ULA / link-local / 公网）→ false（豁免不放过真内网）', () => {
+    expect(isFlowzFakeIp('198.17.0.1')).toBe(false); // 198.18/15 下界外
+    expect(isFlowzFakeIp('198.20.0.1')).toBe(false); // 上界外
+    expect(isFlowzFakeIp('fc00:4000::1')).toBe(false); // 超 /18
+    expect(isFlowzFakeIp('fc01::1')).toBe(false); // 首段非 fc00
+    expect(isFlowzFakeIp('fd00::1')).toBe(false); // 真实 ULA（fd00::/8）
+    expect(isFlowzFakeIp('fe80::1')).toBe(false); // link-local
+    expect(isFlowzFakeIp('10.0.0.1')).toBe(false);
+    expect(isFlowzFakeIp('8.8.8.8')).toBe(false);
+    expect(isFlowzFakeIp('2001:db8::1')).toBe(false);
   });
 });

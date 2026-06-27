@@ -65,6 +65,26 @@ export function isPrivateIp(ip: string): boolean {
 }
 
 /**
+ * 是否 FlowZ FakeIP 假地址（FAKEIP_INET4_RANGE=198.18.0.0/15 / FAKEIP_INET6_RANGE=fc00::/18，见 shared/fakeip-filter）。
+ * TUN+FakeIP 下系统 DNS 解析公网订阅域名会返回假 IP（如 fc00::57）；它不是真内网——核连接时按域名反查真实解析。
+ * SSRF guard 须豁免它，否则订阅经代理（系统 DNS 拿假 IP）被 isPrivateIp 的 fc00::/7 判定误拒（真机 2026-06-28 实证
+ * subscribe.x → fc00::57）。注：fc00::/18 是 FlowZ 专用假段（真实 ULA 用 fd00::/8，互不相交），豁免不放过真内网。
+ */
+export function isFlowzFakeIp(ip: string): boolean {
+  const h = ip.replace(/^\[|\]$/g, '').toLowerCase();
+  const kind = isIP(h);
+  if (kind === 4) {
+    const m = h.match(/^(\d{1,3})\.(\d{1,3})\./);
+    return !!m && parseInt(m[1], 10) === 198 && [18, 19].includes(parseInt(m[2], 10)); // 198.18.0.0/15
+  }
+  if (kind === 6) {
+    const seg = expandIpv6(h);
+    return !!seg && seg[0] === 0xfc00 && (seg[1] & 0xc000) === 0; // fc00::/18（首 18 bit）
+  }
+  return false;
+}
+
+/**
  * 把一个 isIP 已认定合法的 IPv6 字符串规范化展开成 8 个 16-bit 段数值。
  * 处理 `::` 压缩与末尾内嵌点分 IPv4（如 ::ffff:127.0.0.1）。非法/解析失败返回 null。
  */
@@ -111,12 +131,19 @@ export type DnsLookupAll = (host: string) => Promise<Array<{ address: string }>>
  * 残余风险（TOCTOU rebinding）：guard 校验「此刻」解析结果；Electron net.fetch 不暴露
  * pin-IP 钩子，fetch 内部会再次解析，理论上存在两次 lookup 间被改写的窗口。本取舍优先拒绝内网解析结果。
  */
-export async function assertHostAllowed(urlObj: URL, lookup: DnsLookupAll): Promise<void> {
+export async function assertHostAllowed(
+  urlObj: URL,
+  lookup: DnsLookupAll,
+  // 仅「经代理（proxied socks session）」时豁免 FlowZ FakeIP：经代理出口是远程节点、本机内网不可达，系统 DNS
+  // 把公网域名解析成 FakeIP（核分配、连接时按域名反查真实）可安全豁免；直连/字面 IP 不豁免（防本机内网 SSRF）。
+  exemptFakeIp = false
+): Promise<void> {
   const host = urlObj.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (host === 'localhost') {
     throw new Error(`订阅地址指向本机/内网/link-local，已拒绝: ${urlObj.hostname}`);
   }
   if (isIP(host)) {
+    // 字面 IP 无「域名反查真实」语义——字面 FakeIP 也按内网拒（不豁免），防 https://[fc00::57] 直连内网绕过。
     if (isPrivateIp(host)) {
       throw new Error(`订阅地址指向本机/内网/link-local，已拒绝: ${urlObj.hostname}`);
     }
@@ -135,6 +162,8 @@ export async function assertHostAllowed(urlObj: URL, lookup: DnsLookupAll): Prom
     throw new Error(`订阅地址无法解析到任何 IP，已拒绝: ${urlObj.hostname}`);
   }
   for (const r of resolved) {
+    // 仅经代理时豁免 FakeIP（核按域名 socks5h 重解析真实，本机内网不可达）；直连不豁免（域名真实解析内网仍须拦）。
+    if (exemptFakeIp && isFlowzFakeIp(r.address)) continue;
     if (isPrivateIp(r.address)) {
       throw new Error(
         `订阅地址解析到本机/内网/link-local，已拒绝: ${urlObj.hostname} → ${r.address}`

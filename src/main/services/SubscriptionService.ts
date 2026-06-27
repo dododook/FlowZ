@@ -528,11 +528,15 @@ export class SubscriptionService {
     // 注：httpPort 参数已废弃（订阅经代理改走 update-in 端口；保留签名待块1 合并后统一清理调用方），viaProxy 路径不再读它。
     void httpPort;
     let fetchImpl: typeof net.fetch;
+    // 实际是否走 proxied（经核 update-in socks，远程出口、本机内网不可达）——SSRF guard 的 FakeIP 豁免须键于此，
+    // 而非 viaProxy 意图：viaProxy=true 但 update-in 端口不可用时回退 direct，那时不能豁免 FakeIP（防本机内网 SSRF）。
+    let viaProxiedSession = false;
     if (viaProxy) {
       const updateInPort = this.updateInPortProvider?.() ?? 0;
       if (updateInPort > 0) {
         const ps = await this.getProxiedSession(updateInPort);
         fetchImpl = ps.fetch.bind(ps);
+        viaProxiedSession = true;
       } else {
         const ds = await this.getDirectSession();
         fetchImpl = ds.fetch.bind(ds);
@@ -545,7 +549,13 @@ export class SubscriptionService {
     // H2：redirect:'manual' 自管重定向链——每跳 Location 重跑 SSRF guard（含 H1 DNS 解析），
     // 通过才续跳，最多 MAX_REDIRECTS 跳。默认 follow 会让首跳过 guard 后跳到内网不复检。
     let currentUrl = url;
-    await assertHostAllowed(parse(currentUrl), (h) => dnsPromises.lookup(h, { all: true })); // H1：初始 URL 解析后逐 IP 校验
+    // 仅实际走 proxied（viaProxiedSession）才豁免 FlowZ FakeIP（TUN+FakeIP 下系统 DNS 把公网域名解析成假 IP，
+    // 经核反查真实；直连/端口不可用回退直连不豁免，防域名真实解析到本机内网的 SSRF）。
+    await assertHostAllowed(
+      parse(currentUrl),
+      (h) => dnsPromises.lookup(h, { all: true }),
+      viaProxiedSession
+    ); // H1：初始 URL 解析后逐 IP 校验
 
     let response: GlobalResponse | null = null;
     for (let hop = 0; hop <= SubscriptionService.MAX_REDIRECTS; hop++) {
@@ -571,7 +581,11 @@ export class SubscriptionService {
         if (nextObj.protocol !== 'http:' && nextObj.protocol !== 'https:') {
           throw new Error('订阅重定向目标协议不支持（仅允许 http/https），已拒绝');
         }
-        await assertHostAllowed(nextObj, (h) => dnsPromises.lookup(h, { all: true })); // 重定向目标过同一 guard（含 DNS 解析）
+        await assertHostAllowed(
+          nextObj,
+          (h) => dnsPromises.lookup(h, { all: true }),
+          viaProxiedSession
+        ); // 重定向目标过同一 guard（含 DNS 解析）
         // 释放上一跳响应体，避免泄漏。
         try {
           await response.body?.cancel();
