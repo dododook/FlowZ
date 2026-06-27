@@ -959,6 +959,7 @@
     "accessModeSystem": "System",
     "accessModeUserspaceDesc": "gVisor 用户态网络栈：零提权，仅用于出网 / 访问。",
     "accessModeSystemTunOnly": "System 需 TUN 模式；非 TUN 时按 gVisor 运行（你的设置已保留，切回 TUN 自动恢复）。",
+    "accessModeWindowsGvisorOnly": "Windows 仅支持 gVisor —— 以用户态网络栈运行（仅出网 / 访问，不建内核接口）。",
     "accessModeSystemDesc": "System：建内核接口，可被其它设备访问、替子网转发（需 helper + TUN）。",
     "wgFullTunnel": "全部出网经此节点",
     "wgFullTunnelDesc": "本机全部外网流量经此 WireGuard 节点出去（此节点即出口）；关闭则仅路由下方网段。",

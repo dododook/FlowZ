@@ -364,14 +364,6 @@ export class HelperManager implements IPrivilegedHelper {
     }
   }
 
-  /** No-op：接口 metric 降权是 Windows 出口托管根治手段（无 ifscope）；macOS 用 `route -ifscope` 作用域隔离，不需要。 */
-  async setInterfaceMetric(
-    _iface: string,
-    _metric: number
-  ): Promise<{ ok: boolean; error?: string }> {
-    return { ok: true };
-  }
-
   /** 经 helper 以 root 杀掉所有 sing-box（含外部 osascript 路径遗留的孤儿），零提权。 */
   async cleanup(): Promise<boolean> {
     try {

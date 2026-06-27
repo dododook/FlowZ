@@ -959,6 +959,7 @@
     "accessModeSystem": "System",
     "accessModeUserspaceDesc": "gVisor 使用者態網路堆疊：零提權，僅用於出網 / 存取。",
     "accessModeSystemTunOnly": "System 需 TUN 模式；非 TUN 時按 gVisor 運行（你的設定已保留，切回 TUN 自動恢復）。",
+    "accessModeWindowsGvisorOnly": "Windows 僅支援 gVisor —— 以使用者態網路堆疊執行（僅出網 / 存取，不建核心介面）。",
     "accessModeSystemDesc": "System：建核心介面，可被其它裝置存取、替子網轉發（需 helper + TUN）。",
     "wgFullTunnel": "全部出網經此節點",
     "wgFullTunnelDesc": "本機全部外網流量經此 WireGuard 節點出去（此節點即出口）；關閉則僅路由下方網段。",

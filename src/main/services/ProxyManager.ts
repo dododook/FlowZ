@@ -66,6 +66,7 @@ import {
   meshSelectedExitFallsBackToDirect,
   meshAlwaysRoutesSubnets,
   endpointForcedRouteCidrs,
+  meshSystemSupportedOnPlatform,
 } from '../../shared/endpoint-routes';
 import { resolveStartRetryBudget } from '../../shared/start-retry-policy';
 import {
@@ -750,7 +751,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //   best-effort stopCore 停掉起不来的核（startSingBoxProcess 失败分支，跨平台；win32 另有顶部 waitForOwnTunAdapter-
     //   Released 门控）；② 恒定 3s × N 次重试给内核留足异步回收双 utun/适配器的时间 → start 自愈。次数/间隔以 Mac
     //   真机释放时序为准（Task #6 校准）。
-    const startRetryBudget = resolveStartRetryBudget(isTunMode, config.servers);
+    const startRetryBudget = resolveStartRetryBudget(isTunMode, config.servers, process.platform);
     const runStartWithRetry = (): Promise<void> =>
       retry(() => this.startSingBoxProcess(startGen), {
         maxRetries: startRetryBudget.maxRetries,
@@ -2579,8 +2580,10 @@ done
       // Phase 2：reverseMesh(system 内核接口)需提权,仅 TUN 模式可行（系统代理路径不提权）。非 TUN →
       // buildOutbounds 跳过 reverseMesh 节点不发射,避免内核接口创建失败致启动 FATAL。此判据取「会以提权跑」
       // 的下界(TUN);helper 实际就绪由连接闸门保证,maybePromptHelperGate 仅 macOS/Win 引导(Linux 另径),
-      // 各平台 system 接口可创建性真机另验(设计 §11.6/11.7)。
-      systemInterfaceAvailable: cfg.proxyModeType === 'tun',
+      // 各平台 system 接口可创建性真机另验(设计 §11.6/11.7)。Windows 禁 System（强制 gVisor）→ 单一真值谓词
+      // meshSystemSupportedOnPlatform（理由见其注释：tsnet 自装 exit 0/0 抢 DNS、无 ifscope 隔离）。
+      systemInterfaceAvailable:
+        cfg.proxyModeType === 'tun' && meshSystemSupportedOnPlatform(process.platform),
     });
     this.pendingEndpoints = outboundsResult.pendingEndpoints;
     this.pendingRuleSelectors = outboundsResult.pendingRuleSelectors;

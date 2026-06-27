@@ -167,6 +167,20 @@ export function meshUsesSystemInterface(server: ServerConfig): boolean {
 }
 
 /**
+ * 平台是否支持组网 System 内核接口模式（reverseMesh）。**Windows 禁 System**：Windows 上 sing-box 的 tsnet 给
+ * flowz-ts 自装 exit 0/0 metric=0、抢直连/bootstrap DNS 致全网瘫，且无 macOS 的 ifscope 作用域可隔离 → System
+ * 不可靠；故 Windows 一律强制 gVisor（userspace 栈零提权、不建内核接口、出口经 tsnet 内部转发不依赖 OS 路由）。
+ * macOS/Linux 支持 System。接受 process.platform / window.electron.platform 取值，是「Windows 禁 System」的**单一
+ * 真值谓词**——ProxyManager.systemInterfaceAvailable、start-retry 预算、UI AccessModeField、MeshExitRouteManager
+ * 共用，避免散落多处平台判断漂移（同 neighbor.ts 的能力谓词模式）。
+ */
+export function meshSystemSupportedOnPlatform(
+  platform: NodeJS.Platform | string | undefined
+): boolean {
+  return (platform || '').toLowerCase() !== 'win32';
+}
+
+/**
  * 节点是否参与测速。不可测=tailscale / 自定义 endpoint / reverseMesh(system 内核接口)。
  * 与 ProxyManager.buildSpeedTestOutbound 的 null 分支同口径(单一真值);WireGuard 仍可测。
  */

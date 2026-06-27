@@ -40,7 +40,10 @@ const SUPPORT_DIR = path.join(process.env.ProgramData || 'C:\\ProgramData', 'Flo
 const ERROR_SERVICE_DOES_NOT_EXIST = 1060;
 /** 与 helper-win 的 protoVersion 对应。Windows 独立谱系：v1 = ping/version/status/start/stop/cleanup/freeport。 */
 const MIN_USABLE_PROTO = 1;
-const EXPECTED_PROTO = 5; // v5：iface-metric=PowerShell 全路径+两族(IPv6)。v4=PS单族/v3=netsh(不生效)。proto<5 仍可 TUN，升级温和提示。
+// Windows 禁 System（强制 gVisor）后，客户端只用 v1 命令：iface-metric（v3–v5）已删；route-add/del（v2）仅
+// MeshExitRouteManager 调用，而其 win32 路径已 no-op 不可达。故期望 proto 降回 MIN_USABLE_PROTO → 不再对 v1–v4
+// 旧 helper 弹「可升级」提示（那些高 proto 能力 Windows 已不调用）。将来若 Windows 重新启用 route 命令再上调。
+const EXPECTED_PROTO = MIN_USABLE_PROTO;
 
 export class WindowsServiceHelper implements IPrivilegedHelper {
   /** 装/卸互斥期返回最近稳定快照，避免 TOCTOU 半态（对齐 HelperManager.lastStableStatus）。 */
@@ -241,21 +244,6 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     if (!cidrs.length) return { ok: true };
     try {
       const resp = await this.sendCommand([cmd, iface, cidrs.join(',')], 5000);
-      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  }
-
-  /**
-   * 经服务(SYSTEM)把内核接口的接口 metric 设高（proto v3）。Windows System TS 出口根治：tsnet 给 flowz-ts 装的
-   * exit 0/0 metric=0 会抢过物理网卡、把直连/bootstrap DNS 灌进 TS 出口 → SERVFAIL；降权 flowz-ts 后其 0/0 输给
-   * 以太网、直连回物理，出口经 sing-box 内部转发不受影响（真机实证）。proto<3 旧服务回 ERR unknown → {ok:false}
-   * （调用方降级，提示重装 helper）。
-   */
-  async setInterfaceMetric(iface: string, metric: number): Promise<{ ok: boolean; error?: string }> {
-    try {
-      const resp = await this.sendCommand(['iface-metric', iface, String(metric)], 5000);
       return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };

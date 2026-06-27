@@ -959,6 +959,7 @@
     "accessModeSystem": "System",
     "accessModeUserspaceDesc": "gVisor userspace netstack — no privileges; outbound / access only.",
     "accessModeSystemTunOnly": "System needs TUN mode; in non-TUN it runs as gVisor (your setting is kept and restored when you switch back to TUN).",
+    "accessModeWindowsGvisorOnly": "Windows supports gVisor only — runs as a userspace netstack (outbound / access; no kernel interface).",
     "accessModeSystemDesc": "System: real kernel interface — reachable by other devices, can route for subnets (needs helper + TUN).",
     "wgFullTunnel": "Route all internet via this node",
     "wgFullTunnelDesc": "All internet egresses via this WireGuard node (this node is the exit); off = only route the subnets below.",
