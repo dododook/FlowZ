@@ -1032,7 +1032,11 @@ if (gotTheLock) {
     // Phase 1（更新网络统一层）：更新链路（检查/资源/应用）统一会话层——独立 partition 会话按 mainSessionViaProxy
     // ×proxyRunning 选经代理(socks 入站)/直连，取代裸 net.request 走 default session。proxyManager 已就绪。
     const updateNetwork = new UpdateNetwork();
-    updateService.setUpdateNetwork(updateNetwork, () => proxyManager?.getStatus().running ?? false);
+    updateService.setUpdateNetwork(
+      updateNetwork,
+      () => proxyManager?.getStatus().running ?? false,
+      () => proxyManager?.getUpdateInPort() ?? null
+    );
     // 后台预热内核版本缓存（getCoreVersion 写 this.coreVersion）：使「关于」页**首次**进入也命中缓存、
     // 不再临时 spawn `sing-box version` 子进程导致加载转圈。
     // 延后 ~5s 触发（C2）：spawn 50MB sing-box.exe 会再触发一次 AV 扫描，与 Windows portable 冷启动的自解压 + AV
@@ -1168,7 +1172,8 @@ if (gotTheLock) {
     );
     ruleResourceManager.setUpdateNetwork(
       updateNetwork,
-      () => proxyManager?.getStatus().running ?? false
+      () => proxyManager?.getStatus().running ?? false,
+      () => proxyManager?.getUpdateInPort() ?? null
     );
     // 启动即把内置 geo 规则集补种到运行时目录：缺失/损坏补种 + 出厂态下 app 升级带来的新出厂数据刷新
     // （不回滚网络更新版）。使「规则资源」页在首次启动代理前也能反映真实文件、可更新/重置；幂等、不阻塞启动。

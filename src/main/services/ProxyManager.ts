@@ -350,6 +350,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 真实直连出口 IP 与代理出口 IP（inbound 规则在 route.rules 头部短路，不受分流策略影响）。
   private probeDirectPort: number | null = null;
   private probeProxyPort: number | null = null;
+  // 更新链路统一 inbound `update-in`（socks）的动态端口（每次 start 与探针同批分配）：FlowZ 应用更新检查/下载
+  // + 规则资源下载流量 pin 到此口（订阅/核心链路待后续接入），route 头部钉死按 proxyMode 决策（global/smart→
+  // 经代理 userExitTag，off-mesh 回退 direct；direct→direct）。归属 100% 确定（只有 FlowZ 主动往此口发）→
+  // 天然不误伤其它进程。更新网络统一层 §4.3 / Phase 2。
+  private updateInPort: number | null = null;
   private configPath: string;
   private singboxPath: string;
   // `sing-box version` 探测串行链（issue #150）：所有版本探测（启动检测/换核重读/CoreUpdate 检查/关于页）汇流
@@ -815,6 +820,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
                     ib.listen_port = this.probeDirectPort;
                   } else if (ib.tag === 'probe-proxy-in' && this.probeProxyPort) {
                     ib.listen_port = this.probeProxyPort;
+                  } else if (ib.tag === 'update-in' && this.updateInPort) {
+                    ib.listen_port = this.updateInPort;
                   }
                 }
                 await this.writeSingBoxConfig(singboxConfig);
@@ -2200,7 +2207,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     const servers: net.Server[] = [];
     const ports: number[] = [];
     try {
-      for (let i = 0; i < 2; i++) {
+      // 3 个本地回环端口：probe-direct / probe-proxy / update-in（更新链路统一 inbound，Phase 2）
+      for (let i = 0; i < 3; i++) {
         let port = 0;
         // 至多 5 次重绑避开排除端口（ephemeral 段与常用端口几乎不撞，循环仅作保险）
         for (let attempt = 0; attempt < 5; attempt++) {
@@ -2224,9 +2232,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
       this.probeDirectPort = ports[0];
       this.probeProxyPort = ports[1];
+      this.updateInPort = ports[2];
     } catch {
       this.probeDirectPort = null;
       this.probeProxyPort = null;
+      this.updateInPort = null;
     } finally {
       await Promise.all(
         servers.map((srv) => new Promise<void>((resolve) => srv.close(() => resolve())))
@@ -2492,6 +2502,11 @@ done
     return null;
   }
 
+  /** 当前 update-in inbound 端口（更新链路 pin 目标）；代理未启动或分配失败时返回 null。供 UpdateNetwork 取数。 */
+  getUpdateInPort(): number | null {
+    return this.updateInPort;
+  }
+
   /**
    * #57 resolve-ahead：本次预解析得到的节点 IP（写进了 outbound.server）。供 DiagnosticService 把这些
    * config.servers 之外的真实节点 IP 一并按节点身份脱敏（<ip-N>），杜绝漏进诊断报告（红线：零节点身份明文）。
@@ -2598,11 +2613,13 @@ done
       inbounds: buildInbounds(config, resolvedIps, {
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
+        updateInPort: this.updateInPort,
       }),
       outbounds: outboundsResult.outbounds,
       route: buildRouteConfig(config, idToTagMap, {
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
+        updateInPort: this.updateInPort,
         lanResolverForDns: this.lanResolverForDns,
         pendingEndpoints: this.pendingEndpoints,
         log: (level, message) => this.logToManager(level, message),
@@ -4675,9 +4692,10 @@ exit 0
     this.singboxPid = null;
     this.startTime = null;
     this.startedViaHelper = false;
-    // 进程已停 → 探针端口失效，置 null 让 IpInfoService 知道代理出口不可测
+    // 进程已停 → 探针/update-in 端口失效，置 null 让 IpInfoService / UpdateNetwork 知道出口/更新口不可测
     this.probeDirectPort = null;
     this.probeProxyPort = null;
+    this.updateInPort = null;
     // Tailscale 登录 URL 去重集随核会话收尾清空（绑定核会话而非整进程）：下个核会话若再触发交互登录，
     // 同一 URL 应重新弹「需登录」提示。tailscaleAuthPolling 有自身 delete 收尾，不在此动（勿破在飞登录）。
     this.tailscaleAuthSeen.clear();

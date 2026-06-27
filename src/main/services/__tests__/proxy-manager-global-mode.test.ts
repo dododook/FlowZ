@@ -28,6 +28,7 @@ import type { UserConfig } from '../../../shared/types';
 const routeDeps = (): RouteConfigDeps => ({
   probeDirectPort: null,
   probeProxyPort: null,
+  updateInPort: null,
   lanResolverForDns: null,
   pendingEndpoints: [],
   log: () => {},

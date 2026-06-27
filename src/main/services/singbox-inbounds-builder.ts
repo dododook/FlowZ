@@ -27,6 +27,7 @@ import { isValidMacAddress, isTunMacFilterSupported } from '../../shared/neighbo
 export interface InboundsDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
+  updateInPort: number | null;
 }
 
 export function buildInbounds(
@@ -80,6 +81,19 @@ export function buildInbounds(
         listen_port: deps.probeProxyPort,
       }
     );
+  }
+
+  // 更新链路统一 inbound（socks，Phase 2）：FlowZ 应用更新检查/下载（UpdateService）+ 规则资源下载
+  // （RuleResourceManager）流量 pin 到此口（订阅/核心链路待后续接入），route 头部钉死按 proxyMode 决策
+  // （不限 domain：归属 100% 确定不误伤，且覆盖任意订阅 URL）。用 socks（非 http）——net.request 经 socks
+  // 入站不挂死（Phase 0 V2 实证）+ socks 锚点跨平台一致。loopback 不进 TUN。分配失败则不注入。
+  if (deps.updateInPort) {
+    inbounds.push({
+      type: 'socks',
+      tag: 'update-in',
+      listen: '127.0.0.1',
+      listen_port: deps.updateInPort,
+    });
   }
 
   // TUN 模式额外添加 TUN inbound

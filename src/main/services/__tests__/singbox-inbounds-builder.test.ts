@@ -16,6 +16,7 @@ import { withPlatform } from './platform-test-utils';
 const deps = (over: Partial<InboundsDeps> = {}): InboundsDeps => ({
   probeDirectPort: null,
   probeProxyPort: null,
+  updateInPort: null,
   ...over,
 });
 
@@ -60,6 +61,21 @@ describe('buildInbounds — mixed + probe', () => {
   it('probe 端口缺失（null）→ 不注入探针', () => {
     const ibs = withPlatform('linux', () => buildInbounds(cfg({}), undefined, deps()));
     expect(ibs.map((i) => i.tag)).not.toContain('probe-direct-in');
+  });
+
+  it('update-in 端口注入 → 增 update-in（socks，对应端口）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(cfg({}), undefined, deps({ updateInPort: 21003 }))
+    );
+    const updateIn = byTag(ibs, 'update-in');
+    expect(updateIn.type).toBe('socks');
+    expect(updateIn.listen).toBe('127.0.0.1');
+    expect(updateIn.listen_port).toBe(21003);
+  });
+
+  it('update-in 端口缺失（null）→ 不注入', () => {
+    const ibs = withPlatform('linux', () => buildInbounds(cfg({}), undefined, deps()));
+    expect(ibs.map((i) => i.tag)).not.toContain('update-in');
   });
 });
 

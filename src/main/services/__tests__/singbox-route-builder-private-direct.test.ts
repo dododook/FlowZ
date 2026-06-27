@@ -69,6 +69,7 @@ const capturingDeps = (): { deps: RouteConfigDeps; logs: string[] } => {
   const deps: RouteConfigDeps = {
     probeDirectPort: null,
     probeProxyPort: null,
+    updateInPort: null,
     lanResolverForDns: null,
     pendingEndpoints: [],
     log: (_level, message) => logs.push(message),

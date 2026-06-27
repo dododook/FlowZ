@@ -81,6 +81,7 @@ const udp443RejectRule = (matcher: Record<string, unknown> = {}): SingBoxRouteRu
 export interface RouteConfigDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
+  updateInPort: number | null;
   lanResolverForDns: string | null;
   pendingEndpoints: SingBoxEndpoint[];
   log: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
@@ -199,6 +200,20 @@ export function buildRouteConfig(
       { inbound: ['probe-direct-in'], action: 'route', outbound: 'direct' },
       { inbound: ['probe-proxy-in'], action: 'route', outbound: selectedServerTag }
     );
+  }
+
+  // A3. update-in 钉死路由（更新链路统一 inbound，紧随探针、先于一切分流，Phase 2）：
+  //   global/smart → userExitTag（经代理，先于 smart 普通分流——§6.2 不漏判被墙更新源；off-mesh 关外网组网节点
+  //                  时随 final 回退 direct，避免功能流量黑洞——与 probe-proxy-in 固定用 selector 的取舍不同：
+  //                  探针黑洞=如实显示出口不可达，更新黑洞=静默失败，故更新走 userExitTag 兜底）
+  //   direct       → direct（尊重用户直连意图，§6.2 不偷代理）
+  //   不限 domain：归属 100% 确定（只有 FlowZ pin 此口）→ 不误伤；且覆盖任意订阅 URL（列不出域名集）。
+  if (deps.updateInPort) {
+    rules.push({
+      inbound: ['update-in'],
+      action: 'route',
+      outbound: proxyMode === 'direct' ? 'direct' : userExitTag,
+    });
   }
 
   // 1. 强制放行 sing-box 核心进程：防止流量回流死循环

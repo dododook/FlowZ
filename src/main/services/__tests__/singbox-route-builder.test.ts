@@ -20,6 +20,7 @@ const deps = (
 ): RouteConfigDeps => ({
   probeDirectPort: null,
   probeProxyPort: null,
+  updateInPort: null,
   lanResolverForDns: null,
   pendingEndpoints,
   log: () => {},
@@ -417,5 +418,59 @@ describe('buildRouteConfig — issue #147 race 上游直连放行（§E.1，防 
       bootstrapRule(buildRouteConfig(cfg([n]), idMap([n]), deps([], { raceUpstreamIps: [] }))).port
     ).not.toContain(853);
     expect(bootstrapRule(buildRouteConfig(cfg([n]), idMap([n]), deps([]))).port).not.toContain(853);
+  });
+});
+
+describe('buildRouteConfig — update-in 钉死路由（Phase 2）', () => {
+  const node = proxyNode();
+  // 找 update-in 规则：inbound 含 'update-in' 的 route 规则。
+  const updateInRule = (rc: any): any =>
+    (rc.rules || []).find((r: any) => Array.isArray(r.inbound) && r.inbound.includes('update-in'));
+
+  it('smart：update-in → proxy-selector（强制经代理）', () => {
+    const rc = buildRouteConfig(
+      cfg([node], { proxyMode: 'smart' }),
+      idMap([node]),
+      deps([], { updateInPort: 21003 })
+    );
+    const r = updateInRule(rc);
+    expect(r).toBeDefined();
+    expect(r.action).toBe('route');
+    expect(r.outbound).toBe('proxy-selector');
+    expect(r.domain_suffix).toBeUndefined(); // 不限 domain
+  });
+
+  it('global：update-in → proxy-selector', () => {
+    const rc = buildRouteConfig(
+      cfg([node], { proxyMode: 'global' }),
+      idMap([node]),
+      deps([], { updateInPort: 21003 })
+    );
+    expect(updateInRule(rc).outbound).toBe('proxy-selector');
+  });
+
+  it('direct：update-in → direct（不偷代理）', () => {
+    const rc = buildRouteConfig(
+      cfg([node], { proxyMode: 'direct' }),
+      idMap([node]),
+      deps([], { updateInPort: 21003 })
+    );
+    expect(updateInRule(rc).outbound).toBe('direct');
+  });
+
+  it('updateInPort 缺失（null）→ 无 update-in 规则', () => {
+    const rc = buildRouteConfig(cfg([node], { proxyMode: 'smart' }), idMap([node]), deps([]));
+    expect(updateInRule(rc)).toBeUndefined();
+  });
+
+  it('off-mesh（关外网组网节点选中）+ smart：update-in → direct（随 userExitTag 回退，避功能流量黑洞）', () => {
+    const wg = wgNode('w1', 'WG', ['10.8.0.0/24'], { allowInternet: false });
+    const rc = buildRouteConfig(
+      cfg([wg], { proxyMode: 'smart' }),
+      idMap([wg]),
+      deps([], { updateInPort: 21003 })
+    );
+    // 此场景下用户常规出口 userExitTag 已回退 direct；update-in 跟随，不黑洞到 off-mesh 节点。
+    expect(updateInRule(rc).outbound).toBe('direct');
   });
 });

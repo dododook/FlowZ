@@ -621,6 +621,22 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     ).toMatchSnapshot();
   });
 
+  it('update-in 端口注入（Phase 2，smart）→ 锁 update-in socks inbound + 钉死 route(proxy-selector)', () => {
+    expect(
+      snap(cfg({ servers: [server({})], proxyMode: 'smart' }), '1.13.0', 'linux', (svc) => {
+        svc.updateInPort = 21003;
+      })
+    ).toMatchSnapshot();
+  });
+
+  it('update-in 端口注入（Phase 2，direct）→ update-in route 钉死 direct（不偷代理）', () => {
+    expect(
+      snap(cfg({ servers: [server({})], proxyMode: 'direct' }), '1.13.0', 'linux', (svc) => {
+        svc.updateInPort = 21003;
+      })
+    ).toMatchSnapshot();
+  });
+
   it('blockQuic=true（smart）→ 锁代理向 udp443 reject 配对 + 末尾兜底 udp443RejectRule()', () => {
     const customRules: Rule[] = [
       {

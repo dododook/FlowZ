@@ -39,7 +39,6 @@ import {
 import { enumerateResourceRefs, isResourceReferenced } from '../../shared/rule-resource-refs';
 import { UpdateNetwork } from './UpdateNetwork';
 import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
-import { localProxyPort } from '../../shared/proxy-ports';
 
 const IDLE_TIMEOUT_MS = 15_000;
 const OVERALL_TIMEOUT_MS = 120_000;
@@ -66,11 +65,18 @@ export class RuleResourceManager {
   // 未注入 → updateSession 返回 undefined（net.request 回落 default session，旧行为兜底）。
   private updateNetwork: UpdateNetwork | null = null;
   private proxyRunningProvider: (() => boolean) | null = null;
+  // Phase 2：update-in inbound 动态端口读取器（proxyManager.getUpdateInPort）。viaProxy 时 pin 此口（非 mixedPort）。
+  private updateInPortProvider: (() => number | null) | null = null;
 
-  /** Phase 1：注入更新链路统一会话层 + 代理运行态读取器（index.ts 装配）。 */
-  setUpdateNetwork(updateNetwork: UpdateNetwork, proxyRunningProvider: () => boolean): void {
+  /** Phase 1/2：注入更新链路统一会话层 + 代理运行态读取器 + update-in 端口读取器（index.ts 装配）。 */
+  setUpdateNetwork(
+    updateNetwork: UpdateNetwork,
+    proxyRunningProvider: () => boolean,
+    updateInPortProvider: () => number | null
+  ): void {
     this.updateNetwork = updateNetwork;
     this.proxyRunningProvider = proxyRunningProvider;
+    this.updateInPortProvider = updateInPortProvider;
   }
 
   /**
@@ -81,18 +87,19 @@ export class RuleResourceManager {
   private async updateSession(): Promise<Session | undefined> {
     if (!this.updateNetwork) return undefined;
     let viaProxy = false;
-    let mixedPort = 7890;
+    let updateInPort = 0;
     try {
       const cfg = await this.configManager.loadConfig();
       const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
       viaProxy = resolveMainSessionViaProxy(running, cfg.mainSessionViaProxy);
-      mixedPort = localProxyPort(cfg);
+      updateInPort = this.updateInPortProvider?.() ?? 0;
     } catch {
       viaProxy = false; // 读 config 失败 → 直连兜底
     }
-    // sessionFor 内部 setProxy 极罕见可能 reject；兜底 undefined 守住 fetchBuffer/fetchJson 的「永不 reject」契约
-    // （其失败一律归一为 {ok:false}/reject('...')，不因会话初始化异常逃逸）。
-    return this.updateNetwork.sessionFor(viaProxy, mixedPort).catch(() => undefined);
+    // viaProxy 但 update-in 端口不可用（核未起/未分配）→ 直连兜底，不 pin 到无效端口
+    if (viaProxy && updateInPort <= 0) viaProxy = false;
+    // sessionFor 内部 setProxy 极罕见可能 reject；兜底 undefined 守住 fetchBuffer/fetchJson 的「永不 reject」契约。
+    return this.updateNetwork.sessionFor(viaProxy, updateInPort).catch(() => undefined);
   }
 
   // 串行化所有 load-modify-save，防并发批次/删除/setGhProxy 在 load→save 窗口内交错丢写（review P2-1）
