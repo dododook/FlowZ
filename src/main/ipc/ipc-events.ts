@@ -85,10 +85,3 @@ export const ipcEventEmitter = new IpcEventEmitter();
 export function broadcastEvent<T = any>(channel: string, data: T): void {
   ipcEventEmitter.sendToAll(channel, data);
 }
-
-/**
- * 便捷函数：向特定窗口发送事件
- */
-export function sendEventToWindow<T = any>(window: BrowserWindow, channel: string, data: T): void {
-  ipcEventEmitter.sendToWindow(window, channel, data);
-}

@@ -273,8 +273,3 @@ export function getWarpDeregisterQueue(logManager?: LogManager): WarpDeregisterQ
   }
   return singleton;
 }
-
-/** 仅供测试：重置单例（隔离用例间状态）。 */
-export function __resetWarpDeregisterQueueSingleton(): void {
-  singleton = null;
-}

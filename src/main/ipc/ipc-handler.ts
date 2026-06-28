@@ -145,10 +145,3 @@ export function registerIpcHandler<TArgs = any, TResult = any>(
 ): void {
   ipcHandlerRegistry.register(channel, handler);
 }
-
-/**
- * 便捷函数：注销 IPC 处理器
- */
-export function unregisterIpcHandler(channel: IpcChannel): void {
-  ipcHandlerRegistry.unregister(channel);
-}

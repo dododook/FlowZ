@@ -13,7 +13,6 @@
  *   且 `MainMessageKey = keyof typeof MESSAGES` 自动派生 key 联合类型（新增键无需手维护 union）。
  */
 import {
-  SUPPORTED_LANGUAGES,
   DEFAULT_LANGUAGE,
   resolveEffectiveLanguage,
   type SupportedLanguage,
@@ -456,9 +455,6 @@ export function mt(key: MainMessageKey): string {
   const row = MESSAGES[key];
   return row[currentLang] ?? row[DEFAULT_LANGUAGE];
 }
-
-/** 受支持语言数（供测试校验 parity）。 */
-export const MAIN_I18N_LANG_COUNT = SUPPORTED_LANGUAGES.length;
 
 /** 全部文案键（供测试遍历校验）。 */
 export const MAIN_MESSAGE_KEYS = Object.keys(MESSAGES) as MainMessageKey[];
