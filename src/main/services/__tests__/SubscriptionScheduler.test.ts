@@ -46,7 +46,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     await run();
     // 仅直连订阅被拉取（viaProxy=false）；经代理订阅被跳过、未拉取
     expect(fetchSubscription).toHaveBeenCalledTimes(1);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, 7890, undefined);
+    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, undefined);
     expect(pending()).toBe(true);
   });
 
@@ -54,8 +54,8 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     const { fetchSubscription, run, pending } = makeScheduler(makeConfig(), true);
     await run();
     expect(fetchSubscription).toHaveBeenCalledTimes(2);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, 7890, undefined);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, 7890, undefined);
+    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, undefined);
+    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, undefined);
     expect(pending()).toBe(false);
   });
 
@@ -67,7 +67,7 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     await run();
     // direct 覆盖 per-sub → 两订阅都直连拉取
     expect(fetchSubscription).toHaveBeenCalledTimes(2);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', false, 7890, undefined);
+    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', false, undefined);
     expect(pending()).toBe(false);
   });
 
@@ -79,8 +79,8 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     await run();
     // proxy 覆盖 per-sub → 即便 'd' 未设 updateViaProxy 也经代理
     expect(fetchSubscription).toHaveBeenCalledTimes(2);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', true, 7890, undefined);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, 7890, undefined);
+    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', true, undefined);
+    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, undefined);
     expect(pending()).toBe(false);
   });
 

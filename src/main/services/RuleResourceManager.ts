@@ -98,8 +98,9 @@ export class RuleResourceManager {
     }
     // viaProxy 但 update-in 端口不可用（核未起/未分配）→ 直连兜底，不 pin 到无效端口
     if (viaProxy && updateInPort <= 0) viaProxy = false;
-    // sessionFor 内部 setProxy 极罕见可能 reject；兜底 undefined 守住 fetchBuffer/fetchJson 的「永不 reject」契约。
-    return this.updateNetwork.sessionFor(viaProxy, updateInPort).catch(() => undefined);
+    // sessionFor 内部 setProxy 极罕见可能 reject → sessionForOrDirect 回落强制直连会话（绝不落 default session，
+    // M1：对齐 CoreDownloader）；连 direct 也 reject（几乎不可能）才最终兜底 undefined 守 fetchBuffer/fetchJson 「永不 reject」契约。
+    return this.updateNetwork.sessionForOrDirect(viaProxy, updateInPort).catch(() => undefined);
   }
 
   // 串行化所有 load-modify-save，防并发批次/删除/setGhProxy 在 load→save 窗口内交错丢写（review P2-1）

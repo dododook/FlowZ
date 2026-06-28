@@ -503,7 +503,6 @@ export class SubscriptionService {
   private async fetchSubscriptionText(
     url: string,
     viaProxy: boolean,
-    httpPort: number | undefined,
     userAgent: string,
     signal?: AbortSignal
   ): Promise<{ text: string; userInfo?: SubscriptionConfig['userInfo'] }> {
@@ -525,8 +524,7 @@ export class SubscriptionService {
 
     // viaProxy=true → pin 到 update-in socks 入站（动态端口，proxyManager.getUpdateInPort）：与应用更新/资源链路
     // 统一经核 route 按 proxyMode 决策。端口不可用（核未起/未分配/未注入）→ 退直连（自举友好）。viaProxy=false → 直连。
-    // 注：httpPort 参数已废弃（订阅经代理改走 update-in 端口；保留签名待块1 合并后统一清理调用方），viaProxy 路径不再读它。
-    void httpPort;
+    // 订阅经代理唯一入口 = update-in 端口（旧 httpPort/mixedPort 参数已彻底移除，L1）。
     let fetchImpl: typeof net.fetch;
     // 实际是否走 proxied（经核 update-in socks，远程出口、本机内网不可达）——SSRF guard 的 FakeIP 豁免须键于此，
     // 而非 viaProxy 意图：viaProxy=true 但 update-in 端口不可用时回退 direct，那时不能豁免 FakeIP（防本机内网 SSRF）。
@@ -687,7 +685,6 @@ export class SubscriptionService {
     ctx: {
       allowProviders: boolean;
       viaProxy: boolean;
-      httpPort?: number;
       userAgent: string;
       // throwOnEmpty=false：provider 复用路径用（0 节点返回空集而非 throw，让 resolveProxyProviders
       // 按 permanent 0-node 处理；真正的 YAML/JSON 结构错误仍由 tryLoadClashDoc 上抛）。默认 true。
@@ -810,7 +807,6 @@ export class SubscriptionService {
     ctx: {
       allowProviders: boolean;
       viaProxy: boolean;
-      httpPort?: number;
       userAgent: string;
       throwOnEmpty?: boolean;
     }
@@ -840,7 +836,6 @@ export class SubscriptionService {
             const { text } = await this.fetchSubscriptionText(
               url,
               ctx.viaProxy,
-              ctx.httpPort,
               ctx.userAgent,
               signal
             );
@@ -853,7 +848,6 @@ export class SubscriptionService {
             const r = await this.parseSubscriptionContent(text, subscriptionId, {
               allowProviders: false,
               viaProxy: ctx.viaProxy,
-              httpPort: ctx.httpPort,
               userAgent: ctx.userAgent,
               throwOnEmpty: false,
             });
@@ -916,7 +910,6 @@ export class SubscriptionService {
     url: string,
     subscriptionId: string,
     viaProxy: boolean = false,
-    httpPort?: number,
     userAgent?: string
   ): Promise<{
     servers: ServerConfig[];
@@ -937,7 +930,6 @@ export class SubscriptionService {
       const { text, userInfo } = await this.fetchSubscriptionText(
         url,
         viaProxy,
-        httpPort,
         ua,
         AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS)
       );
@@ -952,7 +944,6 @@ export class SubscriptionService {
         {
           allowProviders: true,
           viaProxy,
-          httpPort,
           userAgent: ua,
         }
       );

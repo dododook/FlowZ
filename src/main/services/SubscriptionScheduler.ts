@@ -17,7 +17,6 @@ import type { ConfigManager } from './ConfigManager';
 import type { LogManager } from './LogManager';
 import { SubscriptionService } from './SubscriptionService';
 import type { UserConfig } from '../../shared/types';
-import { localProxyPort } from '../../shared/proxy-ports';
 import { resolveSubscriptionViaProxy } from '../../shared/subscription-proxy';
 import { BackoffTracker } from './backoff-tracker';
 
@@ -159,7 +158,6 @@ export class SubscriptionScheduler {
             sub.url,
             sub.id,
             subViaProxy,
-            localProxyPort(config),
             sub.userAgent ?? config.subscriptionUserAgent
           );
           fetched.push({

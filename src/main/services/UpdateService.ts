@@ -103,8 +103,9 @@ export class UpdateService {
     }
     // viaProxy 但 update-in 端口不可用（核未起/未分配）→ 直连兜底，不 pin 到无效端口
     if (viaProxy && updateInPort <= 0) viaProxy = false;
-    // sessionFor 内部 setProxy 极罕见可能 reject；兜底 undefined（回落 default session）守住「绝不抛」契约。
-    return this.updateNetwork.sessionFor(viaProxy, updateInPort).catch(() => undefined);
+    // sessionFor 内部 setProxy 极罕见可能 reject → sessionForOrDirect 回落强制直连会话（绝不落 default session，
+    // M1：对齐 CoreDownloader）；连 direct 也 reject（几乎不可能）才最终兜底 undefined 守「绝不抛」契约。
+    return this.updateNetwork.sessionForOrDirect(viaProxy, updateInPort).catch(() => undefined);
   }
 
   /** 读用户配置的 GitHub 加速前缀（规范化）。未配置/读失败 → undefined（直连兜底，不抛）。 */

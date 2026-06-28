@@ -43,4 +43,18 @@ export class UpdateNetwork {
   async sessionFor(viaProxy: boolean, port: number): Promise<Session> {
     return viaProxy ? this.getProxiedSession(port) : this.getDirectSession();
   }
+
+  /**
+   * sessionFor 的兜底版（M1）：经代理会话构造（setProxy/partition 初始化）极罕见 reject 时，回落强制直连会话，
+   * **绝不让调用方拿到 undefined**——否则 net.request({session:undefined}) 会落到 Electron default session，
+   * 重新引入系统代理污染 / manual 模式挂死，违反「更新链路不消费 default session」。与 CoreDownloader.updateSession
+   * 的 direct 兜底同口径。direct 自身再 reject（几乎不可能：setProxy mode:direct）才由调用方最终兜底。
+   */
+  async sessionForOrDirect(viaProxy: boolean, port: number): Promise<Session> {
+    try {
+      return await this.sessionFor(viaProxy, port);
+    } catch {
+      return this.getDirectSession();
+    }
+  }
 }

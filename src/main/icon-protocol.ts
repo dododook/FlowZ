@@ -38,6 +38,18 @@ export interface IconProtocolDeps {
 let cfgMsvpCache: { value: boolean | undefined; expiry: number } | null = null;
 const CFG_CACHE_TTL_MS = 1000;
 
+// 图标代理重定向上限（M2）：与订阅链路同口径，redirect:'manual' 自管链、逐跳过 SSRF guard。
+const MAX_ICON_REDIRECTS = 5;
+
+/** 释放响应体，避免重定向丢弃上一跳 body 时 socket/内存泄漏。 */
+async function drainBody(r: Response): Promise<void> {
+  try {
+    await r.body?.cancel();
+  } catch {
+    /* ignore */
+  }
+}
+
 /** app ready 后注册 flowz-icon:// handler（经 update-in 统一会话拉取图标，回退 direct）。 */
 export function registerIconProtocol(deps: IconProtocolDeps): void {
   protocol.handle(ICON_PROXY_SCHEME, async (request) => {
@@ -74,20 +86,49 @@ export function registerIconProtocol(deps: IconProtocolDeps): void {
     }
     if (viaProxy && port <= 0) viaProxy = false;
 
+    const lookupFn = (h: string) => dnsPromises.lookup(h, { all: true });
     // SSRF：图标 URL 部分来自用户手动输入 → 拦内网/回环/link-local；仅实际经代理（socks）时豁免 FlowZ
     // FakeIP（系统 DNS 把公网域名解析成假 IP，核按域名 socks5h 重解析、本机内网不可达），直连不豁免。
     try {
-      await assertHostAllowed(target, (h) => dnsPromises.lookup(h, { all: true }), viaProxy);
+      await assertHostAllowed(target, lookupFn, viaProxy); // 首跳 guard
     } catch {
       return new Response(null, { status: 403 });
     }
 
+    // M2：redirect:'manual' 自管重定向链——每跳 Location 重跑 SSRF guard（含 DNS 解析）通过才续跳，最多
+    // MAX_ICON_REDIRECTS 跳。默认 follow 会让首跳过 guard 后 30x 到内网不复检（direct 模式下用户自输入 URL
+    // 借此 SSRF）。首跳 target 已在上方 guard 过；循环内复检后续每一跳。
     try {
       const ses = await deps.updateNetwork.sessionFor(viaProxy, port);
-      // SSRF 残留（与 ssrf-guard 的 TOCTOU 注释同级）：Session.fetch 默认 follow redirect，重定向目标不再过
-      // assertHostAllowed。viaProxy 时 redirect 由远端节点 socks5h 解析、本机内网不可达（安全）；仅 direct
-      // 模式（代理未运行/关）下用户自输入 URL 经 30x 重定向到内网才有窄 SSRF 窗口（同 guard 既有 residual）。
-      return await ses.fetch(target.toString(), { headers: { 'User-Agent': APP_USER_AGENT } });
+      let currentUrl = target.toString();
+      let response: Response | null = null;
+      for (let hop = 0; hop <= MAX_ICON_REDIRECTS; hop++) {
+        response = await ses.fetch(currentUrl, {
+          headers: { 'User-Agent': APP_USER_AGENT },
+          redirect: 'manual',
+        });
+        const loc =
+          response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
+        if (!loc) break; // 非 30x（或无 Location）→ 终态响应
+        await drainBody(response); // 释放上一跳 body
+        if (hop >= MAX_ICON_REDIRECTS) return new Response(null, { status: 502 }); // 超重定向上限
+        let nextObj: URL;
+        try {
+          nextObj = new URL(loc, currentUrl); // 相对 Location 以当前 URL 为基准解析
+        } catch {
+          return new Response(null, { status: 400 });
+        }
+        if (nextObj.protocol !== 'https:' && nextObj.protocol !== 'http:') {
+          return new Response(null, { status: 400 });
+        }
+        try {
+          await assertHostAllowed(nextObj, lookupFn, viaProxy); // 重定向目标过同一 guard（含 DNS 解析）
+        } catch {
+          return new Response(null, { status: 403 });
+        }
+        currentUrl = nextObj.toString();
+      }
+      return response ?? new Response(null, { status: 502 });
     } catch (e) {
       deps.logManager.addLog('warn', `图标代理拉取失败: ${e}`, 'IconProtocol');
       return new Response(null, { status: 502 });
