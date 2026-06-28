@@ -5,10 +5,9 @@
  * 用户手动输入（add-custom-app），故复用 ssrf-guard 拦内网（仅实际经代理时豁免 FlowZ FakeIP，同订阅链路）。
  */
 import { protocol } from 'electron';
-import { promises as dnsPromises } from 'dns';
 import { ICON_PROXY_SCHEME } from '../shared/icon-proxy';
-import { assertHostAllowed } from '../shared/ssrf-guard';
 import { resolveUpdateProxyTarget } from '../shared/update-proxy';
+import { safeRedirectFetch, SafeFetchError } from './safe-redirect-fetch';
 import { APP_USER_AGENT } from '../shared/constants';
 import type { UpdateNetwork } from './services/UpdateNetwork';
 import type { UserConfig } from '../shared/types';
@@ -37,18 +36,6 @@ export interface IconProtocolDeps {
 // 远低于渲染，1s TTL 足够新鲜；proxyRunning / update-in 端口走 thunk（内存、廉价）每次取最新、不缓存。
 let cfgMsvpCache: { value: boolean | undefined; expiry: number } | null = null;
 const CFG_CACHE_TTL_MS = 1000;
-
-// 图标代理重定向上限（M2）：与订阅链路同口径，redirect:'manual' 自管链、逐跳过 SSRF guard。
-const MAX_ICON_REDIRECTS = 5;
-
-/** 释放响应体，避免重定向丢弃上一跳 body 时 socket/内存泄漏。 */
-async function drainBody(r: Response): Promise<void> {
-  try {
-    await r.body?.cancel();
-  } catch {
-    /* ignore */
-  }
-}
 
 /** app ready 后注册 flowz-icon:// handler（经 update-in 统一会话拉取图标，回退 direct）。 */
 export function registerIconProtocol(deps: IconProtocolDeps): void {
@@ -89,50 +76,22 @@ export function registerIconProtocol(deps: IconProtocolDeps): void {
       viaProxy = false; // 读 config 失败 → 直连兜底
     }
 
-    const lookupFn = (h: string) => dnsPromises.lookup(h, { all: true });
-    // SSRF：图标 URL 部分来自用户手动输入 → 拦内网/回环/link-local；仅实际经代理（socks）时豁免 FlowZ
-    // FakeIP（系统 DNS 把公网域名解析成假 IP，核按域名 socks5h 重解析、本机内网不可达），直连不豁免。
-    try {
-      await assertHostAllowed(target, lookupFn, viaProxy); // 首跳 guard
-    } catch {
-      return new Response(null, { status: 403 });
-    }
-
-    // M2：redirect:'manual' 自管重定向链——每跳 Location 重跑 SSRF guard（含 DNS 解析）通过才续跳，最多
-    // MAX_ICON_REDIRECTS 跳。默认 follow 会让首跳过 guard 后 30x 到内网不复检（direct 模式下用户自输入 URL
-    // 借此 SSRF）。首跳 target 已在上方 guard 过；循环内复检后续每一跳。
+    // SSRF + 逐跳 redirect 复检收口到 safeRedirectFetch（首跳 + 每跳 Location 过 assertHostAllowed）：图标 URL
+    // 部分来自用户手动输入，仅实际经代理（socks，本机内网不可达）时豁免 FlowZ FakeIP。安全拒绝按 reason 映射
+    // 状态码（协议非法→400 / SSRF→403 / 超上限→502）；fetchImpl 网络错误冒泡到末端 catch→502。
     try {
       const ses = await deps.updateNetwork.sessionFor(viaProxy, port);
-      let currentUrl = target.toString();
-      let response: Response | null = null;
-      for (let hop = 0; hop <= MAX_ICON_REDIRECTS; hop++) {
-        response = await ses.fetch(currentUrl, {
-          headers: { 'User-Agent': APP_USER_AGENT },
-          redirect: 'manual',
-        });
-        const loc =
-          response.status >= 300 && response.status < 400 ? response.headers.get('location') : null;
-        if (!loc) break; // 非 30x（或无 Location）→ 终态响应
-        await drainBody(response); // 释放上一跳 body
-        if (hop >= MAX_ICON_REDIRECTS) return new Response(null, { status: 502 }); // 超重定向上限
-        let nextObj: URL;
-        try {
-          nextObj = new URL(loc, currentUrl); // 相对 Location 以当前 URL 为基准解析
-        } catch {
-          return new Response(null, { status: 400 });
-        }
-        if (nextObj.protocol !== 'https:' && nextObj.protocol !== 'http:') {
-          return new Response(null, { status: 400 });
-        }
-        try {
-          await assertHostAllowed(nextObj, lookupFn, viaProxy); // 重定向目标过同一 guard（含 DNS 解析）
-        } catch {
-          return new Response(null, { status: 403 });
-        }
-        currentUrl = nextObj.toString();
-      }
-      return response ?? new Response(null, { status: 502 });
+      return await safeRedirectFetch<Response>({
+        fetchImpl: (u, init) => ses.fetch(u, init),
+        url: target.toString(),
+        userAgent: APP_USER_AGENT,
+        exemptFakeIp: viaProxy,
+      });
     } catch (e) {
+      if (e instanceof SafeFetchError) {
+        const status = e.reason === 'redirect-protocol' ? 400 : e.reason === 'ssrf' ? 403 : 502;
+        return new Response(null, { status });
+      }
       deps.logManager.addLog('warn', `图标代理拉取失败: ${e}`, 'IconProtocol');
       return new Response(null, { status: 502 });
     }

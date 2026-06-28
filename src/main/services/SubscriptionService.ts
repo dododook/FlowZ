@@ -3,8 +3,7 @@ import { app, net, session, type Session } from 'electron';
 import type { ServerConfig, SubscriptionConfig } from '../../shared/types';
 import { ProtocolParser } from './ProtocolParser';
 import { LogManager } from './LogManager';
-import { promises as dnsPromises } from 'dns';
-import { assertHostAllowed } from '../../shared/ssrf-guard';
+import { safeRedirectFetch } from '../safe-redirect-fetch';
 import {
   CLASH_PROBE_RE,
   tryLoadClashDoc,
@@ -99,8 +98,6 @@ type SingboxOutbound = {
 export class SubscriptionService {
   // 响应体积上限：超大响应直接 OOM（兼缓解 YAML 锚点炸弹的输入面）。content-length 预检 + 读取后字节校验双闸。
   private static readonly MAX_BODY_BYTES = 10 * 1024 * 1024; // 10MB
-  // 重定向链最大跳数：每跳 Location 重跑 SSRF guard（含 DNS 解析），超过即拒（防无限跳/绕 guard）。
-  private static readonly MAX_REDIRECTS = 5;
   // 主订阅 fetch 超时（比 provider 15s 宽）：防 slow-loris 挂死、scheduler isRunning 永真卡死后续更新。
   private static readonly MAIN_FETCH_TIMEOUT_MS = 30_000;
 
@@ -544,62 +541,19 @@ export class SubscriptionService {
       fetchImpl = ds.fetch.bind(ds);
     }
 
-    // H2：redirect:'manual' 自管重定向链——每跳 Location 重跑 SSRF guard（含 H1 DNS 解析），
-    // 通过才续跳，最多 MAX_REDIRECTS 跳。默认 follow 会让首跳过 guard 后跳到内网不复检。
-    let currentUrl = url;
-    // 仅实际走 proxied（viaProxiedSession）才豁免 FlowZ FakeIP（TUN+FakeIP 下系统 DNS 把公网域名解析成假 IP，
-    // 经核反查真实；直连/端口不可用回退直连不豁免，防域名真实解析到本机内网的 SSRF）。
-    await assertHostAllowed(
-      parse(currentUrl),
-      (h) => dnsPromises.lookup(h, { all: true }),
-      viaProxiedSession
-    ); // H1：初始 URL 解析后逐 IP 校验
-
-    let response: GlobalResponse | null = null;
-    for (let hop = 0; hop <= SubscriptionService.MAX_REDIRECTS; hop++) {
-      response = await fetchImpl(currentUrl, {
-        headers: { 'User-Agent': userAgent },
-        redirect: 'manual',
-        ...(signal ? { signal } : {}),
-      });
-
-      // 30x：取 Location，重跑 guard 后续跳。
-      if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
-        if (hop >= SubscriptionService.MAX_REDIRECTS) {
-          throw new Error(`订阅重定向次数超过上限（${SubscriptionService.MAX_REDIRECTS}），已拒绝`);
-        }
-        const loc = response.headers.get('location')!;
-        // 相对 Location 以当前 URL 为基准解析；再校验协议 + 解析后 IP。
-        let nextObj: URL;
-        try {
-          nextObj = new URL(loc, currentUrl);
-        } catch {
-          throw new Error('订阅重定向目标非法，已拒绝');
-        }
-        if (nextObj.protocol !== 'http:' && nextObj.protocol !== 'https:') {
-          throw new Error('订阅重定向目标协议不支持（仅允许 http/https），已拒绝');
-        }
-        await assertHostAllowed(
-          nextObj,
-          (h) => dnsPromises.lookup(h, { all: true }),
-          viaProxiedSession
-        ); // 重定向目标过同一 guard（含 DNS 解析）
-        // 释放上一跳响应体，避免泄漏。
-        try {
-          await response.body?.cancel();
-        } catch {
-          // ignore
-        }
-        currentUrl = nextObj.toString();
-        continue;
-      }
-
-      break; // 非 30x（或无 Location）→ 终态响应
-    }
-
-    if (!response) {
-      throw new Error('订阅拉取未获得响应');
-    }
+    // H1+H2：初始 URL + 每跳 Location 都过 SSRF guard，收口到 safeRedirectFetch（首跳 + 逐跳复检防 redirect
+    // 跳到内网的 SSRF 绕过）。先 parse 校验协议（保留订阅特有「订阅地址协议不支持」文案 + 脱敏），再交 helper。
+    // 仅实际走 proxied（viaProxiedSession）才豁免 FlowZ FakeIP（系统 DNS 把公网域名解析成假 IP、经核反查真实、
+    // 本机内网不可达）；直连/端口回退不豁免，防域名真实解析到本机内网的 SSRF。helper 的安全拒绝（含「重定向
+    // 次数超过上限」「本机/内网」）按原文案冒泡给 UI。
+    parse(url); // 初始 URL 协议校验（http/https）
+    const response = await safeRedirectFetch<GlobalResponse>({
+      fetchImpl: (u, init) => fetchImpl(u, init),
+      url,
+      userAgent,
+      exemptFakeIp: viaProxiedSession,
+      ...(signal ? { signal } : {}),
+    });
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
     }
