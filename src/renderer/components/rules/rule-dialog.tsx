@@ -27,7 +27,11 @@ import { Loader2, ListPlus, Plus, X } from 'lucide-react';
 import { ServerSelectGroups } from '@/components/settings/server-select-groups';
 import { useAppStore } from '@/store/app-store';
 import type { Rule, RuleType, RuleAction, RuleCondition } from '../../../shared/types';
-import { validateRuleValue, RULE_TYPE_IDS } from '../../../shared/rules';
+import {
+  validateRuleValue,
+  isRuleTypePlatformSupported,
+  findAddableRuleType,
+} from '../../../shared/rules';
 import {
   meshForcedRouteCidrs,
   meshForceRoutedServers,
@@ -144,6 +148,16 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   }, [open, mode, rule]);
 
   const usedTypes = new Set(conditionTypes);
+  // 平台门控：device 类别（source_mac_address / source_hostname）仅 Linux/macOS 内核支持（sing-box 1.14 邻居
+  // 解析，已真机 check 实证，见 shared/neighbor），Windows 选了也被 main 侧 fail-closed 丢弃。故 Windows 隐藏
+  // device 类型；判定下沉 shared/rules#isRuleTypePlatformSupported（与生成层单一真值），呈现/新增时再叠加
+  // 「本块已选中」豁免（edit 跨平台旧规则不丢可见性/可删性）。
+  const platform = window.electron?.platform;
+  const isTypePlatformSupported = (tp: RuleType) => isRuleTypePlatformSupported(tp, platform);
+  // 下一个可新增类型（未用 ∧ 平台支持）：决定「添加条件」按钮显隐 + addCondition 取值，单一来源防口径漂移
+  // （Windows 上 device 组用尽即无候选 → 按钮隐藏）。
+  const nextAddableType = findAddableRuleType(usedTypes, platform);
+  const canAddCondition = nextAddableType !== undefined;
   // bypassFakeIP 是规则级设置：只要任一条件是域名类即可用（生成期对域名类条件取真实 DNS）。
   const bypassApplicable = conditionTypes.some((ct) => BYPASS_FAKEIP_TYPES.includes(ct));
 
@@ -163,10 +177,9 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   };
 
   const addCondition = () => {
-    const next = RULE_TYPE_IDS.find((tp) => !usedTypes.has(tp));
-    if (!next) return; // 全部类型用尽
+    if (!nextAddableType) return; // 全部（当前平台支持的）类型用尽
     setFocusedType(null);
-    setConditionTypes((prev) => [...prev, next]);
+    setConditionTypes((prev) => [...prev, nextAddableType]);
   };
 
   const removeCondition = (ct: RuleType) => {
@@ -394,22 +407,29 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {RULE_CATEGORIES.map((cat) => (
-                        <SelectGroup key={cat}>
-                          <SelectLabel>
-                            {t(`rules.category.${cat}`, CATEGORY_NAME[cat])}
-                          </SelectLabel>
-                          {CATEGORY_TYPES[cat].map((tp) => (
-                            <SelectItem
-                              key={tp}
-                              value={tp}
-                              disabled={usedTypes.has(tp) && tp !== ct}
-                            >
-                              {t(`rules.types.${tp}.name`, RULE_TYPE_NAME[tp])}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      ))}
+                      {RULE_CATEGORIES.map((cat) => {
+                        // 平台不支持的类型隐藏，但保留「当前块已选中」的（edit 跨平台旧规则仍可见/可改/可删）。
+                        const types = CATEGORY_TYPES[cat].filter(
+                          (tp) => isTypePlatformSupported(tp) || tp === ct
+                        );
+                        if (types.length === 0) return null; // 整组不支持且未选中（如 Windows 的 device 组）→ 隐藏
+                        return (
+                          <SelectGroup key={cat}>
+                            <SelectLabel>
+                              {t(`rules.category.${cat}`, CATEGORY_NAME[cat])}
+                            </SelectLabel>
+                            {types.map((tp) => (
+                              <SelectItem
+                                key={tp}
+                                value={tp}
+                                disabled={usedTypes.has(tp) && tp !== ct}
+                              >
+                                {t(`rules.types.${tp}.name`, RULE_TYPE_NAME[tp])}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   {PROCESS_TYPES.includes(ct) && (
@@ -444,7 +464,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
               </div>
             ))}
 
-            {usedTypes.size < RULE_TYPE_IDS.length && (
+            {canAddCondition && (
               <Button
                 type="button"
                 variant="outline"

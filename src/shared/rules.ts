@@ -4,7 +4,7 @@
  * 保证两侧规则语义完全一致（仿 shared/version.ts 的共享惯例）。
  */
 import type { Rule, RuleType, RuleCondition, LegacyDomainRule, RuleAction } from './types';
-import { isValidMacAddress, isValidSourceHostname } from './neighbor';
+import { isValidMacAddress, isValidSourceHostname, isSourceDeviceMatchSupported } from './neighbor';
 
 export const RULE_TYPE_IDS: RuleType[] = [
   'domain',
@@ -47,6 +47,31 @@ export const RULE_TYPE_CATEGORY: Record<RuleType, RuleCategory> = {
 
 /** 仅这三类域名规则支持 bypassFakeIP。 */
 export const BYPASS_FAKEIP_TYPES: RuleType[] = ['domain', 'domainSuffix', 'domainKeyword'];
+
+/**
+ * 规则类型在指定平台是否受内核支持：device 类别（source_mac_address / source_hostname，sing-box 1.14 邻居
+ * 解析）仅 Linux/macOS（真机 check 实证，见 shared/neighbor），其余类别全平台。渲染层据此隐藏不支持的类型
+ * 选项、主进程据此 fail-closed 丢弃条件，单一真值（避免 UI 与生成层对平台支持面漂移）。
+ */
+export function isRuleTypePlatformSupported(
+  type: RuleType,
+  platform: NodeJS.Platform | string | undefined
+): boolean {
+  return RULE_TYPE_CATEGORY[type] !== 'device' || isSourceDeviceMatchSupported(platform);
+}
+
+/**
+ * 下一个可新增的条件类型（未被使用 ∧ 当前平台支持），无则 undefined。rule-dialog 的「添加条件」按钮显隐
+ * 与 addCondition 取值共用本函数，保证「按钮显示 ⟺ 点击有结果」（口径单一来源，防二者漂移）。
+ */
+export function findAddableRuleType(
+  usedTypes: ReadonlySet<RuleType>,
+  platform: NodeJS.Platform | string | undefined
+): RuleType | undefined {
+  return RULE_TYPE_IDS.find(
+    (tp) => !usedTypes.has(tp) && isRuleTypePlatformSupported(tp, platform)
+  );
+}
 
 // 域名：标签 1-63 字符、可含通配 *. 前缀（domainSuffix 容忍）；不强校验 TLD（geosite 标签另有规则）
 const DOMAIN_RE =

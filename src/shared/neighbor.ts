@@ -2,9 +2,14 @@
  * LAN 设备识别簇（sing-box 1.14 「邻居解析」/Neighbor Resolution）的共享校验 + 平台门控 ——
  * 主进程构建（route/dns/inbounds builder）与渲染层表单（rule-dialog / network-settings）共用单一真值。
  *
- * 能力来自 sing-box 1.14（已用真实 1.14.0-alpha.32 内核 `sing-box check` 实证，见 [[singbox-1.14-features]] §D）：
+ * 能力来自 sing-box 1.14（字段在 1.14.0-alpha.32 真机 `sing-box check` 验过被接受，见 [[singbox-1.14-features]] §D）：
  *   1. route / DNS rule item `source_mac_address` / `source_hostname`（Listable[string]）——按源设备 MAC /
- *      主机名（DHCP 租约）分流。仅 Linux/macOS（及 Android/macOS 图形客户端）支持。
+ *      主机名（DHCP 租约）分流。**仅 Linux/macOS（及 Android/macOS 图形客户端）支持**——此平台门控由 sing-box
+ *      源码 build tag 坐实（非 `check`：`check` 是 config 解析、跨平台不 FATAL，证不了 Windows 排除）：解析
+ *      「源 IP→MAC/主机名」的邻居解析器 `route/neighbor_resolver_{linux,darwin}.go` 各带 `//go:build linux|darwin`
+ *      真实现，`neighbor_resolver_stub.go`（`//go:build !linux && !darwin`）的 `newNeighborResolver` 直接
+ *      `return nil, os.ErrInvalid`、无 windows 实现；`route/router.go` 对 `os.ErrInvalid` 静默跳过 → Windows 上
+ *      解析器不存在、这两类规则永不匹配且不报错（静默死规则）→ 故必须 UI/生成层 fail-closed。
  *      · MAC：内核走 Go `net.ParseMAC`，仅接受 EUI-48 三种写法（冒号 / 连字符 / Cisco 点分），其余 FATAL。
  *        route 规则的 MAC 在 `check` 期不校验（运行期按字符串匹配），但 UI/构建仍按内核 parser 校验，杜绝脏值。
  *   2. local DNS server `neighbor_domain`（Listable[string]）——对单标签短名（host 部分无 `.`）走邻居解析，
