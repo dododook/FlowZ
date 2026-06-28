@@ -36,21 +36,11 @@ jest.mock('electron', () => ({
 
 import { ConfigManager } from '../ConfigManager';
 import type { Protocol, UserConfig } from '../../../shared/types';
+import { ALL_PROTOCOLS } from '../../../shared/server-completeness';
 
-/** Protocol 联合的全部成员——与 src/shared/types.ts 定义逐字对齐，作为白名单对齐的真值基准。 */
-const ALL_PROTOCOLS: Protocol[] = [
-  'vless',
-  'trojan',
-  'hysteria2',
-  'shadowsocks',
-  'anytls',
-  'tuic',
-  'vmess',
-  'naive',
-  'socks',
-  'http',
-  'ssh',
-];
+// 攻击面/一致性 review H4：原此处自建 ALL_PROTOCOLS（11 项，漏 wireguard/tailscale/custom），
+// 注释声称"与 types.ts 逐字对齐"实为假——白名单回归测试对漏列协议零覆盖。改 import 权威真值
+//（server-completeness.ts 的 ALL_PROTOCOLS，14 项全），让"新增协议同步"的契约真正可验证。
 
 /** 最小可校验 UserConfig（够过 validateConfig 的非 protocol 分支），按需覆盖 servers。
  *  mixed-only 后 validateConfig 尾部强制校验 mixedPort（http/socksPort 仅存在时宽松校验，且迁移会以 httpPort
@@ -89,6 +79,18 @@ function makeServerConfig(protocol: Protocol): UserConfig['servers'][number] {
   base.password = 'pass';
   base.username = 'user';
   base.shadowsocksSettings = { method: 'aes-256-gcm', password: 'pass' };
+  // 一致性 review H4：补齐原漏列协议的必填（wireguard/custom）。原 makeServerConfig 未覆盖，
+  // 导致 wireguard/custom 的「缺必填」校验从没被测到（测试本身漏列这俩协议）。
+  if (protocol === 'wireguard') {
+    base.wireguardSettings = {
+      privateKey: 'priv-key',
+      peerPublicKey: 'peer-key',
+      localAddress: ['10.0.0.2/32'],
+    };
+  }
+  if (protocol === 'custom') {
+    base.customSettings = { outbound: { type: 'trojan', server: '1.2.3.4', server_port: 443 } };
+  }
   return base;
 }
 
