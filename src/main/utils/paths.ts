@@ -67,25 +67,31 @@ export function getUserDataPath(): string {
   // 获取 Electron 默认的 userData 路径
   let userDataPath = app.getPath('userData');
 
-  // 检查是否在 macOS 上以 root 运行
-  if (process.platform === 'darwin' && process.getuid && process.getuid() === 0) {
-    // 尝试从环境变量获取真实用户
+  // 检查是否在 macOS/Linux 上以 root 运行（跨平台 review 🟡-4 + R6-M3：原仅 darwin，
+  // Linux 提权 pkexec/setcap 同样以 root 跑辅助逻辑，需回退真实用户家目录否则解析到 /root 致配置分裂）。
+  const isUnixRoot =
+    (process.platform === 'darwin' || process.platform === 'linux') &&
+    process.getuid &&
+    process.getuid() === 0;
+  if (isUnixRoot) {
     const sudoUser = process.env.SUDO_USER;
     const homeDir = process.env.HOME;
+    const appName = app.getName() || 'FlowZ';
+    const isMac = process.platform === 'darwin';
 
+    // 解析真实用户家目录：优先 SUDO_USER，回退 HOME（R6-M3：不依赖 /Users/ 或 /home/ 前缀——
+    // root 自身 /root、usermod -d 改过的非标准路径都会让前缀判定失败；SUDO_USER 缺失时 pkexec/setcap
+    // 路径下 HOME 才是主回退，直接用它本身而非校验前缀）。
+    let realHome: string | null = null;
     if (sudoUser) {
-      // 通过 SUDO_USER 构建正确的路径
-      const realUserHome = `/Users/${sudoUser}`;
-      const appName = app.getName() || 'FlowZ';
-      userDataPath = path.join(realUserHome, 'Library/Application Support', appName);
-    } else if (homeDir && homeDir.startsWith('/Users/')) {
-      // 通过 HOME 环境变量获取
-      const appName = app.getName() || 'FlowZ';
-      // 提取用户名
-      const match = homeDir.match(/^\/Users\/([^/]+)/);
-      if (match) {
-        userDataPath = path.join('/Users', match[1], 'Library/Application Support', appName);
-      }
+      realHome = isMac ? `/Users/${sudoUser}` : `/home/${sudoUser}`;
+    } else if (homeDir && homeDir !== '/root' && homeDir !== '/var/root') {
+      realHome = homeDir;
+    }
+    if (realHome) {
+      userDataPath = isMac
+        ? path.join(realHome, 'Library/Application Support', appName)
+        : path.join(realHome, '.config', appName); // Linux XDG：~/.config/<appName>（与 Electron 默认一致）
     }
   }
 

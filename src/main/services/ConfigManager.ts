@@ -6,7 +6,14 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
-import type { UserConfig, Rule, RuleCondition, LogLevel, Protocol } from '../../shared/types';
+import type {
+  UserConfig,
+  Rule,
+  RuleCondition,
+  LogLevel,
+  Protocol,
+  ProxyModeType,
+} from '../../shared/types';
 import type { LogManager } from './LogManager';
 import { getConfigPath } from '../utils/paths';
 import { writeFileAtomic } from '../utils/atomic-write';
@@ -524,6 +531,10 @@ export class ConfigManager implements IConfigManager {
     if (!modeTypeLower || !['systemproxy', 'tun', 'manual'].includes(modeTypeLower)) {
       throw new Error('proxyModeType must be systemProxy, tun, or manual');
     }
+    // 跨平台 review H2（根治）：回写归一化小写值。validateConfig 是 loadConfig/saveConfig 的必经校验
+    //（saveConfig 内部亦调本校验），回写后磁盘值恒小写 → 全栈 15+ 处 === 'tun' 谓词可信，消除
+    // "大小写不规范致日志静默丢失/幽灵文件"风险。原仅校验不回写，renderer 仍用 toLowerCase 反证假设不可靠。
+    config.proxyModeType = modeTypeLower as ProxyModeType;
 
     // subscriptionProxyPolicy（三态可选）sanitize（不 throw，与 dnsTimeoutMs/CIDR 同标准防整配置回落）：
     // 非 'follow'|'proxy'|'direct' 的脏值（手改 / 损坏备份跨设备导入，见 config-portability）→ 删除该字段，落回默认 follow。

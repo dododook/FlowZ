@@ -374,11 +374,15 @@ export class MacOSSystemDns extends SystemDnsBase {
     const { stdout } = await execAsync('networksetup -listallnetworkservices', {
       timeout: DNS_CMD_TIMEOUT_MS,
     });
-    return stdout
-      .split('\n')
-      .slice(1)
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('*'));
+    return (
+      stdout
+        .split('\n')
+        .slice(1)
+        .map((l) => l.trim())
+        // 跨平台 review 🟡-2：与 SystemProxyManager.getNetworkServices 口径统一，排除 Bluetooth PAN——
+        // 否则 DNS 接管会把 DNS 写到蓝牙网络（PAN/个人热点），关闭后可能残留。
+        .filter((l) => l && !l.startsWith('*') && !l.includes('Bluetooth'))
+    );
   }
 
   protected async readDns(service: string): Promise<string[]> {
@@ -397,12 +401,16 @@ export class MacOSSystemDns extends SystemDnsBase {
 
   protected listTargetsSync(): string[] {
     const { execSync } = require('child_process');
-    return execSync('networksetup -listallnetworkservices', { timeout: DNS_CMD_TIMEOUT_MS })
-      .toString()
-      .split('\n')
-      .slice(1)
-      .map((l: string) => l.trim())
-      .filter((l: string) => l && !l.startsWith('*'));
+    return (
+      execSync('networksetup -listallnetworkservices', { timeout: DNS_CMD_TIMEOUT_MS })
+        .toString()
+        .split('\n')
+        .slice(1)
+        .map((l: string) => l.trim())
+        // 跨平台 review 🟡-2/M5：与 async listTargets 口径统一，排除 Bluetooth PAN——否则关机还原
+        //（restoreDnsSync 走此 sync 路径）仍会往蓝牙网络写 DNS，async/sync 服务集不一致。
+        .filter((l: string) => l && !l.startsWith('*') && !l.includes('Bluetooth'))
+    );
   }
 
   protected applyDnsSync(service: string, ips: string[]): void {

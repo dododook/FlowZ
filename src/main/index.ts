@@ -1485,15 +1485,15 @@ if (gotTheLock) {
       getPrivacyMode,
     });
 
-    // macOS/Linux 关机/重启早期钩子：powerMonitor 'shutdown'（win32 不发此事件，注销/关机走窗口级
-    // 'session-end'，见 createWindow）。同步兜底：停代理 + marker 门控关系统代理（syncCleanupOnExit 内），
-    // 防关机过快时 SIGTERM→cleanupResources 异步链跑不完导致 networksetup/gsettings 代理残留。
-    if (process.platform === 'darwin' || process.platform === 'linux') {
-      powerMonitor.on('shutdown', () => {
-        logManager.addLog('warn', 'OS shutdown detected (powerMonitor), syncing cleanup', 'Main');
-        syncCleanupOnExit();
-      });
-    }
+    // 关机/重启早期钩子：powerMonitor 'shutdown'（跨平台 review 🟡-5：原仅 darwin/linux，补 win32）。
+    // 三平台都注册——Windows 系统关机/重启时 Electron 也发此事件（原注释"win32 不发"仅对注销 logoff 成立，
+    // 关机是发的）。多一道兜底防 SIGTERM→cleanupResources 异步链跑不完导致系统代理/DNS 残留。
+    // syncCleanupOnExit 内 marker 门控，无 marker 时 no-op，多注册无害。
+    // 注：Windows 注销（logoff）仍走窗口级 'session-end'（见 createWindow），此处不覆盖 logoff。
+    powerMonitor.on('shutdown', () => {
+      logManager.addLog('warn', 'OS shutdown detected (powerMonitor), syncing cleanup', 'Main');
+      syncCleanupOnExit();
+    });
 
     // Dock 点击 / Finder·Spotlight 重新打开运行中的 app（macOS 经 activate，非 second-instance）。
     // hasVisibleWindows=false 涵盖窗口隐藏/最小化/已销毁三态；showWindow 已分别处理（show / restore / 重建）。

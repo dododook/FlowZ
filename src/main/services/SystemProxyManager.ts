@@ -99,13 +99,14 @@ export abstract class SystemProxyBase implements ISystemProxyManager {
    * 写入持久化 marker（enableProxy 成功后调用）
    * 记录"系统代理由 FlowZ 设置"，供崩溃/强杀后下次启动恢复与退出兜底门控使用。
    * 同步 fs API（文件极小）；失败仅告警，绝不抛出影响代理设置结果。
+   * originalSettings 可选：保存 enable 前的原始代理快照，供 disableProxySync（关机新建实例路径，
+   * 跨平台 review H1-2）读回恢复——否则关机时实例 originalSettings 为 null，恢复分支不可达。
    */
-  protected writeMarker(ourHostPort: string): void {
+  protected writeMarker(ourHostPort: string, originalSettings?: SystemProxyStatus | null): void {
     try {
-      fs.writeFileSync(
-        SystemProxyBase.getMarkerPath(),
-        JSON.stringify({ ourHostPort, at: Date.now() })
-      );
+      const data: Record<string, unknown> = { ourHostPort, at: Date.now() };
+      if (originalSettings) data.originalSettings = originalSettings;
+      fs.writeFileSync(SystemProxyBase.getMarkerPath(), JSON.stringify(data));
     } catch (error) {
       this.log('warn', `写入系统代理 marker 失败: ${error}`);
     }
@@ -129,12 +130,15 @@ export abstract class SystemProxyBase implements ISystemProxyManager {
   }
 
   /** 读取持久化 marker；文件不存在或内容损坏一律返回 null（启动恢复/退出门控用） */
-  static readMarker(): { ourHostPort: string } | null {
+  static readMarker(): { ourHostPort: string; originalSettings?: SystemProxyStatus } | null {
     try {
       const raw = fs.readFileSync(SystemProxyBase.getMarkerPath(), 'utf-8');
       const data = JSON.parse(raw);
       if (data && typeof data.ourHostPort === 'string' && data.ourHostPort) {
-        return { ourHostPort: data.ourHostPort };
+        return {
+          ourHostPort: data.ourHostPort,
+          ...(data.originalSettings ? { originalSettings: data.originalSettings } : {}),
+        };
       }
       return null;
     } catch {
@@ -776,9 +780,15 @@ export class LinuxSystemProxy extends SystemProxyBase {
   ): Promise<void> {
     this.log('info', '正在设置 Linux 系统代理');
 
-    // 保存原始设置
+    // 保存原始设置（防自指：已指向我们自己的代理 → 视为无原始，杜绝 disable restore 死端口致断网。
+    // 跨平台对齐：Win/macOS enableProxy 都用 stripSelf，原 Linux 直接赋值裸 getProxyStatus，
+    // marker 残留指向自身时 originalSettings 会捕获自身代理，disable 恢复回去 = 死端口断网）。
     try {
-      this.originalSettings = await this.getProxyStatus();
+      this.originalSettings = SystemProxyBase.stripSelf(
+        await this.getProxyStatus(),
+        address,
+        httpPort
+      );
       this.log('info', '已保存原始代理设置');
     } catch (error) {
       this.log('warn', `无法获取原始代理设置: ${error}`);
@@ -811,8 +821,9 @@ export class LinuxSystemProxy extends SystemProxyBase {
         },
         { maxRetries: 1, delay: 500 }
       );
-      // 持久化 marker：标记系统代理由 FlowZ 设置（崩溃/强杀后下次启动据此恢复）
-      this.writeMarker(`${address}:${httpPort}`);
+      // 持久化 marker：标记系统代理由 FlowZ 设置（崩溃/强杀后下次启动据此恢复）+ 携带 originalSettings
+      // 快照（跨平台 review H1-2：disableProxySync 关机时新建实例 originalSettings=null，需从 marker 读回恢复）。
+      this.writeMarker(`${address}:${httpPort}`, this.originalSettings);
       this.log('info', 'Linux 系统代理设置成功');
     } catch (error) {
       this.log('error', `设置 Linux 系统代理失败: ${error}`);
@@ -821,18 +832,61 @@ export class LinuxSystemProxy extends SystemProxyBase {
   }
 
   /**
+   * 从 originalSettings.httpProxy（"host:port"）健壮拆分出 host/port。
+   * getProxyStatus 拼的是 `${host}:${port}`，host 为合法 IPv4/域名（不含 ':'），故用 lastIndexOf(':') 拆 port。
+   * 缺端口（无 ':' 或端口非数字）→ 返回 null，调用方据此不进恢复分支（置 none）。
+   */
+  private static splitHostPort(httpProxy?: string): { host: string; port: number } | null {
+    if (!httpProxy) return null;
+    const idx = httpProxy.lastIndexOf(':');
+    if (idx <= 0) return null; // 无 ':' 或以 ':' 开头（无 host）
+    const host = httpProxy.slice(0, idx);
+    const port = parseInt(httpProxy.slice(idx + 1), 10);
+    if (!host || !Number.isFinite(port) || port <= 0 || port > 65535) return null;
+    return { host, port };
+  }
+
+  /**
    * 禁用系统代理
    */
   async disableProxy(): Promise<void> {
     this.log('info', '正在禁用 Linux 系统代理');
     try {
-      await execAsync('gsettings set org.gnome.system.proxy mode "none"');
-      this.log('info', '已禁用系统代理');
+      // 三平台对称（跨平台 review 🔴High）：原仅置 mode=none 丢弃 originalSettings，用户原始代理配置永久丢失
+      //（Win/macOS disableProxy 都 restoreProxySettings）。有原始快照（manual + host:port）→ 恢复；否则置 none。
+      const restored = await this.restoreOriginalProxyAsync();
+      if (!restored) {
+        await execAsync('gsettings set org.gnome.system.proxy mode "none"');
+        this.log('info', '已禁用系统代理');
+      }
       // 拆除成功 → 删除持久化 marker
       this.clearMarker();
     } catch (error) {
-      this.log('error', `禁用 Linux 系统代理失败: ${error}`);
+      // 跨平台 review M3：恢复/禁用失败时不删 marker——保留供下次启动重试（与 macOS disableProxySync
+      // allOff 才删 marker 策略一致）。原 catch 静默吞错 + marker 已清 → 用户原始代理丢失无任何可观测信号。
+      this.log('error', `禁用 Linux 系统代理失败（保留 marker 供下次重试）: ${error}`);
     }
+  }
+
+  /**
+   * 异步恢复原始代理配置（disableProxy 用）。返回 true=已恢复原始代理；false=无有效快照（调用方置 none）。
+   */
+  private async restoreOriginalProxyAsync(): Promise<boolean> {
+    const hp = LinuxSystemProxy.splitHostPort(this.originalSettings?.httpProxy);
+    if (!this.originalSettings?.enabled || !hp) return false;
+    this.log('info', '正在恢复原始代理设置');
+    // host/port 同步恢复到 http/https/socks（对齐 enableProxy 写法；getProxyStatus 仅采集 http，三者用同 host:port）
+    await execAsync('gsettings set org.gnome.system.proxy mode "manual"');
+    await execAsync(`gsettings set org.gnome.system.proxy.http host "${hp.host}"`);
+    await execAsync(`gsettings set org.gnome.system.proxy.http port ${hp.port}`);
+    await execAsync('gsettings set org.gnome.system.proxy.http enabled true');
+    await execAsync(`gsettings set org.gnome.system.proxy.https host "${hp.host}"`);
+    await execAsync(`gsettings set org.gnome.system.proxy.https port ${hp.port}`);
+    await execAsync(`gsettings set org.gnome.system.proxy.socks host "${hp.host}"`);
+    await execAsync(`gsettings set org.gnome.system.proxy.socks port ${hp.port}`);
+    this.originalSettings = null;
+    this.log('info', '已恢复原始代理设置');
+    return true;
   }
 
   /**
@@ -851,7 +905,10 @@ export class LinuxSystemProxy extends SystemProxyBase {
       const portResult = await execAsync('gsettings get org.gnome.system.proxy.http port');
 
       const host = hostResult.stdout.replace(/'/g, '').trim();
-      const port = portResult.stdout.trim();
+      // gsettings 对 guint 类型输出带 GVariant 类型前缀（如 "uint32 8080"），剥前缀取纯数字端口。
+      // 跨平台 review H1-1：原 portResult.stdout.trim() 原样保留 "uint32 8080" → 拼 httpProxy 后
+      // splitHostPort 的 parseInt 恒 NaN → disableProxy 恢复分支永不触发（静默 fail，假绿测试绕过）。
+      const port = portResult.stdout.replace(/^uint\d+\s+/i, '').trim();
       // mode=manual 但 host 空 = 无实际代理（用户清了 host），不误报 enabled（否则 advisory 弹 ":port"）。
       if (!host) return { enabled: false };
 
@@ -865,20 +922,41 @@ export class LinuxSystemProxy extends SystemProxyBase {
   }
 
   /**
-   * 同步禁用系统代理
+   * 同步禁用系统代理（关机/崩溃兜底路径，跨平台 review 🔴High R6-H1：原赤裸置 none 不恢复 originalSettings，
+   * 与 disableProxy 行为分裂——正常退出恢复原始代理，异常/关机退出抹成 none）。
    */
   disableProxySync(): void {
     const { execSync } = require('child_process');
-    try {
-      // GNOME
-      execSync('gsettings set org.gnome.system.proxy mode "none"', { stdio: 'ignore' });
-      // GNOME 禁用成功 → 删除持久化 marker（enableProxy 仅走 GNOME 路径）
-      this.clearMarker();
-    } catch {
-      /* ignore */
+    const run = (cmd: string): void => {
+      try {
+        execSync(cmd, { stdio: 'ignore' });
+      } catch {
+        /* best-effort，关机语境不抛 */
+      }
+    };
+    // 跨平台 review H1-2：关机时 syncCleanupOnExit 新建实例（originalSettings=null），需从 marker 读回
+    // enableProxy 时持久化的原始快照。无 marker 或快照无效 → 置 none（用户原本无代理）。
+    const marker = SystemProxyBase.readMarker();
+    const snap = this.originalSettings ?? marker?.originalSettings ?? null;
+    const hp = LinuxSystemProxy.splitHostPort(snap?.httpProxy);
+    if (snap?.enabled && hp) {
+      run('gsettings set org.gnome.system.proxy mode "manual"');
+      run(`gsettings set org.gnome.system.proxy.http host "${hp.host}"`);
+      run(`gsettings set org.gnome.system.proxy.http port ${hp.port}`);
+      run('gsettings set org.gnome.system.proxy.http enabled true');
+      run(`gsettings set org.gnome.system.proxy.https host "${hp.host}"`);
+      run(`gsettings set org.gnome.system.proxy.https port ${hp.port}`);
+      run(`gsettings set org.gnome.system.proxy.socks host "${hp.host}"`);
+      run(`gsettings set org.gnome.system.proxy.socks port ${hp.port}`);
+    } else {
+      // 无原始代理 → 置 none
+      run('gsettings set org.gnome.system.proxy mode "none"');
     }
+    this.originalSettings = null; // L3：与 restoreOriginalProxyAsync 对称置 null
+    // GNOME 处理完成 → 删除持久化 marker（enableProxy 仅走 GNOME 路径）
+    this.clearMarker();
     try {
-      // KDE
+      // KDE（best-effort，无原始快照恢复——KDE 路径未在 enableProxy 采集 originalSettings）
       execSync('kwriteconfig5 --file kioslaverc --group "Proxy Settings" --key "ProxyType" 0', {
         stdio: 'ignore',
       });
