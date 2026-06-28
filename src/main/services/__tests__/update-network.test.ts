@@ -67,3 +67,60 @@ describe('UpdateNetwork', () => {
     expect(s).toBe(direct);
   });
 });
+
+describe('UpdateNetwork.resolveSessionForMainUpdate（类2 viaProxy/port 决策收口）', () => {
+  beforeEach(() => mockFromPartition.mockReset());
+
+  function setup(
+    cfg: { mainSessionViaProxy?: boolean } | null,
+    running: boolean,
+    port: number | null,
+    cfgReject = false
+  ) {
+    const proxied = makeSession();
+    const direct = makeSession();
+    mockFromPartition.mockImplementation((name: string) =>
+      name === 'flowz-update-proxied' ? proxied : direct
+    );
+    const un = new UpdateNetwork();
+    un.setMainUpdateProviders({
+      configProvider: () =>
+        cfgReject ? Promise.reject(new Error('config boom')) : Promise.resolve(cfg as never),
+      proxyRunningProvider: () => running,
+      updateInPortProvider: () => port,
+    });
+    return { un, proxied, direct };
+  }
+
+  it('running ∧ mainSessionViaProxy 未关 ∧ 端口可用 → proxied(socks)', async () => {
+    const { un, proxied } = setup({ mainSessionViaProxy: true }, true, 52330);
+    expect(await un.resolveSessionForMainUpdate()).toBe(proxied);
+    expect(proxied.setProxy).toHaveBeenCalledWith({ proxyRules: 'socks5://127.0.0.1:52330' });
+  });
+
+  it('代理未运行 → direct', async () => {
+    const { un, direct } = setup({ mainSessionViaProxy: true }, false, 52330);
+    expect(await un.resolveSessionForMainUpdate()).toBe(direct);
+  });
+
+  it('mainSessionViaProxy=false → direct', async () => {
+    const { un, direct } = setup({ mainSessionViaProxy: false }, true, 52330);
+    expect(await un.resolveSessionForMainUpdate()).toBe(direct);
+  });
+
+  it('端口不可用(<=0) → direct（不 pin 无效口）', async () => {
+    const { un, direct } = setup({ mainSessionViaProxy: true }, true, 0);
+    expect(await un.resolveSessionForMainUpdate()).toBe(direct);
+  });
+
+  it('读 config 失败 → direct 兜底', async () => {
+    const { un, direct } = setup(null, true, 52330, true);
+    expect(await un.resolveSessionForMainUpdate()).toBe(direct);
+  });
+
+  it('未注入 providers → viaProxy=false → direct', async () => {
+    const direct = makeSession();
+    mockFromPartition.mockReturnValue(direct);
+    expect(await new UpdateNetwork().resolveSessionForMainUpdate()).toBe(direct);
+  });
+});

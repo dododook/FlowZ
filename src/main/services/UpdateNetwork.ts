@@ -1,4 +1,6 @@
 import { session, type Session } from 'electron';
+import { resolveUpdateProxyTarget } from '../../shared/update-proxy';
+import type { UserConfig } from '../../shared/types';
 
 /**
  * 更新链路统一网络层：资源/应用更新等 main 进程 `net.request` 的会话来源。
@@ -56,5 +58,45 @@ export class UpdateNetwork {
     } catch {
       return this.getDirectSession();
     }
+  }
+
+  // 类2 收口：主更新链路（应用/资源/核心）viaProxy/port 决策 providers，index.ts 一次注入（共享 proxyManager/
+  // configManager）。原 UpdateService/RuleResourceManager/CoreDownloader 三处各自重复「读 config→proxyRunning→
+  // updateInPort→viaProxy 求值→端口闸→sessionForOrDirect」易漂移；收口到 resolveSessionForMainUpdate 单点。
+  private configProvider: (() => Promise<UserConfig | null>) | null = null;
+  private proxyRunningProvider: (() => boolean) | null = null;
+  private updateInPortProvider: (() => number | null) | null = null;
+
+  /** index.ts 一次注入主更新链路决策 providers（configManager.loadConfig / proxyManager.running / getUpdateInPort）。 */
+  setMainUpdateProviders(deps: {
+    configProvider: () => Promise<UserConfig | null>;
+    proxyRunningProvider: () => boolean;
+    updateInPortProvider: () => number | null;
+  }): void {
+    this.configProvider = deps.configProvider;
+    this.proxyRunningProvider = deps.proxyRunningProvider;
+    this.updateInPortProvider = deps.updateInPortProvider;
+  }
+
+  /**
+   * 主更新链路统一会话决策（类2 收口单点）：读 config(mainSessionViaProxy)+proxyRunning+updateInPort，经
+   * resolveUpdateProxyTarget 决定 viaProxy/有效端口（端口闸单一真值，与 icon-protocol 共用）；读 config 失败
+   * → 直连兜底；返回 sessionForOrDirect（绝不消费 default session，M1）。UpdateService/RuleResourceManager/
+   * CoreDownloader 三处统一调用，防漂移。未注入 providers（理论：index 总注入）→ 读不到则 viaProxy=false。
+   */
+  async resolveSessionForMainUpdate(): Promise<Session> {
+    let target = { viaProxy: false, port: 0 };
+    try {
+      const cfg = this.configProvider ? await this.configProvider() : null;
+      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
+      target = resolveUpdateProxyTarget(
+        running,
+        cfg?.mainSessionViaProxy,
+        this.updateInPortProvider?.()
+      );
+    } catch {
+      target = { viaProxy: false, port: 0 }; // 读 config 失败 → 直连兜底
+    }
+    return this.sessionForOrDirect(target.viaProxy, target.port);
   }
 }

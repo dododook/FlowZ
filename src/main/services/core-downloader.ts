@@ -20,34 +20,25 @@ import { powershellPath } from '../utils/win-system32';
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { findSuitableSingboxAsset } from './singbox-asset';
 import { UpdateNetwork } from './UpdateNetwork';
-import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
 
 export class CoreDownloader {
   // direct 自举兜底会话（强制 mode:direct）：核下载是自举链路，UpdateNetwork 未注入 / update-in 端口不可用 /
   // sessionFor 失败时回落此口——绝不回落 default session（核更新链路统一经本类专用会话，default session 已
   // 回归系统代理且 bootstrap 期不可控）；TUN 模式 direct 由 OS 层透明捕获，系统代理模式直连 GitHub（实测均可达）。
   private updateDirectSession: Session | null = null;
-  // §8 四链路收口：核更新链路也接入 update-in（socks）。viaProxy（resolveMainSessionViaProxy）时经 update-in→route→
-  // proxy；否则走 direct 兜底（自举）。构造后由 CoreUpdateService 转发、index 装配。
+  // §8 四链路收口：核更新链路也接入 update-in（socks）。viaProxy/port 决策已收口到 UpdateNetwork.
+  // resolveSessionForMainUpdate（类2，providers 由 index.ts 一次注入）；本类只持 updateNetwork 引用 + 自举兜底。
   private updateNetwork: UpdateNetwork | null = null;
-  private proxyRunningProvider: (() => boolean) | null = null;
-  private updateInPortProvider: (() => number | null) | null = null;
 
   constructor(
     private readonly logManager: LogManager,
-    // 注入配置读取器（读 ghProxyPrefix 镜像前缀 + mainSessionViaProxy）；未配置时解析为 null。
+    // 注入配置读取器（读 ghProxyPrefix 镜像前缀）；未配置时解析为 null。
     private readonly configProvider: () => Promise<UserConfig | null>
   ) {}
 
-  /** §8：注入更新链路统一会话层 + 代理运行态/update-in 端口读取器（CoreUpdateService 转发，index 装配）。 */
-  setUpdateNetwork(
-    updateNetwork: UpdateNetwork,
-    proxyRunningProvider: () => boolean,
-    updateInPortProvider: () => number | null
-  ): void {
+  /** §8：注入更新链路统一会话层（类2：决策 providers 改由 index.ts 注入 updateNetwork.setMainUpdateProviders）。 */
+  setUpdateNetwork(updateNetwork: UpdateNetwork): void {
     this.updateNetwork = updateNetwork;
-    this.proxyRunningProvider = proxyRunningProvider;
-    this.updateInPortProvider = updateInPortProvider;
   }
 
   /** direct 自举兜底会话（强制 mode:direct，绕 default session http 入站挂死）。 */
@@ -60,28 +51,13 @@ export class CoreDownloader {
   }
 
   /**
-   * 核更新链路（检查/下载）统一会话。viaProxy（resolveMainSessionViaProxy = running && mainSessionViaProxy!==false）
-   * 且 update-in 端口可用 → 经 update-in（socks→route→proxy）；否则 direct 兜底（自举：核下载恒可达 direct+mirror）。
-   * 恒返回 Session（非 undefined）——核自举绝不回落 default session（http 入站挂死）；sessionFor 失败亦回 direct。
+   * 核更新链路（检查/下载）统一会话。viaProxy/port 决策收口到 UpdateNetwork.resolveSessionForMainUpdate（类2
+   * 三链路单点防漂移）。恒返回 Session（非 undefined）——核自举绝不回落 default session（http 入站挂死）：
+   * 未注入 updateNetwork / resolveSessionForMainUpdate 极罕见 reject → 回本类 direct 自举兜底。
    */
   private async updateSession(): Promise<Session> {
     if (!this.updateNetwork) return this.getDirectSession();
-    let viaProxy = false;
-    let updateInPort = 0;
-    try {
-      const cfg = await this.configProvider();
-      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
-      viaProxy = resolveMainSessionViaProxy(running, cfg?.mainSessionViaProxy);
-      updateInPort = this.updateInPortProvider?.() ?? 0;
-    } catch {
-      viaProxy = false;
-    }
-    if (viaProxy && updateInPort <= 0) viaProxy = false;
-    try {
-      return await this.updateNetwork.sessionFor(viaProxy, updateInPort);
-    } catch {
-      return this.getDirectSession(); // sessionFor/setProxy 失败 → direct 兜底（自举绝不回 default session）
-    }
+    return this.updateNetwork.resolveSessionForMainUpdate().catch(() => this.getDirectSession());
   }
 
   async fetchReleases(): Promise<any[]> {

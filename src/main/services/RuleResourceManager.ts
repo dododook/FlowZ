@@ -38,7 +38,6 @@ import {
 } from './builtin-geo-rulesets';
 import { enumerateResourceRefs, isResourceReferenced } from '../../shared/rule-resource-refs';
 import { UpdateNetwork } from './UpdateNetwork';
-import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
 
 const IDLE_TIMEOUT_MS = 15_000;
 const OVERALL_TIMEOUT_MS = 120_000;
@@ -61,46 +60,25 @@ export class RuleResourceManager {
     private readonly notifyCoreReload: (config: UserConfig) => void
   ) {}
 
-  // Phase 1（更新网络统一层 §8）：更新链路统一会话层 + 代理运行态读取器，构造后由 index.ts 注入。
+  // 更新链路统一会话层（类2：viaProxy/port 决策已收口到 UpdateNetwork.resolveSessionForMainUpdate，providers
+  // 由 index.ts 一次注入 updateNetwork.setMainUpdateProviders；本服务只持 updateNetwork 引用）。
   // 未注入 → updateSession 返回 undefined（net.request 回落 default session，旧行为兜底）。
   private updateNetwork: UpdateNetwork | null = null;
-  private proxyRunningProvider: (() => boolean) | null = null;
-  // Phase 2：update-in inbound 动态端口读取器（proxyManager.getUpdateInPort）。viaProxy 时 pin 此口（非 mixedPort）。
-  private updateInPortProvider: (() => number | null) | null = null;
 
-  /** Phase 1/2：注入更新链路统一会话层 + 代理运行态读取器 + update-in 端口读取器（index.ts 装配）。 */
-  setUpdateNetwork(
-    updateNetwork: UpdateNetwork,
-    proxyRunningProvider: () => boolean,
-    updateInPortProvider: () => number | null
-  ): void {
+  /** 注入更新链路统一会话层（类2：决策 providers 改由 index.ts 注入 updateNetwork.setMainUpdateProviders）。 */
+  setUpdateNetwork(updateNetwork: UpdateNetwork): void {
     this.updateNetwork = updateNetwork;
-    this.proxyRunningProvider = proxyRunningProvider;
-    this.updateInPortProvider = updateInPortProvider;
   }
 
   /**
-   * Phase 1：资源下载统一会话。读 config(mainSessionViaProxy/mixedPort) + proxyRunning，经
-   * resolveMainSessionViaProxy 决定经代理（socks 入站）还是直连；未注入 → undefined（net.request 回落
-   * default session，旧行为兜底）。读 config 失败 → 直连兜底（绝不抛）。
+   * 资源下载统一会话。viaProxy/port 决策收口到 UpdateNetwork.resolveSessionForMainUpdate（类2 三链路单点防漂移）：
+   * mainSessionViaProxy×proxyRunning×updateInPort 求值、端口不可用/读 config 失败回落直连、经 sessionForOrDirect
+   * 绝不消费 default session（M1）。未注入 → undefined（旧行为兜底）；极罕见 direct 也 reject → undefined 守
+   * fetchBuffer/fetchJson「永不 reject」契约。
    */
   private async updateSession(): Promise<Session | undefined> {
     if (!this.updateNetwork) return undefined;
-    let viaProxy = false;
-    let updateInPort = 0;
-    try {
-      const cfg = await this.configManager.loadConfig();
-      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
-      viaProxy = resolveMainSessionViaProxy(running, cfg.mainSessionViaProxy);
-      updateInPort = this.updateInPortProvider?.() ?? 0;
-    } catch {
-      viaProxy = false; // 读 config 失败 → 直连兜底
-    }
-    // viaProxy 但 update-in 端口不可用（核未起/未分配）→ 直连兜底，不 pin 到无效端口
-    if (viaProxy && updateInPort <= 0) viaProxy = false;
-    // sessionFor 内部 setProxy 极罕见可能 reject → sessionForOrDirect 回落强制直连会话（绝不落 default session，
-    // M1：对齐 CoreDownloader）；连 direct 也 reject（几乎不可能）才最终兜底 undefined 守 fetchBuffer/fetchJson 「永不 reject」契约。
-    return this.updateNetwork.sessionForOrDirect(viaProxy, updateInPort).catch(() => undefined);
+    return this.updateNetwork.resolveSessionForMainUpdate().catch(() => undefined);
   }
 
   // 串行化所有 load-modify-save，防并发批次/删除/setGhProxy 在 load→save 窗口内交错丢写（review P2-1）

@@ -19,7 +19,6 @@ import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { createIdleTimeout, parseExpectedBytes } from './download-hardening';
 import { findSuitableUpdateAsset } from './update-asset';
 import { UpdateNetwork } from './UpdateNetwork';
-import { resolveMainSessionViaProxy } from '../../shared/update-proxy';
 import {
   buildWindowsUpdateVbs,
   buildLinuxAppImageScript,
@@ -48,12 +47,10 @@ export class UpdateService {
   // #60：注入配置读取器（仅用于读 ghProxyPrefix 下载镜像前缀），构造后注入。未配置→null（直连，旧行为）。
   // 与 CoreUpdateService.configProvider / CoreDownloader 同口径——App 自更新与内核/资源下载共用同一 gh 加速前缀。
   private configProvider: (() => Promise<UserConfig | null>) | null = null;
-  // Phase 1（更新网络统一层 §8）：更新链路统一会话层 + 代理运行态读取器，构造后由 index.ts 注入。
+  // 更新链路统一会话层（类2：viaProxy/port 决策已收口到 UpdateNetwork.resolveSessionForMainUpdate，providers
+  // 由 index.ts 一次注入 updateNetwork.setMainUpdateProviders；本服务只持 updateNetwork 引用）。
   // 未注入 → updateSession 返回 undefined（net.request 回落 default session，旧行为兜底）。
   private updateNetwork: UpdateNetwork | null = null;
-  private proxyRunningProvider: (() => boolean) | null = null;
-  // Phase 2：update-in inbound 动态端口读取器（proxyManager.getUpdateInPort）。viaProxy 时 pin 此口（非 mixedPort）。
-  private updateInPortProvider: (() => number | null) | null = null;
 
   constructor(logManager: LogManager) {
     this.logManager = logManager;
@@ -73,39 +70,20 @@ export class UpdateService {
     this.configProvider = provider;
   }
 
-  /** Phase 1/2：注入更新链路统一会话层 + 代理运行态读取器 + update-in 端口读取器（index.ts 装配）。 */
-  setUpdateNetwork(
-    updateNetwork: UpdateNetwork,
-    proxyRunningProvider: () => boolean,
-    updateInPortProvider: () => number | null
-  ): void {
+  /** 注入更新链路统一会话层（类2：决策 providers 改由 index.ts 注入 updateNetwork.setMainUpdateProviders）。 */
+  setUpdateNetwork(updateNetwork: UpdateNetwork): void {
     this.updateNetwork = updateNetwork;
-    this.proxyRunningProvider = proxyRunningProvider;
-    this.updateInPortProvider = updateInPortProvider;
   }
 
   /**
-   * Phase 1/2：更新链路（检查/下载）统一会话。读 mainSessionViaProxy + proxyRunning 经 resolveMainSessionViaProxy
-   * 决定经代理还是直连；经代理时 pin 到 update-in inbound 动态端口（Phase 2，非 mixedPort）。未注入 updateNetwork
-   * → undefined（net.request 回落 default session）。读 config 失败 / update-in 端口不可用 → 直连兜底（绝不抛）。
+   * 更新链路（检查/下载）统一会话。viaProxy/port 决策收口到 UpdateNetwork.resolveSessionForMainUpdate（类2，
+   * 三链路单点防漂移）：mainSessionViaProxy×proxyRunning×updateInPort 求值、端口不可用/读 config 失败回落直连、
+   * 经 sessionForOrDirect 绝不消费 default session（M1）。未注入 updateNetwork → undefined（旧行为兜底）；
+   * 极罕见 direct 也 reject → undefined 守 net.request「绝不抛」契约。
    */
   private async updateSession(): Promise<Session | undefined> {
     if (!this.updateNetwork) return undefined;
-    let viaProxy = false;
-    let updateInPort = 0;
-    try {
-      const cfg = this.configProvider ? await this.configProvider() : null;
-      const running = this.proxyRunningProvider ? this.proxyRunningProvider() : false;
-      viaProxy = resolveMainSessionViaProxy(running, cfg?.mainSessionViaProxy);
-      updateInPort = this.updateInPortProvider?.() ?? 0;
-    } catch {
-      viaProxy = false; // 读 config 失败 → 直连兜底
-    }
-    // viaProxy 但 update-in 端口不可用（核未起/未分配）→ 直连兜底，不 pin 到无效端口
-    if (viaProxy && updateInPort <= 0) viaProxy = false;
-    // sessionFor 内部 setProxy 极罕见可能 reject → sessionForOrDirect 回落强制直连会话（绝不落 default session，
-    // M1：对齐 CoreDownloader）；连 direct 也 reject（几乎不可能）才最终兜底 undefined 守「绝不抛」契约。
-    return this.updateNetwork.sessionForOrDirect(viaProxy, updateInPort).catch(() => undefined);
+    return this.updateNetwork.resolveSessionForMainUpdate().catch(() => undefined);
   }
 
   /** 读用户配置的 GitHub 加速前缀（规范化）。未配置/读失败 → undefined（直连兜底，不抛）。 */

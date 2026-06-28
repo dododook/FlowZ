@@ -1034,11 +1034,14 @@ if (gotTheLock) {
     // Phase 1（更新网络统一层）：更新链路（检查/资源/应用）统一会话层——独立 partition 会话按 mainSessionViaProxy
     // ×proxyRunning 选经代理(socks 入站)/直连，取代裸 net.request 走 default session。proxyManager 已就绪。
     const updateNetwork = new UpdateNetwork();
-    updateService.setUpdateNetwork(
-      updateNetwork,
-      () => proxyManager?.getStatus().running ?? false,
-      () => proxyManager?.getUpdateInPort() ?? null
-    );
+    // 类2：主更新链路 viaProxy/port 决策 providers 一次注入 UpdateNetwork（共享 configManager/proxyManager）；
+    // UpdateService/RuleResourceManager/CoreDownloader 三处只调 resolveSessionForMainUpdate，不再各自重复决策（防漂移）。
+    updateNetwork.setMainUpdateProviders({
+      configProvider: () => configManager.loadConfig(),
+      proxyRunningProvider: () => proxyManager?.getStatus().running ?? false,
+      updateInPortProvider: () => proxyManager?.getUpdateInPort() ?? null,
+    });
+    updateService.setUpdateNetwork(updateNetwork);
     // §8 四链路收口：订阅经代理也 pin 到 update-in（socks），与应用更新/资源链路统一经核 route 按 proxyMode 决策。
     subscriptionService.setUpdateInPortProvider(() => proxyManager?.getUpdateInPort() ?? null);
     // §8 四链路收口：核更新链路（CoreDownloader）也接入 update-in；viaProxy 时经 update-in，否则 direct 兜底（自举）。
@@ -1184,11 +1187,7 @@ if (gotTheLock) {
       (cfg) => ipcEventEmitter.sendToAll('event:configChanged', { newValue: cfg }),
       (cfg) => mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, cfg)
     );
-    ruleResourceManager.setUpdateNetwork(
-      updateNetwork,
-      () => proxyManager?.getStatus().running ?? false,
-      () => proxyManager?.getUpdateInPort() ?? null
-    );
+    ruleResourceManager.setUpdateNetwork(updateNetwork);
     // 启动即把内置 geo 规则集补种到运行时目录：缺失/损坏补种 + 出厂态下 app 升级带来的新出厂数据刷新
     // （不回滚网络更新版）。使「规则资源」页在首次启动代理前也能反映真实文件、可更新/重置；幂等、不阻塞启动。
     void configManager

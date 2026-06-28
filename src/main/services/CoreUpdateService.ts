@@ -112,11 +112,7 @@ export class CoreUpdateService {
 
   /** §8：把更新链路统一会话层转发给 CoreDownloader（核更新链路接入 update-in）；proxyRunning/update-in 端口惰性读 this.proxyManager。 */
   setUpdateNetwork(updateNetwork: UpdateNetwork): void {
-    this.coreDownloader.setUpdateNetwork(
-      updateNetwork,
-      () => this.proxyManager?.getStatus().running ?? false,
-      () => this.proxyManager?.getUpdateInPort() ?? null
-    );
+    this.coreDownloader.setUpdateNetwork(updateNetwork);
   }
 
   /** B 块：注入 helper（macOS 持久化内核更新经 helper v5 install-core 写受保护目录）。 */

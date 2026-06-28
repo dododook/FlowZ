@@ -8,7 +8,7 @@ import { protocol } from 'electron';
 import { promises as dnsPromises } from 'dns';
 import { ICON_PROXY_SCHEME } from '../shared/icon-proxy';
 import { assertHostAllowed } from '../shared/ssrf-guard';
-import { resolveMainSessionViaProxy } from '../shared/update-proxy';
+import { resolveUpdateProxyTarget } from '../shared/update-proxy';
 import { APP_USER_AGENT } from '../shared/constants';
 import type { UpdateNetwork } from './services/UpdateNetwork';
 import type { UserConfig } from '../shared/types';
@@ -66,8 +66,9 @@ export function registerIconProtocol(deps: IconProtocolDeps): void {
       return new Response(null, { status: 400 });
     }
 
-    // viaProxy × update-in 端口（同四链路口径）：代理运行 ∧ mainSessionViaProxy 未关 ∧ 端口可用 → 经 update-in。
-    // config 经 TTL 缓存避免网格批量渲染逐请求读盘；端口/运行态走廉价 thunk 每次取最新。
+    // viaProxy × update-in 端口（同四链路口径，端口闸共用 resolveUpdateProxyTarget）：代理运行 ∧
+    // mainSessionViaProxy 未关 ∧ 端口可用 → 经 update-in。config 经 TTL 缓存避免网格批量渲染逐请求读盘；
+    // 端口/运行态走廉价 thunk 每次取最新。
     let viaProxy = false;
     let port = 0;
     try {
@@ -79,12 +80,14 @@ export function registerIconProtocol(deps: IconProtocolDeps): void {
         msvp = (await deps.configProvider()).mainSessionViaProxy;
         cfgMsvpCache = { value: msvp, expiry: now + CFG_CACHE_TTL_MS };
       }
-      viaProxy = resolveMainSessionViaProxy(deps.proxyRunningProvider(), msvp);
-      port = deps.updateInPortProvider() ?? 0;
+      ({ viaProxy, port } = resolveUpdateProxyTarget(
+        deps.proxyRunningProvider(),
+        msvp,
+        deps.updateInPortProvider()
+      ));
     } catch {
       viaProxy = false; // 读 config 失败 → 直连兜底
     }
-    if (viaProxy && port <= 0) viaProxy = false;
 
     const lookupFn = (h: string) => dnsPromises.lookup(h, { all: true });
     // SSRF：图标 URL 部分来自用户手动输入 → 拦内网/回环/link-local；仅实际经代理（socks）时豁免 FlowZ
