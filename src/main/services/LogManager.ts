@@ -36,6 +36,14 @@ export class LogManager extends EventEmitter implements ILogManager {
 
   private initPromise: Promise<void>;
   private pendingWrites: Set<Promise<void>> = new Set();
+  // 写盘背压上限（issue #210 根因 #1）：日志产生速度 > appendFile 写盘速度时（Linux TUN 下 stdout 全量直喂、
+  // 爆发连接风暴、慢盘/磁盘满），pendingWrites 无界增长会撑爆内存（每条 Promise 持有 entry + 闭包，GC 无法回收）。
+  // 超过此上限即丢弃本条【落盘】（内存 logs 缓冲仍保留，受 maxLogs=1000 上限，UI 可见性不受影响）——丢盘优先于堆内存。
+  // 正常运行远低于此值（写盘微秒级），仅在异常积压时触发兜底。
+  private static readonly MAX_PENDING_WRITES = 200;
+  // 背压丢弃计数（issue #210 可观测性）：被背压丢弃落盘的日志条数。累积只增不减（进程生命周期内），
+  // 供 P4 内存自检 warn 日志/诊断报告引用——若此值持续增长，说明写盘持续跟不上（慢盘/磁盘满/日志风暴）。
+  private droppedDueToBackpressure = 0;
   // 连续相同日志折叠：上游重试/风暴/多源(stderr+文件监听)可能短时间刷同一行（level+source+message）。
   // 仅折叠「严格连续」的相同行（被任意不同行打断即重置），3s 内重复丢弃 → 同一 FATAL 不再刷 5-6 行；
   // 持续重复每 ~3s 仍放行一次，保留对「仍在发生」的可见性。distinct/交错日志不受影响。
@@ -113,14 +121,20 @@ export class LogManager extends EventEmitter implements ILogManager {
     }
 
     // 文件 sink（app.log，writeToFile 内含按 maxLogFileSize 轮转）
-    const writePromise = this.writeToFile(entry)
-      .catch((error) => {
-        console.error('Failed to write log to file:', error);
-      })
-      .finally(() => {
-        this.pendingWrites.delete(writePromise);
-      });
-    this.pendingWrites.add(writePromise);
+    // 背压保护（issue #210 根因 #1）：写盘积压超 MAX_PENDING_WRITES 时丢弃本条落盘——
+    // 内存 logs 缓冲 + UI 事件在下文照常处理（UI 可见性不受影响），仅跳过 appendFile 防止 pendingWrites 无界增长。
+    if (this.pendingWrites.size < LogManager.MAX_PENDING_WRITES) {
+      const writePromise = this.writeToFile(entry)
+        .catch((error) => {
+          console.error('Failed to write log to file:', error);
+        })
+        .finally(() => {
+          this.pendingWrites.delete(writePromise);
+        });
+      this.pendingWrites.add(writePromise);
+    } else {
+      this.droppedDueToBackpressure++;
+    }
 
     // 内存缓冲 + UI 事件
     this.logs.push(entry);
@@ -136,6 +150,14 @@ export class LogManager extends EventEmitter implements ILogManager {
    */
   async flush(): Promise<void> {
     await Promise.all(Array.from(this.pendingWrites));
+  }
+
+  /**
+   * 被背压丢弃落盘的日志累计条数（issue #210 可观测性）。
+   * 0 = 写盘始终跟得上；持续增长 = 写盘瓶颈（慢盘/磁盘满/日志风暴），需关注。
+   */
+  getDroppedDueToBackpressure(): number {
+    return this.droppedDueToBackpressure;
   }
 
   /**

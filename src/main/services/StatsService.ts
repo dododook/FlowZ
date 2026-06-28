@@ -20,6 +20,10 @@ const CONNECTIONS_INTERVAL_NS = 1_000_000_000;
 // 正常活跃连接数 << 此值；仅异常累积时硬上限驱逐最旧条目兜底防 OOM。刻意不用 TTL 清扫——会误清合法长连接
 // （VPN/大下载 > TTL 仍活，被删后 UPDATE 帧 connection=null 无法补建 → 丢到下次 reset），size 上限更安全。
 const MAX_CONN_MAP_SIZE = 50_000;
+// gRPC 长流周期重建（issue #210 根因 #3）：Status/Connections 流不间断长跑（数小时）下，grpc-js 内部
+// HTTP/2 会话/通道对象可能缓慢保留（grpc-node #2068 ServerHttp2Session/channelz 类已知问题）。周期性 cancel +
+// 重订阅（复用 resubscribe）使流对象不长期驻留，重连瞬断 < 1s（首帧到达即恢复），换取长会话内存稳定。
+const STREAM_RESUBSCRIBE_INTERVAL_MS = 30 * 60 * 1000; // 30 分钟
 
 /** 数值规整：string/number → number，非有限值 → undefined（避免 NaN 进 UI 差分）。 */
 function num(v: unknown): number | undefined {
@@ -121,6 +125,8 @@ export class StatsService {
   private connMap = new Map<string, SingBoxConnection>();
   private connections: ConnectionEntry[] = [];
   private started = false;
+  // 长流周期重建定时器（issue #210 根因 #3）：见 STREAM_RESUBSCRIBE_INTERVAL_MS。null=未运行。
+  private resubscribeTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * @param onUpdate 每次拿到新 Status 时回调（广播给渲染端）
@@ -144,6 +150,28 @@ export class StatsService {
     // resubscribe/started 的时序竞态曾致「启动后拓扑不自动刷新、需先点连接信息」。广播仍由窗口可见性门控
     // （onConnectionEvents 内 isWindowVisible）省无 UI 开销；watcher 计数仅作渲染端引用记录，不再 gate 订阅。
     this.subscribeConnectionsStream();
+    this.startResubscribeTimer();
+  }
+
+  /**
+   * 启动长流周期重建定时器（issue #210 根因 #3）。已运行则不重复启动。stop 时清理（L4：resubscribe 不触碰它）。
+   * 周期触发调 resubscribeStreamsOnly（不归零快照，避免首页闪烁 M4）；崩溃/重启场景由外部调 resubscribe（归零）。
+   */
+  private startResubscribeTimer(): void {
+    if (this.resubscribeTimer) return;
+    this.resubscribeTimer = setInterval(() => {
+      // 仅在仍处于运行态时重建（stop 后可能仍有在途回调）；started 守卫防停止后误触发。
+      if (!this.started) return;
+      this.resubscribeStreamsOnly();
+    }, STREAM_RESUBSCRIBE_INTERVAL_MS);
+  }
+
+  /** 停止周期重建定时器（幂等）。 */
+  private stopResubscribeTimer(): void {
+    if (this.resubscribeTimer) {
+      clearInterval(this.resubscribeTimer);
+      this.resubscribeTimer = null;
+    }
   }
 
   /**
@@ -164,6 +192,7 @@ export class StatsService {
     // F2：snapshot 归零并广播（对齐 stop() 语义）。新核重启后 totals/speed/activeConnections 本就从 0 起；
     // 不归零则崩溃 auto-restart（不走 stop()）后，新核首帧到达前 ~1s 窗口里首页 activeConnections 显旧值、
     // 而连接列表已被 unsubscribeConnectionsStream 清空，计数/列表不一致。归零 + 广播使重连窗口状态一致。
+    // 注意：周期重建（startResubscribeTimer）调 resubscribeStreamsOnly（不归零），避免首页每 30min 闪烁 0。
     this.snapshot = {
       uploadSpeed: 0,
       downloadSpeed: 0,
@@ -175,10 +204,32 @@ export class StatsService {
     this.onConnections?.({ connections: [], at: Date.now() });
     this.subscribeStatusStream();
     this.subscribeConnectionsStream(); // 跟随 started（见 start 注释）
+    // 启动长流周期重建定时器（issue #210 根因 #3 + R2 review H1 假绿修复）：本方法是生产唯一驱动入口
+    //（index.ts 仅 proxyManager.on('api-client-ready', () => resubscribe())，从不调 start()）。
+    // 若定时器只在 start() 启动，生产环境永不触发 → 周期重建失效（grpc-js 长流驻留未规避）。
+    // startResubscribeTimer 幂等（已运行则 return），故崩溃重启多次 resubscribe 只持有一个定时器。
+    this.startResubscribeTimer();
+  }
+
+  /**
+   * 周期重建专用（issue #210 根因 #3）：仅重订阅两条流（停旧句柄 + 重新订阅），**不归零 snapshot**。
+   * 与 resubscribe() 的区别：周期重建是同一核的流刷新（规避 grpc-js 长流对象驻留），速率/总量是连续值，
+   * 归零会让首页每 30min 闪烁 0（M4）。旧句柄已 cancel，新核首帧到达即覆盖快照（重连瞬断 < 1s）；
+   * connMap 经 unsubscribeConnectionsStream 清空重建（连接列表本就该重置，避免跨流 id 漂移）。
+   */
+  private resubscribeStreamsOnly(): void {
+    this.unsubscribeStatusStream();
+    this.unsubscribeConnectionsStream();
+    // 不归零 snapshot：速率/总量是连续值，重连后首帧覆盖；归零会闪烁。
+    // 但 activeConnections 重置为 connMap.size（刚清空=0），等首帧恢复——这与 resubscribe 的瞬时 0 等价，
+    // 区别仅在 totals/speed 不闪。
+    this.subscribeStatusStream();
+    this.subscribeConnectionsStream();
   }
 
   stop(): void {
     this.started = false;
+    this.stopResubscribeTimer();
     this.unsubscribeStatusStream();
     this.unsubscribeConnectionsStream();
     this.snapshot = {

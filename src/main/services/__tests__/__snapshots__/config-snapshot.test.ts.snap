@@ -191,6 +191,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     ],
     "log": {
       "level": "info",
+      "output": "/fake/userData/singbox.log",
       "timestamp": true,
     },
     "outbounds": [
@@ -847,6 +848,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     ],
     "log": {
       "level": "info",
+      "output": "/fake/userData/singbox.log",
       "timestamp": true,
     },
     "outbounds": [
@@ -6175,6 +6177,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     ],
     "log": {
       "level": "info",
+      "output": "/fake/userData/singbox.log",
       "timestamp": true,
     },
     "outbounds": [
@@ -16969,6 +16972,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     ],
     "log": {
       "level": "info",
+      "output": "/fake/userData/singbox.log",
       "timestamp": true,
     },
     "outbounds": [
@@ -17593,6 +17597,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     ],
     "log": {
       "level": "info",
+      "output": "/fake/userData/singbox.log",
       "timestamp": true,
     },
     "outbounds": [

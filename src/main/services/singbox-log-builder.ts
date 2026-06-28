@@ -26,14 +26,20 @@ export function buildLogConfig(config: UserConfig, privacyMode: boolean): SingBo
     return logConfig;
   }
 
-  // 在 TUN 模式下（macOS 和 Windows），使用权限提升运行时无法捕获 stdout
-  // 需要将日志输出到文件，然后通过文件监控读取
-  // 注意：这里直接根据 config 参数判断，而不是 this.currentConfig
-  const isTunMode = config.proxyModeType?.toLowerCase() !== 'systemproxy';
-  const isMacTunMode = process.platform === 'darwin' && isTunMode;
-  const isWindowsTunMode = process.platform === 'win32' && isTunMode;
+  // sing-box 日志写文件（output）的场景 = TUN 模式（与 ProxyManager.needsRootPrivilege / isTunModeNow 同谓词）：
+  //  - mac/win TUN：提权后台运行，stdout 无法被父进程捕获 → 必须写文件 + logFileWatcher 读取。
+  //  - Linux TUN：issue #210 根因 #1——虽是直接子进程、stdout 可捕获，但日志全量直喂主进程
+  //    （handleProcessOutput→addLog）在高频下会撑爆 LogManager.pendingWrites。写文件 + watcher 有
+  //    MAX_LOG_FILE_SIZE 截断兜底，三平台 TUN 行为统一。
+  // manual 模式（直接子进程、非 TUN 接管）日志量小，stdout 直喂可接受，不写文件（与 ProxyManager
+  // logFileWatcher 启用条件严格一致——二者必须同谓词，否则会出现「写文件但无人读」或「读空文件」）。
+  // 注意：此处用 config.proxyModeType（生成时的配置），非 this.currentConfig。
+  const isTunMode = config.proxyModeType?.toLowerCase() === 'tun';
+  const writesLogToFile =
+    isTunMode &&
+    (process.platform === 'darwin' || process.platform === 'win32' || process.platform === 'linux');
 
-  if (isMacTunMode || isWindowsTunMode) {
+  if (writesLogToFile) {
     logConfig.output = getSingBoxLogPath();
   }
 

@@ -384,6 +384,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 长会话 debug 日志无限增长会撑满磁盘，超过此上限即截断 singbox.log
   // （sing-box 以 O_APPEND 模式写，截断后从 offset 0 续写，不产生 sparse 空洞）
   private static readonly MAX_LOG_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+  // 主进程内存自检阈值（issue #210 可观测性）：健康检查（10s 周期）顺带采样 RSS，超过此值记 warn 日志
+  // 便于早期定位泄漏（pendingWrites 积压 / gRPC 长流保留 / connMap 膨胀等）。仅观测告警，不强制干预——
+  // 阈值取较宽松的 1GB（FlowZ 常态 < 300MB），避免误报；命中后降频记录防刷屏（MEMORY_WARN_COOLDOWN_MS）。
+  private static readonly RSS_WARN_THRESHOLD = 1024 * 1024 * 1024; // 1GB
+  private static readonly MEMORY_WARN_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟内不重复告警
+  private lastMemoryWarnAt = 0;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL = 10000; // 10秒检查一次
 
@@ -4017,6 +4023,10 @@ exit 0
         // 硬切 1.14 + §5 守卫剥离——live 核恒 ≥1.14、配置亦不再含 sniff_override_destination，U盾域名走路由规则）。
         const spawnEnv = { ...process.env };
 
+        // 复位上次启动错误输出（R2 review M3）：lastErrorOutput 仅在 stderr handler 赋值，Linux TUN 下 stderr 静默
+        // → 该字段保留上次非 TUN 模式的陈旧内容 → parseStartupError 会给本次启动失败喂错误分类。每次 spawn 前清零。
+        this.lastErrorOutput = '';
+
         this.singboxProcess = spawn(command, args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: spawnEnv,
@@ -4052,6 +4062,16 @@ exit 0
             this.lastErrorOutput = output;
             this.handleProcessOutput(output);
           });
+        }
+
+        // Linux TUN：sing-box 日志写文件（singbox-log-builder TUN+Linux 设 output），stdout 静默 →
+        // 必须【在 spawn 后立即起 logFileWatcher】（而非等 1s 成功后）。否则启动失败路径（进程在 1s 内退出、
+        // watcher 尚未起）下 singbox.log 里的 FATAL 配置错误/端口冲突无人读取 → lastErrorOutput 链路
+        // （parseStartupError/classifyCoreError）拿不到具体错误，用户只得到通用退出码（H2 回归）。
+        // startLogFileWatcher 内部会清空日志文件（writeFileSync ''），sing-box 从空文件续写，时序正确。
+        // macOS/Windows 系统代理 + Linux 系统代理/manual：sing-box 仍走 stdout（上面已监听），不起 watcher。
+        if (process.platform === 'linux' && this.isTunModeNow()) {
+          this.startLogFileWatcher();
         }
 
         // 监听进程事件
@@ -4164,6 +4184,7 @@ exit 0
           } else {
             // 系统代理模式或 Linux
             if (this.singboxProcess && this.pid) {
+              // Linux TUN 的 logFileWatcher 已在 spawn 后立即启动（见上方 stderr 监听后），此处不重复。
               // 启动健康检查定时器
               this.startHealthCheck();
 
@@ -4882,6 +4903,32 @@ exit 0
   }
 
   /**
+   * 主进程内存自检（issue #210 可观测性）：采样 RSS，超 RSS_WARN_THRESHOLD 记 warn 日志。
+   * 与健康检查同频（10s）调用，但降频记录（MEMORY_WARN_COOLDOWN_MS 内不重复）防刷屏。
+   * 仅观测告警，不强制 GC/干预——为泄漏定位提供早期信号（pendingWrites 积压/gRPC 长流保留等）。
+   */
+  private checkMemoryUsage(): void {
+    let rss = 0;
+    try {
+      rss = process.memoryUsage().rss;
+    } catch {
+      return; // memoryUsage 极端异常不阻断健康检查
+    }
+    if (rss < ProxyManager.RSS_WARN_THRESHOLD) return;
+    const now = Date.now();
+    if (now - this.lastMemoryWarnAt < ProxyManager.MEMORY_WARN_COOLDOWN_MS) return;
+    this.lastMemoryWarnAt = now;
+    const mb = Math.round(rss / 1024 / 1024);
+    this.logToManager(
+      'warn',
+      `主进程内存占用 ${mb}MB 偏高（阈值 ${Math.round(
+        ProxyManager.RSS_WARN_THRESHOLD / 1024 / 1024
+      )}MB），可能存在内存泄漏，建议关注日志量/连接数`,
+      'ProxyManager'
+    );
+  }
+
+  /**
    * 执行健康检查
    */
   private performHealthCheck(): void {
@@ -4889,6 +4936,10 @@ exit 0
     if (this.isRestarting) {
       return;
     }
+
+    // 主进程内存自检（issue #210 可观测性）：跟随健康检查节拍（10s），但仅在非重启态执行（上方 isRestarting
+    // 早退已过滤重启期）。重启循环通常很短，跳过其间的内存采样无碍——长会话泄漏在稳态运行期会持续被采样。
+    this.checkMemoryUsage();
 
     // 判定依据与 getStatus 一致：经包装进程(osascript/UAC)启动才取 singboxPid，否则取 pid。
     // 修复 Linux TUN（直接 spawn，singboxPid 恒 null）下健康检查/自动重启完全失效（issue #33）。
@@ -5562,6 +5613,23 @@ exit 0
           const newContent = buffer.toString('utf-8');
           this.lastLogFileSize = stats.size;
 
+          // R2 review M1（闭合 H2）+ R3 Nit-1（正则口径统一）+ R4 Low-1（兑现注释承诺）：
+          // watcher 读到的内容若含【结构化错误/崩溃】特征，同步更新 lastErrorOutput，使 parseStartupError/
+          // classifyCoreError 在 TUN 模式（日志写文件、stderr 静默）下拿到具体错误，而非通用退出码文案。
+          // 匹配两类特征（与 inferUnparsedLevel 口径统一）：
+          //  1) sing-box 级别 token ERROR/FATAL（恒大写，见 parseSingBoxLog）—— 大小写敏感，不匹配正文小写 error
+          //     （R4 Low-1：原 /i 标志让 "connection to error-host" 误命中，与注释自相矛盾）。
+          //  2) Go runtime 裸堆栈 panic:/fatal error:/goroutine[running]（行首锚定，带 i 容小写）。
+          // 覆盖 mac/win/Linux TUN（watcher 共用）。slice(-2048) 取本增量块尾部（非全文件尾）避免无限增长。
+          if (
+            /(?:ERROR|FATAL)\b/.test(newContent) ||
+            /(?:^\s*panic[:\s]|^\s*fatal error:|^\s*goroutine\s+\d+\s+\[running\])/im.test(
+              newContent
+            )
+          ) {
+            this.lastErrorOutput = newContent.slice(-2048);
+          }
+
           // 处理日志内容
           if (newContent.trim()) {
             this.handleProcessOutput(newContent);
@@ -5642,6 +5710,23 @@ exit 0
   }
 
   /**
+   * 未解析日志行的级别启发式（issue #210 review M2 / R2 收窄 / R3 注释精准化）。
+   * parseSingBoxLog 失败的行原一律标 info。本函数兜住 **Go runtime 裸堆栈**（进程崩溃时 runtime 旁路 logger
+   * 直接打印、不带 sing-box timestamp 前缀的行）：panic 堆栈首行 `panic: ...`、`goroutine N [running]:`、
+   * `fatal error: ...`。这类行 parseSingBoxLog（要求行首时间戳 + 级别 token）解析不了，落本分支。
+   *
+   * **不**兜 sing-box 业务级 FATAL（如 `2026-... FATAL[...] config error`）——那些带时间戳前缀，由
+   * parseSingBoxLog 成功解析走解析分支，不进本函数（R3 Nit-4：原注释把 sing-box FATAL 列为命中对象不精确）。
+   *
+   * 刻意不用宽松 \berror\b/\bwarn\b（R2 review M2）：误升面太大（续行正文常含 error/warning），与
+   * parseSingBoxLog 级别 token 锚定行首的设计冲突。panic/fatal 误判面远小，且 fatal 误升代价可接受。
+   */
+  private inferUnparsedLevel(line: string): 'info' | 'fatal' {
+    if (/^\s*panic[:\s]|^\s*goroutine\s+\d+\s+\[running\]|^\s*fatal\b/i.test(line)) return 'fatal';
+    return 'info';
+  }
+
+  /**
    * 解析并记录日志行
    */
   private parseAndLogLine(line: string): void {
@@ -5681,7 +5766,15 @@ exit 0
     } else {
       // 无法解析的日志，尝试对原始行也进行标签转换
       const resolvedLine = this.resolveTagsToNames(line);
-      this.logToManager('info', resolvedLine, 'sing-box');
+      // M2：未解析行的级别启发式（issue #210 review M2）。parseSingBoxLog 失败的行（多行堆栈/续行/非标准格式）
+      // 原一律标 info —— 真实的 FATAL/panic（sing-box 启动崩溃、配置错误多行 traceback）会被误标 info 淹没。
+      // 按行内关键词轻量推断级别，再经 singboxLogLevel（已知预期噪音仍降级 debug）。仅作兜底，不追求精确。
+      const inferredLevel = this.inferUnparsedLevel(resolvedLine);
+      this.logToManager(
+        this.singboxLogLevel(inferredLevel, resolvedLine),
+        resolvedLine,
+        'sing-box'
+      );
     }
   }
 
