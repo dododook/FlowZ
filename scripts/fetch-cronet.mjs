@@ -13,7 +13,14 @@
  *   cronet-go 版本」对应。cronet 走 C API（Chromium 稳定 ABI），跨 sing-box 小版本一般兼容；若升级
  *   sing-box 后 naive 报符号错，提高 manifest 中的版本并重打包。该 manifest 同时被 TS 主进程读取，
  *   是核心/cronet 版本耦合的唯一真源。来源：https://github.com/SagerNet/cronet-go/releases
+ *
+ * 完整性 pin（与 fetch-core 对称）：core-manifest.json 的 cronetArchiveSha256 是「下载的 libcronet 库本体」
+ *   的 sha256，其值 == cronet-go release REST API 返回的 asset digest（gh api
+ *   repos/SagerNet/cronet-go/releases/tags/<cronetVersion> --jq '.assets[]|{name,digest}'，一行可取，
+ *   换版本直接抄）。libcronet 是运行期 dlopen 加载执行的原生库，故与 sing-box 核同级别供应链防护：下载后
+ *   逐字节校验、不符即 fail（落位前拦损坏/截断/投毒），缺 pin 直接拒拉（绝不无校验拉可执行原生库）。
  */
+import { createHash } from 'crypto';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync } from 'fs';
 import { get } from 'https';
 import { dirname, join } from 'path';
@@ -26,23 +33,26 @@ const coreManifest = JSON.parse(
   readFileSync(join(ROOT, 'src/shared/core-manifest.json'), 'utf-8')
 );
 const CRONET_VERSION = coreManifest.cronetVersion; // ← 与打包 sing-box 的 cronet-go 版本对齐
+const CRONET_SHA = coreManifest.cronetArchiveSha256 || {}; // 库本体 sha == cronet-go release API 的 asset digest
 const REPO = 'SagerNet/cronet-go';
 const FORCE = process.argv.includes('--force');
 
 // 仅 linux/windows 走动态库；mac 静态编入核心二进制，不需下载（见文件头）。
-// resources 目标目录 ← cronet-go 资产名 → 落地文件名(purego 期望)
+// resources 目标目录 ← cronet-go 资产名 → 落地文件名(purego 期望) → cronetArchiveSha256 key。
 const TARGETS = [
-  { dir: 'resources/linux', asset: 'libcronet-linux-amd64.so', out: 'libcronet.so' },
-  { dir: 'resources/win', asset: 'libcronet-windows-amd64.dll', out: 'libcronet.dll' },
+  { dir: 'resources/linux', asset: 'libcronet-linux-amd64.so', out: 'libcronet.so', key: 'linux' },
+  { dir: 'resources/win', asset: 'libcronet-windows-amd64.dll', out: 'libcronet.dll', key: 'win' },
 ];
 
-function download(url, dest, redirects = 0) {
+const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
+
+function download(url, dest, want, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) return reject(new Error('too many redirects'));
     get(url, { headers: { 'User-Agent': 'FlowZ-fetch-cronet' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        return resolve(download(res.headers.location, dest, redirects + 1));
+        return resolve(download(res.headers.location, dest, want, redirects + 1));
       }
       if (res.statusCode !== 200) {
         res.resume();
@@ -65,7 +75,15 @@ function download(url, dest, redirects = 0) {
       file.on('finish', () =>
         file.close((err) => {
           if (err) return fail(err);
+          // 完整性校验：对下载库本体算 sha256，比对 manifest pin（= cronet-go release API 的 asset digest）。
+          // fail-fast 于落位前——损坏/截断/投毒不会 rename 到 dest（坏 .tmp 由 fail() 清理）。
           try {
+            const got = sha256(tmp);
+            if (got !== want) {
+              return fail(
+                new Error(`sha256 不符：期望 ${want}，实得 ${got}（版本漂移 / 投毒 / 截断）`)
+              );
+            }
             renameSync(tmp, dest);
             resolve();
           } catch (e) {
@@ -87,12 +105,22 @@ for (const t of TARGETS) {
     ok++;
     continue;
   }
+  // 完整性 pin 是供应链防护核心：缺 pin 直接 fail（绝不无校验拉可 dlopen 的原生库）；换版本须同步补 cronetArchiveSha256。
+  // normalize：容忍带/不带 `sha256:` 前缀——cronet-go release API 的 asset digest 形如 `sha256:<hex>`，可原样抄进 manifest。
+  const want = (CRONET_SHA[t.key] || '').replace(/^sha256:/, '');
+  if (!want) {
+    console.error(
+      `  FAILED ${t.key}: core-manifest.json 缺 cronetArchiveSha256[${t.key}] pin → 拒绝无完整性校验拉取（换版本须同步补；值=cronet-go release API 的 asset digest）`
+    );
+    failed++;
+    continue;
+  }
   mkdirSync(absDir, { recursive: true });
   const url = `https://github.com/${REPO}/releases/download/${CRONET_VERSION}/${t.asset}`;
   try {
     console.log(`downloading ${t.asset} → ${t.dir}/${t.out} ...`);
-    await download(url, dest);
-    console.log(`  ok`);
+    await download(url, dest, want);
+    console.log(`  ok (sha ${want.slice(0, 12)}…)`);
     ok++;
   } catch (e) {
     console.error(`  FAILED: ${e.message}`);
