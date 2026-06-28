@@ -85,9 +85,37 @@ describe('buildInbounds — TUN', () => {
       buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
     );
     const tun = byTag(ibs, 'tun-in');
-    expect(tun.stack).toBe('gvisor'); // macOS 强制 gvisor
+    expect(tun.stack).toBe('gvisor'); // macOS auto/缺省 → 平台默认 gvisor（resolveTunStack）
     expect(tun.route_exclude_address).toContain('127.0.0.0/8');
     expect(tun.platform?.http_proxy?.enabled).toBe(true); // macOS http_proxy
+  });
+
+  it('mac 显式 stack=system 原样下发（全平台 honor，不砌墙；mac 默认仍 gvisor 见上 auto 用例）', () => {
+    const ibs = withPlatform('darwin', () =>
+      buildInbounds(
+        cfg({
+          proxyModeType: 'tun',
+          tunConfig: { stack: 'system', mtu: 1500, autoRoute: true, strictRoute: true },
+        }),
+        undefined,
+        deps()
+      )
+    );
+    expect(byTag(ibs, 'tun-in').stack).toBe('system');
+  });
+
+  it('显式 stack=mixed 全平台原样下发（honor 用户选择）', () => {
+    const ibs = withPlatform('win32', () =>
+      buildInbounds(
+        cfg({
+          proxyModeType: 'tun',
+          tunConfig: { stack: 'mixed', mtu: 1500, autoRoute: true, strictRoute: true },
+        }),
+        undefined,
+        deps()
+      )
+    );
+    expect(byTag(ibs, 'tun-in').stack).toBe('mixed');
   });
 
   it('Windows TUN + bypassLAN：排除段含私网 CIDR + 核心 DNS IP', () => {

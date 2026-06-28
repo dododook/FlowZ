@@ -29,6 +29,7 @@ import {
 } from '../../shared/server-completeness';
 import { isAccountBasedProtocol } from '../../shared/endpoint-routes';
 import { isDirectSelection } from '../../shared/direct-selection';
+import { TUN_STACK_VALUES, migrateTunStackConfig } from '../../shared/tun-stack';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -180,6 +181,9 @@ export class ConfigManager implements IConfigManager {
       // 订阅代理策略一次性迁移（已发布布尔字段 subscriptionUpdateViaProxy@4eccd59 → 新三态，幂等、绝不抛）：
       // 旧 true（订阅经代理，常因订阅地址被墙而开）若不迁移会随字段改名静默退化为直连（被墙订阅拉取失败、无感）。
       await this.migrateSubscriptionProxyPolicy(config);
+
+      // TUN stack 一次性迁移（幂等、绝不抛）：存量旧强制默认 stack → 'auto'（行为零变化，见 migrateTunStack）。
+      await this.migrateTunStack(config);
 
       // 应用分流默认预设一次性注入（幂等、flag 守卫）：为未配置的内置预设注入默认「代理·跟全局」规则，
       // 并剔除已下线预设（apple/bilibili）的残留。使每张卡片启动即有 rule-sel-app selector → 首次切节点即热切换，
@@ -542,8 +546,8 @@ export class ConfigManager implements IConfigManager {
     ) {
       throw new Error('tunConfig.mtu must be a number between 1280 and 65535');
     }
-    if (!['system', 'gvisor', 'mixed'].includes(config.tunConfig.stack)) {
-      throw new Error('tunConfig.stack must be system, gvisor, or mixed');
+    if (!TUN_STACK_VALUES.includes(config.tunConfig.stack)) {
+      throw new Error('tunConfig.stack must be auto, system, gvisor, or mixed');
     }
     if (typeof config.tunConfig.autoRoute !== 'boolean') {
       throw new Error('tunConfig.autoRoute must be a boolean');
@@ -893,6 +897,26 @@ export class ConfigManager implements IConfigManager {
   }
 
   /**
+   * TUN stack 一次性迁移（幂等、绝不抛）：存量 stack 为旧强制默认（mac=gvisor / Win·Linux=system，
+   * 旧版 UI 不暴露 stack → 这些是被迫默认、非用户真实选择）→ 一律归 'auto'。'auto' 经 resolveTunStack
+   * 解析回各平台原默认（mac→gvisor / Win·Linux→system），故迁移【行为零变化】，仅语义干净 +
+   * 后续平台默认演进自动惠及 + UI 显示「Auto」。迁移后用户在 UI 显式改的值（system/gvisor/mixed）
+   * 不再被回灌（tunStackMigrated 守卫）。详见 docs/design/tun-stack-option.md §7。
+   * 幂等：tunStackMigrated===true 即跳过（含新装——createDefaultConfig 已置 true）。
+   */
+  private async migrateTunStack(config: UserConfig): Promise<void> {
+    try {
+      // 纯逻辑收敛到 shared/tun-stack#migrateTunStackConfig（可单测）；本壳只负责落盘 + 吞异常。
+      if (!migrateTunStackConfig(config)) return; // 幂等/无变更（含新装）→ 不落盘
+      await this.saveConfig(config).catch((e) =>
+        this.log('warn', `TUN stack 迁移后落盘失败（不阻断，下次重试）: ${e}`)
+      );
+    } catch (e) {
+      this.log('warn', `TUN stack 迁移失败（吞掉，不影响启动）: ${e}`);
+    }
+  }
+
+  /**
    * 创建默认配置
    */
   private createDefaultConfig(): UserConfig {
@@ -904,10 +928,12 @@ export class ConfigManager implements IConfigManager {
       proxyModeType: 'systemProxy', // 默认使用系统代理模式，不需要管理员权限
       tunConfig: {
         mtu: process.platform === 'darwin' ? 1400 : 1350,
-        stack: process.platform === 'darwin' ? 'gvisor' : 'system',
+        // 'auto' = 跟随平台映射（resolveTunStack：mac→gvisor / Win·Linux→system），新装直接用新模型。
+        stack: 'auto',
         autoRoute: true,
         strictRoute: true,
       },
+      tunStackMigrated: true, // 新装即新模型，迁移幂等跳过（对齐 fakeIpToggleMigrated 新装置位）
       customRules: [],
       autoStart: false,
       silentStart: false,

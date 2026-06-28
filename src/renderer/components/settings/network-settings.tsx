@@ -34,9 +34,10 @@ import {
   DEFAULT_POOL_IDS,
   DEFAULT_SINGLE_ID,
 } from '@shared/node-resolver-upstreams';
-import type { CustomDnsUpstream, DnsConfig } from '@shared/types';
+import type { CustomDnsUpstream, DnsConfig, TunStack } from '@shared/types';
 import { DEFAULT_BYPASS_LAN } from '@shared/system-proxy-bypass';
 import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
+import { resolveTunStack, CONCRETE_TUN_STACKS } from '@shared/tun-stack';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { SettingsRow } from './settings-row';
@@ -49,6 +50,9 @@ import { TerminalProxySection } from './terminal-proxy-section';
 const isMac = window.electron?.platform === 'darwin';
 const isWin = window.electron?.platform === 'win32';
 const isLinux = window.electron?.platform === 'linux';
+
+// Auto 档在本平台解析到的具体栈（UI 显示 "Auto (gvisor)" 用），与主进程 resolveTunStack 同源单一真值。
+const autoResolvedStack = resolveTunStack('auto', window.electron?.platform ?? 'linux');
 
 const DNS_DEFAULTS = {
   domesticDns: 'https://doh.pub/dns-query',
@@ -541,6 +545,48 @@ export function NetworkSettings() {
           )}
         </CardContent>
       </Card>
+
+      {/* TUN 模式：网络栈（仅 TUN 接管时显示）。stack 决定 TUN 流量的 TCP/IP 栈实现，Auto 按平台映射
+          (mac gvisor / Win·Linux system)，system/gvisor/mixed 三档全平台可选（含 mac，honor 用户选择）；
+          改栈经 saveConfig 自动重启核。详见 docs/design/tun-stack-option.md。文案按平台给默认建议。 */}
+      {config.proxyModeType?.toLowerCase() === 'tun' && (
+        <Card>
+          <CardContent className="divide-y divide-border/60 pt-2">
+            <SettingsRow heading label={t('settings.advanced.tunMode', 'TUN 模式')} />
+            <SettingsRow
+              label={t('settings.advanced.tunStack', '网络栈')}
+              description={t(
+                isMac
+                  ? 'settings.advanced.tunStackDescMac'
+                  : isWin
+                    ? 'settings.advanced.tunStackDescWin'
+                    : 'settings.advanced.tunStackDescLinux'
+              )}
+              tooltip={t('settings.advanced.tunStackDescFull')}
+            >
+              <Select
+                value={config.tunConfig?.stack ?? 'auto'}
+                onValueChange={(v) => updateTun({ stack: v as TunStack })}
+              >
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">
+                    {`${t('settings.advanced.tunStackAuto', 'Auto')} (${autoResolvedStack})`}
+                  </SelectItem>
+                  {/* 三档全平台可选（含 mac，honor 用户选择）；Auto 默认按平台映射（mac→gvisor）。 */}
+                  {CONCRETE_TUN_STACKS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingsRow>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 连接 / 流量（QUIC/TLS/IPv6 流量治理 + 切换/换节点/更新路由 行为） */}
       <Card>

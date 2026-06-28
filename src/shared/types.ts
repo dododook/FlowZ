@@ -124,7 +124,9 @@ export type Protocol =
 export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type Security = 'none' | 'tls' | 'reality';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
-export type TunStack = 'system' | 'gvisor' | 'mixed';
+// 'auto' = 默认档：跟随平台映射（macOS→gvisor / Windows·Linux→system），经 shared/tun-stack#resolveTunStack
+// 解析成下发给核的具体栈。system/gvisor/mixed = 显式高级兜底。详见 docs/design/tun-stack-option.md。
+export type TunStack = 'auto' | 'system' | 'gvisor' | 'mixed';
 
 // ============================================================================
 // 订阅配置
@@ -343,6 +345,9 @@ export interface UserConfig {
 
   // TUN 模式配置
   tunConfig: TunModeConfig;
+  // TUN stack 一次性迁移标记（幂等）：存量旧强制默认 stack（mac=gvisor / Win·Linux=system，非真实选择）→ 'auto'。
+  // undefined=未迁移（旧配置）；新装由 createDefaultConfig 置 true。详见 ConfigManager.migrateTunStack。
+  tunStackMigrated?: boolean;
 
   // 路由规则
   customRules: Rule[];

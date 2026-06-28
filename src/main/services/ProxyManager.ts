@@ -31,6 +31,7 @@ import { type ISystemDnsManager } from './SystemDnsManager';
 import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
+import { resolveTunStack } from '../../shared/tun-stack';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 import { parseDefaultGateway, parseScutilRouter } from '../../shared/default-route';
 import {
@@ -1591,12 +1592,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * 其余影响配置生成的项（模式/端口/TUN/customRules/servers 集合/appRules/interrupt 开关）都未变。
    */
   /**
-   * Windows TUN 热切换 guard：system 栈放行（实测零环路），gvisor 栈未实测保守退回重启。
+   * Windows TUN 热切换 guard：system 栈放行（实测零环路），非 system（gvisor/mixed）未实测保守退回重启。
    * 全局节点热切换与规则目标热切换共用（rule-sel selector 切换同理可能触发 Wintun 回捕）。
+   * 注：必须用 resolveTunStack 把 'auto' 解析成【具体】栈再判——Win 上 'auto'→system，应走零断流快路径；
+   * 若按裸 'auto'!=='system' 误判会让迁移后（默认 'auto'）的 Win 用户全部退回重启（回归）。
    */
   private winTunBlocksHotSwitch(config: UserConfig): boolean {
     if (process.platform !== 'win32' || config.proxyModeType !== 'tun') return false;
-    const winTunStack = config.tunConfig?.stack || 'system'; // Windows 默认 system 栈
+    const winTunStack = resolveTunStack(config.tunConfig?.stack, process.platform); // 'auto'→system(Win)
     return winTunStack !== 'system';
   }
 

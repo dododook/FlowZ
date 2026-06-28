@@ -9,6 +9,7 @@
 import type { UserConfig } from '../../shared/types';
 import { localProxyPort } from '../../shared/proxy-ports';
 import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
+import { resolveTunStack } from '../../shared/tun-stack';
 import type { SingBoxInbound } from './singbox-config-types';
 import {
   isIpv4Host,
@@ -179,14 +180,11 @@ export function buildInbounds(
     const userMtu = config.tunConfig?.mtu;
     const effectiveMtu = !userMtu || userMtu === 9000 ? platformDefaultMtu : userMtu;
 
-    // macOS 必须 gvisor 栈(3.3.18)；'system' 是历史默认值（UI 不暴露 stack 设置项），在 macOS 上
-    // 等同"未自定义"，必须回退到 gvisor，否则同 MTU 一样平台判定成永不生效的死代码。Win/Linux 保持 system。
-    const platformDefaultStack = process.platform === 'darwin' ? 'gvisor' : 'system';
-    const userStack = config.tunConfig?.stack;
-    const effectiveStack =
-      !userStack || (process.platform === 'darwin' && userStack === 'system')
-        ? platformDefaultStack
-        : userStack;
+    // TUN 网络栈：经 resolveTunStack 把用户选择（含 'auto' 默认档）解析成下发给核的【具体】栈。FlowZ 始终显式
+    // pin，绝不吃 sing-box build-tag 默认（编进 gvisor→默认漂成 mixed）。'auto'/缺省→平台默认（mac gvisor /
+    // Win·Linux system）；显式 system/gvisor/mixed 原样下发（honor 用户选择，零强制回退——旧 darwin&&system→gvisor
+    // 强制回退已移除，它把"用户选 system"与"未设置"混为一谈）。依据/置信度见 docs/design/tun-stack-option.md。
+    const effectiveStack = resolveTunStack(config.tunConfig?.stack, process.platform);
 
     const autoRoute = config.tunConfig?.autoRoute ?? true;
     // 刻意不设 sing-box 1.14 inbound 的 dns_mode → 内核取默认 `hijack`（= native + 端口 53 拦截）。不显式 pin 的理由：
@@ -203,7 +201,7 @@ export function buildInbounds(
       mtu: effectiveMtu,
       auto_route: autoRoute,
       strict_route: config.tunConfig?.strictRoute ?? true,
-      // macOS 必须使用 gvisor 栈(3.3.18)。Windows 下 system 栈配合 Wintun 性能最强且稳定(3.4.0)。
+      // 具体栈由 resolveTunStack 解析（Auto→平台默认 / 显式选择 verbatim），恒 system|gvisor|mixed，永不省略。
       stack: effectiveStack,
       route_exclude_address: excludeAddr,
     };

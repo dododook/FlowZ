@@ -168,6 +168,14 @@ describe('ProxyManager.winTunBlocksHotSwitch', () => {
     expect(svc.winTunBlocksHotSwitch(cfg)).toBe(true);
   });
 
+  it('win32 + tun + stack=auto → false（Auto 解析为 system，迁移后默认须放行；防回归）', () => {
+    setPlatform('win32');
+    const svc = makeSvc();
+    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'auto' });
+    // 治本：guard 必须 resolveTunStack 后再判，不能按裸 'auto'!=='system' 误退重启
+    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
+  });
+
   it('darwin + tun + stack=gvisor → false（非 Win 不拦）', () => {
     setPlatform('darwin');
     const svc = makeSvc();

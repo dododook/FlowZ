@@ -331,7 +331,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (!config.tunConfig) {
           config.tunConfig = {
             mtu: window.electron?.platform === 'darwin' ? 1400 : 1350,
-            stack: window.electron?.platform === 'darwin' ? 'gvisor' : 'system',
+            // 'auto' = 跟随平台映射（主进程 resolveTunStack 解析），渲染端缺省兜底用新模型默认档。
+            stack: 'auto',
             autoRoute: true,
             strictRoute: true,
           };

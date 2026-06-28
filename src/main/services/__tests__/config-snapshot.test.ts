@@ -57,7 +57,9 @@ function cfg(over: Partial<UserConfig>): UserConfig {
     selectedServerId: 's1',
     proxyMode: 'smart',
     proxyModeType: 'systemProxy',
-    tunConfig: { mtu: 1350, stack: 'system', autoRoute: true, strictRoute: true },
+    // stack: 'auto' = 新模型默认档；经 resolveTunStack 解析回各平台默认（mac→gvisor / Win·Linux→system），
+    // 与旧 stack:'system'+强制回退逐平台结果一致 → 快照字节不变（坐实迁移零行为变化）。
+    tunConfig: { mtu: 1350, stack: 'auto', autoRoute: true, strictRoute: true },
     customRules: [],
     appRules: [],
     customAppPresets: [],
