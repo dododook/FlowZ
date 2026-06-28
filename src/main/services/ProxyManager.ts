@@ -76,6 +76,7 @@ import {
   classifyReseedResult,
 } from '../../shared/core-build';
 import { retry } from '../utils/retry';
+import { writeFileAtomic } from '../utils/atomic-write';
 import { coreVersionAtLeast } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
@@ -1422,7 +1423,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.customRuleFilesDegraded = false;
     try {
       await fs.mkdir(dir, { recursive: true });
-      // 孤儿清扫（含 atomicWrite 可能残留的 .tmp）
+      // 孤儿清扫（含 atomicWrite 可能残留的 .tmp）。writeFileAtomic 用唯一后缀 .<pid>.<rand6hex>.tmp
+      //（架构 review：原固定 .tmp 正则不匹配新后缀，硬崩溃残留文件无法被清扫）——放宽正则匹配任意中间段。
       let existing: string[] = [];
       try {
         existing = await fs.readdir(dir);
@@ -1430,7 +1432,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         /* 目录刚建/读失败：无孤儿可清 */
       }
       for (const name of existing) {
-        if (/^custom-rule-.+\.json(\.tmp)?$/.test(name) && !expected.has(name)) {
+        // 匹配 custom-rule-*.json 及其任意后缀的 .tmp 残留（.<pid>.<rand>.tmp 或裸 .tmp）
+        if (/^custom-rule-.+\.json(?:\.[^.]+)*\.tmp$/.test(name) && !expected.has(name)) {
           await fs.unlink(path.join(dir, name)).catch(() => {});
         }
       }
@@ -1485,9 +1488,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
   /** 原子写：临时文件 + rename（与 RuleResourceManager 同形；rename-over 触发 sing-box fswatch 热重载）。 */
   private async atomicWrite(filePath: string, content: string): Promise<void> {
-    const tmp = `${filePath}.tmp`;
-    await fs.writeFile(tmp, content, 'utf-8');
-    await fs.rename(tmp, filePath);
+    // 架构 review：改用 utils/writeFileAtomic（唯一后缀 .tmp 防多 writer 撞车），消除本处复刻的固定
+    // `${filePath}.tmp`——正是 util 已修掉的形态（多 writer 写同一 .tmp 致字节交错损坏正本）。
+    await writeFileAtomic(filePath, content);
   }
 
   /**

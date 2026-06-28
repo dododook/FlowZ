@@ -36,7 +36,7 @@ import {
   registerSystemHandlers,
   registerRuleResourceHandlers,
 } from './ipc/handlers';
-import { setIpcLogger } from './ipc/ipc-handler';
+import { setIpcLogger, registerIpcHandler } from './ipc/ipc-handler';
 import { createAutoStartManager } from './services/AutoStartManager';
 import { UpdateService } from './services/UpdateService';
 import { CoreUpdateService } from './services/CoreUpdateService';
@@ -1429,9 +1429,9 @@ if (gotTheLock) {
       updateTrayMenuState(isRunning, hasError);
     });
 
-    // 监听渲染进程语言同步
-    const { ipcMain } = require('electron');
-    ipcMain.handle(IPC_CHANNELS.APP_SET_LANGUAGE, (_: any, lang: string) => {
+    // 监听渲染进程语言同步（架构 review：改走 registerIpcHandler 统一 ApiResponse 契约 + 进注册表，
+    // 原裸 ipcMain.handle 是 19 个 handler 中唯一例外，绕过 wrapper 且无返回值）
+    registerIpcHandler<string, void>(IPC_CHANNELS.APP_SET_LANGUAGE, (_event, lang: string) => {
       currentLanguage = lang || currentLanguage;
       setMainLanguage(currentLanguage); // 主进程 i18n（桌面通知等）同步语言
       if (trayManager) {
