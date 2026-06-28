@@ -88,6 +88,12 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     },
     onShowWindow: () => {
       showWindow();
+      // 「打开主窗口」回首页（与「打开设置」恒切 /settings 对称）：原仅 show 保持上次路由 → 停设置页则仍显示设置页。
+      // getMainWindow 在 showWindow 后取（窗口可能刚重建），导航到首页。
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/home');
+      }
     },
     onQuit: () => {
       // 收敛到单一退出管线：app.quit() → before-quit(置 isQuitting) → close 放行 → will-quit → cleanupResources → exit

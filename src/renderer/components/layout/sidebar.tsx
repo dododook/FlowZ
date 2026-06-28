@@ -156,7 +156,7 @@ export function Sidebar({
         <button
           onClick={toggleCollapsed}
           title={collapsed ? t('sidebar.expand', '展开侧栏') : t('sidebar.collapse', '收起侧栏')}
-          className={`flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground ${
+          className={`sidebar-toggle flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground ${
             collapsed ? (isMac ? 'h-[52px] w-[52px]' : 'h-[44px] w-[44px]') : 'h-7 w-7'
           }`}
         >

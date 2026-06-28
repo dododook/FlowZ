@@ -287,12 +287,15 @@
     color: hsl(var(--foreground));
   }
 
-  /* 消除窗口重建/复焦后 Chromium 默认 :focus-visible 的橙黄 outline 钉在首个 nav 上；保留键盘可达性。 */
-  .nav-item:focus {
+  /* 消除窗口重建/复焦后 Chromium 默认 :focus-visible 的橙黄 outline 钉在首个 tabbable（折叠 toggle 是 icon-rail
+     首个 tabbable，托盘打开窗口后焦点落它）/ nav 上；保留键盘可达性（:focus-visible 才描 FlowZ ring）。 */
+  .nav-item:focus,
+  .sidebar-toggle:focus {
     outline: none;
   }
 
-  .nav-item:focus-visible {
+  .nav-item:focus-visible,
+  .sidebar-toggle:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: -2px;
   }
