@@ -141,6 +141,26 @@ describe('formatBypassForWindows', () => {
     expect(parts).toContain('localhost');
     expect(parts).toContain('<local>');
   });
+
+  it('攻击面 M1：白名单剥 cmd 元字符（防 ProxyOverride/参数边界注入）', () => {
+    const out = formatBypassForWindows([
+      'evil";injected', // " 破坏 reg /d "..." 边界
+      'a.com;b.com', // ; 拆出额外分隔项
+      'a&calc', // & cmd 引号内命令分隔
+      'a|whoami', // | cmd 管道
+      'a%PATH%b', // % 环境变量展开
+      'normal.com',
+    ]);
+    const parts = out.split(';');
+    // 白名单只留 [a-zA-Z0-9.\-*:/<>()]，cmd 元字符全部被剥
+    expect(parts.some((p) => p.includes('"'))).toBe(false);
+    expect(parts.some((p) => p.includes('&'))).toBe(false);
+    expect(parts.some((p) => p.includes('|'))).toBe(false);
+    expect(parts.some((p) => p.includes('%'))).toBe(false);
+    // 合法输入保留
+    expect(parts).toContain('normal.com');
+    expect(parts).toContain('<local>');
+  });
 });
 
 describe('formatBypassForMac / Linux', () => {

@@ -548,9 +548,15 @@ export class MacOSSystemProxy extends SystemProxyBase {
             // 代理绕过列表（忽略代理列表）= 用户配置的 bypass 清单（缺省业内聚合清单，对齐 Clash/Stash）。
             // networksetup 原样接受 CIDR(v4/v6) + 域名 + *.通配（空格分隔）。保存原列表→开启写入→关闭还原。
             const bypassDomains = formatBypassForMac(bypassList ?? []);
-            await execAsync(
-              `networksetup -setproxybypassdomains "${service}" ${bypassDomains.join(' ')}`
-            );
+            // 攻击面 review H3：bypass 列表是用户可控输入（设置 UI 编辑 / 备份导入注入），原用 execAsync
+            // shell 字符串拼接（${bypassDomains.join(' ')}）→ 含 ;/`/$() 的项可命令注入。改 execFileAsync
+            // 数组参数：每个 bypass 项作为独立 argv 元素，不经 /bin/sh -c 解析，从根本上消除注入面。
+            // service/address/httpPort 同为 argv（程序内常量/系统输出，虽非外部可控但一并参数化更稳）。
+            await execFileAsync('networksetup', [
+              '-setproxybypassdomains',
+              service,
+              ...bypassDomains,
+            ]);
 
             this.log('debug', `网络服务 "${service}" 代理设置完成`);
           }
@@ -723,37 +729,38 @@ export class MacOSSystemProxy extends SystemProxyBase {
 
     for (const service of services) {
       if (settings.enabled) {
-        // 恢复 HTTP 代理
+        // 恢复 HTTP 代理（攻击面 review M2：set*proxy 改 execFileAsync argv，server/port 来自系统原始设置
+        // 经 shell 拼接有注入残面，与 enable 路径 H3 参数化口径统一）
         if (settings.httpProxy) {
           const [server, port] = settings.httpProxy.split(':');
-          await execAsync(`networksetup -setwebproxy "${service}" ${server} ${port}`);
-          await execAsync(`networksetup -setwebproxystate "${service}" on`);
+          await execFileAsync('networksetup', ['-setwebproxy', service, server, port]);
+          await execFileAsync('networksetup', ['-setwebproxystate', service, 'on']);
         } else {
-          await execAsync(`networksetup -setwebproxystate "${service}" off`);
+          await execFileAsync('networksetup', ['-setwebproxystate', service, 'off']);
         }
 
         // 恢复 HTTPS 代理
         if (settings.httpsProxy) {
           const [server, port] = settings.httpsProxy.split(':');
-          await execAsync(`networksetup -setsecurewebproxy "${service}" ${server} ${port}`);
-          await execAsync(`networksetup -setsecurewebproxystate "${service}" on`);
+          await execFileAsync('networksetup', ['-setsecurewebproxy', service, server, port]);
+          await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'on']);
         } else {
-          await execAsync(`networksetup -setsecurewebproxystate "${service}" off`);
+          await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'off']);
         }
 
         // 恢复 SOCKS 代理
         if (settings.socksProxy) {
           const [server, port] = settings.socksProxy.split(':');
-          await execAsync(`networksetup -setsocksfirewallproxy "${service}" ${server} ${port}`);
-          await execAsync(`networksetup -setsocksfirewallproxystate "${service}" on`);
+          await execFileAsync('networksetup', ['-setsocksfirewallproxy', service, server, port]);
+          await execFileAsync('networksetup', ['-setsocksfirewallproxystate', service, 'on']);
         } else {
-          await execAsync(`networksetup -setsocksfirewallproxystate "${service}" off`);
+          await execFileAsync('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
         }
       } else {
-        // 禁用所有代理
-        await execAsync(`networksetup -setwebproxystate "${service}" off`);
-        await execAsync(`networksetup -setsecurewebproxystate "${service}" off`);
-        await execAsync(`networksetup -setsocksfirewallproxystate "${service}" off`);
+        // 禁用所有代理（M2：参数化对齐）
+        await execFileAsync('networksetup', ['-setwebproxystate', service, 'off']);
+        await execFileAsync('networksetup', ['-setsecurewebproxystate', service, 'off']);
+        await execFileAsync('networksetup', ['-setsocksfirewallproxystate', service, 'off']);
       }
     }
   }
@@ -804,10 +811,18 @@ export class LinuxSystemProxy extends SystemProxyBase {
           await execAsync(`gsettings set org.gnome.system.proxy.socks port ${socksPort}`);
 
           // 设置忽略列表（用户配置的 bypass 清单，缺省业内聚合清单）。gsettings ignore-hosts 为 GVariant 字符串数组，
-          // 接受 CIDR + 域名；单引号包裹、逗号分隔。条目本身无单引号（已 trim/去空），无注入风险。
+          // 接受 CIDR + 域名；单引号包裹、逗号分隔。
+          // 攻击面 review H1（与 mac H3 / win M1 同源）：原 execAsync shell 双引号拼接 ignoreList，bypass 项含
+          // $()/反引号时在双引号内仍展开 → 命令注入（原注释"无注入风险"误判）。改 execFileAsync argv 参数化，
+          // ignoreList 作为独立 argv 元素不经 /bin/sh -c 解析，从根本上消除注入面。
           const hosts = formatBypassForLinux(bypassList ?? []);
           const ignoreList = `[${hosts.map((h) => `'${h}'`).join(', ')}]`;
-          await execAsync(`gsettings set org.gnome.system.proxy ignore-hosts "${ignoreList}"`);
+          await execFileAsync('gsettings', [
+            'set',
+            'org.gnome.system.proxy',
+            'ignore-hosts',
+            ignoreList,
+          ]);
         },
         { maxRetries: 1, delay: 500 }
       );

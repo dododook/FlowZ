@@ -124,8 +124,16 @@ export function formatBypassForMac(list: string[]): string[] {
  */
 export function formatBypassForWindows(list: string[]): string {
   const out: string[] = [];
+  // 攻击面 review M1（白名单兜底）：Windows ProxyOverride 经 execAsync（cmd /c shell）写入，cmd 双引号内
+  // &|<>^% 仍是元字符（与 POSIX 不同），黑名单逐个剥易漏。改白名单：仅保留 bypass 合法字符
+  //（域名/CIDR/通配 *.x/<local>/IPv6 冒号/括号），其余一律剥除。bypass 项本不该含 shell 元字符，无损合法输入。
+  const SAFE = /[a-zA-Z0-9.\-*:/<>()]/;
   for (const raw of list) {
-    const t = raw.trim();
+    const t = raw
+      .trim()
+      .split('')
+      .filter((ch) => SAFE.test(ch))
+      .join('');
     if (!t) continue;
     if (isIpv4Cidr(t)) {
       out.push(...ipv4CidrToWindowsPatterns(t));
