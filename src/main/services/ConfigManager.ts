@@ -526,15 +526,22 @@ export class ConfigManager implements IConfigManager {
       throw new Error('proxyMode must be global, smart, or direct');
     }
 
-    // 验证 proxyModeType（不区分大小写）
+    // 验证 proxyModeType（不区分大小写），并回写到**权威 camelCase 规范值**。validateConfig 是
+    // loadConfig/saveConfig 的必经校验，回写后磁盘值恒为规范形 → 全栈精确比较（=== 'systemProxy' /
+    // === 'tun' / === 'manual'）可信，消除大小写漂移致日志静默丢失/幽灵文件风险。
+    // 关键：必须归一到 camelCase 'systemProxy'（ProxyModeType 联合类型与 ProxyManager 谓词均为
+    // camelCase），不能盲 toLowerCase——后者把 'systemProxy' 变 'systemproxy'，使 ProxyManager.ts
+    // 的 === 'systemProxy' 恒 false、系统代理分支永不命中（系统代理从不设置 → 流量直连泄漏）。
+    const CANONICAL_MODE_TYPE: Record<string, ProxyModeType> = {
+      systemproxy: 'systemProxy',
+      tun: 'tun',
+      manual: 'manual',
+    };
     const modeTypeLower = config.proxyModeType?.toLowerCase();
-    if (!modeTypeLower || !['systemproxy', 'tun', 'manual'].includes(modeTypeLower)) {
+    if (!modeTypeLower || !(modeTypeLower in CANONICAL_MODE_TYPE)) {
       throw new Error('proxyModeType must be systemProxy, tun, or manual');
     }
-    // 跨平台 review H2（根治）：回写归一化小写值。validateConfig 是 loadConfig/saveConfig 的必经校验
-    //（saveConfig 内部亦调本校验），回写后磁盘值恒小写 → 全栈 15+ 处 === 'tun' 谓词可信，消除
-    // "大小写不规范致日志静默丢失/幽灵文件"风险。原仅校验不回写，renderer 仍用 toLowerCase 反证假设不可靠。
-    config.proxyModeType = modeTypeLower as ProxyModeType;
+    config.proxyModeType = CANONICAL_MODE_TYPE[modeTypeLower];
 
     // subscriptionProxyPolicy（三态可选）sanitize（不 throw，与 dnsTimeoutMs/CIDR 同标准防整配置回落）：
     // 非 'follow'|'proxy'|'direct' 的脏值（手改 / 损坏备份跨设备导入，见 config-portability）→ 删除该字段，落回默认 follow。
