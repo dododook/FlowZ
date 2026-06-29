@@ -41,8 +41,11 @@ export const DEFAULT_FAKEIP_FILTER_DOMAINS = [
 
 /**
  * FakeIP 假 IP 段（单一真值）：dns-builder 分配给 fakeip server；旁路/force-route 护栏据此排除，防假 IP 被当私网直连。
- * - v4 `198.18.0.0/15`：RFC 2544 基准段，刻意在私网空间之外（不与任何 LAN 旁路 v4 段相交）。
- * - v6 `fc00::/18`：落在 ULA 保留半区 fc00::/8 内，与实际使用的 fd00::/8 不相交——故 LAN 旁路用 fd00::/8 不会吃掉假 v6。
+ * - v4 `198.18.0.0/15`：RFC 2544 基准段，刻意在私网空间之外（不与任何 LAN 旁路 v4 段相交），浏览器 Chrome LNA 判为 public。
+ * - v6 `2001:db8::/32`：RFC 3849 文档保留段，在全局单播 2000::/3 内——浏览器 Chrome Local Network Access 判为 **public**，
+ *   故 https 公网页面取该段子资源不被当「public→private 降级」拦截（旧 fc00::/18 在 ULA=private，会触发
+ *   net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS，YouTube 图片/字体等跨源资源加载失败）。文档段永不路由公网、
+ *   不与真实目标撞 IP，TUN 抓 v6 后照样反查域名喂代理。与 LAN 旁路 fc00::/7(ULA) 不相交，护栏对其退化为 no-op。
  */
 export const FAKEIP_INET4_RANGE = '198.18.0.0/15';
-export const FAKEIP_INET6_RANGE = 'fc00::/18';
+export const FAKEIP_INET6_RANGE = '2001:db8::/32';

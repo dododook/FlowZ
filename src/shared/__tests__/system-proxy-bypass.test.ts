@@ -19,7 +19,7 @@ describe('默认清单（业内聚合，对齐 Stash）', () => {
       '169.254.0.0/16',
       '172.16.0.0/12',
       '192.168.0.0/16',
-      'fd00::/8',
+      'fc00::/7',
       'fe80::/10',
       'localhost',
       '*.local',
@@ -83,7 +83,7 @@ describe('bypassLanCidrs（TUN / Windows route_exclude 只取 IP 段）', () => 
   it('从完整默认清单筛 CIDR：含全部 v4/v6 段、无域名项', () => {
     const cidrs = bypassLanCidrs([...DEFAULT_BYPASS_LAN]);
     expect(cidrs).toContain('10.0.0.0/8');
-    expect(cidrs).toContain('fd00::/8');
+    expect(cidrs).toContain('fc00::/7');
     expect(cidrs).not.toContain('localhost');
     expect(cidrs).not.toContain('captive.apple.com');
     expect(cidrs.every((c) => c.includes('/'))).toBe(true);

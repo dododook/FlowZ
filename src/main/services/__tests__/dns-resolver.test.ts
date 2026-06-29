@@ -313,11 +313,12 @@ describe('§B：enableIPv6 收敛 AAAA（IPv4-only 节点防 ERR_CONNECTION_CLOS
     expect(fakeip(cfg)?.inet6_range).toBeUndefined();
   });
 
-  it('enableIPv6=true → strategy=prefer_ipv4 + fakeip 带 inet6_range（允许 AAAA / v6-only 目标可达）', () => {
+  it('enableIPv6=true → strategy=prefer_ipv4 + fakeip 带 inet6_range=2001:db8::/32（公网文档段，避开 Chrome LNA）', () => {
     const v6cfg = { ...tunFx.config, enableIPv6: true } as AnyCfg;
     const cfg = new ProxyManager().generateSingBoxConfig(v6cfg) as AnyCfg;
     expect(cfg.dns.strategy).toBe('prefer_ipv4');
-    expect(fakeip(cfg)?.inet6_range).toBe('fc00::/18');
+    // 公网文档段（非旧 ULA fc00::/18）：浏览器 Chrome Local Network Access 判 public、不拦 public 页面取该段子资源。
+    expect(fakeip(cfg)?.inet6_range).toBe('2001:db8::/32');
   });
 });
 

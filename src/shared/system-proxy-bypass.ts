@@ -23,7 +23,7 @@ export const DEFAULT_BYPASS_LAN: readonly string[] = [
   '224.0.0.0/4', // 组播
   '233.252.0.0/24', // MCAST-TEST-NET
   '240.0.0.0/4', // 保留
-  'fd00::/8', // IPv6 ULA（实际使用半区；不用 fc00::/7：fc00::/8 保留半区被 FakeIP inet6_range(fc00::/18) 占用，旁路它会把假 v6 当私网吃成直连）
+  'fc00::/7', // IPv6 ULA 全段（FakeIP 假 v6 已移至公网文档段 2001:db8::/32、不再占 ULA，故覆盖完整 /7；护栏校验两者零相交）
   'fe80::/10', // IPv6 link-local
   // 本地 / mDNS
   'localhost',

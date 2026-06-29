@@ -8,6 +8,8 @@
  * 本模块是 SSRF 防护，覆盖回环/link-local/CGNAT/IPv4-mapped 防绕过，故意更严，勿合并。
  */
 import { isIP } from 'net';
+import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from './fakeip-filter';
+import { cidrOverlapsAny } from './ip';
 
 /**
  * 单个字面 IP 是否属内网/回环/link-local/CGNAT 等不可达外网的危险段。
@@ -65,23 +67,18 @@ export function isPrivateIp(ip: string): boolean {
 }
 
 /**
- * 是否 FlowZ FakeIP 假地址（FAKEIP_INET4_RANGE=198.18.0.0/15 / FAKEIP_INET6_RANGE=fc00::/18，见 shared/fakeip-filter）。
- * TUN+FakeIP 下系统 DNS 解析公网订阅域名会返回假 IP（如 fc00::57）；它不是真内网——核连接时按域名反查真实解析。
- * SSRF guard 须豁免它，否则订阅经代理（系统 DNS 拿假 IP）被 isPrivateIp 的 fc00::/7 判定误拒（真机 2026-06-28 实证
- * subscribe.x → fc00::57）。注：fc00::/18 是 FlowZ 专用假段（真实 ULA 用 fd00::/8，互不相交），豁免不放过真内网。
+ * 是否 FlowZ FakeIP 假地址（FAKEIP_INET4_RANGE=198.18.0.0/15 / FAKEIP_INET6_RANGE=2001:db8::/32）。
+ * TUN+FakeIP 下系统 DNS 解析公网订阅域名会返回假 IP；它不是真内网——核连接时按域名反查真实解析。
+ * **由 fakeip-filter 常量派生（单一真值）**：裸 IP 视为 /32(v4)·/128(v6) 与假段做家族感知交集，改 FAKEIP_INET*_RANGE
+ * 本判定自动跟随、不漂移（旧版手抄 0x2001/0x0db8 是双真值——改回私网段忘同步即静默撞墙）。
+ * 现两段均在私网空间外、isPrivateIp 本就不拦 → SSRF 豁免对其为冗余兜底；保留是为「未来改回私网假段」时让豁免真实生效
+ * （那时 isFlowzFakeIp 经常量自动认出该段、exemptFakeIp 正确放行经代理订阅，避免旧 fc00::/18 被 fc00::/7 误拒的撞墙复发）。
  */
 export function isFlowzFakeIp(ip: string): boolean {
   const h = ip.replace(/^\[|\]$/g, '').toLowerCase();
-  const kind = isIP(h);
-  if (kind === 4) {
-    const m = h.match(/^(\d{1,3})\.(\d{1,3})\./);
-    return !!m && parseInt(m[1], 10) === 198 && [18, 19].includes(parseInt(m[2], 10)); // 198.18.0.0/15
-  }
-  if (kind === 6) {
-    const seg = expandIpv6(h);
-    return !!seg && seg[0] === 0xfc00 && (seg[1] & 0xc000) === 0; // fc00::/18（首 18 bit）
-  }
-  return false;
+  if (!isIP(h)) return false; // 仅字面 IP（CIDR/主机名 → false）
+  // 裸 IP → /32·/128 主机与假段家族感知交集；跨族恒不相交由 cidrsOverlap 保证
+  return cidrOverlapsAny(h, [FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE]);
 }
 
 /**

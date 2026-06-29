@@ -24,7 +24,8 @@ function makeResp(status: number, location?: string): FakeResp {
 const PUBLIC = [{ address: '93.184.216.34' }];
 const INTERNAL = [{ address: '10.0.0.5' }];
 const META = [{ address: '169.254.169.254' }];
-const FAKEIP6 = [{ address: 'fc00::57' }]; // FlowZ FakeIP（IPv6 fc00::/18）：isPrivateIp 判 ULA、isFlowzFakeIp 豁免
+const FAKEIP6 = [{ address: '2001:db8::57' }]; // FlowZ FakeIP（IPv6 2001:db8::/32 公网文档段）：isFlowzFakeIp 豁免、Chrome LNA 判 public
+const REAL_ULA6 = [{ address: 'fc00::57' }]; // 真实 ULA（fc00::/7）：isPrivateIp 判内网、非 FakeIP，直连不豁免
 
 const base = {
   userAgent: 'TestUA',
@@ -176,7 +177,7 @@ describe('safeRedirectFetch', () => {
     );
   });
 
-  it('exemptFakeIp=true → 豁免 FlowZ FakeIP（IPv6 fc00::/18，经代理出口）', async () => {
+  it('exemptFakeIp=true → 豁免 FlowZ FakeIP（IPv6 2001:db8::/32，经代理出口）', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(makeResp(200));
     const lookup = jest.fn().mockResolvedValue(FAKEIP6);
     const r = await safeRedirectFetch<FakeResp>({
@@ -189,9 +190,9 @@ describe('safeRedirectFetch', () => {
     expect(r.status).toBe(200); // FakeIP 豁免，不拒
   });
 
-  it('exemptFakeIp=false → FakeIP(fc00::) 视作内网拒（直连不豁免）', async () => {
+  it('exemptFakeIp=false → 真内网(fc00:: ULA) 视作内网拒（直连不豁免）', async () => {
     const fetchImpl = jest.fn();
-    const lookup = jest.fn().mockResolvedValue(FAKEIP6);
+    const lookup = jest.fn().mockResolvedValue(REAL_ULA6);
     await expectReason(
       safeRedirectFetch<FakeResp>({ ...base, fetchImpl, url: 'https://sub.example.com/x', lookup }),
       'ssrf'

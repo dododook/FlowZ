@@ -103,7 +103,7 @@ export function cidrOverlapsAny(target: string, candidates: string[]): boolean {
 
 /**
  * 把 cidrs 按"与 ranges 任一相交"分两组（v4+v6）。FakeIP 护栏用：剔除会吃掉假 IP 段（198.18.0.0/15 ·
- * fc00::/18）的旁路/私网直连条目，防假 IP 被当私网直连、绕过 fakeip 反查致服务端收不到域名（v6 撞墙根因）。
+ * 2001:db8::/32）的旁路/私网直连条目，防假 IP 被当私网直连、绕过 fakeip 反查致服务端收不到域名（v6 撞墙根因）。
  */
 export function partitionCidrsByOverlap(
   cidrs: string[],
