@@ -876,7 +876,7 @@ export class LinuxSystemProxy extends SystemProxyBase {
       //（Win/macOS disableProxy 都 restoreProxySettings）。有原始快照（manual + host:port）→ 恢复；否则置 none。
       const restored = await this.restoreOriginalProxyAsync();
       if (!restored) {
-        await execAsync('gsettings set org.gnome.system.proxy mode "none"');
+        await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'none']);
         this.log('info', '已禁用系统代理');
       }
       // 拆除成功 → 删除持久化 marker
@@ -895,15 +895,19 @@ export class LinuxSystemProxy extends SystemProxyBase {
     const hp = LinuxSystemProxy.splitHostPort(this.originalSettings?.httpProxy);
     if (!this.originalSettings?.enabled || !hp) return false;
     this.log('info', '正在恢复原始代理设置');
-    // host/port 同步恢复到 http/https/socks（对齐 enableProxy 写法；getProxyStatus 仅采集 http，三者用同 host:port）
-    await execAsync('gsettings set org.gnome.system.proxy mode "manual"');
-    await execAsync(`gsettings set org.gnome.system.proxy.http host "${hp.host}"`);
-    await execAsync(`gsettings set org.gnome.system.proxy.http port ${hp.port}`);
-    await execAsync('gsettings set org.gnome.system.proxy.http enabled true');
-    await execAsync(`gsettings set org.gnome.system.proxy.https host "${hp.host}"`);
-    await execAsync(`gsettings set org.gnome.system.proxy.https port ${hp.port}`);
-    await execAsync(`gsettings set org.gnome.system.proxy.socks host "${hp.host}"`);
-    await execAsync(`gsettings set org.gnome.system.proxy.socks port ${hp.port}`);
+    // host/port 同步恢复到 http/https/socks（getProxyStatus 仅采集 http，三者用同 host:port）。
+    // 攻击面收口（Low-2，与 #213 enable 路径硬化口径统一）：hp.host 来自系统既有 gsettings（可被
+    // dconf 投毒含 $()/反引号/分号等），改 execFileAsync argv——host 作独立参数下发，不经 /bin/sh -c
+    // 插值，杜绝命令注入（原 execAsync 字符串拼接是注入面）。
+    const port = String(hp.port);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy', 'mode', 'manual']);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'host', hp.host]);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'port', port]);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.http', 'enabled', 'true']);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.https', 'host', hp.host]);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.https', 'port', port]);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.socks', 'host', hp.host]);
+    await execFileAsync('gsettings', ['set', 'org.gnome.system.proxy.socks', 'port', port]);
     this.originalSettings = null;
     this.log('info', '已恢复原始代理设置');
     return true;
@@ -946,10 +950,12 @@ export class LinuxSystemProxy extends SystemProxyBase {
    * 与 disableProxy 行为分裂——正常退出恢复原始代理，异常/关机退出抹成 none）。
    */
   disableProxySync(): void {
-    const { execSync } = require('child_process');
-    const run = (cmd: string): void => {
+    const { execSync, execFileSync } = require('child_process');
+    // 攻击面收口（Low-2）：gsettings 经 execFileSync argv 下发——host 来自系统 gsettings 可投毒，
+    // argv 形式不经 /bin/sh -c 插值。best-effort，关机语境不抛。
+    const gset = (args: string[]): void => {
       try {
-        execSync(cmd, { stdio: 'ignore' });
+        execFileSync('gsettings', args, { stdio: 'ignore' });
       } catch {
         /* best-effort，关机语境不抛 */
       }
@@ -960,17 +966,18 @@ export class LinuxSystemProxy extends SystemProxyBase {
     const snap = this.originalSettings ?? marker?.originalSettings ?? null;
     const hp = LinuxSystemProxy.splitHostPort(snap?.httpProxy);
     if (snap?.enabled && hp) {
-      run('gsettings set org.gnome.system.proxy mode "manual"');
-      run(`gsettings set org.gnome.system.proxy.http host "${hp.host}"`);
-      run(`gsettings set org.gnome.system.proxy.http port ${hp.port}`);
-      run('gsettings set org.gnome.system.proxy.http enabled true');
-      run(`gsettings set org.gnome.system.proxy.https host "${hp.host}"`);
-      run(`gsettings set org.gnome.system.proxy.https port ${hp.port}`);
-      run(`gsettings set org.gnome.system.proxy.socks host "${hp.host}"`);
-      run(`gsettings set org.gnome.system.proxy.socks port ${hp.port}`);
+      const port = String(hp.port);
+      gset(['set', 'org.gnome.system.proxy', 'mode', 'manual']);
+      gset(['set', 'org.gnome.system.proxy.http', 'host', hp.host]);
+      gset(['set', 'org.gnome.system.proxy.http', 'port', port]);
+      gset(['set', 'org.gnome.system.proxy.http', 'enabled', 'true']);
+      gset(['set', 'org.gnome.system.proxy.https', 'host', hp.host]);
+      gset(['set', 'org.gnome.system.proxy.https', 'port', port]);
+      gset(['set', 'org.gnome.system.proxy.socks', 'host', hp.host]);
+      gset(['set', 'org.gnome.system.proxy.socks', 'port', port]);
     } else {
       // 无原始代理 → 置 none
-      run('gsettings set org.gnome.system.proxy mode "none"');
+      gset(['set', 'org.gnome.system.proxy', 'mode', 'none']);
     }
     this.originalSettings = null; // L3：与 restoreOriginalProxyAsync 对称置 null
     // GNOME 处理完成 → 删除持久化 marker（enableProxy 仅走 GNOME 路径）
