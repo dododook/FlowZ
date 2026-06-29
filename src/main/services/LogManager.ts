@@ -121,9 +121,13 @@ export class LogManager extends EventEmitter implements ILogManager {
     }
 
     // 文件 sink（app.log，writeToFile 内含按 maxLogFileSize 轮转）
-    // 背压保护（issue #210 根因 #1）：写盘积压超 MAX_PENDING_WRITES 时丢弃本条落盘——
-    // 内存 logs 缓冲 + UI 事件在下文照常处理（UI 可见性不受影响），仅跳过 appendFile 防止 pendingWrites 无界增长。
-    if (this.pendingWrites.size < LogManager.MAX_PENDING_WRITES) {
+    // 背压保护（issue #210 根因 #1）：写盘积压超 MAX_PENDING_WRITES 时丢弃本条落盘，防 pendingWrites
+    // 无界增长撑爆内存——内存 logs 缓冲 + UI 事件在下文照常处理（UI 可见性不受影响），仅跳过 appendFile。
+    // 例外：fatal/error 关键级别**绕过上限直写**。崩溃复盘依赖 app.log 的 FATAL/error 行，而背压风暴正是
+    // 本 PR 目标场景（慢盘/磁盘满/连接风暴）——此刻把 FATAL 一并丢弃，事后导出恰缺最关键一行、根因不可复原。
+    // fatal/error 相对 sing-box stdout 的 info/debug 洪流是低频，豁免不会重新引入无界增长。
+    const critical = level === 'fatal' || level === 'error';
+    if (critical || this.pendingWrites.size < LogManager.MAX_PENDING_WRITES) {
       const writePromise = this.writeToFile(entry)
         .catch((error) => {
           console.error('Failed to write log to file:', error);

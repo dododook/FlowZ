@@ -114,4 +114,27 @@ describe('LogManager 背压（issue #210 根因 #1）', () => {
     // 恢复后丢弃计数不再增长（新日志都成功落盘，未触发背压）
     expect(manager.getDroppedDueToBackpressure()).toBe(beforeDropped);
   });
+
+  it('FATAL/error 关键级别绕过背压上限直写（崩溃复盘不丢关键行）', async () => {
+    const MAX = (LogManager as unknown as { MAX_PENDING_WRITES: number }).MAX_PENDING_WRITES;
+    await (manager as unknown as { initPromise: Promise<void> }).initPromise;
+
+    // 撑满积压：MAX 条 info（blockWrites=true，writeToFile 的 appendFile 永不 resolve）→ pending 封顶 MAX
+    for (let i = 0; i < MAX; i++) manager.addLog('info', `sat-${i}`, 'test');
+    const pending = (manager as unknown as { pendingWrites: Set<unknown> }).pendingWrites;
+    expect(pending.size).toBe(MAX);
+
+    // 满载下：普通 info 被丢（不入 pendingWrites，dropped++）
+    const droppedBefore = manager.getDroppedDueToBackpressure();
+    manager.addLog('info', 'should-drop', 'test');
+    expect(pending.size).toBe(MAX); // 未新增落盘
+    expect(manager.getDroppedDueToBackpressure()).toBe(droppedBefore + 1);
+
+    // 满载下：fatal / error 绕过上限直写（同步入 pendingWrites，pending 超过 MAX），且不计入丢弃
+    manager.addLog('fatal', 'critical-fatal', 'test');
+    expect(pending.size).toBe(MAX + 1);
+    manager.addLog('error', 'critical-error', 'test');
+    expect(pending.size).toBe(MAX + 2);
+    expect(manager.getDroppedDueToBackpressure()).toBe(droppedBefore + 1);
+  });
 });
