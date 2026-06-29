@@ -78,8 +78,10 @@ interface AppState {
   // 出口 IP 信息（本地直连出口 / 代理出口）
   ipInfo: IpInfoSnapshot | null;
 
-  // Latency test results (persisted across view changes)
+  // 测速结果：仅应用生命周期内存态，重启清空（不持久化——重启是全新周期，不显示旧测速结果）
   latencyMap: Record<string, number>;
+  // 每节点最近测速时间戳（serverId → epoch ms），与 latencyMap 并行；供延迟徽标「会话内」陈旧标识
+  latencyTestedAt: Record<string, number>;
 
   // 启动前配置校验 gate 剔除的非法节点（serverId → 信息）：节点列表据此标灰 + tooltip（不禁用点击）。
   // 仅会话内存，由 EVENT_PROXY_INVALID_NODES 事件覆盖（空数组=清空）。
@@ -119,9 +121,8 @@ interface AppState {
   setCurrentView: (view: string) => void;
   setServerPageAction: (action: 'add-server' | 'add-sub' | null) => void;
   setSettingsSection: (section: string) => void;
-  setLatencyMap: (
-    map: Record<string, number> | ((prev: Record<string, number>) => Record<string, number>)
-  ) => void;
+  /** 应用一批测速结果（serverId→latency）：合并 latencyMap + 为这些节点打 latencyTestedAt 时间戳（单一结果应用路径，会话内存态）。 */
+  applyLatencyResults: (results: Record<string, number>) => void;
   setPrivacyMode: (value: boolean) => void;
   setAvailableAppUpdate: (info: UpdateInfo | null) => void;
   setAvailableCoreUpdate: (info: AvailableCoreUpdate | null) => void;
@@ -182,6 +183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stats: null,
   ipInfo: null,
   latencyMap: {},
+  latencyTestedAt: {},
   invalidNodes: {},
   // 启动秒显：从 localStorage 缓存派生登录态初值（代理关时不再 spawn 瞬态核探针，见 use-tailscale-login-cache-store）。
   tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
@@ -205,10 +207,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   setServerPageAction: (action) => set({ serverPageAction: action }),
   setSettingsSection: (section) => set({ settingsSection: section }),
-  setLatencyMap: (map) =>
-    set((state) => ({
-      latencyMap: typeof map === 'function' ? map(state.latencyMap) : map,
-    })),
+  applyLatencyResults: (results) =>
+    set((state) => {
+      const now = Date.now();
+      const latencyTestedAt = { ...state.latencyTestedAt };
+      for (const id of Object.keys(results)) latencyTestedAt[id] = now;
+      return { latencyMap: { ...state.latencyMap, ...results }, latencyTestedAt };
+    }),
   setAvailableAppUpdate: (info) => set({ availableAppUpdate: info }),
   setAvailableCoreUpdate: (info) => set({ availableCoreUpdate: info }),
   setPrivacyMode: async (value) => {

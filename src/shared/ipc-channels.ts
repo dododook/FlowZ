@@ -160,6 +160,9 @@ export const IPC_CHANNELS = {
   // 应用语言同步（渲染进程 -> 主进程）
   APP_SET_LANGUAGE: 'app:setLanguage',
 
+  // 节点列表「按延迟排序」开关同步（渲染进程 -> 主进程，使托盘列表与下拉同序）
+  APP_SET_NODE_SORT_BY_LATENCY: 'app:setNodeSortByLatency',
+
   // 数据备份与恢复
   BACKUP_EXPORT: 'backup:export',
   BACKUP_IMPORT: 'backup:import',

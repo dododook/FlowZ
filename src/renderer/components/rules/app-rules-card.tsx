@@ -360,6 +360,7 @@ export function AppRulesCard() {
                           valuePrefix="node-"
                           itemClassName="text-xs"
                           selectedId={rule?.targetServerId}
+                          showLatency
                         />
                       </>
                     )}

@@ -516,7 +516,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">{t('rules.defaultNodeTip')}</SelectItem>
-                  <ServerSelectGroups servers={servers} selectedId={targetServerId} />
+                  <ServerSelectGroups servers={servers} selectedId={targetServerId} showLatency />
                 </SelectContent>
               </Select>
             </div>

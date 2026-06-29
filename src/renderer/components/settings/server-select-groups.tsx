@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { SelectGroup, SelectItem } from '@/components/ui/select';
 import { groupServersBySubscription } from '@shared/server-grouping';
+import { sortServersByLatency } from '@shared/server-latency-sort';
 import type { ServerConfig } from '@/bridge/types';
 import { useAppStore } from '@/store/app-store';
+import { useNodeSortStore } from '@/store/use-node-sort-store';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DIRECT_SERVER_ID } from '@shared/direct-selection';
+import { SpeedBadge } from './speed-badge';
+
+/** 稳定空引用：showLatency=false 时作 latencyMap 选择器返回值，避免订阅 latencyMap、防测速期无谓重渲染（F2）。 */
+const EMPTY_LATENCY: Record<string, number> = {};
 
 interface ServerSelectGroupsProps {
   servers: ServerConfig[];
@@ -22,6 +28,10 @@ interface ServerSelectGroupsProps {
   selectedId?: string;
   /** 顶部加「直连」项（仅首页全局节点选择用；应用分流/路由规则/detour 不传——它们有各自 action=直连） */
   includeDirect?: boolean;
+  /** 每项名字右侧显示测速延迟徽标（读全局 latencyMap）；首页 + 应用分流 + 路由规则传 true，节点编辑 detour 不传 */
+  showLatency?: boolean;
+  /** 是否随「延迟排序」开关重排本列表（仅首页传 true）；与 showLatency 解耦——其余选择器显徽标但不被开关重排（用户定「开关只管下拉+托盘」） */
+  enableLatencySort?: boolean;
 }
 
 /**
@@ -40,9 +50,18 @@ export function ServerSelectGroups({
   itemClassName,
   selectedId,
   includeDirect,
+  showLatency,
+  enableLatencySort,
 }: ServerSelectGroupsProps) {
   const { t } = useTranslation();
   const subscriptions = useAppStore((s) => s.config?.subscriptions || []);
+  // 仅 showLatency（首页）时订阅 latencyMap：其余消费方拿稳定空引用 → 测速期间 latencyMap 频繁更新不触其重渲染。
+  const latencyMap = useAppStore((s) => (showLatency ? s.latencyMap : EMPTY_LATENCY));
+  // 「按延迟排序」开关（与托盘同序，共用比较器）：仅 enableLatencySort（首页）订阅并生效；应用分流/路由规则只显徽标、不被开关重排
+  // （用户定「开关只管下拉+托盘」），其余选择器拿 false（零订阅 churn）。开关关 → 不排序、保留 config 原序。开关开 → 按延迟（无结果按名称降级）。
+  const sortByLatency = useNodeSortStore((s) => (enableLatencySort ? s.sortByLatency : false));
+  const sortNodes = (arr: ServerConfig[]): ServerConfig[] =>
+    enableLatencySort && sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr;
   const list = servers.filter(
     (s) =>
       (!excludeId || s.id !== excludeId) &&
@@ -50,6 +69,18 @@ export function ServerSelectGroups({
   );
   const groups = groupServersBySubscription(list, subscriptions);
   const val = (id: string) => `${valuePrefix}${id}`;
+  // 节点项渲染（DRY 单组/多组两处）：showLatency 时经 SelectItem 的 trailing 槽挂 SpeedBadge（名字 truncate、
+  // 徽标恒右对齐可见，见 ui/select）；否则纯名字——其余消费方（应用分流/路由规则/节点编辑）行为逐字不变。
+  const renderItem = (s: ServerConfig) => (
+    <SelectItem
+      key={s.id}
+      value={val(s.id)}
+      className={itemClassName}
+      trailing={showLatency ? <SpeedBadge server={s} latencyMap={latencyMap} /> : undefined}
+    >
+      {s.name}
+    </SelectItem>
+  );
   // 「直连」置顶项（全局直连哨兵，#73）：选中即 proxy-selector default=direct；不分组、恒第一项。
   const directItem = includeDirect ? (
     <SelectItem value={val(DIRECT_SERVER_ID)} className={itemClassName}>
@@ -57,14 +88,14 @@ export function ServerSelectGroups({
     </SelectItem>
   ) : null;
 
-  // 默认展开组：当前选中节点所在组；无则第一组。
+  // 默认展开组：仅展开「当前选中节点所在组」；未选中、或选中项不属任何分组（如直连/默认哨兵）→ 全部折叠（不再默认展开第一组）。
   // 注意：ServerSelectGroups 挂在 radix Select 的常驻 Content 子树里，会在 config 加载完成前先挂载，
-  // 那时 selectedId 还是 undefined。若用 useState 惰性初始化会把展开组锁死在「第一组(自建)」、之后不更新。
-  // 故改为「每次渲染从 defaultGroup 派生 expanded」（随 selectedId 到位而更新），用户手动折叠后才接管(override)。
-  const defaultGroup = groups.length
-    ? (selectedId && groups.find((g) => g.servers.some((s) => s.id === selectedId))?.id) ||
-      groups[0].id
-    : undefined;
+  // 那时 selectedId 还是 undefined。若用 useState 惰性初始化会把展开组锁死、之后不更新。
+  // 故改为「每次渲染从 defaultGroup 派生 expanded」（随 selectedId 到位而更新），用户手动展开/折叠后才接管(override)。
+  const defaultGroup =
+    selectedId && groups.length
+      ? groups.find((g) => g.servers.some((s) => s.id === selectedId))?.id
+      : undefined;
   const [override, setOverride] = useState<Set<string> | null>(null);
   const expanded = override ?? new Set(defaultGroup ? [defaultGroup] : []);
   const toggle = (id: string) => {
@@ -79,11 +110,7 @@ export function ServerSelectGroups({
     return (
       <>
         {directItem}
-        {list.map((s) => (
-          <SelectItem key={s.id} value={val(s.id)} className={itemClassName}>
-            {s.name}
-          </SelectItem>
-        ))}
+        {sortNodes(list).map(renderItem)}
       </>
     );
   }
@@ -113,12 +140,7 @@ export function ServerSelectGroups({
               </span>
               <span className="ms-auto shrink-0 text-[10px] opacity-60">{g.servers.length}</span>
             </div>
-            {open &&
-              g.servers.map((s) => (
-                <SelectItem key={s.id} value={val(s.id)} className={itemClassName}>
-                  {s.name}
-                </SelectItem>
-              ))}
+            {open && sortNodes(g.servers).map(renderItem)}
           </SelectGroup>
         );
       })}

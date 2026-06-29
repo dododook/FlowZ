@@ -246,6 +246,13 @@ export const configApi = {
   async setLanguage(lang: string): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.APP_SET_LANGUAGE, lang);
   },
+
+  /**
+   * 同步「节点列表按延迟排序」开关到主进程（使托盘节点列表与下拉同序）。
+   */
+  async setNodeSortByLatency(value: boolean): Promise<void> {
+    return ipcClient.invoke(IPC_CHANNELS.APP_SET_NODE_SORT_BY_LATENCY, value);
+  },
 };
 
 /** F29：隐私密码 API。哈希/校验全在 main；渲染端只拿 hasPassword 布尔与 verify 结果，永不接触明文/哈希。 */

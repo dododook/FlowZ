@@ -10,6 +10,7 @@ import {
 import { LogManager } from './LogManager';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
+import { sortServersByLatency } from '../../shared/server-latency-sort';
 import { mt, setMainLanguage } from '../i18n';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
@@ -122,6 +123,8 @@ export class TrayManager implements ITrayManager {
   // 测速结果
   private speedTestResults: Map<string, number | null> = new Map();
   private isSpeedTesting: boolean = false;
+  // 节点列表「按延迟排序」开关（默认按名称）：由渲染端经 APP_SET_NODE_SORT_BY_LATENCY 同步，使托盘列表与下拉同序。
+  private sortByLatency: boolean = false;
 
   constructor(
     mainWindow: BrowserWindow | null,
@@ -335,6 +338,11 @@ export class TrayManager implements ITrayManager {
       };
     };
 
+    // 「按延迟排序」开关：开则有效延迟升序在前（超时/未测垫底、无结果按名称降级），关则保留 config 原序——
+    // 与下拉同序（共用比较器）。关时不排序而非按名称，避免默认态静默打乱用户的订阅/自建顺序。
+    const sortNodes = (arr: ServerConfig[]): ServerConfig[] =>
+      this.sortByLatency ? sortServersByLatency(arr, (id) => this.speedTestResults.get(id)) : arr;
+
     // 「直连」置顶项（全局直连哨兵，#73）：与首页节点选择同概念、同步；选中即 proxy-selector→direct（热切换）。
     serverSubmenu.push({
       label: mt('trayDirect'),
@@ -354,13 +362,13 @@ export class TrayManager implements ITrayManager {
       const groups = groupServersBySubscription(data.servers, data.subscriptions);
       if (groups.length <= 1) {
         // 单一来源：平铺
-        data.servers.forEach((s) => serverSubmenu.push(buildServerItem(s)));
+        sortNodes(data.servers).forEach((s) => serverSubmenu.push(buildServerItem(s)));
       } else {
-        // 多来源：每个订阅/自建/组网一个子菜单
+        // 多来源：每个订阅/自建/组网一个子菜单（组内按当前排序策略）
         for (const g of groups) {
           serverSubmenu.push({
             label: g.isMesh ? mt('trayMesh') : g.isManual ? mt('trayCustomNodes') : g.name,
-            submenu: g.servers.map(buildServerItem),
+            submenu: sortNodes(g.servers).map(buildServerItem),
           });
         }
       }
@@ -718,14 +726,45 @@ export class TrayManager implements ITrayManager {
   }
 
   /**
-   * 更新测速结果
+   * 置「测速中」态（供非托盘入口——如服务器页/首页测速——也让托盘菜单显示 testing）。幂等：同态 no-op 不重建菜单。
    */
-  updateSpeedTestResults(results: Map<string, number | null>, servers: ServerConfig[]): void {
-    this.speedTestResults = results;
+  setSpeedTesting(testing: boolean): void {
+    if (this.isSpeedTesting === testing) return;
+    this.isSpeedTesting = testing;
+    this.updateTrayMenu(this.isProxyRunning);
+  }
+
+  /**
+   * 置「按延迟排序」开关（供渲染端同步，使托盘节点列表与下拉同序）。幂等：同态 no-op 不重建菜单。
+   * 无测速结果时排序退化为按名称（见 server-latency-sort），故 cold-start 结果未到达不影响顺序。
+   */
+  setSortByLatency(sortByLatency: boolean): void {
+    if (this.sortByLatency === sortByLatency) return;
+    this.sortByLatency = sortByLatency;
+    this.updateTrayMenu(this.isProxyRunning);
+  }
+
+  /**
+   * 更新测速结果（合并入托盘延迟显示）。
+   * @param results 本次测速逐节点结果（可能是子集，如单节点 ⚡）。
+   * @param opts.toast 是否广播完成汇总 toast（EVENT_SPEED_TEST_RESULT_LIST）；仅托盘入口触发的测速传 true——
+   *   渲染入口（服务器页/首页）测速由 use-speed-test 自弹 toast，此处再弹会双 toast。
+   *
+   * **合并而非替换**：results 可能是子集（单节点测速 / 单飞 join 拿到的他人子集结果）；若整表替换会塌缩托盘
+   * 已有的其余节点延迟。合并保留旧值、只更新本次测到的节点（与渲染层 applyLatencyResults 同语义）。
+   */
+  updateSpeedTestResults(
+    results: Map<string, number | null>,
+    servers: ServerConfig[],
+    opts: { toast?: boolean } = {}
+  ): void {
+    this.speedTestResults = new Map([...this.speedTestResults, ...results]);
     this.isSpeedTesting = false;
     this.updateTrayMenu(this.isProxyRunning);
 
-    // 仅列实际测速的节点：不可测节点（Tailscale/reverseMesh/custom-endpoint）经 isSpeedTestable 已不在 results，
+    if (!opts.toast) return;
+
+    // 仅列本次实际测速的节点：不可测节点（Tailscale/reverseMesh/custom-endpoint）经 isSpeedTestable 已不在 results，
     // 与 buildServerItem 的 undefined→无徽标 同口径，避免 toast 把「不适用」误报成「超时」。
     const resultList = servers
       .filter((s) => results.has(s.id))

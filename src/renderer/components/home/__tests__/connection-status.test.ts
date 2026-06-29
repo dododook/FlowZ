@@ -84,7 +84,6 @@ describe('deriveConnectionStatus — TUN 模式', () => {
     });
     expect(r.label).toBe('home.statusConnected');
     expect(r.variant).toBe('default');
-    expect(r.mode).toBe('home.tunMode');
     expect(r.description).toContain('home.uptime#{"min":2}'); // floor(125/60)=2
   });
 
@@ -156,7 +155,6 @@ describe('deriveConnectionStatus — 系统代理 / manual', () => {
       label: 'home.statusConnected',
       variant: 'default',
       isManualNotice: true,
-      mode: 'home.manualMode',
     });
     expect(r.description).toBe('home.manualMode - home.uptime#{"min":1}');
   });
@@ -209,7 +207,7 @@ describe('deriveConnectionStatus — 模式回落', () => {
         proxyModeType: 'tun',
       },
     });
-    expect(r.mode).toBe('home.tunMode'); // 走 TUN 分支
+    expect(r.description).toContain('home.tunMode'); // 走 TUN 分支（描述以 TUN 文案打头）
     expect(r.label).toBe('home.statusConnected');
   });
 });

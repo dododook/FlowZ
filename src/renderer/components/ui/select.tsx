@@ -106,12 +106,17 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { trailing?: React.ReactNode }
+>(({ className, children, trailing, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
       'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 ps-8 pe-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      // trailing 时让 ItemText（本组件恒为第 2 个子节点：indicator span 第 1、ItemText span 第 2）truncate 撑开：
+      // radix @radix-ui/react-select 的 SelectItemText 会 strip className/style（不转发到 span），故无法直接给
+      // ItemText 加类——改由父 Item 经 :nth-child(2) 定向。否则长节点名不截断、尾随徽标被 overflow-x-hidden 裁掉。
+      trailing &&
+        'gap-2 [&>span:nth-child(2)]:min-w-0 [&>span:nth-child(2)]:flex-1 [&>span:nth-child(2)]:truncate',
       className
     )}
     {...props}
@@ -122,7 +127,9 @@ const SelectItem = React.forwardRef<
       </SelectPrimitive.ItemIndicator>
     </span>
 
+    {/* trailing 槽：尾随内容（如延迟徽标）渲染在 ItemText 兄弟位、不进 ItemText → 不镜像到触发器 SelectValue。 */}
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {trailing}
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;

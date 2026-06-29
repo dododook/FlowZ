@@ -216,6 +216,9 @@ let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
 let helperManager: IPrivilegedHelper | null = null;
 let currentLanguage = 'zh-CN'; // 渲染端 APP_SET_LANGUAGE 同步的最近语言；经 setMainLanguage 喂主进程 i18n（mt() 据此取文案）。空值由 handler 的 lang||currentLanguage 兜底保留旧值（不传空给 setMainLanguage）
+// 渲染端 APP_SET_NODE_SORT_BY_LATENCY 同步的「按延迟排序」开关最近值；持有于此以便 trayManager 在渲染端 mount 推送
+// 早于 tray 创建的极端时序下、于 tray 创建后补应用（否则 push 被 trayManager?.短路丢弃 → 托盘整会话停在默认序）。
+let currentNodeSortByLatency = false;
 
 /**
  * helper 引导对话框（注入 ProxyManager.setHelperGate，由 start() 在 darwin+TUN+helper 未就绪+未 dismiss
@@ -1418,8 +1421,14 @@ if (gotTheLock) {
     updateService.setCleanupCallback(runCleanup);
     registerUpdateHandlers();
 
-    // 注册测速处理器
-    registerSpeedTestHandlers(configManager, speedTestService);
+    // 注册测速处理器（注入唯一编排器依赖：含 getTrayManager 惰性访问器，使渲染入口测速也回写托盘列表）
+    registerSpeedTestHandlers({
+      configManager,
+      speedTestService,
+      getMainWindow: () => mainWindow,
+      getTrayManager: () => trayManager,
+      logManager,
+    });
 
     // IPC 处理器全部注册完成（汇总一条，取代各 handler 模块的逐条启动日志）
     logManager.addLog('info', 'IPC handlers 注册完成', 'Main');
@@ -1439,6 +1448,16 @@ if (gotTheLock) {
       }
     });
 
+    // 节点列表「按延迟排序」开关同步：渲染端 App.tsx 在 mount（cold-start 一次同步）+ 每次切换时推送，
+    // 使托盘节点列表与下拉同序（幂等，TrayManager.setSortByLatency 同态 no-op 不重建菜单）。
+    registerIpcHandler<boolean, void>(
+      IPC_CHANNELS.APP_SET_NODE_SORT_BY_LATENCY,
+      (_event, value: boolean) => {
+        currentNodeSortByLatency = !!value; // 记住最近值，供 tray 创建后补应用（防早到 push 被丢）
+        trayManager?.setSortByLatency(currentNodeSortByLatency);
+      }
+    );
+
     // 创建托盘图标
     trayManager = new TrayManager(
       mainWindow,
@@ -1457,6 +1476,9 @@ if (gotTheLock) {
       })
     );
     trayManager.createTray();
+    // 补应用「按延迟排序」开关：若渲染端 mount 推送早于本行（极端时序），上面 handler 的 trayManager?. 已丢弃该值，
+    // 此处用持有的最近值兜底（幂等：默认 false 时 no-op）。覆盖「持久 true 偏好在冷启被丢、托盘整会话停默认序」。
+    trayManager.setSortByLatency(currentNodeSortByLatency);
 
     // 初始化托盘菜单状态
     updateTrayMenuState(false);

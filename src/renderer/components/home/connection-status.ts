@@ -1,6 +1,6 @@
 /**
  * 连接状态卡的状态推导 —— 纯函数，从 connection-status-card.tsx 抽出（审计 §4）。
- * 输入 store 快照 + i18n 取值器，输出卡片展示信息（label/variant/description/mode）。
+ * 输入 store 快照 + i18n 取值器，输出卡片展示信息（label/variant/description）。
  * 无 react/store 依赖、t 由参数注入 → 可被 .test.ts 直接覆盖各状态档位矩阵。
  *
  * §4 修复：删除原对 `proxyCore.error` 的中文 `.includes()`（'权限不足'/'wintun'/'sing-box.exe'…）分类——
@@ -21,7 +21,6 @@ export interface StatusInfo {
   label: string;
   variant: 'default' | 'secondary' | 'destructive' | 'outline';
   description: string;
-  mode: string;
   isManualNotice?: boolean;
 }
 
@@ -42,11 +41,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
   const proxyModeType = configProxyModeType || connectionStatus?.proxyModeType || 'systemProxy';
   const isTunMode = proxyModeType === 'tun';
   const isManualMode = proxyModeType === 'manual';
-  const modeText = isTunMode
-    ? t('home.tunMode')
-    : isManualMode
-      ? t('home.manualMode')
-      : t('home.systemProxyMode');
 
   // store proxyError（start/stop 写的 i18n / String(error)）优先展示
   if (proxyError) {
@@ -54,7 +48,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
       label: t('home.statusError'),
       variant: 'destructive',
       description: proxyError,
-      mode: modeText,
     };
   }
 
@@ -63,7 +56,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
       label: t('home.statusUnknown'),
       variant: 'secondary',
       description: t('home.fetchingStatus'),
-      mode: modeText,
     };
   }
 
@@ -75,7 +67,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
       label: t('home.statusError'),
       variant: 'destructive',
       description: proxyCore.error,
-      mode: modeText,
     };
   }
 
@@ -90,7 +81,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
         label: t('home.statusConnected'),
         variant: 'default',
         description: `${t('home.tunMode')}${t('home.statusConnected')}${uptimeText ? ' - ' + uptimeText : ''}`,
-        mode: modeText,
       };
     }
     if (proxyBusy) {
@@ -99,14 +89,12 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
         label: t(stopping ? 'home.disconnecting' : 'home.statusConnecting'),
         variant: 'secondary',
         description: t(stopping ? 'home.stoppingProxy' : 'home.startingTun'),
-        mode: modeText,
       };
     }
     return {
       label: t('home.statusDisconnected'),
       variant: 'outline',
       description: t('home.tunNotEnabled'),
-      mode: modeText,
     };
   }
 
@@ -117,7 +105,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
         label: t('home.statusConnected'),
         variant: 'default',
         description: uptimeText ? `${t('home.manualMode')} - ${uptimeText}` : t('home.manualMode'),
-        mode: modeText,
         isManualNotice: true,
       };
     }
@@ -125,7 +112,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
       label: t('home.statusConnected'),
       variant: 'default',
       description: `${t('home.systemProxyConnected')}${uptimeText ? ' - ' + uptimeText : ''}`,
-      mode: modeText,
     };
   }
 
@@ -135,7 +121,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
       label: t('home.statusConnecting'),
       variant: 'secondary',
       description: t('home.singboxRunningEnabling'),
-      mode: modeText,
     };
   }
 
@@ -145,7 +130,6 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
       label: t(stopping ? 'home.disconnecting' : 'home.statusConnecting'),
       variant: 'secondary',
       description: t(stopping ? 'home.stoppingProxy' : 'home.startingSingbox'),
-      mode: modeText,
     };
   }
 
@@ -153,6 +137,5 @@ export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): Stat
     label: t('home.statusDisconnected'),
     variant: 'outline',
     description: t('home.proxyNotEnabled'),
-    mode: modeText,
   };
 }

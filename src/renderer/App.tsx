@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { MainLayout } from './components/layout/main-layout';
 import { useAppStore } from './store/app-store';
+import { useNodeSortStore } from './store/use-node-sort-store';
 import { useNativeEventListeners } from './hooks/use-native-events';
 import { HomePage } from './pages/home-page';
 import { LogsPage } from './pages/logs-page';
@@ -27,11 +28,18 @@ function App() {
   const loadConfig = useAppStore((state) => state.loadConfig);
   const refreshConnectionStatus = useAppStore((state) => state.refreshConnectionStatus);
   const setPrivacyMode = useAppStore((state) => state.setPrivacyMode);
+  const nodeSortByLatency = useNodeSortStore((state) => state.sortByLatency);
 
   // 离开设置页重置子节的逻辑已下沉到 store.setCurrentView，此处直接用 setCurrentView
 
   // Listen to native events
   useNativeEventListeners();
+
+  // 同步「节点列表按延迟排序」开关到主进程：mount 时把 localStorage 持久值推给托盘（cold-start 同序），
+  // 之后每次开关切换 nodeSortByLatency 变化即重推（托盘 setSortByLatency 幂等）。
+  useEffect(() => {
+    api.config.setNodeSortByLatency(nodeSortByLatency).catch(console.error);
+  }, [nodeSortByLatency]);
 
   // Load initial data
   useEffect(() => {

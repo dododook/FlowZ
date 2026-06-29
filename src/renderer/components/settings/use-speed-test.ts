@@ -13,7 +13,7 @@ import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import type { ServerConfigWithId } from './server-list-helpers';
 
 export function useSpeedTest(servers: ServerConfigWithId[]) {
-  const setLatencyMap = useAppStore((state) => state.setLatencyMap);
+  const applyLatencyResults = useAppStore((state) => state.applyLatencyResults);
   const { t } = useTranslation();
   const [isTestingSpeed, setIsTestingSpeed] = useState(false);
   const [speedProgress, setSpeedProgress] = useState<{
@@ -41,7 +41,7 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
       toast.info(t('servers.speedTestStart'));
       const results = await api.server.speedTest(serverIdsToTest);
       // 末尾兜底同步（确保最终结果一致，兜底事件丢失）；函数式合并保留未测节点的历史延迟。
-      setLatencyMap((prev) => ({ ...prev, ...results }));
+      applyLatencyResults(results);
       toast.success(t('servers.speedTestDone'));
       // 不再自动排序（保留用户排序偏好，测速只更新延迟值）
     } catch (error) {
@@ -66,7 +66,7 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
       const results = await api.server.speedTest([serverId]);
 
       // Update only this specific node's latency in the store（函数式合并，避免 stale 覆盖）
-      setLatencyMap((prev) => ({ ...prev, ...results }));
+      applyLatencyResults(results);
 
       if (results[serverId] !== undefined) {
         toast.success(t('servers.speedTestDone'));

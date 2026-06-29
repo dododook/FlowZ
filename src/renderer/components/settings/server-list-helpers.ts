@@ -9,6 +9,7 @@ import {
   meshNodeCarriesFullTunnel,
 } from '../../../shared/endpoint-routes';
 import { isWarpServer } from '../../../shared/warp';
+import { sortServersByLatency } from '../../../shared/server-latency-sort';
 
 export type ServerConfigWithId = ServerConfig;
 export type ViewMode = 'card' | 'list';
@@ -28,20 +29,11 @@ export function sortServers(
   sortOrder: SortOrder,
   latencyMap: Record<string, number>
 ): ServerConfigWithId[] {
-  // undefined=从未测速，-1=测速失败/超时 → 均视作「无有效结果」。
-  const realLatency = (id: string): number | null => {
-    const v = latencyMap[id];
-    return v === undefined || v === -1 ? null : v;
-  };
+  // 延迟排序委托给共享比较器（单一来源，与首页下拉 + 托盘同序；语义不变：无结果沉底、按名称降级）。
+  if (sortKey === 'latency') {
+    return sortServersByLatency(list, (id) => latencyMap[id], sortOrder);
+  }
   return [...list].sort((a, b) => {
-    if (sortKey === 'latency') {
-      const la = realLatency(a.id);
-      const lb = realLatency(b.id);
-      if (la === null && lb === null) return a.name.localeCompare(b.name);
-      if (la === null) return 1; // 无结果沉底（不随 asc/desc 翻转）
-      if (lb === null) return -1;
-      return sortOrder === 'asc' ? la - lb : lb - la;
-    }
     let cmp = 0;
     if (sortKey === 'name') cmp = a.name.localeCompare(b.name);
     else if (sortKey === 'protocol') cmp = a.protocol.localeCompare(b.protocol);

@@ -18,6 +18,7 @@ import type { TrayManager } from './services/TrayManager';
 import type { ProxyMode, ProxyModeType } from '../shared/types';
 import { ipcEventEmitter } from './ipc/ipc-events';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
+import { runSpeedTest } from './services/speed-test-runner';
 
 /** 注入依赖：服务单例（值，tray 创建前已初始化）+ 可变引用 getter（call-time 取值）+ 主进程局部动作。 */
 export interface TrayActionDeps {
@@ -219,58 +220,13 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
       }
     },
     onSpeedTest: async () => {
-      const mainWindow = getMainWindow();
-      const trayManager = getTrayManager();
-      try {
-        const config = await configManager.loadConfig();
-        if (config.servers.length === 0) {
-          logManager.addLog('warn', 'No servers configured for speed test', 'Main');
-          return;
-        }
-
-        logManager.addLog(
-          'info',
-          `Starting speed test for ${config.servers.length} servers`,
-          'Main'
-        );
-
-        // 复用 SpeedTestService（互斥：与 UI 入口并发时复用同一次测速，避免起两个临时 sing-box）。
-        // onResult/onProgress 流式推 renderer（与 UI 入口一致，latencyMap/进度实时更新）→ 托盘与 UI 测速结果互通。
-        const results = await speedTestService.testAllServers(
-          config.servers,
-          (serverId, latency) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, {
-                serverId,
-                latency: latency === null ? -1 : latency,
-              });
-            }
-          },
-          (tested, ok, total) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_PROGRESS, {
-                tested,
-                ok,
-                total,
-              });
-            }
-          },
-          config.speedTestUrl // 与 UI 入口一致用用户配置的测速端点（否则托盘测速仍走默认 generate_204）
-        );
-
-        logManager.addLog('info', 'Speed test completed for all servers', 'Main');
-
-        if (trayManager) {
-          trayManager.updateSpeedTestResults(results, config.servers);
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logManager.addLog('error', `Speed test failed: ${errorMessage}`, 'Main');
-
-        if (trayManager) {
-          trayManager.updateSpeedTestResults(new Map(), []);
-        }
-      }
+      // 全量测速经唯一编排器 runSpeedTest：传播副作用（渲染广播 + 托盘回写 + 测速态）统一在一处。
+      // notifyTrayToast:true —— 托盘入口需要完成汇总 toast（App.tsx 监听 RESULT_LIST）；渲染入口不传（use-speed-test 自弹）。
+      // runSpeedTest 内已记日志 + 复位测速态后 rethrow（IPC 入口需要它）；托盘入口 fire-and-forget，此处吞掉避免未处理 rejection。
+      await runSpeedTest(
+        { configManager, speedTestService, getMainWindow, getTrayManager, logManager },
+        { notifyTrayToast: true }
+      ).catch(() => {});
     },
     onEnterPrivacyMode: () => {
       setPrivacyMode(true); // 置主进程 flag（单一真值）并广播；避免渲染端异步回写竞态/窗口重建丢锁

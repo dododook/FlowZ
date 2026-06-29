@@ -1,51 +1,29 @@
 /**
- * 测速相关 IPC 处理器
+ * 测速相关 IPC 处理器。
+ *
+ * 复用唯一编排器 runSpeedTest——与托盘入口同源传播（渲染逐节点广播 + 进度 + 托盘回写 + 测速态），
+ * 修复历史漂移「服务器页/首页测速不同步到托盘服务器列表」（旧实现此处只广播、漏了 trayManager 回写）。
  */
 
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import { registerIpcHandler } from '../ipc-handler';
-import { ConfigManager } from '../../services/ConfigManager';
-
-import { SpeedTestService } from '../../services/SpeedTestService';
+import { runSpeedTest, type SpeedTestRunnerDeps } from '../../services/speed-test-runner';
 
 /**
- * 注册测速相关的 IPC 处理器
+ * 注册测速相关的 IPC 处理器。
+ * @param deps 唯一编排器依赖（configManager / speedTestService / getMainWindow / getTrayManager / logManager）。
  */
-export function registerSpeedTestHandlers(
-  configManager: ConfigManager,
-  speedTestService: SpeedTestService
-): void {
-  // 服务器测速
+export function registerSpeedTestHandlers(deps: SpeedTestRunnerDeps): void {
+  // 服务器测速（serverIds 缺省=全部；逐节点结果/进度由 runSpeedTest 广播，托盘同步回写）
   registerIpcHandler<{ serverIds?: string[] }, Record<string, number>>(
     IPC_CHANNELS.SERVER_SPEED_TEST,
-    async (event: IpcMainInvokeEvent, args?: { serverIds?: string[] }) => {
-      const config = await configManager.loadConfig();
+    async (_event: IpcMainInvokeEvent, args?: { serverIds?: string[] }) => {
+      const rawResults = await runSpeedTest(deps, { serverIds: args?.serverIds });
       const results: Record<string, number> = {};
-
-      const serversToTest = args?.serverIds
-        ? config.servers.filter((s) => args.serverIds!.includes(s.id))
-        : config.servers;
-
-      // 逐节点回调：每测完一个节点立即发送 EVENT（渲染端订阅增量更新），不等队列。
-      const rawResults = await speedTestService.testAllServers(
-        serversToTest,
-        (serverId, latency) => {
-          event.sender.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, {
-            serverId,
-            latency: latency === null ? -1 : latency,
-          });
-        },
-        (tested, ok, total) => {
-          event.sender.send(IPC_CHANNELS.EVENT_SPEED_TEST_PROGRESS, { tested, ok, total });
-        },
-        config.speedTestUrl
-      );
-
       for (const [id, latency] of rawResults.entries()) {
         results[id] = latency === null ? -1 : latency;
       }
-
       return results;
     }
   );
