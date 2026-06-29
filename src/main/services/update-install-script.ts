@@ -16,11 +16,10 @@
  *   installed 形态（NSIS / dpkg）由安装器自身原位升级，亦不动各自 data 目录。
  */
 
+import { shq } from '../utils/shell-quote';
+
 /** VBS 字符串字面量里的反斜杠按既有约定双写（与旧 installUpdate 一致，Windows 容忍双反斜杠路径）。 */
 const vbsPath = (p: string): string => p.replace(/\\/g, '\\\\');
-
-/** bash 单引号安全转义。 */
-const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /**
  * Windows 更新 VBS。portableTarget 非空=便携态（覆盖回原 exe 再启动）；否则=NSIS（运行下载的 setup，原行为逐字保留）。

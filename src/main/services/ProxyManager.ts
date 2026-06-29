@@ -3267,100 +3267,6 @@ done
     return process.platform === 'win32' && this.needsRootPrivilege();
   }
 
-  /** shell 单引号转义（防注入），与 HelperManager.shq 同形。delegate → PlatformPrivilegeService（T16 子 commit 1）。 */
-  private shq(s: string): string {
-    return this.privilegeService?.shq(s) ?? `'${s.replace(/'/g, `'\\''`)}'`;
-  }
-
-  /**
-   * 运行命令并捕获 stdout（出错 reject）。用于 getcap 探测。
-   * delegate → PlatformPrivilegeService（T16 子 commit 1）；未注入时保留原实现兜底（防 index.ts 装配前调用）。
-   */
-  private execCapture(bin: string, args: string[]): Promise<string> {
-    if (this.privilegeService) return this.privilegeService.execCapture(bin, args);
-    return new Promise((resolve, reject) => {
-      const proc = spawn(bin, args);
-      let stdout = '';
-      let stderr = '';
-      proc.stdout?.on('data', (d) => {
-        stdout += d.toString();
-      });
-      proc.stderr?.on('data', (d) => {
-        stderr += d.toString();
-      });
-      proc.on('exit', (code) => {
-        if (code === 0) resolve(stdout);
-        else reject(new Error(stderr.trim() || `exit ${code}`));
-      });
-      proc.on('error', reject);
-    });
-  }
-
-  /**
-   * 以 pkexec(root) 跑 bash 脚本（弹一次密码框）。区分取消(126)/无认证代理(127)。
-   * delegate → PlatformPrivilegeService（T16 子 commit 1）；未注入时保留原实现兜底。
-   */
-  private runPkexecScript(scriptPath: string): Promise<{ success: boolean; error?: string }> {
-    if (this.privilegeService) return this.privilegeService.runPkexecScript(scriptPath);
-    return new Promise((resolve) => {
-      const proc = spawn('/usr/bin/pkexec', ['/bin/bash', scriptPath]);
-      let stderr = '';
-      proc.stderr?.on('data', (d) => {
-        stderr += d.toString();
-      });
-      proc.on('exit', (code) => {
-        if (code === 0) resolve({ success: true });
-        else if (code === 126) resolve({ success: false, error: '授权被取消' });
-        else if (code === 127)
-          resolve({ success: false, error: '授权失败或系统缺少 polkit 认证代理' });
-        else if (code === 3) resolve({ success: false, error: '系统缺少 setcap（libcap2-bin）' });
-        else resolve({ success: false, error: stderr.trim() || `pkexec 退出码 ${code}` });
-      });
-      proc.on('error', (err) => resolve({ success: false, error: err.message }));
-    });
-  }
-
-  /**
-   * 生成 Linux TUN 提权脚本：setcap 赋权 + 安装限定用户的 resolve1 polkit 规则（含 0.105 .pkla 回退）。
-   * delegate → PlatformPrivilegeService（T16 子 commit 1）；未注入时保留原实现兜底。
-   */
-  private buildLinuxTunSetupScript(corePath: string, user: string, rulesFile: string): string {
-    if (this.privilegeService)
-      return this.privilegeService.buildLinuxTunSetupScript(corePath, user, rulesFile);
-    // user 已经白名单校验（[a-z0-9_.@-]），可安全嵌入 heredoc 字面量
-    return `#!/bin/bash
-set -e
-CORE=${this.shq(corePath)}
-RULES=${this.shq(rulesFile)}
-SETCAP="$(command -v setcap || echo /usr/sbin/setcap)"
-# setcap 缺失（精简 Debian 无 libcap2-bin）→ 用退出码 3 区分于 pkexec 的 126/127（P3-1）
-[ -x "$SETCAP" ] || { echo "setcap 未安装(libcap)" >&2; exit 3; }
-"$SETCAP" 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' "$CORE"
-mkdir -p /etc/polkit-1/rules.d
-cat > "$RULES" <<'EOF'
-// FlowZ: 允许指定用户改 systemd-resolved 链路 DNS（TUN auto_route 免逐条密码框）。手动删除本文件即恢复默认。
-polkit.addRule(function(action, subject) {
-  if (action.id.indexOf("org.freedesktop.resolve1.") === 0 &&
-      subject.user === "${user}" && subject.local && subject.active) {
-    return polkit.Result.YES;
-  }
-});
-EOF
-# 0.105 .pkla 回退：只要 polkit localauthority 父目录在就建 50-local.d 并写（P3-2，放宽过严条件）
-PKLA_DIR=/etc/polkit-1/localauthority/50-local.d
-if [ -d /etc/polkit-1/localauthority ]; then
-  mkdir -p "$PKLA_DIR"
-  cat > "$PKLA_DIR/49-flowz-resolved.pkla" <<'EOF2'
-[FlowZ resolved DNS]
-Identity=unix-user:${user}
-Action=org.freedesktop.resolve1.*
-ResultActive=yes
-EOF2
-fi
-echo flowz-linux-tun-setup-ok
-`;
-  }
-
   /**
    * Linux TUN：确保打包核心具备 TUN 所需 capabilities，并安装一条「仅当前用户改 systemd-resolved
    * 链路 DNS」的 polkit 规则——否则 sing-box(auto_route) 经 resolve1 D-Bus 设 DNS 时，polkit 按 uid
@@ -3369,100 +3275,13 @@ echo flowz-linux-tun-setup-ok
    * 仅 Linux TUN 生效；root 运行整 app 时跳过。
    *
    * T16 子 commit 4：实现迁入 PlatformPrivilegeService.ensureCapabilities，此处 delegate；
-   * 未注入时保留原实现兜底（防 index.ts 装配前调用）。
+   * 未注入抛错（装配链路恒先注入，理由同 execCapture）。删原内联兜底实现——它整体复刻
+   * ensureCapabilities（getcap 探测 / 用户名白名单 / 写脚本 / pkexec / 复检），属同类死副本。
    */
   private async ensureLinuxTunCapabilities(): Promise<void> {
-    if (this.privilegeService) return this.privilegeService.ensureCapabilities();
-    if (process.platform !== 'linux' || !this.needsRootPrivilege()) return;
-    // 以 root 跑整个 app → 已有全部权限，无需 pkexec
-    if (typeof process.getuid === 'function' && process.getuid() === 0) return;
-
-    const fs = require('fs');
-    const corePath = this.singboxPath;
-    const rulesFile = '/etc/polkit-1/rules.d/49-flowz-resolved.rules';
-
-    // 核心不存在 → 直接报「找不到」（命中 nonRetryableErrors），不白弹密码框（P2-3）
-    if (!fs.existsSync(corePath)) {
-      throw new Error(`找不到 sing-box 可执行文件: ${corePath}`);
-    }
-
-    // 定位 getcap（普通用户 PATH 常不含 /usr/sbin）；绝对路径都不在则退回裸名走 PATH（P2-1）
-    const getcapBin =
-      ['/usr/sbin/getcap', '/sbin/getcap', '/usr/bin/getcap'].find((p) => {
-        try {
-          return fs.existsSync(p);
-        } catch {
-          return false;
-        }
-      }) || 'getcap';
-
-    // true=有 caps，false=无 caps，null=getcap 不可用（无法判定，复检时以脚本退出码为准）
-    const probeCaps = async (): Promise<boolean | null> => {
-      try {
-        return /cap_net_admin/.test(await this.execCapture(getcapBin, [corePath]));
-      } catch {
-        return null;
-      }
-    };
-
-    let rulesExist = false;
-    try {
-      rulesExist = fs.existsSync(rulesFile);
-    } catch {
-      /* ignore */
-    }
-
-    // 已具备 caps 且规则文件已存在 → 零弹窗
-    if ((await probeCaps()) === true && rulesExist) return;
-
-    // 当前用户名（白名单校验，杜绝注入）。允许企业目录用户名常见的 . 与 @（SSSD/AD），
-    // 三处嵌入上下文（quoted-heredoc / JS 双引号串 / .pkla 值）对 . @ 均安全。
-    let user = '';
-    try {
-      user = require('os').userInfo().username;
-    } catch {
-      /* fallthrough */
-    }
-    if (!user) {
-      throw new Error('TUN 模式需要管理员权限：无法确定当前用户名，请手动配置 setcap');
-    }
-    if (!/^[a-z_][a-z0-9_.@-]*$/i.test(user)) {
-      throw new Error(`TUN 模式需要管理员权限：用户名 "${user}" 含不支持的字符，请手动配置 setcap`);
-    }
-
-    this.logToManager(
-      'info',
-      'Linux TUN 首次配置：请求一次管理员授权（赋核心网络权限 + 安装 DNS polkit 规则）...'
-    );
-
-    const scriptPath = path.join(getUserDataPath(), 'flowz-linux-tun-setup.sh');
-    try {
-      fs.writeFileSync(scriptPath, this.buildLinuxTunSetupScript(corePath, user, rulesFile), {
-        mode: 0o755,
-      });
-    } catch (e) {
-      throw new Error(
-        `TUN 模式需要管理员权限：无法写入提权脚本 (${e instanceof Error ? e.message : String(e)})`
-      );
-    }
-
-    const result = await this.runPkexecScript(scriptPath);
-    try {
-      fs.unlinkSync(scriptPath);
-    } catch {
-      /* 忽略 */
-    }
-
-    // 复检 caps。getcap 不可用（null）时无法验证 → 信任脚本退出码（set -e + 末行 echo 保证 setcap
-    // 成功才退 0）。仅当「getcap 明确说无 caps」或「getcap 不可用且脚本失败」才判失败（P2-1）。
-    const post = await probeCaps();
-    if (post === false || (post === null && !result.success)) {
-      throw new Error(
-        `TUN 模式需要管理员权限：${result.error || '授权被取消或系统缺少 polkit 认证代理'}。` +
-          `可手动执行: sudo setcap 'cap_net_admin,cap_net_bind_service,cap_net_raw=+ep' "${corePath}"`
-      );
-    }
-    this.logToManager('info', 'Linux TUN 提权配置完成（核心已赋权，DNS polkit 规则已安装）');
+    if (!this.privilegeService)
+      throw new Error('privilegeService 未注入：ensureLinuxTunCapabilities 不可用');
+    return this.privilegeService.ensureCapabilities();
   }
 
   /**

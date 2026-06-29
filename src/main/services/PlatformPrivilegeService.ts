@@ -38,6 +38,7 @@ import {
   getSingBoxPidPath,
 } from '../utils/paths';
 import { system32, powershellPath } from '../utils/win-system32';
+import { shq } from '../utils/shell-quote';
 
 /**
  * 提权服务依赖注入上下文。所有成员为只读回调——避免本服务直接访问 ProxyManager 内部状态。
@@ -126,21 +127,13 @@ export class PlatformPrivilegeService {
     private readonly helperManager: HelperManager | null
   ) {}
 
-  // ─── 工具方法（迁自 ProxyManager，原 private，本服务公开供 delegate）──────────────────────────
-
-  /**
-   * shell 单引号转义（防注入），与 HelperManager.shq 同形。
-   * 迁自 ProxyManager.shq。
-   */
-  shq(s: string): string {
-    return `'${s.replace(/'/g, `'\\''`)}'`;
-  }
+  // ─── 工具方法（迁自 ProxyManager；曾公开供 ProxyManager delegate，现仅 ensureCapabilities 内部用 → 收回 private）──
 
   /**
    * 运行命令并捕获 stdout（出错 reject）。用于 getcap 探测。
    * 迁自 ProxyManager.execCapture。
    */
-  execCapture(bin: string, args: string[]): Promise<string> {
+  private execCapture(bin: string, args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
       const proc = spawn(bin, args);
       let stdout = '';
@@ -163,7 +156,7 @@ export class PlatformPrivilegeService {
    * 以 pkexec(root) 跑 bash 脚本（弹一次密码框）。区分取消(126)/无认证代理(127)。
    * 迁自 ProxyManager.runPkexecScript。
    */
-  runPkexecScript(scriptPath: string): Promise<{ success: boolean; error?: string }> {
+  private runPkexecScript(scriptPath: string): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
       const proc = spawn('/usr/bin/pkexec', ['/bin/bash', scriptPath]);
       let stderr = '';
@@ -186,12 +179,12 @@ export class PlatformPrivilegeService {
    * 生成 Linux TUN 提权脚本：setcap 赋权 + 安装限定用户的 resolve1 polkit 规则（含 0.105 .pkla 回退）。
    * 迁自 ProxyManager.buildLinuxTunSetupScript。
    */
-  buildLinuxTunSetupScript(corePath: string, user: string, rulesFile: string): string {
+  private buildLinuxTunSetupScript(corePath: string, user: string, rulesFile: string): string {
     // user 已经白名单校验（[a-z0-9_.@-]），可安全嵌入 heredoc 字面量
     return `#!/bin/bash
 set -e
-CORE=${this.shq(corePath)}
-RULES=${this.shq(rulesFile)}
+CORE=${shq(corePath)}
+RULES=${shq(rulesFile)}
 SETCAP="$(command -v setcap || echo /usr/sbin/setcap)"
 # setcap 缺失（精简 Debian 无 libcap2-bin）→ 用退出码 3 区分于 pkexec 的 126/127（P3-1）
 [ -x "$SETCAP" ] || { echo "setcap 未安装(libcap)" >&2; exit 3; }

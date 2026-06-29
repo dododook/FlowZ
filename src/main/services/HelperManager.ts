@@ -20,6 +20,7 @@ import type { IPrivilegedHelper, HelperStartResult } from './IPrivilegedHelper';
 import type { ILogManager } from './LogManager';
 import { resourceManager } from './ResourceManager';
 import { getUserDataPath } from '../utils/paths';
+import { shq } from '../utils/shell-quote';
 import { sha256File } from '../../shared/file-hash';
 
 // .btm(NSKeyedArchiver) 结构化解析：plist 原为 electron-builder 间接依赖，已提升为直接 dependency 确保打包入 asar。
@@ -725,11 +726,6 @@ export class HelperManager implements IPrivilegedHelper {
   }
 
   // ── 脚本生成 ─────────────────────────────────────────────────────────────
-  /** 单引号包裹并转义，安全嵌入 bash。FlowZ 路径一般不含单引号，仍防御性处理。 */
-  private shq(s: string): string {
-    return `'${s.replace(/'/g, `'\\''`)}'`;
-  }
-
   private xmlEscape(s: string): string {
     return s
       .replace(/&/g, '&amp;')
@@ -787,24 +783,24 @@ export class HelperManager implements IPrivilegedHelper {
     return `#!/bin/bash
 set -e
 umask 077
-SRC=${this.shq(srcBinary)}
-DEST=${this.shq(HELPER_DEST)}
-SUPPORT=${this.shq(SYSTEM_SUPPORT)}
-PLIST=${this.shq(PLIST_PATH)}
+SRC=${shq(srcBinary)}
+DEST=${shq(HELPER_DEST)}
+SUPPORT=${shq(SYSTEM_SUPPORT)}
+PLIST=${shq(PLIST_PATH)}
 mkdir -p /Library/PrivilegedHelperTools "$SUPPORT"
 # 关键：umask 077 会把新建目录设成 700 → 普通用户 app 无法穿越该目录连接 socket(EACCES)。
 # 目录必须 755 可穿越（socket 内部仍靠 token 鉴权 + token 文件 600 保护）。
 chmod 755 /Library/PrivilegedHelperTools "$SUPPORT"
 cp "$SRC" "$DEST"
 chown root:wheel "$DEST"; chmod 755 "$DEST"
-printf '%s' ${this.shq(token)} > "$SUPPORT/helper.token"
+printf '%s' ${shq(token)} > "$SUPPORT/helper.token"
 chown root:wheel "$SUPPORT/helper.token"; chmod 600 "$SUPPORT/helper.token"
 # B 块 seed：把内置内核播种进受保护目录，作为 macOS 现役核「单一稳定真相」（root owner、755 → all 读/exec，
 # 仅 root 可写）。plist 的 --singbox 锁定 $COREDIR/sing-box，故 seed 后「写/读/执行」三处路径恒一致。
 # 守卫「仅当受保护目录尚无可执行 sing-box」→ 重装/修复 helper 不覆盖用户已更新的核；v4→v5 升级时目录为空、
 # 从 bundle 播种当前核。macOS cronet 静态编入 sing-box，无需额外 libcronet 文件。
-COREDIR=${this.shq(coreDir)}
-BUNDLED_SB=${this.shq(bundledSingbox)}
+COREDIR=${shq(coreDir)}
+BUNDLED_SB=${shq(bundledSingbox)}
 mkdir -p "$COREDIR"
 chown root:wheel "$COREDIR"; chmod 755 "$COREDIR"
 if [ ! -x "$COREDIR/sing-box" ]; then
@@ -832,10 +828,10 @@ echo installed-ok
 
   private buildUninstallScript(): string {
     return `#!/bin/bash
-PLIST=${this.shq(PLIST_PATH)}
+PLIST=${shq(PLIST_PATH)}
 launchctl bootout system "$PLIST" 2>/dev/null || true
-rm -f "$PLIST" ${this.shq(HELPER_DEST)}
-rm -rf ${this.shq(SYSTEM_SUPPORT)}
+rm -f "$PLIST" ${shq(HELPER_DEST)}
+rm -rf ${shq(SYSTEM_SUPPORT)}
 echo uninstalled-ok
 `;
   }
