@@ -2,6 +2,7 @@
   "name": "flowz",
   "version": "4.1.6",
   "description": "FlowZ - 简洁现代的跨平台代理客户端",
+  "desktopName": "flowz",
   "main": "dist/main/main/index.js",
   "scripts": {
     "prepare": "husky",

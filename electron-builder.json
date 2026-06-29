@@ -152,7 +152,18 @@
       "deb"
     ],
     "category": "Network",
-    "icon": "resources/app.png",
+    "icon": "build/icons",
+    "synopsis": "Clean, modern cross-platform proxy client",
+    "description": "FlowZ - a clean, modern cross-platform proxy client.",
+    "desktop": {
+      "entry": {
+        "Comment[zh_CN]": "简洁现代的跨平台代理客户端",
+        "Comment[zh_TW]": "簡潔現代的跨平台代理客戶端",
+        "Comment[ru]": "Простой современный кроссплатформенный прокси-клиент",
+        "Comment[fa]": "کلاینت پروکسی مدرن و چندسکویی"
+      }
+    },
+    "syncDesktopName": true,
     "artifactName": "${productName}-${version}-linux-${arch}.${ext}",
     "extraResources": [
       {

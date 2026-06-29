@@ -1002,11 +1002,24 @@ export const appApi = {
   },
 };
 
+/** 窗口控制（Linux frameless 自绘标题栏用；Mac 红绿灯 / Win titleBarOverlay 原生按钮不经此）。 */
+export const windowApi = {
+  minimize: (): Promise<void> => ipcClient.invoke(IPC_CHANNELS.WINDOW_MINIMIZE),
+  /** 切换最大化/还原，返回切换后是否最大化。 */
+  maximizeToggle: (): Promise<boolean> => ipcClient.invoke(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE),
+  close: (): Promise<void> => ipcClient.invoke(IPC_CHANNELS.WINDOW_CLOSE),
+  isMaximized: (): Promise<boolean> => ipcClient.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
+  /** 监听最大化态变更（WM 双击标题/拖顶等非按钮操作）；返回取消订阅函数。 */
+  onMaximizeChange: (listener: (maximized: boolean) => void): (() => void) =>
+    ipcClient.on(IPC_CHANNELS.EVENT_WINDOW_MAXIMIZE_CHANGED, listener),
+};
+
 /**
  * 统一的 API 客户端
  */
 export const api = {
   proxy: proxyApi,
+  window: windowApi,
   config: configApi,
   privacy: privacyApi,
   server: serverApi,

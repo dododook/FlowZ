@@ -57,6 +57,40 @@ const MESSAGES = {
     fa: 'برای پیوستن به شبکه، ورود را در مرورگر کامل کنید',
   },
 
+  // —— 完全卸载（Linux 本体删不掉时引导手动移除：deb 系统装 root 无权 / 无废纸篓后端 / 边缘形态） ——
+  uninstallManualTitle: {
+    'zh-CN': '需手动移除应用本体',
+    'zh-TW': '需手動移除應用本體',
+    'en-US': 'Remove the app manually',
+    ru: 'Удалите приложение вручную',
+    fa: 'برنامه را به‌صورت دستی حذف کنید',
+  },
+  uninstallManualMessage: {
+    'zh-CN': 'FlowZ 用户数据已清除。',
+    'zh-TW': 'FlowZ 使用者資料已清除。',
+    'en-US': 'FlowZ user data has been removed.',
+    ru: 'Пользовательские данные FlowZ удалены.',
+    fa: 'داده‌های کاربری FlowZ حذف شد.',
+  },
+  // detail 末尾会拼接应用本体的实际路径（exe 目录或 AppImage 文件），故以冒号结尾。
+  uninstallManualBody: {
+    'zh-CN':
+      '应用本体未能自动删除（可能位于系统目录或受保护位置）：\n• 若经 .deb 安装：sudo apt remove flowz（或 sudo dpkg -r flowz）\n• 若以 AppImage 运行：请删除你的 .AppImage 文件\n• 否则请手动删除以下路径：',
+    'zh-TW':
+      '應用本體未能自動刪除（可能位於系統目錄或受保護位置）：\n• 若經 .deb 安裝：sudo apt remove flowz（或 sudo dpkg -r flowz）\n• 若以 AppImage 執行：請刪除你的 .AppImage 檔案\n• 否則請手動刪除以下路徑：',
+    'en-US':
+      'The app itself could not be removed automatically (it may be in a system or protected location):\n• If installed via .deb: sudo apt remove flowz (or sudo dpkg -r flowz)\n• If running as an AppImage: delete your .AppImage file\n• Otherwise, delete this path manually:',
+    ru: 'Само приложение не удалось удалить автоматически (возможно, оно в системном или защищённом расположении):\n• Если установлено через .deb: sudo apt remove flowz (или sudo dpkg -r flowz)\n• Если запущено как AppImage: удалите ваш файл .AppImage\n• Иначе удалите этот путь вручную:',
+    fa: 'خودِ برنامه به‌صورت خودکار حذف نشد (ممکن است در مسیری سیستمی یا محافظت‌شده باشد):\n• اگر از طریق ‎.deb‎ نصب شده: sudo apt remove flowz (یا sudo dpkg -r flowz)\n• اگر به‌صورت AppImage اجرا می‌شود: فایل ‎.AppImage‎ خود را حذف کنید\n• در غیر این صورت این مسیر را به‌صورت دستی حذف کنید:',
+  },
+  uninstallManualOk: {
+    'zh-CN': '知道了',
+    'zh-TW': '知道了',
+    'en-US': 'Got it',
+    ru: 'Понятно',
+    fa: 'متوجه شدم',
+  },
+
   // —— 托盘菜单（TrayManager） ——
   trayStatusError: {
     'zh-CN': '连接异常',

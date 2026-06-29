@@ -108,6 +108,15 @@ try {
   // 部分环境不支持，忽略
 }
 
+// Linux：QEMU/虚拟显卡 + xrdp/VNC 等远程桌面/虚拟机环境无可用硬件加速，Chromium GPU 进程反复启动失败
+// （ContextResult::kTransientFailure → GPU process launch failed error_code=1002）会触发
+// "GPU process isn't usable. Goodbye." FATAL，整个 app 闪退（实测 QEMU stdvga + xrdp 必现）。
+// FlowZ 为轻量代理工具 UI（无 3D/视频/canvas 密集渲染），软件渲染体验无感，故 Linux 一律禁用硬件加速换稳定。
+// 必须在 app ready 之前调用（Electron 约束），放在单实例锁之前 = 模块加载期最早处。
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration();
+}
+
 // 单实例锁：防止开启多个软件实例
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -538,7 +547,7 @@ async function createWindow(forceShow = false) {
 
   // 单次 loadConfig 读取窗口尺寸 + 主题（loadConfig 内部 catch 兜默认配置、绝不抛，无需 try/catch）。
   // 注意：transparent 仅 macOS 启用，Win/Linux 启用会侧边栏透明 + 鼠标事件穿透（Electron 已知问题）。
-  let windowWidth = 1200;
+  let windowWidth = 960;
   let windowHeight = 800;
   const cfg = await configManager.loadConfig();
   if (cfg.rememberWindowSize && cfg.windowBounds) {
@@ -586,12 +595,14 @@ async function createWindow(forceShow = false) {
     // Windows：集成式标题栏（隐藏原生栏 + 右上覆盖层按钮，对齐 Mac）+ Win11 Mica 材质。
     // Mica 仅作窗口/侧栏底（壁纸微染），内容卡片实色不透。窗口 backgroundColor 取实色主题色作兜底：
     // 物理屏+透明效果 → Mica；RDP/透明关 → DWM 回落该实色 #1F252E/#E9EEF3（不会黑）。
-    // Linux 无覆盖层 API → 不进此分支，默认边框 + 实色底。
     ...(isWindows && {
       titleBarStyle: 'hidden',
       titleBarOverlay: overlayColors(isDarkInitial),
       backgroundMaterial: 'mica',
     }),
+    // Linux：无系统 titleBarOverlay API → frameless（frame:false）+ 渲染端自绘标题栏（拖拽区 + min/max/close 按钮），
+    // 与 Mac/Win 嵌入式视觉对齐。frameless 窗口 Electron 默认仍保留边缘 resize（resizable 未关）。
+    ...(!isMac && !isWindows && { frame: false }),
   });
 
   // Windows: 监听系统主题变化，同步原生窗口背景色
@@ -635,6 +646,18 @@ async function createWindow(forceShow = false) {
     }, 500);
   });
 
+  // Linux frameless 自绘标题栏：最大化态变更（含 WM 双击标题/拖顶等非按钮操作）推渲染端，同步 max/restore 图标。
+  const sendMaximizeState = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(
+        IPC_CHANNELS.EVENT_WINDOW_MAXIMIZE_CHANGED,
+        mainWindow.isMaximized()
+      );
+    }
+  };
+  mainWindow.on('maximize', sendMaximizeState);
+  mainWindow.on('unmaximize', sendMaximizeState);
+
   // 移除默认菜单栏（Windows/Linux）
   if (process.platform !== 'darwin') {
     mainWindow.setMenu(null);
@@ -650,10 +673,15 @@ async function createWindow(forceShow = false) {
 
   startupMark('windowCreated');
 
-  // 窗口加载完成后显示
-  mainWindow.once('ready-to-show', async () => {
-    startupMark('readyToShow');
-    // 立即消费 pendingForceShow（早于任何 await，避免与并发 showWindow 竞态）：显式唤出在途 silent 启动时强制显示
+  // 窗口呈现决策（show vs 静默隐藏）抽成**幂等**函数，由 ready-to-show 与 did-finish-load 兜底各触发一次、取先到者。
+  // 根因（Linux 启动驻留托盘）：show:false 窗口的 `ready-to-show` 在 Linux 上会被合成器拖延数十秒（不给隐藏窗口出首帧，
+  // 实测 17~129s），单靠它 → 窗口长时间不显示、误以为驻留托盘。`did-finish-load` 不依赖合成器、稳定及时，作兜底
+  // （给 ready-to-show 先手 300ms，正常机器上 ready-to-show 先到、无闪现；被拖延时由 did-finish-load 兜住）。
+  let windowPresented = false;
+  const presentWindow = async () => {
+    if (windowPresented || !mainWindow || mainWindow.isDestroyed()) return;
+    windowPresented = true; // 同步占位，防 ready-to-show + did-finish-load 并发双进入
+    // 消费 pendingForceShow（显式唤出在途 silent 启动时强制显示）
     const wantShow = forceShow || pendingForceShow;
     pendingForceShow = false;
     try {
@@ -678,6 +706,14 @@ async function createWindow(forceShow = false) {
       mainWindow?.show();
       logStartupTimingOnce();
     }
+  };
+  mainWindow.once('ready-to-show', () => {
+    startupMark('readyToShow');
+    void presentWindow();
+  });
+  // 兜底：did-finish-load 稳定到达后给 ready-to-show 先手 300ms 再呈现（覆盖 Linux ready-to-show 被拖延数十秒）。
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(() => void presentWindow(), 300);
   });
 
   // 开发环境加载 Vite 开发服务器
@@ -1457,6 +1493,23 @@ if (gotTheLock) {
         trayManager?.setSortByLatency(currentNodeSortByLatency);
       }
     );
+
+    // 窗口控制（Linux frameless 自绘标题栏的 min/max/close 按钮调用；Mac 红绿灯 / Win titleBarOverlay 用原生按钮不经此）。
+    registerIpcHandler<void, void>(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
+      mainWindow?.minimize();
+    });
+    registerIpcHandler<void, boolean>(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE, () => {
+      if (!mainWindow) return false;
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      else mainWindow.maximize();
+      return mainWindow.isMaximized();
+    });
+    registerIpcHandler<void, void>(IPC_CHANNELS.WINDOW_CLOSE, () => {
+      mainWindow?.close();
+    });
+    registerIpcHandler<void, boolean>(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, () => {
+      return mainWindow?.isMaximized() ?? false;
+    });
 
     // 创建托盘图标
     trayManager = new TrayManager(

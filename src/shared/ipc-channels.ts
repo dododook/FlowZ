@@ -163,6 +163,14 @@ export const IPC_CHANNELS = {
   // 节点列表「按延迟排序」开关同步（渲染进程 -> 主进程，使托盘列表与下拉同序）
   APP_SET_NODE_SORT_BY_LATENCY: 'app:setNodeSortByLatency',
 
+  // 窗口控制（Linux 嵌入式标题栏自绘 min/max/close；Mac 原生红绿灯 / Win titleBarOverlay 系统按钮无需）
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE_TOGGLE: 'window:maximizeToggle',
+  WINDOW_CLOSE: 'window:close',
+  WINDOW_IS_MAXIMIZED: 'window:isMaximized',
+  // 最大化态变更（main -> 渲染）：标题栏 max/restore 图标跟随 WM 双击/拖顶等非按钮操作同步
+  EVENT_WINDOW_MAXIMIZE_CHANGED: 'event:windowMaximizeChanged',
+
   // 数据备份与恢复
   BACKUP_EXPORT: 'backup:export',
   BACKUP_IMPORT: 'backup:import',

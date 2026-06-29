@@ -3,7 +3,7 @@
  * 状态查询 + 安装/卸载（安装/卸载会弹一次 osascript 管理员授权框）。
  */
 
-import { BrowserWindow, IpcMainInvokeEvent, app, shell } from 'electron';
+import { BrowserWindow, IpcMainInvokeEvent, app, shell, dialog } from 'electron';
 import { spawn } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -17,6 +17,7 @@ import type { IPrivilegedHelper } from '../../services/IPrivilegedHelper';
 import type { IProxyManager } from '../../services/ProxyManager';
 import { getSingboxDashboardDir } from '../../utils/paths';
 import { mapElectronLocaleToDashboardLang } from '../../utils/dashboard-locale';
+import { mt } from '../../i18n';
 
 /**
  * 清 sing-box 官方面板资源缓存目录（dashboard.path）。删后核下次启动因目录为空 → 从 download_url 重拉新 zip。
@@ -203,6 +204,56 @@ export function registerHelperHandlers(
               }
             } catch {
               /* 删不掉 .app 不阻断退出 */
+            }
+          } else if (process.platform === 'linux') {
+            // Linux 删应用本体（原仅删 userData、漏删本体 → 卸载后应用仍在）。官方 target 仅 AppImage + deb：
+            //   AppImage → $APPIMAGE 是原始 .AppImage（exe 是 /tmp FUSE 挂载点、非文件本身）；deb → /opt/FlowZ root 拥有、app 无写权。
+            // 能安全删的目标（AppImage 原文件 / 用户可写的 flowz 专属目录）**只移废纸篓**——刻意不 rmSync 强删：
+            //   无废纸篓后端（精简 WM）时 trashItem reject，若回退 rm -rf 整个父目录会永久误删用户混放文件，无回收网。
+            // 删不掉（deb root 无权 / 无 trash 后端 / 边缘形态）→ 弹原生 dialog 引导手动移除，附**实际路径** + deb 包管理器命令
+            //   （数据已清；toast 会随 app 退出丢失，故用阻塞 dialog，不静默假装成功）。
+            try {
+              const exeDir = path.dirname(app.getPath('exe'));
+              const appImage = process.env.APPIMAGE;
+              let target: string | null = null;
+              if (appImage && fs.existsSync(appImage)) {
+                target = appImage;
+              } else if (
+                /flowz/i.test(path.basename(exeDir)) &&
+                exeDir.startsWith(os.homedir() + path.sep)
+              ) {
+                // exe 父目录是「家目录下」的 flowz 专属目录（AppImage extract / 手动解压）且可写才程序删。
+                // **限定家目录**：deb 装的 /opt·/usr 即使被 sudo 跑/改权限弄成可写也绝不程序删——那会绕过 dpkg
+                // 致包库不一致 + /usr 下 .desktop 悬空，故系统目录一律 target=null 走 dialog 引导经 apt 卸载。
+                try {
+                  fs.accessSync(exeDir, fs.constants.W_OK);
+                  target = exeDir;
+                } catch {
+                  /* 无写权 → 走手动引导 */
+                }
+              }
+              let removed = false;
+              if (target) {
+                // 仅移废纸篓（可恢复安全网）；失败不强删，转手动提示
+                removed = await shell
+                  .trashItem(target)
+                  .then(() => true)
+                  .catch(() => false);
+              }
+              if (!removed) {
+                const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+                const opts = {
+                  type: 'info' as const,
+                  title: mt('uninstallManualTitle'),
+                  message: mt('uninstallManualMessage'),
+                  detail: `${mt('uninstallManualBody')}\n\n${target ?? exeDir}`,
+                  buttons: [mt('uninstallManualOk')],
+                };
+                if (win) await dialog.showMessageBox(win, opts);
+                else await dialog.showMessageBox(opts);
+              }
+            } catch {
+              /* 删本体失败不阻断退出 */
             }
           }
         } else {
