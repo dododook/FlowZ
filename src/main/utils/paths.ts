@@ -47,87 +47,136 @@ function getPortableDataPath(): string | null {
 }
 
 /**
- * 获取正确的用户数据路径
- * 解决以 root 权限运行时 app.getPath('userData') 返回 /var/root/... 的问题
+ * 提权（root）运行时解析「真实登录用户」的家目录；普通用户 / 解析失败返回 null（用 Electron 默认）。
+ * 不硬编码 /home 或 /Users 前缀——兼容 usermod -d 改过的非标准家目录（架构 review #12）。
  *
- * 在 macOS 上，当应用以 root 权限运行时：
- * - app.getPath('userData') 返回 /var/root/Library/Application Support/FlowZ
- * - 但我们需要的是 /Users/<actual_user>/Library/Application Support/FlowZ
+ * 优先级：
+ *  1) HOME 指向真实用户家（多数 sudoers 保留 HOME；取决于 env_reset/always_set_home）→ 直接采信，兼容自定义路径；
+ *  2) HOME 是 root 家（env_reset / sudo -i）→ 用 SUDO_USER 经 /etc/passwd 反查（Linux，兼容 usermod -d）；
+ *     macOS 常规用户不在 /etc/passwd（走 Open Directory），退回 /Users/<user> 系统约定。
  *
- * 策略：
- * 1. 如果已缓存路径，直接返回
- * 2. 检查是否以 root 运行，如果是则尝试获取真实用户的路径
- * 3. 否则使用 Electron 的默认路径
+ * 覆盖范围：sudo 系提权（HOME 保留 或 SUDO_USER 存在）。pkexec 整 app 提权不在范围——其设 HOME=/root、
+ * 不设 SUDO_USER（仅 PKEXEC_UID），两条均 miss → 回落默认；FlowZ 的 pkexec 仅用于 helper 脚本而非整 app
+ * 提权，故现实影响小（与改动前行为一致，非回归）。
  */
-export function getUserDataPath(): string {
-  if (cachedUserDataPath) {
-    return cachedUserDataPath;
+function resolveElevatedRealHome(): string | null {
+  const isUnixRoot =
+    (process.platform === 'darwin' || process.platform === 'linux') &&
+    typeof process.getuid === 'function' &&
+    process.getuid() === 0;
+  if (!isUnixRoot) return null;
+
+  const home = process.env.HOME;
+  if (home && home !== '/root' && home !== '/var/root') return home;
+
+  const sudoUser = process.env.SUDO_USER;
+  if (sudoUser && sudoUser !== 'root') {
+    const fromPasswd = lookupHomeFromPasswd(sudoUser);
+    if (fromPasswd) return fromPasswd;
+    if (process.platform === 'darwin') return `/Users/${sudoUser}`;
   }
-
-  // 获取 Electron 默认的 userData 路径
-  let userDataPath = app.getPath('userData');
-
-  // 检查是否在 macOS 上以 root 运行
-  if (process.platform === 'darwin' && process.getuid && process.getuid() === 0) {
-    // 尝试从环境变量获取真实用户
-    const sudoUser = process.env.SUDO_USER;
-    const homeDir = process.env.HOME;
-
-    if (sudoUser) {
-      // 通过 SUDO_USER 构建正确的路径
-      const realUserHome = `/Users/${sudoUser}`;
-      const appName = app.getName() || 'FlowZ';
-      userDataPath = path.join(realUserHome, 'Library/Application Support', appName);
-    } else if (homeDir && homeDir.startsWith('/Users/')) {
-      // 通过 HOME 环境变量获取
-      const appName = app.getName() || 'FlowZ';
-      // 提取用户名
-      const match = homeDir.match(/^\/Users\/([^/]+)/);
-      if (match) {
-        userDataPath = path.join('/Users', match[1], 'Library/Application Support', appName);
-      }
-    }
-  }
-
-  // 缓存路径
-  cachedUserDataPath = userDataPath;
-
-  return userDataPath;
+  return null;
 }
 
 /**
- * 设置用户数据路径（应在应用启动时尽早调用）
- * 这确保即使后来以 root 运行部分代码，也能使用正确的路径，
- * 并且在便携模式下，Electron 的内部数据也能正确重定向。
+ * 解析 /etc/passwd 文本，取 username 的家目录（第 6 字段 home）。纯函数（IO 分离，便于单测）。
+ * 跳过注释行 / 空行 / 字段不足；精确匹配用户名；兼容 usermod -d 的非标准家目录。
+ */
+export function parsePasswdHome(content: string, username: string): string | null {
+  for (const line of content.split('\n')) {
+    if (!line || line.startsWith('#')) continue;
+    const f = line.split(':'); // name:passwd:uid:gid:gecos:home:shell
+    if (f[0] === username && f[5]) return f[5];
+  }
+  return null;
+}
+
+/** 从 /etc/passwd 取用户名对应家目录（同步、零依赖）；无文件 / 读失败 / 查不到返回 null。 */
+function lookupHomeFromPasswd(username: string): string | null {
+  try {
+    return parsePasswdHome(fs.readFileSync('/etc/passwd', 'utf8'), username);
+  } catch {
+    return null; // 无 /etc/passwd（如 macOS 常规用户）或读取失败 → 由调用方回退
+  }
+}
+
+/**
+ * root 提权修正后的 userData 路径；非提权 / 解析失败返回 null。
+ * 与 Electron 默认布局一致：macOS=~/Library/Application Support/<app>，Linux=~/.config/<app>（XDG）。
+ */
+function resolveElevatedUserDataPath(): string | null {
+  const realHome = resolveElevatedRealHome();
+  if (!realHome) return null;
+  const appName = app.getName() || 'FlowZ';
+  return process.platform === 'darwin'
+    ? path.join(realHome, 'Library/Application Support', appName)
+    : path.join(realHome, '.config', appName);
+}
+
+/**
+ * 获取正确的用户数据路径。
+ *
+ * 以 root 运行时 app.getPath('userData') 解析到 /var/root（mac）或 /root（Linux），需回退真实用户家目录，
+ * 否则内核 / 配置 / marker 等跨用户目录分裂。修正与缓存由 initUserDataPath() 统一完成（便携 / root / 默认
+ * 三态，见其说明）；此处缓存未命中即委托它（而非另写一套优先级），保证两入口单一真值、不漏便携分支。
+ */
+export function getUserDataPath(): string {
+  if (!cachedUserDataPath) {
+    initUserDataPath();
+  }
+  return cachedUserDataPath ?? app.getPath('userData');
+}
+
+/** 把路径下沉给 Electron（必须在 app.requestSingleInstanceLock() 之前调用）。 */
+function applyUserDataPath(p: string): void {
+  try {
+    app.setPath('userData', p);
+  } catch (e) {
+    console.error('[Paths] Failed to set userData path:', e);
+  }
+}
+
+/**
+ * 设置用户数据路径（应在应用启动时尽早调用：index.ts 模块加载即调用，早于任何 service 构造）。
+ *
+ * 三态，命中便携 / root 修正时均 setPath 下沉给 Electron，使后续所有 app.getPath('userData')（含 paths
+ * 之外 ~13 处直接调用的消费点）自动统一到正确路径：
+ *  - 便携模式：重定向到可执行文件同级 data 目录；
+ *  - root 提权：回退真实用户家目录。根治：原 root 修正在 getUserDataPath 内，但本函数在模块加载即把
+ *    app.getPath('userData') 缓存死，getUserDataPath 的修正被 cache 屏蔽、从不执行——已用单测坐实；
+ *  - 普通用户：用 Electron 默认。
  */
 export function initUserDataPath(): void {
-  if (!cachedUserDataPath) {
-    // 优先尝试便携模式路径
-    const portablePath = getPortableDataPath();
-    if (portablePath) {
-      cachedUserDataPath = portablePath;
-
-      // 确保便携版数据目录存在
-      if (!fs.existsSync(cachedUserDataPath)) {
-        try {
-          fs.mkdirSync(cachedUserDataPath, { recursive: true });
-        } catch (e) {
-          console.error('[Paths] Failed to create portable data directory:', e);
-        }
-      }
-
-      // 核心：将 Electron 的 userData 路径重定向到便携目录
-      // 注意：这必须在 app.requestSingleInstanceLock() 之前调用
-      try {
-        app.setPath('userData', cachedUserDataPath);
-      } catch (e) {
-        console.error('[Paths] Failed to set userData path:', e);
-      }
-    } else {
-      // 在应用启动时（普通用户身份）缓存路径
-      cachedUserDataPath = app.getPath('userData');
-    }
+  if (cachedUserDataPath) {
+    return;
   }
+
+  // 1) 便携模式优先
+  const portablePath = getPortableDataPath();
+  if (portablePath) {
+    cachedUserDataPath = portablePath;
+    // 确保便携版数据目录存在
+    if (!fs.existsSync(cachedUserDataPath)) {
+      try {
+        fs.mkdirSync(cachedUserDataPath, { recursive: true });
+      } catch (e) {
+        console.error('[Paths] Failed to create portable data directory:', e);
+      }
+    }
+    applyUserDataPath(cachedUserDataPath);
+    return;
+  }
+
+  // 2) root 提权修正：下沉 setPath 统一全栈消费点（消除 ~13 处 app.getPath('userData') 绕过）
+  const elevated = resolveElevatedUserDataPath();
+  if (elevated) {
+    cachedUserDataPath = elevated;
+    applyUserDataPath(cachedUserDataPath);
+    return;
+  }
+
+  // 3) 普通用户：缓存 Electron 默认
+  cachedUserDataPath = app.getPath('userData');
 }
 
 /**
