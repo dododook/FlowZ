@@ -141,11 +141,12 @@ describe('LinuxSystemProxy 跨平台一致性（R6 High/Medium）+ 注入收口�
       expect(hasCall(calls, 'mode', 'manual')).toBe(true);
       expect(hasCall(calls, 'org.gnome.system.proxy.http', 'host', '1.2.3.4')).toBe(true);
       expect(hasCall(calls, 'org.gnome.system.proxy.http', 'port', '8080')).toBe(true);
-      // https/socks 同 host:port 一并恢复（三 schema 全覆盖）
-      expect(hasCall(calls, 'org.gnome.system.proxy.https', 'host', '1.2.3.4')).toBe(true);
-      expect(hasCall(calls, 'org.gnome.system.proxy.https', 'port', '8080')).toBe(true);
-      expect(hasCall(calls, 'org.gnome.system.proxy.socks', 'host', '1.2.3.4')).toBe(true);
-      expect(hasCall(calls, 'org.gnome.system.proxy.socks', 'port', '8080')).toBe(true);
+      // capture-three（#2）：原快照仅 http → 不把 http 值扇出到未设的 https/socks（防假 socks）
+      expect(hasCall(calls, 'org.gnome.system.proxy.https', 'host', '1.2.3.4')).toBe(false);
+      expect(hasCall(calls, 'org.gnome.system.proxy.socks', 'host', '1.2.3.4')).toBe(false);
+      // Low-1 收口：原本未设的 https/socks 被显式清空（host=''），撤销 enable 期写入的 FlowZ 死端口残留
+      expect(hasCall(calls, 'org.gnome.system.proxy.https', 'host', '')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.socks', 'host', '')).toBe(true);
       expect(hasCall(calls, 'mode', 'none')).toBe(false);
       expect(fs.existsSync(MARKER_PATH)).toBe(false);
     });
@@ -186,6 +187,36 @@ describe('LinuxSystemProxy 跨平台一致性（R6 High/Medium）+ 注入收口�
       // 负向护栏：完全不走 exec（字符串 /bin/sh -c）路径——恶意串绝无机会被 shell 解释
       expect(execMock).not.toHaveBeenCalled();
     });
+
+    it('#2：三 schema 各有快照 → 各自恢复（不丢、不串值）', async () => {
+      const proxy = new LinuxSystemProxy();
+      (proxy as unknown as { originalSettings: unknown }).originalSettings = {
+        enabled: true,
+        httpProxy: '1.1.1.1:80',
+        httpsProxy: '2.2.2.2:443',
+        socksProxy: '3.3.3.3:1080',
+      };
+      const calls = recordExecFileSet();
+      await proxy.disableProxy();
+      expect(hasCall(calls, 'org.gnome.system.proxy.http', 'host', '1.1.1.1')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.http', 'port', '80')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.https', 'host', '2.2.2.2')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.https', 'port', '443')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.socks', 'host', '3.3.3.3')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.socks', 'port', '1080')).toBe(true);
+    });
+
+    it('#4：裸 IPv6 host 正确拆分恢复（::1:8080 → host=::1, port=8080）', async () => {
+      const proxy = new LinuxSystemProxy();
+      (proxy as unknown as { originalSettings: unknown }).originalSettings = {
+        enabled: true,
+        httpProxy: '::1:8080',
+      };
+      const calls = recordExecFileSet();
+      await proxy.disableProxy();
+      expect(hasCall(calls, 'org.gnome.system.proxy.http', 'host', '::1')).toBe(true);
+      expect(hasCall(calls, 'org.gnome.system.proxy.http', 'port', '8080')).toBe(true);
+    });
   });
 
   describe('disableProxySync（同步，R6-H1-2）— 关机新建实例从 marker 读回恢复（execFileSync argv）', () => {
@@ -217,6 +248,18 @@ describe('LinuxSystemProxy 跨平台一致性（R6 High/Medium）+ 注入收口�
       const calls = recordExecFileSync();
       proxy.disableProxySync();
       expect(hasCall(calls, 'mode', 'none')).toBe(true);
+    });
+
+    it('Nit-1：关机 gsettings 全失败 → 保留 marker（不丢回滚信号）', () => {
+      writeMarkerWithSnapshot('127.0.0.1:7890', { enabled: true, httpProxy: '10.0.0.1:3128' });
+      // 关机时 gsettings/DBus 不可用：所有 execFileSync 抛错 → gsettingsOk 恒 false
+      execFileSyncMock.mockImplementation(() => {
+        throw new Error('gsettings unavailable at shutdown');
+      });
+      const proxy = new LinuxSystemProxy();
+      proxy.disableProxySync();
+      // 全部 gset 失败 → 不清 marker，保留（含持久化 originalSettings）供下次启动重试恢复
+      expect(fs.existsSync(MARKER_PATH)).toBe(true);
     });
   });
 });
