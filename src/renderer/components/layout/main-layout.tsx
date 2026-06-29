@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Sidebar } from './sidebar';
-import { LinuxTitlebar } from './linux-titlebar';
+import { LinuxWindowControls } from './linux-titlebar';
+import { api } from '@/ipc/api-client';
 
 interface MainLayoutProps {
   currentView: string;
@@ -12,7 +13,7 @@ interface MainLayoutProps {
 
 const isMac = window.electron?.platform === 'darwin';
 const isWindows = window.electron?.platform === 'win32';
-const isLinux = !isMac && !isWindows; // Linux frameless → 自绘 LinuxTitlebar（替代原生标题栏）
+const isLinux = !isMac && !isWindows; // Linux frameless → 右上自绘窗口控制按钮（替代系统 titleBarOverlay）
 
 export function MainLayout({
   currentView,
@@ -22,29 +23,33 @@ export function MainLayout({
   children,
 }: MainLayoutProps) {
   return (
-    <div className="flex flex-col h-screen w-full overflow-hidden app-shell">
-      {/* Linux frameless：整窗顶部**全宽**自绘标题栏（在 sidebar+内容之上），脱离内容卡的 border/圆角，
-          避免窗口控制按钮背景与卡角重叠；Mac/Win 不走此分支（用各自原生标题栏方案）。 */}
-      {isLinux && <LinuxTitlebar />}
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          currentView={currentView}
-          onViewChange={onViewChange}
-          settingsSection={settingsSection}
-          onSettingsSectionChange={onSettingsSectionChange}
-        />
-        <main className="flex-1 overflow-auto flex flex-col relative z-10 main-content-card transition-all duration-300">
-          {/* 集成标题栏拖拽区：Mac(hiddenInset) h-9；Windows(titleBarOverlay 按钮在右上) 32px。Linux 已在顶部全宽条。 */}
-          {isMac && <div className="h-9 flex-shrink-0 app-region-drag" />}
-          {isWindows && <div className="h-[32px] flex-shrink-0 app-region-drag" />}
+    <div className="flex h-screen w-full overflow-hidden app-shell relative">
+      <Sidebar
+        currentView={currentView}
+        onViewChange={onViewChange}
+        settingsSection={settingsSection}
+        onSettingsSectionChange={onSettingsSectionChange}
+      />
+      <main className="flex-1 overflow-auto flex flex-col relative z-10 main-content-card transition-all duration-300">
+        {/* 集成标题栏拖拽区：Mac(hiddenInset) h-9；Windows(titleBarOverlay)/Linux(右上自绘按钮) 同高 32px。 */}
+        {isMac && <div className="h-9 flex-shrink-0 app-region-drag" />}
+        {(isWindows || isLinux) && (
           <div
-            className="container mx-auto px-6 pb-6 app-region-no-drag max-w-[1400px]"
-            style={{ paddingTop: isLinux ? '24px' : '0' }}
-          >
-            {children}
-          </div>
-        </main>
-      </div>
+            className="h-[32px] flex-shrink-0 app-region-drag"
+            // Linux frameless：拖拽区双击最大化由显式 IPC 保证（不赌 WM 原生处理 app-region 双击）；
+            // Windows 由系统 titleBarOverlay 处理，不加 handler 避免双重触发。
+            onDoubleClick={
+              isLinux ? () => void api.window.maximizeToggle().catch(() => {}) : undefined
+            }
+          />
+        )}
+        <div className="container mx-auto px-6 pb-6 app-region-no-drag max-w-[1400px]">
+          {children}
+        </div>
+      </main>
+      {/* Linux 无系统 titleBarOverlay → 自绘窗口控制按钮，绝对定位窗口右上角（与 Windows 系统按钮同位、同 32px 高），
+          相对 app-shell 固定不随内容滚动；嵌入卡片右上直角区，与 Windows 嵌入式视觉统一（不再全宽标题条）。 */}
+      {isLinux && <LinuxWindowControls />}
     </div>
   );
 }

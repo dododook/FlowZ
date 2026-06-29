@@ -39,6 +39,7 @@ function FlowSplitIcon(props: any) {
   );
 }
 import { useTranslation } from 'react-i18next';
+import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import { useSidebarStore } from './use-sidebar-store';
 
@@ -84,7 +85,7 @@ const settingsNavItems = [
 ];
 
 const isMac = window.electron?.platform === 'darwin';
-const isWindows = window.electron?.platform === 'win32';
+const isLinux = window.electron?.platform === 'linux';
 
 // 折叠 icon-rail 分隔线（toggle↓导航 + routing/diagnostics 分组前共用）：bg-muted-foreground/40
 // 跨浅(#e9eef3)/深(#1f252e)主题对比适中、不刺眼；旧 bg-border/50 因 border 色贴近两主题背景、再砍半透明 → 几乎隐形。
@@ -137,13 +138,17 @@ export function Sidebar({
     <div
       className={`${collapsed ? railWidth : 'w-[184px]'} sidebar h-full flex flex-col relative z-20 select-none transition-[width] duration-300 ease-out`}
     >
-      {/* 集成标题栏顶部条：Mac 让出红绿灯(52)、Windows 让出覆盖层按钮(32)、可拖窗；Linux 默认边框。 */}
+      {/* 集成标题栏顶部条：Mac 让出红绿灯(52)、Windows/Linux 让出右上窗口控制按钮(32)、可拖窗。 */}
       {isMac ? (
         <div className="h-[52px] flex-shrink-0 app-region-drag" />
-      ) : isWindows ? (
-        <div className="h-[32px] flex-shrink-0 app-region-drag" />
       ) : (
-        <div className="h-4 flex-shrink-0" />
+        <div
+          className="h-[32px] flex-shrink-0 app-region-drag"
+          // Linux frameless：拖拽区双击最大化由显式 IPC 保证（与 main 顶部对称，覆盖侧栏顶部双击）。
+          onDoubleClick={
+            isLinux ? () => void api.window.maximizeToggle().catch(() => {}) : undefined
+          }
+        />
       )}
 
       {/* 折叠 toggle：独立一行置于顶部条下方。
