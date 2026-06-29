@@ -2837,6 +2837,13 @@ done
 
   /** 自定义协议兼容性 probe 的结果缓存：键 = 内核身份(版本) + outbound 规范化哈希；换核（版本变）键变、天然失效。 */
   private probeCache = new Map<string, { ok: boolean; error?: string }>();
+  // probeCache 上限（性能 review M1 / issue #210 OOM 审计 Low #1）：原无上限，每次内核升级(binId 变) +
+  // 节点反复编辑(新 sha1)产生新 key，旧 key 永不清除 → 慢速泄漏。2048 覆盖真实长会话工作集
+  // （大订阅 300-500 节点 + 多次换核/编辑累积，实测 ~1130 key），单条结果对象仅 ~150 字节（2048 条 ~300KB），
+  // 内存代价可忽略，换取高命中率——未命中意味着重新 spawn sing-box check 子进程（50-300ms，批量 probe 可感）。
+  // 上限本质是"防极端泄漏的安全网"，长期更优解是随核切换主动清理旧 binId 的 key（后续优化）。
+  // 超限按插入序驱逐最旧（近似 LRU，与 StatsService.connMap 同模式）。
+  private static readonly MAX_PROBE_CACHE = 2048;
 
   /**
    * 用当前内核 probe 一个 outbound/endpoint 是否被支持（自定义协议门控的单一真值 = 内核本身）：
@@ -2905,6 +2912,12 @@ done
       }
     }
     this.probeCache.set(key, result);
+    // 性能 review M1：probeCache 超上限驱逐最旧（近似 LRU）。Map 保持插入序，keys().next() 取最旧。
+    while (this.probeCache.size > ProxyManager.MAX_PROBE_CACHE) {
+      const oldest = this.probeCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.probeCache.delete(oldest);
+    }
     return result;
   }
 
@@ -4857,6 +4870,32 @@ exit 0
   }
 
   /**
+   * 异步版进程探活（性能 review M2）。原 isProcessAlive 用 execSync 同步阻塞 event loop——
+   * performHealthCheck 每 10s 调一次，Windows tasklist ~50-100ms/次 → 周期性主进程卡顿（拖拽/动画可感）。
+   * 本方法用 execFileAsync 不阻塞，仅供 performHealthCheck（周期热路径）用；同步清理/kill 链仍用 isProcessAlive
+   * （那些是进程已死/停止路径，同步语义 + 短暂阻塞可接受）。判定逻辑与 isProcessAlive 严格一致。
+   */
+  private async isProcessAliveAsync(pid: number): Promise<boolean> {
+    const execFileAsync = require('util').promisify(require('child_process').execFile);
+    try {
+      if (process.platform === 'win32') {
+        const { stdout } = await execFileAsync(system32('tasklist.exe'), [
+          '/FI',
+          `PID eq ${pid}`,
+          '/NH',
+        ]);
+        const result = String(stdout);
+        return !result.includes('No tasks') && result.includes(String(pid));
+      } else {
+        const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'pid=']);
+        return String(stdout).trim() === String(pid);
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 启动健康检查定时器
    */
   private startHealthCheck(): void {
@@ -4865,7 +4904,10 @@ exit 0
     }
 
     this.healthCheckTimer = setInterval(() => {
-      this.performHealthCheck();
+      // performHealthCheck 现为 async（性能 review M2 异步探活），fire-and-forget 显式吞 rejection
+      // 避免边角路径（BrowserWindow 已销毁等）变 unhandledRejection（review Medium-1）。对齐项目既有
+      // void this.x().catch() 规约（index.ts:1370/1373）。全局 unhandledRejection 兜底已防 crash。
+      void this.performHealthCheck().catch(() => {});
     }, ProxyManager.HEALTH_CHECK_INTERVAL);
 
     this.logToManager('debug', '已启动进程健康检查');
@@ -4884,7 +4926,7 @@ exit 0
   /**
    * 执行健康检查
    */
-  private performHealthCheck(): void {
+  private async performHealthCheck(): Promise<void> {
     // 如果正在重启中，跳过检查
     if (this.isRestarting) {
       return;
@@ -4899,7 +4941,8 @@ exit 0
       return;
     }
 
-    if (!this.isProcessAlive(activePid)) {
+    // 性能 review M2：改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。
+    if (!(await this.isProcessAliveAsync(activePid))) {
       // 尝试获取更多退出信息
       const exitInfo = this.getProcessExitInfo();
       this.logToManager(

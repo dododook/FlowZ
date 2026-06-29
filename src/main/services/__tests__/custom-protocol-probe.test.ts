@@ -157,3 +157,40 @@ describe('probeOutbound — 内核即权威 verdict', () => {
     expect(mockExecFile).not.toHaveBeenCalled();
   });
 });
+
+describe('probeCache LRU 上限（性能 review M1）', () => {
+  it('超 MAX_PROBE_CACHE 上限驱逐最旧（真实 probeOutbound 驱动，约束实现驱逐逻辑）', async () => {
+    const pm = freshPm();
+    const MAX = (ProxyManager as any).MAX_PROBE_CACHE as number;
+    expect(MAX).toBeGreaterThan(0);
+
+    // 真实 probeOutbound 驱动（不同 server_port → 不同 sha1 key），不复制实现驱逐逻辑——
+    // 若实现驱逐改成"删最新/漏 while/边界 off-by-one"，本测试会红（R2 review L1：原隔离测试零约束）。
+    // mock execFile 同步回调，单次 probe <1ms，MAX+20 次（2068）远不至超时。
+    mockExecFile.mockImplementation((...args: any[]) => cbOf(args)(null, '', ''));
+    const total = MAX + 20;
+    for (let i = 1; i <= total; i++) {
+      await pm.probeOutbound({ ...SNELL, server_port: 10000 + i }, false);
+    }
+    // probeCache.size 不超上限（实现的 while 驱逐生效）
+    expect(pm.probeCache.size).toBe(MAX);
+    // 最近 probe 的（port 10000+total）应在缓存
+    expect(await pm.probeOutbound({ ...SNELL, server_port: 10000 + total }, false)).toMatchObject({
+      ok: true,
+    });
+  }, 30000); // MAX=2048 次真实 probe 需更宽松超时（每次含 sha1+tmp 写，~1ms×2068≈2-3s）
+
+  it('probeOutbound 实际命中缓存（不重复 spawn check）', async () => {
+    mockExecFile.mockReset(); // 隔离前一个 case 的 mock 状态
+    mockExecFile.mockImplementation((...args: any[]) => cbOf(args)(null, '', ''));
+    const pm = freshPm();
+    // 首次 probe：触发 check
+    await pm.probeOutbound(SNELL, false);
+    expect(mockExecFile).toHaveBeenCalledTimes(1);
+    // 再次 probe 同一 outbound：应命中缓存，不再 check
+    mockExecFile.mockClear();
+    const r = await pm.probeOutbound(SNELL, false);
+    expect(r.ok).toBe(true);
+    expect(mockExecFile).not.toHaveBeenCalled();
+  });
+});
