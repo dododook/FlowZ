@@ -6,7 +6,8 @@
 import { BrowserWindow, shell, powerMonitor } from 'electron';
 import { notifyUser } from '../notify-user';
 import { mt } from '../i18n';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, execFile } from 'child_process';
+import { promisify } from 'util';
 import { system32, powershellPath } from '../utils/win-system32';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -124,6 +125,10 @@ const PRIVATE_IP_PATTERNS = [
   /\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}/,
   /\b169\.254\.\d{1,3}\.\d{1,3}/,
 ];
+
+// 性能 review M2：promisify(execFile) 提到模块级——isProcessAliveAsync 是每 10s 的周期热路径，
+// 不应每次调用都内联 require('util').promisify(require('child_process').execFile) 重建包装。
+const healthProbeExecFile = promisify(execFile);
 
 /**
  * 从 sing-box `check` 的 stderr 解析出错出站的数组下标。覆盖两种措辞：
@@ -4876,10 +4881,9 @@ exit 0
    * （那些是进程已死/停止路径，同步语义 + 短暂阻塞可接受）。判定逻辑与 isProcessAlive 严格一致。
    */
   private async isProcessAliveAsync(pid: number): Promise<boolean> {
-    const execFileAsync = require('util').promisify(require('child_process').execFile);
     try {
       if (process.platform === 'win32') {
-        const { stdout } = await execFileAsync(system32('tasklist.exe'), [
+        const { stdout } = await healthProbeExecFile(system32('tasklist.exe'), [
           '/FI',
           `PID eq ${pid}`,
           '/NH',
@@ -4887,7 +4891,7 @@ exit 0
         const result = String(stdout);
         return !result.includes('No tasks') && result.includes(String(pid));
       } else {
-        const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'pid=']);
+        const { stdout } = await healthProbeExecFile('ps', ['-p', String(pid), '-o', 'pid=']);
         return String(stdout).trim() === String(pid);
       }
     } catch {
