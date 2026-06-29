@@ -244,7 +244,12 @@ export class WindowsSystemProxy extends SystemProxyBase {
           // 代理覆盖（忽略代理列表）= 用户配置的 bypass 清单（缺省业内聚合清单，含私网/保留段 + Apple 连通性 +
           // 国内会被代理打断的 App/网银）。Windows ProxyOverride 不支持 CIDR → CIDR 转通配（v6 CIDR 跳过）、域名原样、补 <local>。
           // 对齐 Clash/Stash 系：保存原列表→开启写入→关闭还原（restoreProxySettings 负责还原）。
-          const proxyOverride = formatBypassForWindows(bypassList ?? []);
+          const proxyOverride = formatBypassForWindows(bypassList ?? [], (e) =>
+            this.log(
+              'warn',
+              `Windows 代理 bypass 含 cmd 非法字符，已跳过该项（不静默改写主机名）: ${e}`
+            )
+          );
           await execAsync(
             `"${this.regExe}" add "${this.regPath}" /v ProxyOverride /t REG_SZ /d "${proxyOverride}" /f`
           );

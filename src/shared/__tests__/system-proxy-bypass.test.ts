@@ -142,21 +142,39 @@ describe('formatBypassForWindows', () => {
     expect(parts).toContain('<local>');
   });
 
-  it('攻击面 M1：白名单剥 cmd 元字符（防 ProxyOverride/参数边界注入）', () => {
-    const out = formatBypassForWindows([
-      'evil";injected', // " 破坏 reg /d "..." 边界
-      'a.com;b.com', // ; 拆出额外分隔项
-      'a&calc', // & cmd 引号内命令分隔
-      'a|whoami', // | cmd 管道
-      'a%PATH%b', // % 环境变量展开
-      'normal.com',
-    ]);
+  it('攻击面 M1：含 cmd 元字符/非法字符的项整项跳过 + 告警（不逐字符剥除改写主机名）', () => {
+    const skipped: string[] = [];
+    const out = formatBypassForWindows(
+      [
+        'evil";injected', // " 破坏 reg /d "..." 边界
+        'a.com;b.com', // ; 拆出额外分隔项
+        'a&calc', // & cmd 引号内命令分隔
+        'a|whoami', // | cmd 管道
+        'a%PATH%b', // % 环境变量展开
+        'intra_net', // _ 非法 → 整项跳过，绝不静默改写成 intranet（路由到错误主机）
+        'normal.com',
+      ],
+      (e) => skipped.push(e)
+    );
     const parts = out.split(';');
-    // 白名单只留 [a-zA-Z0-9.\-*:/<>()]，cmd 元字符全部被剥
-    expect(parts.some((p) => p.includes('"'))).toBe(false);
-    expect(parts.some((p) => p.includes('&'))).toBe(false);
-    expect(parts.some((p) => p.includes('|'))).toBe(false);
-    expect(parts.some((p) => p.includes('%'))).toBe(false);
+    // cmd 元字符不出现在输出
+    expect(
+      parts.some((p) => p.includes('"') || p.includes('&') || p.includes('|') || p.includes('%'))
+    ).toBe(false);
+    // 整项跳过：不产生被逐字符剥除后的残体（旧实现会留 evilinjected / intranet → 路由到错误主机）
+    expect(parts).not.toContain('evilinjected');
+    expect(parts).not.toContain('intranet');
+    // onUnsafe 收到全部被跳过的非法项（告警可见，不静默篡改）
+    expect(skipped).toEqual(
+      expect.arrayContaining([
+        'evil";injected',
+        'a.com;b.com',
+        'a&calc',
+        'a|whoami',
+        'a%PATH%b',
+        'intra_net',
+      ])
+    );
     // 合法输入保留
     expect(parts).toContain('normal.com');
     expect(parts).toContain('<local>');

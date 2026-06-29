@@ -122,19 +122,20 @@ export function formatBypassForMac(list: string[]): string[] {
  * Windows ProxyOverride 串（分号分隔）：IPv4 CIDR→通配、v6 CIDR 跳过（Win 例外不擅长 v6 通配）、
  * 域名/通配/精确项原样、补 `<local>`。真机待验（输出/匹配语义）。
  */
-export function formatBypassForWindows(list: string[]): string {
+export function formatBypassForWindows(list: string[], onUnsafe?: (entry: string) => void): string {
   const out: string[] = [];
-  // 攻击面 review M1（白名单兜底）：Windows ProxyOverride 经 execAsync（cmd /c shell）写入，cmd 双引号内
-  // &|<>^% 仍是元字符（与 POSIX 不同），黑名单逐个剥易漏。改白名单：仅保留 bypass 合法字符
-  //（域名/CIDR/通配 *.x/<local>/IPv6 冒号/括号），其余一律剥除。bypass 项本不该含 shell 元字符，无损合法输入。
-  const SAFE = /[a-zA-Z0-9.\-*:/<>()]/;
+  // 攻击面 review M1：Windows ProxyOverride 经 execAsync（cmd /c shell）写入，cmd 双引号内 &|<>^% 仍是
+  // 元字符（与 POSIX 不同）。白名单校验 bypass 合法字符（域名/CIDR/通配 *.x/<local>/IPv6 冒号/括号）；
+  // 含非法字符的项**整项跳过并告警**（onUnsafe），不逐字符剥除——剥除会把 intra_net 静默改写成 intranet
+  // 等悄悄路由到错误主机；整项跳过则该项不进 bypass（其流量走代理，fail-safe），告警可见、不静默篡改。
+  const UNSAFE = /[^a-zA-Z0-9.\-*:/<>()]/;
   for (const raw of list) {
-    const t = raw
-      .trim()
-      .split('')
-      .filter((ch) => SAFE.test(ch))
-      .join('');
+    const t = raw.trim();
     if (!t) continue;
+    if (UNSAFE.test(t)) {
+      onUnsafe?.(t);
+      continue;
+    }
     if (isIpv4Cidr(t)) {
       out.push(...ipv4CidrToWindowsPatterns(t));
     } else if (isIpv6Cidr(t)) {
