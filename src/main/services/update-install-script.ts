@@ -95,6 +95,41 @@ export function buildLinuxAppImageScript(opts: {
 }
 
 /**
+ * Linux deb 安装态原位升级脚本：`pkexec apt-get install` 原位升级（apt 比较版本 + 解依赖 + 同包名升级，dpkg 同
+ * 路径覆盖）+ 重启新版。取代旧 `shell.openPath(.deb)`——Ubuntu 24.04+ 默认 .deb 处理器是 App Center，对本地 .deb
+ * 只按【包名】判「已安装」、不比较版本、不提供升级流程（已装即显示 Installed 灰按钮，deb 用户无法 app 内升级）。
+ * data 在 `~/.config/FlowZ` 独立于产物 → 升级零丢失。提权用 pkexec（PolicyKit GUI 授权框，Ubuntu 标准；app 已
+ * 退出，框独立弹出）；用户取消/失败 → 回退 `xdg-open` 下载目录让用户手动处理（不回退 openPath→App Center 死路）。
+ *
+ * 信任边界（review Med-1）：本脚本以 root 自动安装【下载的 deb】，信任源 = GitHub HTTPS release（与 core/AppImage
+ * 更新同边界）。未对下载件做 sha256 比对——完整性靠 HTTPS 传输；旧 openPath 行为同样安装未校验 deb，仅多一步用户手动
+ * 确认，信任源不变（仍是同一 release 资产）。sha256 校验作为后续统一增强（覆盖 deb/AppImage/core 三类下载件），不在本
+ * PR 范围；调用方仅在「形态为 .deb」时才走本脚本（见 installUpdate 的 .deb 守卫，Med-2）。
+ */
+export function buildLinuxDebScript(opts: { installerPath: string; exePath: string }): string {
+  const deb = shq(opts.installerPath);
+  const exe = shq(opts.exePath);
+  return [
+    '#!/bin/bash',
+    'sleep 2',
+    `DEB=${deb}`,
+    `EXE=${exe}`,
+    // apt-get install 本地 deb（apt 1.1+ 支持绝对路径 deb）：解依赖 + 同包名版本升级。-y 免交互确认（apt 层）。
+    // -o Dpkg::Options::=--force-conf*：无 tty/detached 下若 deb 含 conffile 冲突，保留旧配置不阻断 install
+    // （Electron 应用通常无 conffiles，防御性，review Low-1）。pkexec 弹 PolicyKit GUI 授权框（root 提权）。
+    // 成功 → 删临时 deb + 从原 exe 路径启动新版（dpkg 同路径覆盖）。
+    'if pkexec apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$DEB"; then',
+    '  rm -f "$DEB" 2>/dev/null',
+    '  nohup "$EXE" >/dev/null 2>&1 &',
+    'else',
+    // 用户取消授权 / apt 失败 → 打开下载目录让用户手动（不回退 openPath，那会落回 App Center「Installed 无升级」死路）。
+    '  xdg-open "$(dirname "$DEB")" >/dev/null 2>&1 &',
+    'fi',
+    '',
+  ].join('\n');
+}
+
+/**
  * macOS 更新脚本（原子替换，避免 DMG 累积）。appBundlePath 非空=自动替换 .app；为空（定位不到 .app）=回退 open DMG。
  * 提权策略：先**无提权** mv 原子替换（/Applications 对 admin 用户组可写，绝大多数免密码）；失败才 osascript 一次性
  * 管理员授权（系统原生密码框，**不依赖常驻 helper**）。

@@ -22,6 +22,7 @@ import { UpdateNetwork } from './UpdateNetwork';
 import {
   buildWindowsUpdateVbs,
   buildLinuxAppImageScript,
+  buildLinuxDebScript,
   buildMacUpdateScript,
   macAppBundleFromExe,
 } from './update-install-script';
@@ -333,19 +334,39 @@ export class UpdateService {
         }, 1000);
       } else {
         // Linux: AppImage(loose, $APPIMAGE) → 覆盖原 AppImage 原位更新 + 重启（只换文件、不碰 ~/.config）；
-        // deb(installed) → 交 dpkg/GUI 安装器原位升级（openPath，原行为）。
+        // deb(installed) → pkexec apt-get install 原位升级 + 重启（取代旧 shell.openPath(.deb)：Ubuntu 24.04+
+        // 默认 .deb 处理器 App Center 对本地 deb 不做版本升级、只显示 Installed，见 buildLinuxDebScript）。
+        // 两路统一走 spawn detached bash 脚本（不再依赖系统默认 .deb 关联）。
         const appImageTarget = process.env.APPIMAGE || null;
-        if (appImageTarget && installerPath.endsWith('.AppImage')) {
+        const isAppImage = !!appImageTarget && installerPath.endsWith('.AppImage');
+        // deb 脚本严格按【运行形态 + 资产形态】双守卫（review Med-2）：仅「非 AppImage 运行（=deb 安装态）+ .deb 资产」
+        // 才走 root apt 安装。杜绝「AppImage(loose) 用户因 release 只发 deb 被跨形态兜底选中 → 被 system-wide 装 deb」。
+        const isDeb = !appImageTarget && installerPath.endsWith('.deb');
+        if (isAppImage || isDeb) {
           const { spawn } = require('child_process');
           const scriptPath = path.join(app.getPath('temp'), 'flowz_update.sh');
-          const scriptContent = buildLinuxAppImageScript({ installerPath, appImageTarget });
+          const scriptContent = isAppImage
+            ? buildLinuxAppImageScript({ installerPath, appImageTarget: appImageTarget as string })
+            : buildLinuxDebScript({ installerPath, exePath: app.getPath('exe') });
           fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
           const child = spawn('/bin/bash', [scriptPath], { detached: true, stdio: 'ignore' });
           child.unref();
-          this.logManager.addLog('info', `AppImage 原位更新: ${appImageTarget}`, 'UpdateService');
+          this.logManager.addLog(
+            'info',
+            isAppImage
+              ? `AppImage 原位更新: ${appImageTarget}`
+              : 'deb 原位升级（pkexec apt-get install + 重启）',
+            'UpdateService'
+          );
         } else {
+          // 形态错配（AppImage 运行却拿到 .deb / deb 态拿到 .AppImage 等跨形态兜底）：不强制 root 安装，回退交系统
+          // 处理（openPath）让用户手动决定，安全优先。
           await shell.openPath(installerPath);
-          this.logManager.addLog('info', '安装程序已启动，正在退出应用...', 'UpdateService');
+          this.logManager.addLog(
+            'warn',
+            `更新包形态与运行形态不匹配，交系统处理: ${installerPath}`,
+            'UpdateService'
+          );
         }
         setTimeout(() => {
           this.destroyTrayForExit();

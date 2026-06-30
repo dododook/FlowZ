@@ -5,6 +5,7 @@
 import {
   buildWindowsUpdateVbs,
   buildLinuxAppImageScript,
+  buildLinuxDebScript,
   buildMacUpdateScript,
   macAppBundleFromExe,
 } from '../update-install-script';
@@ -56,6 +57,29 @@ describe('buildLinuxAppImageScript', () => {
       appImageTarget: '/a/b.AppImage',
     });
     expect(s).toContain("NEW='/tmp/it'\\''s.AppImage'");
+  });
+});
+
+describe('buildLinuxDebScript', () => {
+  it('pkexec apt-get install 原位升级 + 删 deb + 重启；失败回退 xdg-open 下载目录', () => {
+    const s = buildLinuxDebScript({
+      installerPath: '/tmp/FlowZ-4.1.8.deb',
+      exePath: '/opt/FlowZ/flowz',
+    });
+    expect(s).toContain("DEB='/tmp/FlowZ-4.1.8.deb'");
+    expect(s).toContain("EXE='/opt/FlowZ/flowz'");
+    expect(s).toContain('pkexec apt-get install -y'); // apt 解依赖+版本升级（非 openPath→App Center）
+    expect(s).toContain('Dpkg::Options::=--force-confold'); // 无 tty conffile 防阻断（Low-1）
+    expect(s).toMatch(/pkexec apt-get install .*"\$DEB"/); // deb 路径作末参
+    expect(s).toContain('rm -f "$DEB"'); // 成功删临时 deb
+    expect(s).toContain('nohup "$EXE"'); // 同路径覆盖后从原 exe 启动新版
+    expect(s).toContain('xdg-open "$(dirname "$DEB")"'); // 取消/失败回退（不回 openPath）
+    expect(s.startsWith('#!/bin/bash')).toBe(true);
+  });
+
+  it('单引号路径安全转义', () => {
+    const s = buildLinuxDebScript({ installerPath: "/tmp/it's.deb", exePath: '/o/f' });
+    expect(s).toContain("DEB='/tmp/it'\\''s.deb'");
   });
 });
 

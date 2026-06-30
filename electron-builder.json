@@ -197,5 +197,8 @@
       }
     ]
   },
+  "deb": {
+    "recommends": ["policykit-1"]
+  },
   "publish": null
 }
