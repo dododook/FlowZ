@@ -136,30 +136,13 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Generate Release Notes
-        id: release_notes
-        run: |
-          if [ -f CHANGELOG.md ]; then
-            VERSION=${{ steps.version.outputs.VERSION }}
-            NOTES=$(sed -n "/## \[*${VERSION}\]*/,/## \[*/p" CHANGELOG.md | sed '$d')
-            if [ -z "$NOTES" ]; then
-              NOTES="Release $VERSION"
-            fi
-          else
-            NOTES=$(git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"- %s" || git log --pretty=format:"- %s")
-            NOTES="## What's Changed
-
-          $NOTES"
-          fi
-          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Create GitHub Release
+        # Release notes 单一来源：generate_release_notes 由 GitHub 自动从 PR 列表生成「## What's Changed」+
+        # Full Changelog。不再额外注入 body（曾与 generate_release_notes 叠加导致两个 ## What's Changed 且
+        # 与 PR 标题重复）；无需维护 CHANGELOG.md。
         uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ steps.version.outputs.VERSION }}
-          body: ${{ steps.release_notes.outputs.NOTES }}
           draft: true
           prerelease: false
           generate_release_notes: true
