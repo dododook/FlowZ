@@ -14,6 +14,7 @@ import { registerIconProtocolSchemes, registerIconProtocol } from './icon-protoc
 import { notifyUser, setDesktopNotificationsEnabled } from './notify-user';
 import { mt, setMainLanguage } from './i18n';
 import { runCliEarlyExit } from './cli-early-exit';
+import { selectPortableStaleOld } from './services/update-install-script';
 import { SubscriptionService } from './services/SubscriptionService';
 import { registerPrivacyHandlers } from './ipc/handlers/privacy-handlers';
 import {
@@ -1004,6 +1005,21 @@ if (gotTheLock) {
   registerIconProtocolSchemes();
   app.whenReady().then(async () => {
     startupMark('whenReady');
+    // Windows 便携自更新遗留的 .exe.old（旧版本被 stub 锁、上次 rename 挪开的）→ 启动期清理（此刻无进程占用，可删）。
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+      try {
+        const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+        for (const f of selectPortableStaleOld(fs.readdirSync(portableDir))) {
+          try {
+            fs.unlinkSync(path.join(portableDir, f));
+          } catch {
+            /* 仍被占用 → 下次启动再清 */
+          }
+        }
+      } catch {
+        /* readdir 失败忽略 */
+      }
+    }
     // 初始化服务
     configManager = new ConfigManager();
     protocolParser = new ProtocolParser();

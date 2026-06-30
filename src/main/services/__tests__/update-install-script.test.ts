@@ -8,31 +8,85 @@ import {
   buildLinuxDebScript,
   buildMacUpdateScript,
   macAppBundleFromExe,
+  selectPortableStaleOld,
 } from '../update-install-script';
 
 describe('buildWindowsUpdateVbs', () => {
-  const tmp = 'C:\\Users\\u\\AppData\\Local\\Temp\\FlowZ-portable.exe';
+  const tmp = 'C:\\Users\\u\\AppData\\Local\\Temp\\FlowZ-4.1.7-win-x64-portable.exe';
 
-  it('便携态：覆盖回原 exe 原位 + 启动原位 + 删临时；含覆盖失败回退', () => {
+  it('便携态（B 移入新名+删旧名）：写新版本名到原目录 + 删旧名(被锁则 rename 兜底) + 启新名 + 不静默 fallback', () => {
+    const oldExe = 'D:\\Apps\\FlowZ-4.1.5-win-x64-portable.exe';
+    const newExe = 'D:\\Apps\\FlowZ-4.1.7-win-x64-portable.exe';
+    const s = buildWindowsUpdateVbs({
+      installerPath: tmp,
+      portableTarget: oldExe,
+      portableNewPath: newExe,
+      fallbackMessage: 'UPD_FAIL_MSG',
+    });
+    // 变量赋值（双反斜杠转义）
+    expect(s).toContain('newExe = "D:\\\\Apps\\\\FlowZ-4.1.7-win-x64-portable.exe"');
+    expect(s).toContain('oldExe = "D:\\\\Apps\\\\FlowZ-4.1.5-win-x64-portable.exe"');
+    // 写新版本名文件到原目录（新名不撞锁）
+    expect(s).toContain('fso.CopyFile src, newExe, True');
+    // 旧名被 stub 锁 → DeleteFile 失败则 rename 到 .old；同名时跳过删旧
+    expect(s).toContain('LCase(oldExe) <> LCase(newExe)');
+    expect(s).toContain('fso.DeleteFile oldExe, True');
+    expect(s).toContain('fso.MoveFile oldExe, oldExe & ".old"');
+    // 启动新版本名文件
+    expect(s).toContain('WshShell.Run """" & newExe & """", 1, False');
+    // 残留 .old 清理（新旧两路径）+ newExe 预存则先 rename 挪开
+    expect(s).toContain(
+      'If fso.FileExists(newExe & ".old") Then fso.DeleteFile newExe & ".old", True'
+    );
+    expect(s).toContain(
+      'If fso.FileExists(oldExe & ".old") Then fso.DeleteFile oldExe & ".old", True'
+    );
+    expect(s).toContain('If fso.FileExists(newExe) Then fso.MoveFile newExe, newExe & ".old"');
+    // 写新名失败 fallback：跑临时 src + MsgBox（含注入文案 + 单反斜杠原路径，非双写反斜杠）
+    expect(s).toContain('WshShell.Run """" & src & """", 1, False');
+    expect(s).toContain('MsgBox "UPD_FAIL_MSG"');
+    expect(s).toContain('"C:\\Users\\u\\AppData\\Local\\Temp\\FlowZ-4.1.7-win-x64-portable.exe"');
+    expect(s).toMatch(/\r\n/); // VBS 用 CRLF
+  });
+
+  it('便携态 portableNewPath 缺省 → 退化为覆盖同名（newExe == oldExe）', () => {
     const target = 'D:\\Apps\\FlowZ.exe';
     const s = buildWindowsUpdateVbs({ installerPath: tmp, portableTarget: target });
-    // 覆盖回原 exe（双反斜杠转义）
-    expect(s).toContain(
-      'fso.CopyFile "C:\\\\Users\\\\u\\\\AppData\\\\Local\\\\Temp\\\\FlowZ-portable.exe", "D:\\\\Apps\\\\FlowZ.exe", True'
-    );
-    // 成功 → 跑原位 + 删临时
-    expect(s).toContain('WshShell.Run """D:\\\\Apps\\\\FlowZ.exe"""');
-    expect(s).toContain('If Err.Number = 0 Then');
-    expect(s).toContain('Else'); // 覆盖失败回退跑临时
-    expect(s).toMatch(/\r\n/); // VBS 用 CRLF
+    expect(s).toContain('newExe = "D:\\\\Apps\\\\FlowZ.exe"');
+    expect(s).toContain('oldExe = "D:\\\\Apps\\\\FlowZ.exe"');
   });
 
   it('NSIS 态：跑下载的 setup、无 CopyFile（原行为）', () => {
     const s = buildWindowsUpdateVbs({ installerPath: tmp, portableTarget: null });
     expect(s).toContain(
-      'WshShell.Run """C:\\\\Users\\\\u\\\\AppData\\\\Local\\\\Temp\\\\FlowZ-portable.exe"""'
+      'WshShell.Run """C:\\\\Users\\\\u\\\\AppData\\\\Local\\\\Temp\\\\FlowZ-4.1.7-win-x64-portable.exe"""'
     );
     expect(s).not.toContain('fso.CopyFile');
+  });
+});
+
+describe('selectPortableStaleOld', () => {
+  it('只筛本产品 <prefix>…portable.exe.old，不误删同目录他人 .exe.old', () => {
+    expect(
+      selectPortableStaleOld([
+        'FlowZ-4.1.5-win-x64-portable.exe.old',
+        'FlowZ-4.1.7-win-x64-portable.exe',
+        'Other.EXE.OLD', // 他家工具 → 不删
+        'Foo-portable.exe.old', // 非 FlowZ 前缀 → 不删
+        'data',
+        'config.json',
+      ])
+    ).toEqual(['FlowZ-4.1.5-win-x64-portable.exe.old']);
+  });
+
+  it('自定义 productPrefix', () => {
+    expect(selectPortableStaleOld(['MyApp-1.0-portable.exe.old'], 'MyApp-')).toEqual([
+      'MyApp-1.0-portable.exe.old',
+    ]);
+  });
+
+  it('无匹配（非 portable 的 .old / 缺前缀）→ 空数组', () => {
+    expect(selectPortableStaleOld(['a.exe', 'b.txt', 'c.old', 'FlowZ-x.exe'])).toEqual([]);
   });
 });
 

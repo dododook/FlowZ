@@ -53,6 +53,15 @@ const MESSAGES = {
     ru: 'Все файлы',
     fa: 'همه فایل‌ها',
   },
+  // —— Windows 便携自更新覆盖失败提示（update-install-script VBS MsgBox；路径由 VBS 拼接，故末尾留冒号） ——
+  portableUpdateManualReplace: {
+    'zh-CN': 'FlowZ 自动更新未能替换便携程序。新版已下载到下方路径，请手动替换：',
+    'zh-TW': 'FlowZ 自動更新未能替換便攜程式。新版已下載到下方路徑，請手動替換：',
+    'en-US':
+      'FlowZ auto-update could not replace the portable executable. The new version was downloaded to the path below — please replace it manually:',
+    ru: 'FlowZ не смог заменить переносимый файл при автообновлении. Новая версия загружена по пути ниже — замените её вручную:',
+    fa: 'به‌روزرسانی خودکار FlowZ نتوانست فایل قابل‌حمل را جایگزین کند. نسخهٔ جدید در مسیر زیر دانلود شد — لطفاً به‌صورت دستی جایگزین کنید:',
+  },
   // —— 桌面通知（notify-user 出口） ——
   proxyErrorTitle: {
     'zh-CN': 'FlowZ 代理出错',

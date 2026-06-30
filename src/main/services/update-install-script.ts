@@ -21,34 +21,88 @@ import { shq } from '../utils/shell-quote';
 /** VBS 字符串字面量里的反斜杠按既有约定双写（与旧 installUpdate 一致，Windows 容忍双反斜杠路径）。 */
 const vbsPath = (p: string): string => p.replace(/\\/g, '\\\\');
 
+/** VBS 字符串字面量里的双引号双写转义（MsgBox 等含文本的串）。 */
+const vbsStr = (s: string): string => s.replace(/"/g, '""');
+
 /**
- * Windows 更新 VBS。portableTarget 非空=便携态（覆盖回原 exe 再启动）；否则=NSIS（运行下载的 setup，原行为逐字保留）。
- * 便携只覆盖 exe 一个文件，exe 同级 `data\`（config/core_update/rules）原样保留。
+ * portable 自更新遗留的【本产品】`.exe.old`（旧版本被 stub 锁时 rename 留下）筛选——只匹配
+ * 「<productPrefix>…portable.exe.old」，避免误删同目录其它便携工具的 `.exe.old`；IO 分离便于单测，启动期据此清理。
+ */
+export function selectPortableStaleOld(fileNames: string[], productPrefix = 'FlowZ-'): string[] {
+  const p = productPrefix.toLowerCase();
+  return fileNames.filter((f) => {
+    const l = f.toLowerCase();
+    return l.startsWith(p) && l.endsWith('portable.exe.old');
+  });
+}
+
+/**
+ * Windows 更新 VBS。portableTarget 非空=便携态；否则=NSIS（运行下载的 setup，原行为逐字保留）。
+ *
+ * 便携态（B：移入新版本名 + 删旧版本名）：把下载的【新版本名】文件移入原目录、删除【旧版本名】文件——保留
+ * GitHub release 带版本号的命名（手动下载可区分版本），更新后目录里只剩对齐实际版本的那个文件。
+ * 关键（治"退出重开复原旧版"bug）：portable 原 exe 是被 stub launcher 锁住的自解压包，**不能被覆盖/删除，但能被
+ * rename**（Windows loader 用 FILE_SHARE_DELETE 映射映像）。故：
+ *  - 新版本名文件原本不存在 → 直接写（不撞锁）；若同名已存在（重装同版本）则先 rename 挪开。
+ *  - 旧版本名文件被锁 → DeleteFile 失败时**才** rename 到 `.old`（删旧的兜底，运行中可 rename），下次启动清
+ *    （selectPortableStaleOld）。即主操作是「移入 + 删旧」，rename 仅删旧失败时兜锁，非「改名」。
+ * exe 同级 `data\`（config/core_update/rules）不动 → 用户配置 + 已更新内核零丢失。
+ * portableNewPath 缺省=portableTarget（退化为覆盖同名）。覆盖最终失败 → 不静默：跑临时新版 + MsgBox 提示手动替换。
  */
 export function buildWindowsUpdateVbs(opts: {
   installerPath: string;
   portableTarget?: string | null;
+  /** 新版本名文件在原目录的目标路径（= 原目录 + 下载件文件名）；缺省退化为覆盖 portableTarget 同名。 */
+  portableNewPath?: string | null;
+  /** 覆盖最终失败时的 MsgBox 提示（i18n，调用方注入；默认英文）。 */
+  fallbackMessage?: string;
 }): string {
   const src = vbsPath(opts.installerPath);
   if (opts.portableTarget) {
-    const dst = vbsPath(opts.portableTarget);
+    const oldExe = vbsPath(opts.portableTarget);
+    const newExe = vbsPath(opts.portableNewPath || opts.portableTarget);
+    const msg = vbsStr(
+      opts.fallbackMessage ||
+        'FlowZ auto-update could not replace the portable executable. The new version was downloaded to the path below — please replace it manually:'
+    );
+    // MsgBox 显示用单反斜杠原路径（src 变量是双写反斜杠、给文件操作"容忍"用，直接展示/粘贴资源管理器不友好）。
+    const srcDisplay = vbsStr(opts.installerPath);
     return [
       'WScript.Sleep 2000',
       'Set WshShell = CreateObject("WScript.Shell")',
       'Set fso = CreateObject("Scripting.FileSystemObject")',
+      `src = "${src}"`,
+      `oldExe = "${oldExe}"`,
+      `newExe = "${newExe}"`,
       'On Error Resume Next',
-      // 只覆盖便携 exe 这一个文件（运行进程实跑在 %TEMP% 解压副本，原 exe 未被锁，可覆盖）；
-      // exe 同级 data\ 不动 → 用户配置 + 已更新内核(core_update) 零丢失。
-      `fso.CopyFile "${src}", "${dst}", True`,
+      // 清上次残留 .old（新旧两路径都清）
+      'If fso.FileExists(newExe & ".old") Then fso.DeleteFile newExe & ".old", True',
+      'If fso.FileExists(oldExe & ".old") Then fso.DeleteFile oldExe & ".old", True',
+      'Err.Clear',
+      // 新版本名文件若已存在（重装同版本/残留且被锁）→ rename 挪开，腾出原名
+      'If fso.FileExists(newExe) Then fso.MoveFile newExe, newExe & ".old"',
+      'Err.Clear',
+      // 写新版本名文件到原目录（新名通常不存在、不撞锁，直接成功）
+      'fso.CopyFile src, newExe, True',
       'If Err.Number = 0 Then',
       '  Err.Clear',
-      // 覆盖成功 → 从原位置启动新版（持久更新），并清掉临时下载包
-      `  WshShell.Run """${dst}""", 1, False`,
-      `  fso.DeleteFile "${src}", True`,
-      'Else',
+      // 移除旧版本名文件（与新名不同时）：被 stub 锁 → DeleteFile 失败则 rename 到 .old，下次启动清
+      '  If LCase(oldExe) <> LCase(newExe) Then',
+      '    fso.DeleteFile oldExe, True',
+      '    If Err.Number <> 0 Then',
+      '      Err.Clear',
+      '      fso.MoveFile oldExe, oldExe & ".old"',
+      '    End If',
+      '  End If',
       '  Err.Clear',
-      // 覆盖失败（原位只读/占用）→ 退回跑临时副本，至少本次拿到新版（不删临时包）
-      `  WshShell.Run """${src}""", 1, False`,
+      // 从原目录新版本名文件启动新版 + 删临时下载件
+      '  WshShell.Run """" & newExe & """", 1, False',
+      '  fso.DeleteFile src, True',
+      'Else',
+      // 写新名失败（极罕见：原目录只读）→ 不静默：跑临时新版 + 明确提示用户手动替换
+      '  Err.Clear',
+      '  WshShell.Run """" & src & """", 1, False',
+      `  MsgBox "${msg}" & vbCrLf & "${srcDisplay}", 48, "FlowZ"`,
       'End If',
       'On Error Goto 0',
       'fso.DeleteFile WScript.ScriptFullName, True',

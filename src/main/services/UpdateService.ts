@@ -26,6 +26,7 @@ import {
   buildMacUpdateScript,
   macAppBundleFromExe,
 } from './update-install-script';
+import { mt } from '../i18n';
 
 // 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
@@ -280,14 +281,26 @@ export class UpdateService {
         const vbsPath = path.join(app.getPath('temp'), 'flowz_update.vbs');
 
         const portableTarget = process.env.PORTABLE_EXECUTABLE_FILE || null;
+        // B（移入新版本名 + 删旧版本名）：新版本名文件放回原目录（原目录 + 下载件文件名），保留 GitHub release
+        // 带版本号的命名。
+        const portableNewPath = portableTarget
+          ? path.join(path.dirname(portableTarget), path.basename(installerPath))
+          : null;
         this.logManager.addLog(
           'info',
-          portableTarget ? '便携版：覆盖原 exe 原位更新' : 'NSIS：运行安装器原位升级',
+          portableTarget ? '便携版：移入新版本名文件 + 删旧版本名' : 'NSIS：运行安装器原位升级',
           'UpdateService'
         );
-        const vbsContent = buildWindowsUpdateVbs({ installerPath, portableTarget });
+        const vbsContent = buildWindowsUpdateVbs({
+          installerPath,
+          portableTarget,
+          portableNewPath,
+          fallbackMessage: mt('portableUpdateManualReplace'),
+        });
 
-        fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
+        // .vbs 必须 UTF-16 LE + BOM：wscript 只认它为 Unicode；UTF-8 无 BOM 会按系统 ANSI 代码页解读 →
+        // 非 ASCII 用户名/路径（如中文账户的 %TEMP%/便携目录）错乱致文件操作失败、多语 MsgBox 乱码。
+        fs.writeFileSync(vbsPath, '\ufeff' + vbsContent, 'utf16le');
 
         // 使用 wscript 运行 VBS（完全无窗口）
         const vbs = spawn(system32('wscript.exe'), [vbsPath], {
