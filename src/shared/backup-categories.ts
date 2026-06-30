@@ -64,6 +64,7 @@ const DATA_FIELDS: readonly string[] = [
 /** 敏感/临时态字段：既不进任何类别、也不进通用设置（绝不写入备份文件）。 */
 const EXCLUDED_FROM_BACKUP: readonly string[] = [
   'clashApiSecret', // clash_api 明文密钥，不跨机
+  'privacyPassword', // 隐私解锁密码（loadConfig 已清明文为空串，此处纵深防御兜底，绝不入备份）
   'diagnosticCapture', // 临时诊断态（提级日志）
   'builtinGeoMeta', // 内置 geo 元数据（随包，无需备份）
 ];
