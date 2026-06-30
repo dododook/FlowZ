@@ -15,7 +15,8 @@ import type {
 import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
 import { tailscaleStateExists } from '../../services/tailscale-state';
-import type { StatsService } from '../../services/StatsService';
+// 只需「读快照」最小面（getSnapshot/getConnectionsSnapshot）：StatsWorkerHost（T4 生产）与 StatsService（单测）皆满足。
+import type { StatsProvider } from '../../services/StatsWorkerHost';
 import type { TailscaleStatusSnapshot } from '../../../shared/tailscale-status';
 
 /**
@@ -37,7 +38,7 @@ export function setTrayStateCallback(callback: TrayStateUpdateCallback): void {
  */
 export function registerProxyHandlers(
   proxyManager: ProxyManager,
-  statsService?: StatsService | null
+  statsService?: StatsProvider | null
 ): void {
   // 注：系统代理 enable/clear 已收口于 ProxyManager（start reconcile + ensureSystemProxyCleared），
   // 本 handler 不再直接持有 systemProxyManager（拆双轨，修 C1/M4）。

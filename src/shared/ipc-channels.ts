@@ -135,7 +135,9 @@ export const IPC_CHANNELS = {
   EVENT_PROXY_STOPPED: 'event:proxyStopped',
   EVENT_PROXY_ERROR: 'event:proxyError',
   EVENT_CONFIG_CHANGED: 'event:configChanged',
-  EVENT_LOG_RECEIVED: 'event:logReceived',
+  // 日志批处理广播（T1，issue #225）：~150ms 窗口 coalesce 多条日志为单次数组 IPC（取代旧逐条 event:logReceived，
+  // 已删），削平 sing-box 启动期日志洪流对主线程的 IPC 冲击（每条一次 send → 撞 Windows 拖动 move 循环致拖动卡顿）。
+  EVENT_LOG_RECEIVED_BATCH: 'event:logReceivedBatch',
   EVENT_STATS_UPDATED: 'event:statsUpdated',
   EVENT_CONNECTIONS_UPDATED: 'event:connectionsUpdated',
   EVENT_ENTER_PRIVACY_MODE: 'event:enterPrivacyMode',

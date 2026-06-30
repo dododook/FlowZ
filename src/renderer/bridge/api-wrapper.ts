@@ -247,8 +247,8 @@ export function addEventListener(event: string, listener: (...args: any[]) => vo
       return api.proxy.onError(listener);
     case 'configChanged':
       return api.config.onChanged(listener);
-    case 'logReceived':
-      return api.logs.onReceived(listener);
+    case 'logReceivedBatch':
+      return api.logs.onReceivedBatch(listener);
     case 'statsUpdated':
       return api.stats.onUpdated(listener);
     default:

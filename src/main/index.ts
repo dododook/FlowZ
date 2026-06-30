@@ -44,7 +44,7 @@ import { CoreUpdateScheduler } from './services/CoreUpdateScheduler';
 import { SpeedTestService } from './services/SpeedTestService';
 import { AutoSwitchService } from './services/AutoSwitchService';
 import { SubscriptionScheduler } from './services/SubscriptionScheduler';
-import { StatsService } from './services/StatsService';
+import { StatsWorkerHost } from './services/StatsWorkerHost';
 import { PlatformPrivilegeService } from './services/PlatformPrivilegeService';
 import { IpInfoService } from './services/IpInfoService';
 import { RuleResourceManager } from './services/RuleResourceManager';
@@ -133,6 +133,20 @@ let trayManager: TrayManager | null = null;
 const isDevelopment = process.env.NODE_ENV === 'development';
 let idleCheckInterval: NodeJS.Timeout | null = null; // 自动空闲模式轮询（powerMonitor 真实系统输入空闲）
 
+// 窗口拖动态（T2，issue #225）：Windows 拖动 frameless 窗口走 move modal loop（跑主线程），拖动期间任何
+// 非关键 UI 推流（日志/流量/连接）都会逼整窗逐帧重绘 + RDP 全帧重编码 → 拖动卡顿。move 时置位、moved 去抖后清零。
+let isDragging = false;
+
+/**
+ * UI 广播活跃谓词（T1/T2/T4 统一门控，issue #225）：窗口可见 **且** 非拖动中 才推 UI 更新。
+ * - 日志批 flush（registerLogHandlers）按此门控：不活跃只暂存不推。
+ * - 流量/连接 relay（StatsWorkerHost）按此门控：不活跃只更新缓存不 sendToAll，活跃恢复时补推一帧最新。
+ * 隐藏（macOS hide / minimizeToTray / 轻量销毁）= 无 UI 消费者；拖动中 = 让主线程只处理窗口移动重绘。
+ */
+function isUiBroadcastActive(): boolean {
+  return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !isDragging;
+}
+
 // Privacy Mode State (Main Process)
 let isPrivacyMode = false;
 
@@ -219,7 +233,7 @@ let speedTestService: SpeedTestService;
 let autoSwitchService: AutoSwitchService;
 let subscriptionScheduler: SubscriptionScheduler;
 let coreUpdateScheduler: CoreUpdateScheduler | null = null;
-let statsService: StatsService | null = null;
+let statsService: StatsWorkerHost | null = null;
 let ipInfoService: IpInfoService | null = null;
 let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
@@ -658,6 +672,34 @@ async function createWindow(forceShow = false) {
   mainWindow.on('maximize', sendMaximizeState);
   mainWindow.on('unmaximize', sendMaximizeState);
 
+  // ── 窗口拖动门控（T2，issue #225）── 仅 Windows
+  // 拖动 frameless 窗口走 OS move modal loop（主线程），期间整窗逐帧重绘 + RDP 全帧重编码；若同时有日志/流量/连接
+  // 广播触发重渲，拖动即卡顿。拖动期间置 isDragging → isUiBroadcastActive 返 false → 日志批 flush 与 stats relay
+  // 全部挂起，让主线程只处理窗口移动重绘；拖动结束后去抖恢复并补推一帧最新缓存。
+  // 仅 win32 门控：macOS/Linux 拖动由合成器流畅处理、无主线程 modal 阻塞，挂起只会徒增「拖动时数字冻住」无收益。
+  // 拖动结束判定用「move 流停止」（最后一个 move 后 DRAG_SETTLE_MS 内无新 move）——比 'moved' 事件在各平台/RDP 更可靠。
+  isDragging = false; // 新窗口重置（防上个窗口拖动中被销毁致 isDragging 滞留 true）
+  let dragSettleTimer: NodeJS.Timeout | null = null;
+  if (process.platform === 'win32') {
+    const DRAG_SETTLE_MS = 120;
+    mainWindow.on('move', () => {
+      if (!isDragging) isDragging = true; // 仅拖动起始置位（move 高频，避免重复赋值）
+      if (dragSettleTimer) clearTimeout(dragSettleTimer);
+      dragSettleTimer = setTimeout(() => {
+        isDragging = false;
+        dragSettleTimer = null;
+        // 拖动结束补推一帧最新流量/连接（免等 worker 下一帧最多 ~1s 滞后）；日志由下一 flush tick 自动恢复。
+        statsService?.resume();
+      }, DRAG_SETTLE_MS);
+    });
+    // 拖动中窗口被销毁 → 清残留 settle timer（防对已销毁窗口的滞留回调）。
+    mainWindow.on('closed', () => {
+      if (dragSettleTimer) clearTimeout(dragSettleTimer);
+      dragSettleTimer = null;
+      isDragging = false;
+    });
+  }
+
   // 移除默认菜单栏（Windows/Linux）
   if (process.platform !== 'darwin') {
     mainWindow.setMenu(null);
@@ -855,6 +897,8 @@ async function runCleanup(): Promise<void> {
     coreUpdateScheduler?.stop();
     ruleResourceScheduler?.stop();
     autoSwitchService?.destroy();
+    // T4：终止 stats utilityProcess（停 respawn + kill worker），避免退出后遗留子进程。
+    statsService?.dispose();
 
     // 1. 拆除代理（去 status.running 门控：跨会话孤儿 / 隐藏会话残留也必须回收；退出语境零提权弹框）
     if (proxyManager) {
@@ -1195,16 +1239,19 @@ if (gotTheLock) {
     proxyManager.setPrivilegeService(privilegeService);
     coreUpdateService.setPrivilegeService(privilegeService);
 
-    // 流量统计：代理运行时经管理 API（gRPC）订阅 Status/Connections 流，经事件推渲染端展示。
-    // getApiClient 取 ProxyManager 运行期管理 API 客户端（核未起返回 null → 不开流）。
-    statsService = new StatsService(
-      (stats) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_STATS_UPDATED, stats),
-      () => proxyManager?.getApiClient() ?? null,
-      (snap) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONNECTIONS_UPDATED, snap),
-      // P1/P2：窗口可见才广播——隐藏（macOS hide / minimizeToTray）/销毁（轻量模式）时无 UI 消费者，
-      // 跳过 broadcast（流仍维护快照）。读模块级 mainWindow 当前值（创建/销毁会变）。
-      () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
-    );
+    // 流量统计（T4，issue #225）：StatsService 已拆入 utilityProcess（见 services/StatsWorkerHost + workers/stats-worker）。
+    // 本宿主 fork/看护 worker、缓存最新快照、按 isUiBroadcastActive(可见 && !拖动) 门控后 sendToAll——把 Status/
+    // Connections 长流的 per-frame 解析+物化移出主线程，消除拖动期事件循环争用。worker 据 getStatsApiEndpoint 重建
+    // 自己的 gRPC client（端口随每次启动可能变 → 'api-client-ready' 时经 resubscribe 重发）。
+    statsService = new StatsWorkerHost({
+      workerPath: path.join(__dirname, 'workers', 'stats-worker.js'),
+      onStats: (stats) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_STATS_UPDATED, stats),
+      onConnections: (snap) =>
+        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONNECTIONS_UPDATED, snap),
+      isUiActive: isUiBroadcastActive,
+      getEndpoint: () => proxyManager?.getStatsApiEndpoint() ?? null,
+      log: (level, message) => logManager.addLog(level, message, 'StatsWorker'),
+    });
     // 杀核前静默 StatsService：停其到管理 API 的 Status/Connections gRPC 流（核将死，提前 cancel 避免 RST 噪音）。
     proxyManager.setQuiesceStats(() => {
       statsService?.stop();
@@ -1405,7 +1452,7 @@ if (gotTheLock) {
     registerConfigHandlers(configManager);
     registerPrivacyHandlers();
     registerServerHandlers(protocolParser, configManager, logManager);
-    registerLogHandlers(logManager, proxyManager);
+    registerLogHandlers(logManager, proxyManager, isUiBroadcastActive);
     registerProxyHandlers(proxyManager, statsService);
     registerIpInfoHandlers(ipInfoService);
     registerSystemHandlers();

@@ -203,6 +203,9 @@ export interface IProxyManager {
   getDashboardConnectionInfo(): { ok: boolean; url: string; apiUrl: string; secret: string };
   // 运行期管理 API 客户端（sing-box 1.14 gRPC）：供 StatsService 经此订阅 Status/Connections 流；未启动核时为 null。
   getApiClient(): SingBoxApiClient | null;
+  // stats worker（T4，issue #225）：运行期管理 API 端点（host/port/secret），供 StatsWorkerHost 让 worker 重建
+  // 自己的 gRPC client；核未起返回 null。
+  getStatsApiEndpoint(): { host: string; port: number; secret: string } | null;
   generateSingBoxConfig(config: UserConfig, resolvedIps?: Record<string, string>): SingBoxConfig;
   on(
     event:
@@ -1973,6 +1976,21 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       apiUrl: `http://127.0.0.1:${port}`,
       secret: this.currentConfig?.clashApiSecret || '',
     };
+  }
+
+  /**
+   * stats worker（T4，issue #225）运行期管理 API 端点。worker 进程据此重建自己的 SingBoxApiClient 订阅 Status/
+   * Connections 流（main 不再在主线程跑 stats 解析）。host 恒 127.0.0.1（本地核）；端口随每次启动可能重解析
+   * （见 resolveTailscaleApiPort）→ 'api-client-ready' 时由 StatsWorkerHost.resubscribe 重新下发。核未运行/无端口
+   * → null（worker 不开流，对齐 getApiClient 语义）。
+   * secret 取 currentConfig.clashApiSecret（与 live tailscaleApiClient 同源——二者均随 startInternal 同步刷新）。
+   * worker 重连仅由 'api-client-ready'(=核重启) 驱动，而重启必重跑 startInternal 同时更新 currentConfig 与端口，
+   * 故 endpoint 的 secret/port 与新核恒一致；不存在「secret 不重启被改写后 worker 拿旧值」的路径。
+   */
+  getStatsApiEndpoint(): { host: string; port: number; secret: string } | null {
+    const port = this.tailscaleApiPort;
+    if (!this.getStatus().running || !port) return null;
+    return { host: '127.0.0.1', port, secret: this.currentConfig?.clashApiSecret || '' };
   }
 
   /**

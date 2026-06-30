@@ -469,10 +469,11 @@ export const logsApi = {
   },
 
   /**
-   * 监听日志接收事件
+   * 监听批量日志接收事件（T1，issue #225）：主进程 ~150ms coalesce 多条日志为一次数组推送，
+   * 渲染端单次 setState 批量追加。取代旧逐条 EVENT_LOG_RECEIVED（已删，削渲染端高频重渲与 RDP 逐帧流式开销）。
    */
-  onReceived(listener: (log: LogEntry) => void): () => void {
-    return ipcClient.on(IPC_CHANNELS.EVENT_LOG_RECEIVED, listener);
+  onReceivedBatch(listener: (logs: LogEntry[]) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_LOG_RECEIVED_BATCH, listener);
   },
 };
 

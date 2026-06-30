@@ -40,13 +40,18 @@ export function RealTimeLogs({
   const connectionStatus = useAppStore((state) => state.connectionStatus);
 
   // Effect ①：实时日志订阅 —— 仅挂载时订阅一次；容量经 maxBufferRef 读取，props 变化不重订阅。
+  // T1（issue #225）：改订阅批量通道 'logReceivedBatch'（主进程 ~150ms coalesce），一批日志单次 setState 追加，
+  // 取代逐条 setState（启动期洪流下逐条 = 高频重渲 + RDP 逐帧流式，拖动卡顿主因之一）。
   useEffect(() => {
-    const handleLogReceived = (logEntry: LogEntry) => {
-      setLogs((prev) =>
-        [...prev, { ...logEntry, _id: nextIdRef.current++ }].slice(-maxBufferRef.current)
-      );
+    const handleLogBatch = (entries: LogEntry[]) => {
+      if (!entries || entries.length === 0) return;
+      setLogs((prev) => {
+        const next = prev.slice();
+        for (const e of entries) next.push({ ...e, _id: nextIdRef.current++ });
+        return next.slice(-maxBufferRef.current);
+      });
     };
-    const unsubscribe = addEventListener('logReceived', handleLogReceived);
+    const unsubscribe = addEventListener('logReceivedBatch', handleLogBatch);
     return unsubscribe;
   }, []);
 
