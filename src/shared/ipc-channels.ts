@@ -177,8 +177,9 @@ export const IPC_CHANNELS = {
   EVENT_WINDOW_MAXIMIZE_CHANGED: 'event:windowMaximizeChanged',
 
   // 数据备份与恢复
-  BACKUP_EXPORT: 'backup:export',
-  BACKUP_IMPORT: 'backup:import',
+  BACKUP_EXPORT: 'backup:export', // 选择性导出：接 { categories }，pickCategories 只导出勾选类
+  BACKUP_IMPORT_PICK: 'backup:importPick', // 选择性导入①：弹文件框 + 解析 → 返回备份含哪些类 + 各类数量（不 apply）
+  BACKUP_IMPORT_APPLY: 'backup:importApply', // 选择性导入②：按所选类整类替换 + 空跳过 + sanitize + 保存
   BACKUP_GET_INFO: 'backup:getInfo',
 
   // 诊断报告导出（单 Markdown，脱敏）

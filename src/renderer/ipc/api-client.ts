@@ -30,6 +30,7 @@ import type {
   ImportParseResult,
 } from '../../shared/types';
 import type { WarpWireGuardDraft } from '../../shared/warp';
+import type { BackupCategory } from '../../shared/backup-categories';
 import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
 
 /**
@@ -915,17 +916,35 @@ export interface BackupInfo {
  */
 export const backupApi = {
   /**
-   * 导出备份（弹出系统文件保存对话框）
+   * 导出备份（按勾选类别；缺省/空 = 全部）。弹系统保存对话框。
    */
-  async export(): Promise<{ success: boolean; filePath?: string; error?: string }> {
-    return ipcClient.invoke(IPC_CHANNELS.BACKUP_EXPORT);
+  async export(
+    categories?: BackupCategory[]
+  ): Promise<{ success: boolean; filePath?: string; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.BACKUP_EXPORT, { categories });
   },
 
   /**
-   * 导入并恢复备份（弹出系统文件打开对话框）
+   * 导入①：弹文件框 + 解析 → 返回备份含哪些类 + 各类数量（不 apply）。canceled=用户取消。
    */
-  async import(): Promise<{ success: boolean; info?: BackupInfo; error?: string }> {
-    return ipcClient.invoke(IPC_CHANNELS.BACKUP_IMPORT);
+  async importPick(): Promise<{
+    canceled: boolean;
+    filePath?: string;
+    available?: BackupCategory[];
+    counts?: Partial<Record<BackupCategory, number>>;
+    error?: string;
+  }> {
+    return ipcClient.invoke(IPC_CHANNELS.BACKUP_IMPORT_PICK);
+  },
+
+  /**
+   * 导入②：按所选类整类替换 + 空跳过 + 保存。skipped=选了但备份为空被跳过的类。
+   */
+  async importApply(
+    filePath: string,
+    categories: BackupCategory[]
+  ): Promise<{ success: boolean; info?: BackupInfo; skipped?: BackupCategory[]; error?: string }> {
+    return ipcClient.invoke(IPC_CHANNELS.BACKUP_IMPORT_APPLY, { filePath, categories });
   },
 
   /**

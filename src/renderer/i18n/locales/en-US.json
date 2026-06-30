@@ -610,7 +610,17 @@
         "meshImportHint": "Imported {{count}} mesh node(s): using the same identity (hostname/auth key) on multiple devices may conflict in the tailnet. Consider changing the hostname or re-logging in.",
         "importConfirmTitle": "Confirm Restore",
         "importConfirmDesc": "This will completely overwrite your current nodes, subscriptions, and rules. This action cannot be undone. Please confirm before proceeding.",
-        "importConfirmBtn": "Confirm & Restore"
+        "importConfirmBtn": "Confirm & Restore",
+        "generalSettings": "General settings",
+        "selectExportTitle": "Select what to export",
+        "selectExportDesc": "Check the categories to export. All selected by default.",
+        "selectImportTitle": "Select what to restore",
+        "selectImportDesc": "Check the categories to restore. Restoring overwrites the matching categories; categories empty in the backup are skipped and your current data is kept.",
+        "selectAll": "Select all",
+        "exportSelected": "Export {{count}} item(s)",
+        "importSelected": "Restore {{count}} item(s)",
+        "importSkipped": "{{cats}} empty in backup, skipped",
+        "importEmpty": "Backup has no restorable content"
       },
       "logLevelCaptureLocked": "Locked to debug during diagnostic capture (stop the capture in the Diagnostics card below to change it)",
       "diagnostics": {

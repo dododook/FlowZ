@@ -15,18 +15,10 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { api } from '@/ipc/api-client';
 import type { BackupInfo } from '@/ipc/api-client';
+import { BACKUP_CATEGORIES, type BackupCategory } from '../../../shared/backup-categories';
+import { BackupCategoryDialog, CATEGORY_META } from './backup-category-dialog';
 
 // localStorage key for last export timestamp
 const LAST_EXPORT_KEY = 'flowz_last_backup_export';
@@ -36,8 +28,14 @@ export function BackupRestoreSection() {
   const [backupInfo, setBackupInfo] = useState<BackupInfo | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [lastExportTime, setLastExportTime] = useState<string | null>(null);
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importPick, setImportPick] = useState<{
+    filePath: string;
+    available: BackupCategory[];
+    counts: Partial<Record<BackupCategory, number>>;
+  } | null>(null);
 
   const loadInfo = useCallback(async () => {
     try {
@@ -53,11 +51,24 @@ export function BackupRestoreSection() {
     setLastExportTime(localStorage.getItem(LAST_EXPORT_KEY));
   }, [loadInfo]);
 
+  // 导出对话框的各类数量（自定义规则含规则集）。导出可选全部 6 类（含通用设置）。
+  const exportCounts: Partial<Record<BackupCategory, number>> = {
+    manualNodes: backupInfo?.manualServerCount ?? 0,
+    meshNodes: backupInfo?.meshServerCount ?? 0,
+    subscriptions: backupInfo?.subscriptionCount ?? 0,
+    customRules: (backupInfo?.ruleCount ?? 0) + (backupInfo?.ruleSetCount ?? 0),
+    appRules: backupInfo?.appRuleCount ?? 0,
+  };
+
+  const categoryNames = (cats: BackupCategory[]): string =>
+    cats.map((c) => t(CATEGORY_META[c].i18nKey)).join(', ');
+
   // ── Export ──────────────────────────────────────────────────────────────────
-  const handleExport = async () => {
+  const doExport = async (selected: BackupCategory[]) => {
+    setShowExportDialog(false);
     setIsExporting(true);
     try {
-      const result = await api.backup.export();
+      const result = await api.backup.export(selected);
       if (result.success) {
         const now = new Date().toLocaleString('zh-CN');
         localStorage.setItem(LAST_EXPORT_KEY, now);
@@ -66,24 +77,48 @@ export function BackupRestoreSection() {
           description: t('settings.advanced.backup.exportSuccessDesc'),
         });
       } else if (result.error !== 'cancelled') {
-        toast.error(t('settings.advanced.backup.exportFail'), {
-          description: result.error,
-        });
+        toast.error(t('settings.advanced.backup.exportFail'), { description: result.error });
       }
     } catch (err: any) {
-      toast.error(t('settings.advanced.backup.exportFail'), {
-        description: err?.message,
-      });
+      toast.error(t('settings.advanced.backup.exportFail'), { description: err?.message });
     } finally {
       setIsExporting(false);
     }
   };
 
-  // ── Import ──────────────────────────────────────────────────────────────────
-  const handleImportConfirmed = async () => {
+  // ── Import：①弹文件框选文件 + 解析 → ②选类别对话框 → ③apply ────────────────────
+  const handleImportClick = async () => {
     setIsImporting(true);
     try {
-      const result = await api.backup.import();
+      const r = await api.backup.importPick();
+      if (r.canceled) return; // 用户取消文件框，静默
+      if (r.error === 'invalid_json' || r.error === 'invalid_format') {
+        toast.error(t('settings.advanced.backup.importInvalidFile'));
+        return;
+      }
+      if (r.error) {
+        toast.error(t('settings.advanced.backup.importFail'), { description: r.error });
+        return;
+      }
+      if (!r.available?.length) {
+        toast.warning(t('settings.advanced.backup.importEmpty'));
+        return;
+      }
+      setImportPick({ filePath: r.filePath!, available: r.available, counts: r.counts ?? {} });
+      setShowImportDialog(true);
+    } catch (err: any) {
+      toast.error(t('settings.advanced.backup.importFail'), { description: err?.message });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const doImport = async (selected: BackupCategory[]) => {
+    if (!importPick) return;
+    setShowImportDialog(false);
+    setIsImporting(true);
+    try {
+      const result = await api.backup.importApply(importPick.filePath, selected);
       if (result.success && result.info) {
         await loadInfo();
         toast.success(t('settings.advanced.backup.importSuccess'), {
@@ -93,7 +128,13 @@ export function BackupRestoreSection() {
             rules: result.info.ruleCount,
           }),
         });
-        // 跨平台导入：进程规则（按进程名匹配）平台特定，已禁用——提示在规则页重映射当前平台进程名。
+        // 选了但备份为空被跳过的类别 → 提示（现有数据未被覆盖）。
+        if (result.skipped?.length) {
+          toast.info(
+            t('settings.advanced.backup.importSkipped', { cats: categoryNames(result.skipped) })
+          );
+        }
+        // 跨平台导入：进程规则平台特定、已禁用 → 提示在规则页重映射。
         if (result.info.crossPlatformDisabledRules) {
           toast.warning(
             t('settings.advanced.backup.crossPlatformRulesDisabled', {
@@ -101,27 +142,22 @@ export function BackupRestoreSection() {
             })
           );
         }
-        // 含组网节点：多设备使用同一身份（主机名/认证密钥）可能在 tailnet 冲突，提示改名/重登。
+        // 含组网节点：多设备同身份可能 tailnet 冲突，提示改名/重登。
         if (result.info.meshServerCount > 0) {
           toast.warning(
             t('settings.advanced.backup.meshImportHint', { count: result.info.meshServerCount })
           );
         }
-      } else if (result.error === 'cancelled') {
-        // user cancelled file picker — do nothing
       } else if (result.error === 'invalid_json' || result.error === 'invalid_format') {
         toast.error(t('settings.advanced.backup.importInvalidFile'));
       } else {
-        toast.error(t('settings.advanced.backup.importFail'), {
-          description: result.error,
-        });
+        toast.error(t('settings.advanced.backup.importFail'), { description: result.error });
       }
     } catch (err: any) {
-      toast.error(t('settings.advanced.backup.importFail'), {
-        description: err?.message,
-      });
+      toast.error(t('settings.advanced.backup.importFail'), { description: err?.message });
     } finally {
       setIsImporting(false);
+      setImportPick(null);
     }
   };
 
@@ -151,7 +187,7 @@ export function BackupRestoreSection() {
           size="sm"
           variant="outline"
           disabled={isExporting || isImporting}
-          onClick={handleExport}
+          onClick={() => setShowExportDialog(true)}
           className="flex items-center gap-1.5"
         >
           <Download className={`h-3.5 w-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
@@ -165,7 +201,7 @@ export function BackupRestoreSection() {
           size="sm"
           variant="outline"
           disabled={isExporting || isImporting}
-          onClick={() => setShowImportConfirm(true)}
+          onClick={handleImportClick}
           className="flex items-center gap-1.5"
         >
           <Upload className={`h-3.5 w-3.5 ${isImporting ? 'animate-pulse' : ''}`} />
@@ -265,29 +301,30 @@ export function BackupRestoreSection() {
         )}
       </div>
 
-      {/* Import confirmation dialog */}
-      <AlertDialog open={showImportConfirm} onOpenChange={setShowImportConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('settings.advanced.backup.importConfirmTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('settings.advanced.backup.importConfirmDesc')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setShowImportConfirm(false);
-                handleImportConfirmed();
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t('settings.advanced.backup.importConfirmBtn')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* 导出：选类别对话框（全部 6 类可选，默认全选） */}
+      <BackupCategoryDialog
+        open={showExportDialog}
+        onOpenChange={setShowExportDialog}
+        mode="export"
+        categories={[...BACKUP_CATEGORIES]}
+        counts={exportCounts}
+        busy={isExporting}
+        onConfirm={doExport}
+      />
+
+      {/* 导入：选类别对话框（仅备份含的类，默认全选；覆盖+空跳过说明在 desc） */}
+      <BackupCategoryDialog
+        open={showImportDialog}
+        onOpenChange={(o) => {
+          setShowImportDialog(o);
+          if (!o) setImportPick(null);
+        }}
+        mode="import"
+        categories={importPick?.available ?? []}
+        counts={importPick?.counts ?? {}}
+        busy={isImporting}
+        onConfirm={doImport}
+      />
     </div>
   );
 }
