@@ -1031,6 +1031,18 @@ export const localImportApi = {
   parse(text: string): Promise<ImportParseResult> {
     return ipcClient.invoke(IPC_CHANNELS.LOCAL_IMPORT_PARSE, { text });
   },
+  /**
+   * 弹系统原生文件对话框选配置文件 + 读内容回传（替代 HTML <input type=file>，对话框跟随系统语言）。
+   * canceled=用户取消（UI 静默）；error='too_large'|'read_failed'（UI toast）；否则带 content + fileName。
+   */
+  pickFile(): Promise<{
+    canceled: boolean;
+    content?: string;
+    fileName?: string;
+    error?: 'too_large' | 'read_failed';
+  }> {
+    return ipcClient.invoke(IPC_CHANNELS.LOCAL_IMPORT_PICK_FILE);
+  },
 };
 
 export const api = {

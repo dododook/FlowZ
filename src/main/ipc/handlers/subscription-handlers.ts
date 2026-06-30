@@ -1,10 +1,13 @@
-import { IpcMainInvokeEvent } from 'electron';
+import { IpcMainInvokeEvent, dialog } from 'electron';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { SubscriptionConfig, ImportParseResult } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { SubscriptionService, SubscriptionUpdateResult } from '../../services/SubscriptionService';
 import { ConfigManager } from '../../services/ConfigManager';
 import { resolveSubscriptionViaProxy } from '../../../shared/subscription-proxy';
+import { mt } from '../../i18n';
 import { randomUUID } from 'crypto';
 
 /**
@@ -185,6 +188,37 @@ export function registerSubscriptionHandlers(
       return subscriptionService.parseLocalContent(args?.text ?? '');
     }
   );
+
+  // 本地导入选文件：弹系统原生文件对话框 + 读内容回传。替代渲染端 HTML <input type=file>——避开 Chromium 原生
+  // 控件英文文案（"Choose File / No file chosen"，受 Chromium app locale 控、非 i18next），系统对话框天然跟随
+  // 系统语言、文件名+按钮走 i18next；10 MB 上限与解析门限（local-import-dialog）一致。取消返 canceled，读失败返 error。
+  registerIpcHandler<
+    void,
+    { canceled: boolean; content?: string; fileName?: string; error?: 'too_large' | 'read_failed' }
+  >(IPC_CHANNELS.LOCAL_IMPORT_PICK_FILE, async (_event: IpcMainInvokeEvent) => {
+    const result = await dialog.showOpenDialog({
+      title: mt('localImportPickTitle'),
+      filters: [
+        { name: mt('localImportFilterConfig'), extensions: ['json', 'yaml', 'yml', 'txt', 'conf'] },
+        { name: mt('localImportFilterAll'), extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    const filePath = result.filePaths[0];
+    try {
+      const stat = await fs.stat(filePath);
+      if (stat.size > 10 * 1024 * 1024) {
+        return { canceled: false, error: 'too_large' };
+      }
+      const content = await fs.readFile(filePath, 'utf-8');
+      return { canceled: false, content, fileName: path.basename(filePath) };
+    } catch {
+      return { canceled: false, error: 'read_failed' };
+    }
+  });
 
   // 启动补更/周期更新已由 SubscriptionScheduler 接管（含退避+防丢更新两阶段），此处不再注册 UPDATE_ALL
 }

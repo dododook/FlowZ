@@ -1475,6 +1475,7 @@
     "desc": "支援 sing-box / Xray 設定（.json）、Clash 設定（.yaml），以及分享連結 / Base64 文字。節點匯入到「自建」，Clash 訂閱來源匯入為訂閱。",
     "tabFile": "選擇檔案",
     "tabText": "貼上文字",
+    "pickFile": "選擇檔案…",
     "fileLabel": "設定檔",
     "fileHint": "選擇 .json / .yaml / .txt 檔案",
     "textLabel": "內容",

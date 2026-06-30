@@ -15,7 +15,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Loader2, HardDriveDownload, Server, Rss, Check, X, Edit2, FileText } from 'lucide-react';
+import {
+  Loader2,
+  HardDriveDownload,
+  Server,
+  Rss,
+  Check,
+  X,
+  Edit2,
+  FileText,
+  FolderOpen,
+} from 'lucide-react';
 import { api } from '@/ipc/api-client';
 import type { ServerConfig, ImportParseResult } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +38,8 @@ interface LocalImportDialogProps {
 
 export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: LocalImportDialogProps) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'file' | 'text'>('file');
+  // 默认 text：代理客户端导入多为粘贴分享链接 / 订阅 URL / Base64，文件导入相对低频 → 高频路径前置 + 默认选中。
+  const [tab, setTab] = useState<'file' | 'text'>('text');
   const [content, setContent] = useState('');
   const [fileName, setFileName] = useState('');
   const [parsed, setParsed] = useState<ImportParseResult | null>(null);
@@ -46,17 +57,22 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
     setEditingIndex(null);
   };
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error(t('localImport.errTooLarge', 'File too large (max 10 MB)'));
-      return;
-    }
+  // 走主进程 dialog.showOpenDialog（系统原生文件框，跟随系统语言）选文件 + 读内容；替代 HTML <input type=file>，
+  // 避开 Chromium 原生控件英文文案。canceled=用户取消静默；error→toast；否则回填 content + fileName。
+  const handlePickFile = async () => {
     try {
-      const text = await file.text();
-      setContent(text);
-      setFileName(file.name);
+      const r = await api.localImport.pickFile();
+      if (r.canceled) return;
+      if (r.error === 'too_large') {
+        toast.error(t('localImport.errTooLarge', 'File too large (max 10 MB)'));
+        return;
+      }
+      if (r.error || r.content == null) {
+        toast.error(t('localImport.errRead', 'Failed to read file, please retry'));
+        return;
+      }
+      setContent(r.content);
+      setFileName(r.fileName ?? '');
       resetResult();
     } catch {
       toast.error(t('localImport.errRead', 'Failed to read file, please retry'));
@@ -167,7 +183,7 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
     setContent('');
     setFileName('');
     resetResult();
-    setTab('file');
+    setTab('text');
     onOpenChange(false);
   };
 
@@ -209,18 +225,25 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
         <div className="space-y-4">
           <Tabs value={tab} onValueChange={(v) => setTab(v as 'file' | 'text')}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="file">{t('localImport.tabFile', 'Select File')}</TabsTrigger>
               <TabsTrigger value="text">{t('localImport.tabText', 'Paste Text')}</TabsTrigger>
+              <TabsTrigger value="file">{t('localImport.tabFile', 'Select File')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="file" className="space-y-2">
               <Label htmlFor="local-import-file">{t('localImport.fileLabel', 'Config File')}</Label>
-              <Input
+              {/* 走主进程 dialog.showOpenDialog（系统原生文件框，跟随系统语言），替代 HTML <input type=file>：
+                  避开 Chromium 原生控件英文文案（"Choose File / No file chosen"）；按钮文字 + 文件名走 i18next。
+                  Button 是 labelable 元素，保留 id 让 Label htmlFor 关联（点字段标题亦弹框，a11y 友好）。 */}
+              <Button
                 id="local-import-file"
-                type="file"
-                accept=".json,.yaml,.yml,.txt,.conf"
-                onChange={handleFile}
-              />
+                type="button"
+                variant="outline"
+                className="w-full justify-start font-normal"
+                onClick={handlePickFile}
+              >
+                <FolderOpen className="h-4 w-4 me-2 shrink-0" />
+                {t('localImport.pickFile', 'Browse…')}
+              </Button>
               {fileName && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <FileText className="h-3.5 w-3.5" />

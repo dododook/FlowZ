@@ -31,6 +31,28 @@ const MESSAGES = {
     ru: 'FlowZ — графическое приложение, которому нужна среда рабочего стола; сервер отображения (DISPLAY/Wayland) не обнаружен. Чтобы узнать версию, выполните: flowz --version',
     fa: 'FlowZ یک برنامهٔ گرافیکی است و به محیط دسکتاپ نیاز دارد؛ هیچ سرور نمایشی (DISPLAY/Wayland) شناسایی نشد. برای دیدن نسخه اجرا کنید: flowz --version',
   },
+  // —— 本地导入文件对话框（subscription-handlers，dialog.showOpenDialog title/filters 跟随系统语言） ——
+  localImportPickTitle: {
+    'zh-CN': '选择配置文件',
+    'zh-TW': '選擇設定檔',
+    'en-US': 'Select Config File',
+    ru: 'Выберите файл конфигурации',
+    fa: 'انتخاب فایل پیکربندی',
+  },
+  localImportFilterConfig: {
+    'zh-CN': '配置文件',
+    'zh-TW': '設定檔',
+    'en-US': 'Config files',
+    ru: 'Файлы конфигурации',
+    fa: 'فایل‌های پیکربندی',
+  },
+  localImportFilterAll: {
+    'zh-CN': '所有文件',
+    'zh-TW': '所有檔案',
+    'en-US': 'All files',
+    ru: 'Все файлы',
+    fa: 'همه فایل‌ها',
+  },
   // —— 桌面通知（notify-user 出口） ——
   proxyErrorTitle: {
     'zh-CN': 'FlowZ 代理出错',

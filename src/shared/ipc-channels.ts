@@ -29,6 +29,7 @@ export const IPC_CHANNELS = {
   SERVER_ADD: 'server:add',
   SERVER_ADD_BULK: 'server:addBulk', // 批量添加自建节点（本地导入，一次 loadConfig→saveConfig）
   LOCAL_IMPORT_PARSE: 'localImport:parse', // 本地导入：解析文件/文本 → 预览（节点 + 订阅 + 统计）；不可识别格式 throw
+  LOCAL_IMPORT_PICK_FILE: 'localImport:pickFile', // 本地导入：弹系统原生文件对话框选配置文件 + 读内容回传（替代 HTML input，避开 Chromium 英文文案、对话框天然跟随系统语言）
   SERVER_UPDATE: 'server:update',
   SERVER_DELETE: 'server:delete',
   SERVER_DELETE_BATCH: 'server:deleteBatch',

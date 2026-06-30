@@ -1475,6 +1475,7 @@
     "desc": "Supports sing-box / Xray (.json) and Clash (.yaml), plus share links / Base64 text. Nodes go to Manual; Clash subscription sources become subscriptions.",
     "tabFile": "Select File",
     "tabText": "Paste Text",
+    "pickFile": "Browse…",
     "fileLabel": "Config File",
     "fileHint": "Pick a .json / .yaml / .txt file",
     "textLabel": "Content",
