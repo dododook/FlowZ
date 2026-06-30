@@ -235,7 +235,8 @@ export function registerBackupHandlers(
         }
       }
 
-      // 通过 ConfigManager 保存（内部 validateConfig 校验；失效 selectedServerId 等由其兜底）
+      // 通过 ConfigManager 保存（内部 validateConfig 校验）。失效 selectedServerId 已在 mergeCategories
+      // 末尾归零（validateConfig 对失效引用是 throw、非归零，否则整份导入失败）。
       await configManager.saveConfig(merged);
 
       ipcEventEmitter.sendToAll('event:configChanged', { newValue: merged });

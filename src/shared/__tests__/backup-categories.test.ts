@@ -22,7 +22,12 @@ const cfg = (over: Partial<UserConfig>): UserConfig =>
 
 describe('countCategory / detectCategories', () => {
   const config = cfg({
-    servers: [srv('m1', 'vless'), srv('m2', 'vmess'), srv('x1', 'tailscale'), srv('s1', 'vmess', 'sub1')],
+    servers: [
+      srv('m1', 'vless'),
+      srv('m2', 'vmess'),
+      srv('x1', 'tailscale'),
+      srv('s1', 'vmess', 'sub1'),
+    ],
     subscriptions: [{ id: 'sub1' } as never],
     customRules: [{} as never],
     customRuleSets: [{} as never, {} as never],
@@ -116,9 +121,82 @@ describe('mergeCategories（导入：整类替换 + 空跳过 + 未选保留）'
   });
 
   it('选中类有数据则替换（customRules / generalSettings）', () => {
-    const { config, skipped } = mergeCategories(current, backup, ['customRules', 'generalSettings']);
+    const { config, skipped } = mergeCategories(current, backup, [
+      'customRules',
+      'generalSettings',
+    ]);
     expect(config.customRules).toEqual([{ bak: 1 }]);
     expect(config.proxyMode).toBe('global');
     expect(skipped).toEqual([]);
+  });
+});
+
+describe('review 回归：依赖字段随类 + selectedServerId 兜底 + 敏感字段排除', () => {
+  it('H1 导入节点后失效 selectedServerId → 归零（validateConfig 会 throw）', () => {
+    const cur = cfg({ servers: [srv('cm1', 'vless')], selectedServerId: 'cm1' });
+    const bak = cfg({ servers: [srv('bm1', 'vmess')] });
+    const { config } = mergeCategories(cur, bak, ['manualNodes']);
+    expect(config.servers.map((s) => s.id)).toEqual(['bm1']);
+    expect(config.selectedServerId).toBeNull(); // cm1 已不在 → 归零
+  });
+
+  it('H1 选中节点仍在新 servers / direct 哨兵 → 不动', () => {
+    const cur = cfg({ servers: [srv('m1', 'vless')], selectedServerId: 'm1' });
+    const bak = cfg({ servers: [srv('m1', 'vless'), srv('m2', 'vmess')] });
+    expect(mergeCategories(cur, bak, ['manualNodes']).config.selectedServerId).toBe('m1');
+    const curD = cfg({ servers: [srv('m1', 'vless')], selectedServerId: '__direct__' });
+    expect(mergeCategories(curD, bak, ['manualNodes']).config.selectedServerId).toBe('__direct__');
+  });
+
+  it('M2 ruleResources 随自定义规则类整类替换', () => {
+    const cur = cfg({
+      customRules: [{ cur: 1 } as never],
+      ruleResources: [{ id: 'r-cur' } as never],
+    });
+    const bak = cfg({
+      customRules: [{ bak: 1 } as never],
+      ruleResources: [{ id: 'r-bak' } as never],
+    });
+    const { config } = mergeCategories(cur, bak, ['customRules']);
+    expect(config.ruleResources).toEqual([{ id: 'r-bak' }]);
+    // pick 也带 ruleResources
+    expect(pickCategories(bak, ['customRules']).ruleResources).toEqual([{ id: 'r-bak' }]);
+  });
+
+  it('M3 customAppPresets 随应用分流类整类替换', () => {
+    const cur = cfg({
+      appRules: [{ cur: 1 } as never],
+      customAppPresets: [{ id: 'p-cur' } as never],
+    });
+    const bak = cfg({
+      appRules: [{ bak: 1 } as never],
+      customAppPresets: [{ id: 'p-bak' } as never],
+    });
+    const { config } = mergeCategories(cur, bak, ['appRules']);
+    expect(config.customAppPresets).toEqual([{ id: 'p-bak' }]);
+    expect(pickCategories(bak, ['appRules']).customAppPresets).toEqual([{ id: 'p-bak' }]);
+  });
+
+  it('M4 customRuleSets 整类替换（备份无 ruleSets → 清空，不保留 current）', () => {
+    const cur = cfg({
+      customRules: [{ c: 1 } as never],
+      customRuleSets: [{ id: 'rs-cur' } as never],
+    });
+    const bak = cfg({ customRules: [{ b: 1 } as never] }); // 无 customRuleSets
+    expect(mergeCategories(cur, bak, ['customRules']).config.customRuleSets).toEqual([]);
+  });
+
+  it('L6 通用设置导出/导入排除敏感+临时字段（clashApiSecret/diagnosticCapture/builtinGeoMeta）', () => {
+    const config = cfg({
+      proxyMode: 'global',
+      clashApiSecret: 'secret123',
+      diagnosticCapture: { prevLogLevel: 'info' },
+      builtinGeoMeta: { x: {} },
+    } as never);
+    const out = pickCategories(config, ['generalSettings']);
+    expect(out.proxyMode).toBe('global');
+    expect(out.clashApiSecret).toBeUndefined();
+    expect((out as Record<string, unknown>).diagnosticCapture).toBeUndefined();
+    expect((out as Record<string, unknown>).builtinGeoMeta).toBeUndefined();
   });
 });

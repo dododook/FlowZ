@@ -14,6 +14,7 @@
  */
 import type { UserConfig, ServerConfig } from './types';
 import { isEndpointProtocol } from './endpoint-routes';
+import { isDirectSelection } from './direct-selection';
 
 export type BackupCategory =
   | 'manualNodes'
@@ -43,21 +44,32 @@ function classifyServer(s: ServerConfig): NodeCategory {
 }
 
 /**
- * 不属于 generalSettings 的「数据字段」。generalSettings 用排除法 = config 的其余所有键。
- * selectedServerId 归数据侧（是选中态、跟节点走），不随通用设置导入；导入后若失效由 ConfigManager.validateConfig 兜底归零。
+ * 不属于 generalSettings 的「数据字段」（随各自类别走，不进通用设置）。generalSettings = config 其余键。
+ * - ruleResources 随自定义规则类（ruleSet 规则按 res:<id> 引用它）；customAppPresets 随应用分流类（appRule.appId 引用它）。
+ * - selectedServerId 跟节点走、不随通用设置导入；导入节点后若失效，mergeCategories 末尾主动归零
+ *   （ConfigManager.validateConfig 对失效 selectedServerId 是 **throw、非归零**，不兜底会令整份导入失败）。
  */
 const DATA_FIELDS: readonly string[] = [
   'servers',
   'subscriptions',
   'customRules',
   'customRuleSets',
+  'ruleResources',
   'appRules',
   'appRulesSeeded',
+  'customAppPresets',
   'selectedServerId',
 ];
 
+/** 敏感/临时态字段：既不进任何类别、也不进通用设置（绝不写入备份文件）。 */
+const EXCLUDED_FROM_BACKUP: readonly string[] = [
+  'clashApiSecret', // clash_api 明文密钥，不跨机
+  'diagnosticCapture', // 临时诊断态（提级日志）
+  'builtinGeoMeta', // 内置 geo 元数据（随包，无需备份）
+];
+
 function isGeneralKey(key: string): boolean {
-  return !DATA_FIELDS.includes(key);
+  return !DATA_FIELDS.includes(key) && !EXCLUDED_FROM_BACKUP.includes(key);
 }
 
 /** 某 config 是否含通用设置字段（排除法：存在任一非数据键）。 */
@@ -99,7 +111,10 @@ export function detectCategories(config: Partial<UserConfig>): BackupCategory[] 
 }
 
 /** 导出：从完整 config 抽出选中类的字段（其余字段不进备份）。 */
-export function pickCategories(config: UserConfig, selected: BackupCategory[]): Partial<UserConfig> {
+export function pickCategories(
+  config: UserConfig,
+  selected: BackupCategory[]
+): Partial<UserConfig> {
   const sel = new Set(selected);
   const out: Partial<UserConfig> = {};
 
@@ -114,11 +129,13 @@ export function pickCategories(config: UserConfig, selected: BackupCategory[]): 
   }
   if (sel.has('customRules')) {
     out.customRules = config.customRules;
-    if (config.customRuleSets) out.customRuleSets = config.customRuleSets;
+    out.customRuleSets = config.customRuleSets ?? [];
+    if (config.ruleResources) out.ruleResources = config.ruleResources;
   }
   if (sel.has('appRules')) {
     if (config.appRules) out.appRules = config.appRules;
     if (config.appRulesSeeded !== undefined) out.appRulesSeeded = config.appRulesSeeded;
+    if (config.customAppPresets) out.customAppPresets = config.customAppPresets;
   }
   if (sel.has('generalSettings')) {
     for (const [k, v] of Object.entries(config)) {
@@ -178,10 +195,13 @@ export function mergeCategories(
 
   // customRules（+ customRuleSets 同族）
   if (sel.has('customRules')) {
-    const hasData = (backup.customRules?.length ?? 0) > 0 || (backup.customRuleSets?.length ?? 0) > 0;
+    const hasData =
+      (backup.customRules?.length ?? 0) > 0 || (backup.customRuleSets?.length ?? 0) > 0;
     if (hasData) {
+      // 整类替换：rules + ruleSets + ruleResources（被 ruleSet 规则按 res:<id> 引用）同进同出。
       result.customRules = backup.customRules ?? [];
-      result.customRuleSets = backup.customRuleSets ?? current.customRuleSets;
+      result.customRuleSets = backup.customRuleSets ?? [];
+      result.ruleResources = backup.ruleResources ?? [];
     } else {
       skipped.push('customRules');
     }
@@ -190,8 +210,10 @@ export function mergeCategories(
   // appRules（+ appRulesSeeded）
   if (sel.has('appRules')) {
     if (backup.appRules?.length) {
+      // 整类替换：appRules + appRulesSeeded + customAppPresets（appRule.appId 可引用自定义预设）同进同出。
       result.appRules = backup.appRules;
       if (backup.appRulesSeeded !== undefined) result.appRulesSeeded = backup.appRulesSeeded;
+      result.customAppPresets = backup.customAppPresets ?? [];
     } else {
       skipped.push('appRules');
     }
@@ -207,6 +229,16 @@ export function mergeCategories(
       }
     }
     if (!applied) skipped.push('generalSettings');
+  }
+
+  // 导入节点类后选中节点可能已不在新 servers → 主动归零（validateConfig 对失效 selectedServerId 是 throw、
+  // 非归零，不兜底会令整份导入失败）。null 与 direct 哨兵不动。
+  if (
+    result.selectedServerId &&
+    !isDirectSelection(result.selectedServerId) &&
+    !result.servers.some((s) => s.id === result.selectedServerId)
+  ) {
+    result.selectedServerId = null;
   }
 
   return { config: result, skipped };

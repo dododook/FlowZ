@@ -164,6 +164,8 @@ export function BackupRestoreSection() {
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const totalNodes = backupInfo?.serverCount ?? 0;
   const hasData = totalNodes > 0 || (backupInfo?.subscriptionCount ?? 0) > 0;
+  // 整个导出/导入流程（含选类对话框打开期间）都算忙，避免对话框开着时主按钮仍可点。
+  const busy = isExporting || isImporting || showExportDialog || showImportDialog;
 
   return (
     <div className="space-y-4">
@@ -186,7 +188,7 @@ export function BackupRestoreSection() {
           id="backup-export-btn"
           size="sm"
           variant="outline"
-          disabled={isExporting || isImporting}
+          disabled={busy}
           onClick={() => setShowExportDialog(true)}
           className="flex items-center gap-1.5"
         >
@@ -200,7 +202,7 @@ export function BackupRestoreSection() {
           id="backup-import-btn"
           size="sm"
           variant="outline"
-          disabled={isExporting || isImporting}
+          disabled={busy}
           onClick={handleImportClick}
           className="flex items-center gap-1.5"
         >
