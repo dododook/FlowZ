@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, powerMonitor, shell } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { ConfigManager } from './services/ConfigManager';
 import { ProtocolParser } from './services/ProtocolParser';
 import { LogManager } from './services/LogManager';
@@ -12,6 +13,7 @@ import { resourceManager } from './services/ResourceManager';
 import { registerIconProtocolSchemes, registerIconProtocol } from './icon-protocol';
 import { notifyUser, setDesktopNotificationsEnabled } from './notify-user';
 import { mt, setMainLanguage } from './i18n';
+import { runCliEarlyExit } from './cli-early-exit';
 import { SubscriptionService } from './services/SubscriptionService';
 import { registerPrivacyHandlers } from './ipc/handlers/privacy-handlers';
 import {
@@ -87,6 +89,24 @@ function logStartupTimingOnce(): void {
     'Main'
   );
 }
+
+// ── CLI / 非 GUI 早退（必须在 Electron GUI 平台初始化前；无 DISPLAY 下 GUI 初始化失败会卡死 + segfault）──
+// 编排/判定全在 cli-early-exit（纯函数 + IO 注入，可单测）；此处仅注入真实 IO：
+// - writeStdout/Stderr 用 fs.writeSync(同步落 fd)：process.stdout.write 写管道是异步缓冲，紧跟 exit 会丢
+//   `flowz -V | cat` / `$(flowz -V)` 的输出。
+// - exit 用 process.exit(而非 app.exit)：保证同步终止、绝不 fall-through 落回下方 GUI init（ready 前无 GUI 状态需清理）。
+// - setLanguage 经 resolveAutoLanguage 智能匹配系统 locale(ru-RU→ru / zh_HK→zh-TW)，与 normal 路径一致，禁硬编码。
+runCliEarlyExit({
+  argv: process.argv.slice(1),
+  env: process.env,
+  platform: process.platform,
+  getVersion: () => app.getVersion(),
+  writeStdout: (text) => fs.writeSync(1, text),
+  writeStderr: (text) => fs.writeSync(2, text),
+  setLanguage: (langs) => setMainLanguage(resolveAutoLanguage(langs)),
+  headlessMessage: () => mt('headlessNoDisplay'),
+  exit: (code) => process.exit(code),
+});
 
 // 初始化用户数据路径（必须在 app.requestSingleInstanceLock() 之前调用）
 // 以确保便携模式下，锁文件和所有 Electron 数据都重定向到正确的目录

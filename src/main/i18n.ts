@@ -20,6 +20,17 @@ import {
 
 /** key → 各受支持语言文案。satisfies 保证每键 5 语齐全；新增主进程用户可见串在此扩展。 */
 const MESSAGES = {
+  // —— CLI / 非 GUI 早退（cli-early-exit，main 进程顶层；headless 提示走系统 locale，禁硬编码） ——
+  headlessNoDisplay: {
+    'zh-CN':
+      'FlowZ 是图形界面应用，需要桌面环境运行；当前未检测到显示服务（DISPLAY/Wayland）。查看版本请运行：flowz --version',
+    'zh-TW':
+      'FlowZ 是圖形介面應用，需要桌面環境執行；目前未偵測到顯示服務（DISPLAY/Wayland）。查看版本請執行：flowz --version',
+    'en-US':
+      'FlowZ is a GUI application and needs a desktop environment; no display server (DISPLAY/Wayland) was detected. To check the version, run: flowz --version',
+    ru: 'FlowZ — графическое приложение, которому нужна среда рабочего стола; сервер отображения (DISPLAY/Wayland) не обнаружен. Чтобы узнать версию, выполните: flowz --version',
+    fa: 'FlowZ یک برنامهٔ گرافیکی است و به محیط دسکتاپ نیاز دارد؛ هیچ سرور نمایشی (DISPLAY/Wayland) شناسایی نشد. برای دیدن نسخه اجرا کنید: flowz --version',
+  },
   // —— 桌面通知（notify-user 出口） ——
   proxyErrorTitle: {
     'zh-CN': 'FlowZ 代理出错',

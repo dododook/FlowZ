@@ -4,7 +4,7 @@
  */
 jest.mock('electron', () => ({ app: {} }));
 
-import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } from '../../shared/language';
+import { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, resolveAutoLanguage } from '../../shared/language';
 import { mt, setMainLanguage, getMainLanguage, MAIN_MESSAGE_KEYS } from '../i18n';
 
 // 自动覆盖全部文案键（通知 + 托盘 + 对话框 + 未来新增），无需手维护清单。
@@ -63,5 +63,33 @@ describe('mt', () => {
         expect(mt(key).trim().length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+// headless 早退提示跟随系统 locale 的完整链路（index.ts: setMainLanguage(resolveAutoLanguage(systemLanguagesFromEnv(process.env)))）。
+// 验收门「提示满足系统语言、禁硬编码」：region 化 locale（ru-RU / zh-Hans-CN）须智能匹配到对应语言，
+// 不得静默回退英文。直接把裸 locale 传 setMainLanguage 会走精确匹配、ru-RU 落英文——此处钉死该 i18n 不变量。
+describe('headless 提示跟随系统 locale（H1 回归）', () => {
+  const headlessFor = (sysLocale: string): string => {
+    setMainLanguage(resolveAutoLanguage([sysLocale]));
+    return mt('headlessNoDisplay');
+  };
+
+  it('ru-RU 系统 locale → 俄语文案（含西里尔字母，非英文回退）', () => {
+    expect(headlessFor('ru-RU')).toMatch(/[А-Яа-я]/);
+  });
+
+  it('zh-Hans-CN / zh-CN → 简体中文文案（含汉字）', () => {
+    expect(headlessFor('zh-Hans-CN')).toMatch(/[一-鿿]/);
+    expect(headlessFor('zh-CN')).toMatch(/[一-鿿]/);
+  });
+
+  it('fa-IR → 波斯语文案（含阿拉伯/波斯字母）', () => {
+    expect(headlessFor('fa-IR')).toMatch(/[؀-ۿ]/);
+  });
+
+  it('en-US → 英文；不支持的 de-DE → 兜底英文（仅此情形允许英文）', () => {
+    expect(headlessFor('en-US')).toContain('GUI application');
+    expect(headlessFor('de-DE')).toContain('GUI application');
   });
 });
