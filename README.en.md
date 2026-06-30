@@ -69,6 +69,7 @@ Built around: **simple setup · clear rules · uninterrupted switching · author
 
 **Subscriptions**
 - Subscription import (sing-box JSON and common share formats)
+- Manual import: bring nodes into Manual from a file or pasted text (sing-box / Xray / Clash configs, Base64, share links); Clash proxy-providers are imported as subscriptions (no auto-update, direct by default)
 - Auto-update scheduling (**on by default**): catch-up for stale subscriptions on startup + periodic checks + exponential backoff + an "update over proxy" toggle; updates **never interrupt the current connection**
 - Stable node fingerprint reconciliation: subscription updates keep local id / selected node, zero connection drop
 - **GitHub mirror acceleration**: core / rule resources / dashboard downloads can route through a gh-proxy mirror
@@ -193,7 +194,7 @@ xattr -cr /Applications/FlowZ.app
 
 ## 🚀 Quick Start
 
-1. **Add a node** — pick a protocol on the "Servers" page, or import a subscription link under "Subscriptions".
+1. **Add a node** — pick a protocol on the "Servers" page, use "Manual Import" to bring in nodes from a file or text (sing-box / Xray / Clash / Base64 / share links), or import a subscription link under "Subscriptions".
 2. **Pick a mode** — choose a route mode on the home page (default: Smart / auto-split); if you don't want TUN, switch to "system-proxy mode" in Settings.
 3. **Enable the proxy** — click "Enable proxy" on the home page.
 4. **(Optional) Configure rules** — add custom rules / referenced rule-sets under "Routing rules"; assign per-app policy under "App routing".
