@@ -466,3 +466,124 @@ describe('LOW-1 provider 复用主解析 — 嵌套 proxy-providers 不递归 + 
     expect(joined).toMatch(/再嵌套 proxy-providers|不递归/);
   });
 });
+
+describe('parseLocalContent — 本地导入（不联网）', () => {
+  it('sing-box JSON：映射受支持节点 + 不支持 type 透传 custom + 内部 type 忽略；节点剥 subscriptionId', async () => {
+    const svc = newService(new FakeLog());
+    const text = JSON.stringify({
+      outbounds: [
+        { type: 'vless', tag: 'v1', server: '1.2.3.4', server_port: 443, uuid: 'abc' },
+        { type: 'tor', tag: 't1' }, // 不支持 → 透传 custom
+        { type: 'direct', tag: 'd' }, // 内部 → 忽略
+      ],
+    });
+    const r = await svc.parseLocalContent(text);
+    expect(r.format).toBe('singbox');
+    expect(r.nodes).toHaveLength(2);
+    expect(r.stats.unsupported).toBe(1);
+    const custom = r.nodes.find((n) => n.protocol === 'custom')!;
+    expect((custom.customSettings?.outbound as { type?: string })?.type).toBe('tor');
+    expect(r.nodes.every((n) => n.subscriptionId === undefined)).toBe(true);
+  });
+
+  it('Xray JSON：按 protocol 解析（区别于 sing-box 的 type）', async () => {
+    const svc = newService(new FakeLog());
+    const text = JSON.stringify({
+      outbounds: [
+        {
+          protocol: 'vmess',
+          tag: 'vm1',
+          settings: { vnext: [{ address: '1.2.3.4', port: 443, users: [{ id: 'uuid-x' }] }] },
+        },
+        { protocol: 'freedom', tag: 'd' },
+      ],
+    });
+    const r = await svc.parseLocalContent(text);
+    expect(r.format).toBe('xray');
+    expect(r.nodes).toHaveLength(1);
+    expect(r.nodes[0].protocol).toBe('vmess');
+    expect(r.nodes[0].uuid).toBe('uuid-x');
+  });
+
+  it('Clash YAML：proxies→自建节点；proxy-providers→订阅 {name,url}（不拉取）', async () => {
+    const svc = newService(new FakeLog());
+    const text = [
+      'proxies:',
+      '  - { name: a, type: vless, server: 1.2.3.4, port: 443, uuid: u }',
+      'proxy-providers:',
+      '  prov:',
+      '    type: http',
+      '    url: https://prov.example.com/p',
+    ].join('\n');
+    const r = await svc.parseLocalContent(text);
+    expect(r.format).toBe('clash');
+    expect(r.nodes).toHaveLength(1);
+    expect(r.nodes[0].subscriptionId).toBeUndefined();
+    expect(r.subscriptions).toEqual([{ name: 'prov', url: 'https://prov.example.com/p' }]);
+  });
+
+  it('Base64 分享链接：解码后逐行解析为自建节点', async () => {
+    const svc = newService(new FakeLog());
+    const link = 'vless://uuid-z@5.6.7.8:443?security=tls&type=tcp#mynode';
+    const b64 = Buffer.from(link, 'utf-8').toString('base64');
+    const r = await svc.parseLocalContent(b64);
+    expect(r.format).toBe('links');
+    expect(r.nodes).toHaveLength(1);
+    expect(r.nodes[0].protocol).toBe('vless');
+    expect(r.nodes[0].subscriptionId).toBeUndefined();
+  });
+
+  it('必填不全的节点被最终 gate 过滤计 failed（不入库防整体失败）', async () => {
+    const svc = newService(new FakeLog());
+    const text = JSON.stringify({
+      outbounds: [{ type: 'vless', tag: 'bad', server: '1.2.3.4', server_port: 443 }], // 缺 uuid
+    });
+    const r = await svc.parseLocalContent(text);
+    expect(r.nodes).toHaveLength(0);
+    expect(r.stats.failed).toBeGreaterThanOrEqual(1);
+  });
+
+  it('不可识别格式 → throw（门控）', async () => {
+    const svc = newService(new FakeLog());
+    await expect(svc.parseLocalContent('this-is-not-a-config')).rejects.toThrow(/无法识别/);
+  });
+
+  it('sing-box socks/http 原生映射（非 custom，不置灰）', async () => {
+    const svc = newService(new FakeLog());
+    const text = JSON.stringify({
+      outbounds: [
+        {
+          type: 'socks',
+          tag: 's5',
+          server: '1.2.3.4',
+          server_port: 1080,
+          username: 'u',
+          password: 'p',
+        },
+        { type: 'http', tag: 'h', server: '1.2.3.4', server_port: 8080 },
+      ],
+    });
+    const r = await svc.parseLocalContent(text);
+    expect(r.format).toBe('singbox');
+    expect(r.nodes.map((n) => n.protocol).sort()).toEqual(['http', 'socks']);
+    expect(r.stats.unsupported).toBe(0);
+  });
+
+  it('端口越界(>65535)被最终 gate 过滤计 failed（防整批 saveConfig throw）', async () => {
+    const svc = newService(new FakeLog());
+    const text = JSON.stringify({
+      outbounds: [
+        { type: 'vless', tag: 'bad-port', server: '1.2.3.4', server_port: 70000, uuid: 'u' },
+      ],
+    });
+    const r = await svc.parseLocalContent(text);
+    expect(r.nodes).toHaveLength(0);
+    expect(r.stats.failed).toBeGreaterThanOrEqual(1);
+  });
+
+  it('导入内容过大 → throw（体积闸）', async () => {
+    const svc = newService(new FakeLog());
+    const huge = 'x'.repeat(10 * 1024 * 1024 + 1);
+    await expect(svc.parseLocalContent(huge)).rejects.toThrow(/过大/);
+  });
+});

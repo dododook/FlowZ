@@ -5,6 +5,7 @@
 
 import { IpcMainInvokeEvent } from 'electron';
 import * as fs from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { ServerConfig } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
@@ -51,49 +52,11 @@ export function registerServerHandlers(
     }
   };
 
-  // 解析协议 URL
-  registerIpcHandler<{ url: string }, ServerConfig>(
-    IPC_CHANNELS.SERVER_PARSE_URL,
-    async (_event: IpcMainInvokeEvent, args: { url: string }) => {
-      return protocolParser.parseUrl(args.url);
-    }
-  );
-
   // 生成分享 URL
   registerIpcHandler<{ server: ServerConfig }, string>(
     IPC_CHANNELS.SERVER_GENERATE_URL,
     async (_event: IpcMainInvokeEvent, args: { server: ServerConfig }) => {
       return protocolParser.generateUrl(args.server);
-    }
-  );
-
-  // 从 URL 添加服务器
-  registerIpcHandler<{ url: string; name?: string }, ServerConfig>(
-    IPC_CHANNELS.SERVER_ADD_FROM_URL,
-    async (_event: IpcMainInvokeEvent, args: { url: string; name?: string }) => {
-      // 解析 URL
-      const serverConfig = protocolParser.parseUrl(args.url);
-
-      // 如果传入了自定义名称，使用自定义名称
-      if (args.name) {
-        serverConfig.name = args.name;
-      }
-
-      // 设置创建时间和更新时间
-      const now = new Date().toISOString();
-      serverConfig.createdAt = now;
-      serverConfig.updatedAt = now;
-
-      // 加载当前配置
-      const config = await configManager.loadConfig();
-
-      // 添加服务器到配置
-      config.servers.push(serverConfig);
-
-      // 保存配置
-      await configManager.saveConfig(config);
-
-      return serverConfig;
     }
   );
 
@@ -104,6 +67,31 @@ export function registerServerHandlers(
       const config = await configManager.loadConfig();
       config.servers.push(args.server);
       await configManager.saveConfig(config);
+    }
+  );
+
+  // 批量添加自建节点（本地导入）：一次 loadConfig → push 全部 → 一次 saveConfig（避免 N 次原子写 + N 次广播）。
+  // 每条强制重新生成 id（杜绝与存量/批内 id 撞）+ 剥离 subscriptionId/providerName（恒为自建，可编辑可删除）。
+  // 入参节点已在 parseLocalContent 经 isServerComplete 过滤，validateConfig 不会因协议/字段 throw。
+  registerIpcHandler<{ servers: ServerConfig[] }, { added: number }>(
+    IPC_CHANNELS.SERVER_ADD_BULK,
+    async (_event: IpcMainInvokeEvent, args: { servers: ServerConfig[] }) => {
+      const list = Array.isArray(args.servers) ? args.servers : [];
+      if (list.length === 0) return { added: 0 };
+      const config = await configManager.loadConfig();
+      const now = new Date().toISOString();
+      for (const s of list) {
+        config.servers.push({
+          ...s,
+          id: randomUUID(),
+          subscriptionId: undefined,
+          providerName: undefined,
+          createdAt: s.createdAt ?? now,
+          updatedAt: now,
+        });
+      }
+      await configManager.saveConfig(config);
+      return { added: list.length };
     }
   );
 

@@ -1,8 +1,7 @@
 /**
  * 分享链接支持的协议 scheme 单一真值。
- * 前端导入预检（import-url-dialog 的 isSupportedShareUrl）与后端解析
- * （ProtocolParser.isSupported）共用此列表，避免两处白名单各自维护导致漂移
- * （naive:// 曾仅后端支持、前端漏列，撞 issue #191 导入语境）。
+ * 由 ProtocolParser.isSupported（分享链接解析 + 本地导入 links 分支共用）消费此列表，
+ * 避免多处白名单各自维护导致漂移（naive:// 曾仅后端支持、前端漏列，撞 issue #191 导入语境）。
  */
 export const SUPPORTED_URL_SCHEMES = [
   'vless',

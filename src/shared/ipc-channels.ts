@@ -25,10 +25,10 @@ export const IPC_CHANNELS = {
 
   // 服务器管理
   SERVER_SWITCH: 'server:switch',
-  SERVER_PARSE_URL: 'server:parseUrl',
   SERVER_GENERATE_URL: 'server:generateUrl',
-  SERVER_ADD_FROM_URL: 'server:addFromUrl',
   SERVER_ADD: 'server:add',
+  SERVER_ADD_BULK: 'server:addBulk', // 批量添加自建节点（本地导入，一次 loadConfig→saveConfig）
+  LOCAL_IMPORT_PARSE: 'localImport:parse', // 本地导入：解析文件/文本 → 预览（节点 + 订阅 + 统计）；不可识别格式 throw
   SERVER_UPDATE: 'server:update',
   SERVER_DELETE: 'server:delete',
   SERVER_DELETE_BATCH: 'server:deleteBatch',

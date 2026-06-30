@@ -15,6 +15,7 @@ export type {
   LogEntry,
   ApiResponse,
   SubscriptionConfig,
+  ImportParseResult,
   ProxyMode,
   ProxyModeType,
   IpInfo,

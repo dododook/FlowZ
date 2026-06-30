@@ -26,6 +26,7 @@ import type {
   RuleResourceProgress,
   RuleResourceCatalogResult,
   InvalidNodeInfo,
+  ImportParseResult,
 } from '../../shared/types';
 import type { WarpWireGuardDraft } from '../../shared/warp';
 import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
@@ -283,6 +284,13 @@ export const serverApi = {
   },
 
   /**
+   * 批量添加自建节点（本地导入，一次写盘）
+   */
+  async addBulk(servers: ServerConfig[]): Promise<{ added: number }> {
+    return ipcClient.invoke(IPC_CHANNELS.SERVER_ADD_BULK, { servers });
+  },
+
+  /**
    * 更新服务器
    */
   async update(server: ServerConfig): Promise<void> {
@@ -349,20 +357,6 @@ export const serverApi = {
    */
   async switch(serverId: string): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_SWITCH, { serverId });
-  },
-
-  /**
-   * 解析协议 URL
-   */
-  async parseUrl(url: string): Promise<Omit<ServerConfig, 'id'>> {
-    return ipcClient.invoke(IPC_CHANNELS.SERVER_PARSE_URL, { url });
-  },
-
-  /**
-   * 从 URL 添加服务器
-   */
-  async addFromUrl(url: string, name?: string): Promise<ServerConfig> {
-    return ipcClient.invoke(IPC_CHANNELS.SERVER_ADD_FROM_URL, { url, name });
   },
 
   /**
@@ -1005,6 +999,15 @@ export const appApi = {
 /**
  * 统一的 API 客户端
  */
+/**
+ * 本地导入 API（解析文件/文本 → 预览；不可识别格式时主进程 throw → 此处 reject）
+ */
+export const localImportApi = {
+  parse(text: string): Promise<ImportParseResult> {
+    return ipcClient.invoke(IPC_CHANNELS.LOCAL_IMPORT_PARSE, { text });
+  },
+};
+
 export const api = {
   proxy: proxyApi,
   config: configApi,
@@ -1022,6 +1025,7 @@ export const api = {
   update: updateApi,
   coreUpdate: coreUpdateApi,
   subscription: subscriptionApi,
+  localImport: localImportApi,
   backup: backupApi,
   diagnostic: diagnosticApi,
   helper: helperApi,

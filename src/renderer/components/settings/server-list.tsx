@@ -40,7 +40,7 @@ import {
   Square,
   Copy,
   Zap,
-  Link,
+  HardDriveDownload,
 } from 'lucide-react';
 import { generateShareUrl } from '@/bridge/api-wrapper';
 import { useTranslation } from 'react-i18next';
@@ -503,8 +503,8 @@ export function ServerList({
                   onClick={onImportClick}
                   className="flex items-center gap-2"
                 >
-                  <Link className="h-4 w-4" />
-                  {t('servers.importFromUrl')}
+                  <HardDriveDownload className="h-4 w-4" />
+                  {t('servers.importFromLocal')}
                 </Button>
               </div>
             )}

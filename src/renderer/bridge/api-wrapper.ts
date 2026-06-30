@@ -69,34 +69,8 @@ export async function openExternal(url: string): Promise<ApiResponse<boolean>> {
 }
 
 /**
- * Protocol URL Parsing APIs
+ * Share URL APIs
  */
-export async function parseProtocolUrl(
-  url: string
-): Promise<ApiResponse<Omit<ServerConfig, 'id'>>> {
-  try {
-    const server = await api.server.parseUrl(url);
-    return { success: true, data: server };
-  } catch (error: any) {
-    ErrorHandler.handleApiError(error, i18n.t('apiToast.parseProtocolUrl'));
-    return { success: false, error: error?.message };
-  }
-}
-
-export async function addServerFromUrl(
-  url: string,
-  name: string
-): Promise<ApiResponse<ServerConfig>> {
-  try {
-    const server = await api.server.addFromUrl(url, name);
-    ErrorHandler.showSuccess(i18n.t('apiToast.serverAdded'));
-    return { success: true, data: server };
-  } catch (error: any) {
-    ErrorHandler.handleApiError(error, i18n.t('apiToast.addServerFromUrl'));
-    return { success: false, error: error?.message };
-  }
-}
-
 export async function generateShareUrl(server: ServerConfig): Promise<ApiResponse<string>> {
   try {
     const url = await api.server.generateUrl(server);

@@ -246,6 +246,30 @@ export interface ServerConfig {
 }
 
 // ============================================================================
+// 本地导入（节点 / 订阅）
+// ============================================================================
+
+/** 本地导入识别到的来源格式。 */
+export type ImportFormat = 'singbox' | 'xray' | 'clash' | 'links' | 'unknown';
+
+/**
+ * 本地导入解析结果（主进程 LOCAL_IMPORT_PARSE 返回，渲染端预览用）。
+ * nodes 均为「自建」节点（无 subscriptionId）；subscriptions 仅来自 Clash proxy-providers（不联网拉取）。
+ */
+export interface ImportParseResult {
+  nodes: ServerConfig[];
+  subscriptions: { name: string; url: string }[];
+  stats: {
+    imported: number; // 可入库的节点数（含「不支持但透传为 custom」的，使用时置灰）
+    unsupported: number; // 其中「当前内核不支持、已透传为 custom」的数量（imported 的子集）
+    skipped: number; // 协议不受支持被跳过的节点数
+    failed: number; // 解析失败 / 必填字段不全被跳过的节点数
+  };
+  warnings: string[];
+  format: ImportFormat;
+}
+
+// ============================================================================
 // TUN 模式配置
 // ============================================================================
 

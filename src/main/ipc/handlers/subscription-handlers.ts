@@ -1,6 +1,6 @@
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
-import type { SubscriptionConfig } from '../../../shared/types';
+import type { SubscriptionConfig, ImportParseResult } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { SubscriptionService, SubscriptionUpdateResult } from '../../services/SubscriptionService';
 import { ConfigManager } from '../../services/ConfigManager';
@@ -175,6 +175,14 @@ export function registerSubscriptionHandlers(
           error: error.message,
         };
       }
+    }
+  );
+
+  // 本地导入解析（不联网）：文件/文本 → 预览（自建节点 + Clash 订阅条目 + 统计）。不可识别格式 throw → 渲染端门控报错。
+  registerIpcHandler<{ text: string }, ImportParseResult>(
+    IPC_CHANNELS.LOCAL_IMPORT_PARSE,
+    async (_event: IpcMainInvokeEvent, args: { text: string }) => {
+      return subscriptionService.parseLocalContent(args?.text ?? '');
     }
   );
 

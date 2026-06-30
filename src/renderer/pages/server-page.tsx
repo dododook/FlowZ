@@ -9,7 +9,16 @@ import { SubscriptionDialog } from '@/components/settings/subscription-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, RefreshCw, Rss, Server, Network, ChevronDown, Link, Zap } from 'lucide-react';
+import {
+  Plus,
+  RefreshCw,
+  Rss,
+  Server,
+  Network,
+  ChevronDown,
+  Zap,
+  HardDriveDownload,
+} from 'lucide-react';
 import { isAccountBasedProtocol, isEndpointProtocol } from '../../shared/endpoint-routes';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import {
@@ -28,7 +37,7 @@ import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/page-header';
 import { useServerActions } from './use-server-actions';
 import { useSpeedTest } from '@/components/settings/use-speed-test';
-import { ImportUrlDialog } from '@/components/settings/import-url-dialog';
+import { LocalImportDialog } from '@/components/settings/local-import-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,7 +75,7 @@ export function ServerPage() {
 
   const [isSubDialogOpen, setIsSubDialogOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<SubscriptionConfig | undefined>();
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isLocalImportOpen, setIsLocalImportOpen] = useState(false);
 
   const servers = config?.servers || [];
   // 页级「全部测速」：跨所有分组测全量（与托盘 testAllServers 同口径）；hook 内部 filter 不可测节点、全不可测则 toast。
@@ -249,9 +258,9 @@ export function ServerPage() {
                   <Plus className="h-4 w-4 me-2" />
                   {t('servers.manualAdd')}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsImportDialogOpen(true)}>
-                  <Link className="h-4 w-4 me-2" />
-                  {t('servers.importFromUrl')}
+                <DropdownMenuItem onClick={() => setIsLocalImportOpen(true)}>
+                  <HardDriveDownload className="h-4 w-4 me-2" />
+                  {t('servers.importFromLocal')}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleAddSubscription}>
                   <Rss className="h-4 w-4 me-2" />
@@ -337,7 +346,7 @@ export function ServerPage() {
             onDeleteServers={handleDeleteServers}
             onCloneServer={handleCloneServer}
             onSelectServer={handleSelectServer}
-            onImportClick={() => setIsImportDialogOpen(true)}
+            onImportClick={() => setIsLocalImportOpen(true)}
           />
         </TabsContent>
 
@@ -362,7 +371,7 @@ export function ServerPage() {
               onDeleteServers={handleDeleteServers}
               onCloneServer={handleCloneServer}
               onSelectServer={handleSelectServer}
-              onImportClick={() => setIsImportDialogOpen(true)}
+              onImportClick={() => setIsLocalImportOpen(true)}
             />
           </div>
         </TabsContent>
@@ -448,7 +457,7 @@ export function ServerPage() {
                   onDeleteServers={handleDeleteServers}
                   onCloneServer={handleCloneServer}
                   onSelectServer={handleSelectServer}
-                  onImportClick={() => setIsImportDialogOpen(true)}
+                  onImportClick={() => setIsLocalImportOpen(true)}
                 />
               </div>
             </TabsContent>
@@ -472,9 +481,9 @@ export function ServerPage() {
         subscriptionProxyPolicy={config?.subscriptionProxyPolicy}
       />
 
-      <ImportUrlDialog
-        open={isImportDialogOpen}
-        onOpenChange={setIsImportDialogOpen}
+      <LocalImportDialog
+        open={isLocalImportOpen}
+        onOpenChange={setIsLocalImportOpen}
         onImportSuccess={handleImportSuccess}
       />
     </div>
