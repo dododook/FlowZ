@@ -93,6 +93,10 @@
     "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
     "identity": null,
     "gatekeeperAssess": false,
+    "extendInfo": {
+      "CFBundleLocalizations": ["en", "zh-Hans", "zh-Hant", "ru", "fa"],
+      "CFBundleAllowMixedLocalizations": true
+    },
     "extraResources": [
       {
         "from": "resources/mac-${arch}",
