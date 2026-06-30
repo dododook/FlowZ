@@ -18,6 +18,7 @@ import type { IProxyManager } from '../../services/ProxyManager';
 import { getSingboxDashboardDir } from '../../utils/paths';
 import { mapElectronLocaleToDashboardLang } from '../../utils/dashboard-locale';
 import { mt } from '../../i18n';
+import { buildUninstallSidecar, resolveUninstallBody } from '../../services/uninstall-sidecar';
 
 /**
  * 清 sing-box 官方面板资源缓存目录（dashboard.path）。删后核下次启动因目录为空 → 从 download_url 重拉新 zip。
@@ -263,57 +264,85 @@ export function registerHelperHandlers(
           // 卸载器 /S 静默（用户已在应用内确认完全卸载）；helper 已在第 1 步零提权卸掉 → customUnInstall 钩子 sc query
           // 落空 → 不二次弹 UAC。portable 无卸载器时 rmdir 安装目录（best-effort：装 Program Files 时普通用户无权删，残留由下次安装幂等清理兜底）。
           try {
-            const exePath = app.getPath('exe');
-            const exeDir = path.dirname(exePath);
+            // 便携态 app.getPath('exe') 是 %TEMP% 解压副本（stub 退出自清）、非用户原始本体；原始本体（用户报「残留」
+            // 的对象）在 PORTABLE_EXECUTABLE_FILE/DIR。卸载须清原始本体，故经 resolveUninstallBody 取（NSIS 态无 env
+            // 回落真实 exe）。userData 已由 paths.ts 重定向到 PORTABLE_EXECUTABLE_DIR\data（原始目录），无需在此修正。
+            const { exePath, exeDir } = resolveUninstallBody(process.env, app.getPath('exe'));
             const userData = app.getPath('userData');
             const flowzPid = process.pid;
-            let uninstaller = path.join(exeDir, 'Uninstall FlowZ.exe');
-            if (!fs.existsSync(uninstaller)) {
-              const hit = fs.readdirSync(exeDir).find((f) => /^Uninstall FlowZ.*\.exe$/i.test(f));
-              if (hit) uninstaller = path.join(exeDir, hit);
+            // 定位 NSIS 卸载器（存在=installed，null=portable）。
+            // 便携态（有 PORTABLE_EXECUTABLE_FILE）一律 null：便携无 NSIS 卸载器，且 exeDir 此时是用户可控目录（如
+            // Downloads）——若在此扫 `Uninstall FlowZ*.exe`，恰有同名混放文件会被误判 installed 并静默 /S 执行该任意 exe
+            // （安全/误删面）。故仅 NSIS 安装态（无 PORTABLE_* env、exeDir=受控安装目录）才探测卸载器。
+            let uninstaller: string | null = null;
+            if (!process.env.PORTABLE_EXECUTABLE_FILE) {
+              const defaultUn = path.join(exeDir, 'Uninstall FlowZ.exe');
+              if (fs.existsSync(defaultUn)) {
+                uninstaller = defaultUn;
+              } else {
+                const hit = fs.readdirSync(exeDir).find((f) => /^Uninstall FlowZ.*\.exe$/i.test(f));
+                if (hit) uninstaller = path.join(exeDir, hit);
+              }
             }
-            const hasUninstaller = fs.existsSync(uninstaller);
-            // portable 无卸载器：目录名含 FlowZ（专属目录）才 rmdir 整目录，否则只删 exe 自身
-            // （避免误删用户自选的非专属目录如 D:\Tools\，portable 仍可恢复）。
-            const portableCleanup = exeDir.toLowerCase().includes('flowz')
-              ? `rmdir /s /q "${exeDir}"`
-              : `del /f /q "${exePath}"`;
             const stamp = Date.now();
             const batPath = path.join(os.tmpdir(), `flowz-uninstall-${flowzPid}-${stamp}.bat`);
             const vbsPath = path.join(os.tmpdir(), `flowz-uninstall-${flowzPid}-${stamp}.vbs`);
-            // CRLF 行尾 + GBK 安全（纯 ASCII，路径走变量不内联中文）。
-            const lines = [
-              '@echo off',
-              `set "FLOWZ_PID=${flowzPid}"`,
-              'set "WAIT=0"',
-              ':wait',
-              // 精确等本进程 PID 退出；60×~1s=60s 上限防卡死。
-              `"${system32('tasklist.exe')}" /fi "PID eq %FLOWZ_PID%" 2>nul | "${system32('find.exe')}" "%FLOWZ_PID%" >nul || goto clean`,
-              'set /a WAIT+=1',
-              'if %WAIT% GEQ 60 goto clean',
-              `"${system32('ping.exe')}" 127.0.0.1 -n 2 >nul`,
-              'goto wait',
-              ':clean',
-              `rmdir /s /q "${userData}"`,
-              hasUninstaller ? `if exist "${uninstaller}" "${uninstaller}" /S` : portableCleanup,
-              `del /f /q "${vbsPath}"`, // 清隐藏启动器自身
-              'del "%~f0"',
-              '',
-            ];
-            fs.writeFileSync(batPath, lines.join('\r\n'), 'utf8');
-            // VBScript 隐藏启动器：WScript.Shell.Run(cmd, 0, False) 以隐藏窗口(0)、不等待(False)拉起 .bat。
-            // 规避 Node `spawn('cmd', {detached:true, windowsHide:true})` 在 Windows 上仍弹出 cmd 控制台窗口的已知坑
-            // （detached 新建进程组与 windowsHide 冲突 → 卸载残留终端窗口需手动关闭）。wscript //B 无 UI 随即退出，
-            // 其 .Run 出的 cmd/bat 成为独立后台进程、全程无终端窗口；bat 收尾删 .vbs + 自删。
-            // VBS 字符串内 "" 即字面量 "，故 `cmd /c "<bat>"` 正确加引号容纳带空格路径。
-            const vbs = `Set s = CreateObject("WScript.Shell")\r\ns.Run """${system32('cmd.exe')}"" /c ""${batPath}""", 0, False\r\n`;
-            fs.writeFileSync(vbsPath, vbs, 'utf8');
+            // portable 本体移出目标（%TEMP% 下一次性文件）：sidecar move 本体到此（同卷=rename，运行中亦可）。
+            const bodyTmpPath = path.join(
+              os.tmpdir(),
+              `flowz-uninstall-body-${flowzPid}-${stamp}.exe`
+            );
+            // 非 ASCII 路径（中文用户名的 userData/exeDir/uninstaller）全走 .vbs 设的进程环境变量（.vbs UTF-16 → 值
+            // 为 Unicode），.bat 纯 ASCII 用 %VAR%；batPath 内联进 .vbs 的 .Run 行（同靠 .vbs UTF-16 保 Unicode，非 env）
+            // ——绕开 cmd 代码页 + .vbs/.bat 编码坑（见 uninstall-sidecar）。
+            const { bat, vbs } = buildUninstallSidecar({
+              flowzPid,
+              userData,
+              exeDir,
+              exePath,
+              uninstaller,
+              // portable 无卸载器：目录名含 flowz（专属目录）才 rmdir 整目录，否则只移出 exe 自身（避免误删 D:\Tools\ 等非专属目录）。
+              portableRmdir: exeDir.toLowerCase().includes('flowz'),
+              bodyTmpPath,
+              batPath,
+              vbsPath,
+              sys: {
+                cmd: system32('cmd.exe'),
+                tasklist: system32('tasklist.exe'),
+                find: system32('find.exe'),
+                ping: system32('ping.exe'),
+              },
+            });
+            // .bat 纯 ASCII（路径走 %VAR%）→ utf8 安全；.vbs 含非 ASCII 路径字面 + wscript 读 → 必须 UTF-16 LE+BOM。
+            fs.writeFileSync(batPath, bat, 'utf8');
+            fs.writeFileSync(vbsPath, '\ufeff' + vbs, 'utf16le');
+            // wscript //B 无 UI 随即退出，其 .Run 出的 cmd/bat 成独立后台进程、全程无终端窗口（规避 Node spawn cmd
+            // detached+windowsHide 仍弹控制台的坑）；bat 收尾删 .vbs + 自删。
             spawn(system32('wscript.exe'), ['//B', '//Nologo', vbsPath], {
               detached: true,
               stdio: 'ignore',
               windowsHide: true,
               cwd: os.tmpdir(),
             }).unref();
+            // portable 本体跨卷无法 move（exe 与 %TEMP% 不同盘 → move 退化复制+删源、删源撞运行锁失败、本体留原位）：
+            // 退出前弹阻塞 dialog 引导手动删（数据已清；toast 随 app 退出丢失）。同卷（多数情形）move=rename 必成 → 不打扰。
+            // 有卸载器（installed）由 NSIS 卸载器处理本体，不在此列。
+            if (
+              !uninstaller &&
+              path.parse(exePath).root.toLowerCase() !== path.parse(bodyTmpPath).root.toLowerCase()
+            ) {
+              const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+              const bodyTarget = exeDir.toLowerCase().includes('flowz') ? exeDir : exePath;
+              const opts = {
+                type: 'info' as const,
+                title: mt('uninstallManualTitle'),
+                message: mt('uninstallManualMessage'),
+                detail: `${mt('uninstallPortableBody')}\n\n${bodyTarget}`,
+                buttons: [mt('uninstallManualOk')],
+              };
+              if (win) await dialog.showMessageBox(win, opts);
+              else await dialog.showMessageBox(opts);
+            }
           } catch {
             /* 唤起 sidecar 失败不阻断退出（用户仍可经「添加或删除程序」卸载，含同款 helper 清理钩子） */
           }

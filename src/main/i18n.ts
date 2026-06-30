@@ -123,6 +123,17 @@ const MESSAGES = {
     ru: 'Понятно',
     fa: 'متوجه شدم',
   },
+  // Windows 便携版本体（exe）跨磁盘卷时无法自动移除（同卷靠 move/rename 移出，跨卷退化为复制+删源、删源撞运行锁失败）。
+  // detail 末尾拼接本体实际路径，故以冒号结尾。
+  uninstallPortableBody: {
+    'zh-CN': '便携版程序位于其它磁盘卷时可能无法自动删除。卸载完成后若以下位置仍存在，请手动删除：',
+    'zh-TW':
+      '便攜版程式位於其它磁碟磁碟區時可能無法自動刪除。解除安裝完成後若以下位置仍存在，請手動刪除：',
+    'en-US':
+      'The portable program may not be removed automatically when it resides on a different drive. If the location below still exists after uninstall, please delete it manually:',
+    ru: 'Переносимая программа может не удалиться автоматически, если она находится на другом диске. Если указанное ниже расположение сохранится после удаления, удалите его вручную:',
+    fa: 'برنامهٔ قابل‌حمل ممکن است هنگام قرار داشتن روی درایوی دیگر به‌صورت خودکار حذف نشود. اگر مسیر زیر پس از حذف نصب همچنان باقی ماند، آن را به‌صورت دستی حذف کنید:',
+  },
 
   // —— 托盘菜单（TrayManager） ——
   trayStatusError: {
