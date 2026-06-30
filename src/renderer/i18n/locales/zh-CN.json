@@ -612,12 +612,13 @@
         "selectExportTitle": "选择导出内容",
         "selectExportDesc": "勾选要导出的类别，默认全部。",
         "selectImportTitle": "选择恢复内容",
-        "selectImportDesc": "勾选要恢复的类别。恢复会覆盖当前对应类别且不可撤销；备份中为空的类别将自动跳过、不影响现有数据。",
+        "selectImportDesc": "勾选要恢复的类别。备份中为空的类别将自动跳过、不影响现有数据。",
         "selectAll": "全选",
         "exportSelected": "导出 {{count}} 项",
         "importSelected": "恢复 {{count}} 项",
         "importSkipped": "{{cats}} 在备份中为空，已跳过",
-        "importEmpty": "备份文件无可恢复内容"
+        "importEmpty": "备份文件无可恢复内容",
+        "importWarning": "恢复会覆盖所选类别，此操作不可撤销。"
       },
       "logLevelCaptureLocked": "诊断采集中，级别已锁定为 debug（在下方诊断卡片结束采集后可改）",
       "diagnostics": {

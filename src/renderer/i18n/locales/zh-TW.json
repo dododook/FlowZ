@@ -612,12 +612,13 @@
         "selectExportTitle": "選擇匯出內容",
         "selectExportDesc": "勾選要匯出的類別，預設全部。",
         "selectImportTitle": "選擇還原內容",
-        "selectImportDesc": "勾選要還原的類別。還原會覆寫目前對應類別且無法復原；備份中為空的類別將自動略過、不影響現有資料。",
+        "selectImportDesc": "勾選要還原的類別。備份中為空的類別將自動略過、不影響現有資料。",
         "selectAll": "全選",
         "exportSelected": "匯出 {{count}} 項",
         "importSelected": "還原 {{count}} 項",
         "importSkipped": "{{cats}} 在備份中為空，已略過",
-        "importEmpty": "備份檔無可還原內容"
+        "importEmpty": "備份檔無可還原內容",
+        "importWarning": "還原會覆寫所選類別，此操作無法復原。"
       },
       "logLevelCaptureLocked": "診斷採集中，層級已鎖定為 debug（在下方診斷卡片結束採集後可改）",
       "diagnostics": {

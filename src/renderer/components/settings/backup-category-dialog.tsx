@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Server, Network, Rss, ListFilter, Shield, SlidersHorizontal } from 'lucide-react';
+import {
+  Server,
+  Network,
+  Rss,
+  ListFilter,
+  Shield,
+  SlidersHorizontal,
+  AlertTriangle,
+} from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -97,6 +105,14 @@ export function BackupCategoryDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* 高危覆盖操作：恢复模式醒目警示条（破坏性视觉，比 desc 小字辨识度高）。 */}
+        {!isExport && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span className="text-xs">{t('settings.advanced.backup.importWarning')}</span>
+          </div>
+        )}
+
         <div className="space-y-0.5">
           {/* 全选 */}
           <label className="flex items-center gap-2.5 px-2 py-2 mb-1 rounded-md border-b hover:bg-muted/50 cursor-pointer">
@@ -133,6 +149,7 @@ export function BackupCategoryDialog({
             {t('common.cancel')}
           </Button>
           <Button
+            variant={isExport ? 'default' : 'destructive'}
             disabled={selCount === 0 || busy}
             onClick={() => onConfirm(ordered.filter((c) => selected.has(c)))}
           >

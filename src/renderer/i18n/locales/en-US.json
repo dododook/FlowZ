@@ -612,12 +612,13 @@
         "selectExportTitle": "Select what to export",
         "selectExportDesc": "Check the categories to export. All selected by default.",
         "selectImportTitle": "Select what to restore",
-        "selectImportDesc": "Check the categories to restore. Restoring overwrites the matching categories and cannot be undone; categories empty in the backup are skipped and your current data is kept.",
+        "selectImportDesc": "Check the categories to restore. Categories empty in the backup are skipped and your current data is kept.",
         "selectAll": "Select all",
         "exportSelected": "Export {{count}} item(s)",
         "importSelected": "Restore {{count}} item(s)",
         "importSkipped": "{{cats}} empty in backup, skipped",
-        "importEmpty": "Backup has no restorable content"
+        "importEmpty": "Backup has no restorable content",
+        "importWarning": "Restoring overwrites the selected categories. This cannot be undone."
       },
       "logLevelCaptureLocked": "Locked to debug during diagnostic capture (stop the capture in the Diagnostics card below to change it)",
       "diagnostics": {
