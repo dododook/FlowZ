@@ -178,7 +178,11 @@ describe('probeCache LRU 上限（性能 review M1）', () => {
     expect(await pm.probeOutbound({ ...SNELL, server_port: 10000 + total }, false)).toMatchObject({
       ok: true,
     });
-  }, 30000); // MAX=2048 次真实 probe 需更宽松超时（每次含 sha1+tmp 写，~1ms×2068≈2-3s）
+    // 超时根治（CI flaky）：MAX≈2048 → MAX+20 次真实 probe，每次含 sha1 + tmp config 写。本机 ~2-3s，但 CI
+    // 慢文件 IO（windows/macos runner）实测可达 ~30s，撞原 30000ms 硬超时 → jest 中断该用例 → 已在飞的 probe
+    // promise 泄漏，回调时污染下一用例「命中缓存」的 mockExecFile 计数（Received 2）→ 连锁 2 fail + worker 不优雅退出。
+    // 给 ~3x 余量使该用例在慢 CI 也必跑完（无中断、无 in-flight 泄漏），根除该 flaky。
+  }, 90000);
 
   it('probeOutbound 实际命中缓存（不重复 spawn check）', async () => {
     mockExecFile.mockReset(); // 隔离前一个 case 的 mock 状态
