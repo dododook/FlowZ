@@ -78,7 +78,8 @@ export const IPC_CHANNELS = {
 
   // 统计信息
   STATS_GET: 'stats:get',
-  CONNECTIONS_GET: 'connections:get',
+  CONNECTIONS_GET: 'connections:get', // 连接信息页明细 pull（仅页面打开时定时拉，非每秒全量 push）
+  CONNECTIONS_AGGREGATE_GET: 'connections:aggregateGet', // 首页拓扑聚合回填（挂载初值；后续走 EVENT_CONNECTIONS_AGGREGATE）
   CONNECTIONS_CLOSE: 'connections:close', // 关单条连接（main 经 9090 DELETE /connections/{id}）
   CONNECTIONS_CLOSE_ALL: 'connections:closeAll', // 关全部连接（main 经 9090 DELETE /connections，触发 ResetNetwork）
 
@@ -139,7 +140,9 @@ export const IPC_CHANNELS = {
   // 已删），削平 sing-box 启动期日志洪流对主线程的 IPC 冲击（每条一次 send → 撞 Windows 拖动 move 循环致拖动卡顿）。
   EVENT_LOG_RECEIVED_BATCH: 'event:logReceivedBatch',
   EVENT_STATS_UPDATED: 'event:statsUpdated',
-  EVENT_CONNECTIONS_UPDATED: 'event:connectionsUpdated',
+  // 首页拓扑连接聚合（StatsWorkerHost 每帧 O(N) 聚合后广播，载荷 ~Top-N host + 出口数，与连接总数解耦）。
+  // 取代旧 EVENT_CONNECTIONS_UPDATED（每秒全量 ConnectionEntry[] relay）——连接风暴下渲染端被全量明细拖死（issue #227）。
+  EVENT_CONNECTIONS_AGGREGATE: 'event:connectionsAggregate',
   EVENT_ENTER_PRIVACY_MODE: 'event:enterPrivacyMode',
   EVENT_EXIT_PRIVACY_MODE: 'event:exitPrivacyMode', // 退出隐私模式（解锁/idle 计时复位）
   EVENT_NAVIGATE: 'navigate', // 托盘菜单 -> 渲染端路由跳转

@@ -72,6 +72,11 @@ function ruleActionVariant(action: string): 'secondary' | 'destructive' | 'defau
 /** 稳定的零速率引用：speeds 无此 id 时传入，使 ConnectionRow memo 的 speed 比较恒定（不每帧新建对象）。 */
 const ZERO_SPEED: ConnSpeed = { up: 0, down: 0 };
 
+/** 连接明细 pull 间隔（issue #227）：本页打开期间每隔此时长拉一次 CONNECTIONS_GET，取代旧「每秒全量 push 给
+ *  所有窗口」订阅——连接明细成本仅在用户主动查看本页时产生，且页面关闭即停。对齐旧 push 的 1s 节奏（连接页仅
+ *  打开时拉，1s 无额外负担），关连接另有乐观更新即时反馈，不依赖本间隔。 */
+const PULL_INTERVAL_MS = 1000;
+
 /**
  * 全表共享秒级 tick（P3）：时长列每秒刷新原本随父组件 setNow 触发整表 reconcile（重跑 visible.map + diff ≤500 行）。
  * 改为模块级外部 store + useSyncExternalStore：1s tick 只重渲订阅它的各 DurationCell（纯文本），不穿透
@@ -210,31 +215,44 @@ export function ConnectionsTable() {
   pausedRef.current = paused;
   // per-conn 速率差分的上一帧缓存（不入 state，避免无谓重渲染）。
   const rateRef = useRef<RateState>(new Map());
+  // pull in-flight 守卫（review Low-B）：慢主进程/Windows 拖动期 setInterval 仍每秒派发，防 CONNECTIONS_GET
+  // 叠加排队、drag-end 一并 flush 的瞬时尖峰。
+  const inFlightRef = useRef(false);
 
-  // 数据：挂载 CONNECTIONS_GET 回填 + 订阅 EVENT_CONNECTIONS_UPDATED。暂停时冻结（不更新表 + 不推进速率基准）。
+  // 数据（issue #227）：连接明细改【按需 pull】——本页打开期间每 PULL_INTERVAL_MS 拉一次 CONNECTIONS_GET，
+  // 不再订阅每秒全量 push。暂停 / 窗口隐藏时停拉（冻结当前帧 + 不推进速率基准）；页面卸载清 interval，无残留。
   useEffect(() => {
     let mounted = true;
     const apply = (snap: ConnectionsSnapshot) => {
-      if (pausedRef.current) return; // 本地冻结：保留当前帧
       const { speeds: s, next } = computeConnSpeeds(snap.connections, rateRef.current, snap.at);
       rateRef.current = next;
       setSpeeds(s);
       setConnections(snap.connections);
     };
-    api.connections
-      .get()
-      .then((snap) => {
-        if (mounted) apply(snap);
-      })
-      .catch(() => {
-        /* 静默：核未运行 / 鉴权未就绪，空态由 proxyRunning gate 兜底 */
-      });
-    const unsub = api.connections.onUpdated((snap) => {
-      if (mounted) apply(snap);
-    });
+    const pull = () => {
+      // 暂停 / 窗口隐藏：跳过拉取（无 UI 消费者；对齐 main 侧 isUiBroadcastActive 可见性门控，省隐藏期每秒
+      // CONNECTIONS_GET 的主线程 IPC + 序列化开销，review Med）。拖动期对齐需 main 推拖动态 → 记真机监控项。
+      // in-flight 守卫（Low-B）：上一次未 resolve 不叠加，防慢主进程/拖动期排队积压。
+      if (pausedRef.current || document.hidden || inFlightRef.current) return;
+      inFlightRef.current = true;
+      api.connections
+        .get()
+        .then((snap) => {
+          // 在途结果若期间已暂停则丢弃（gate 上移到 pull 后，apply 不再自查 paused，Low-A）。
+          if (mounted && !pausedRef.current) apply(snap);
+        })
+        .catch(() => {
+          /* 静默：核未运行 / 鉴权未就绪，空态由 proxyRunning gate 兜底 */
+        })
+        .finally(() => {
+          inFlightRef.current = false;
+        });
+    };
+    pull(); // 挂载即拉一次（回填初值）
+    const timer = setInterval(pull, PULL_INTERVAL_MS);
     return () => {
       mounted = false;
-      unsub();
+      clearInterval(timer);
     };
   }, []);
 

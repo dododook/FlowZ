@@ -1,39 +1,39 @@
 /**
  * topology-layout 纯函数单测（Tier-2：connection-topology 抽出布局计算后的离线安全网）。
- * 锁逐字移出的 computeTopologyLayout 坐标/聚合/Top-N/配色/缎带路径，使「每 2s 全量重算」的布局可回归。
+ * issue #227 后 layout 只做坐标布局——聚合（host 累加 / 名称优先级 / Top-N / Others）已下沉 main 的
+ * aggregateConnections（见 connections-aggregate.test）。本测试锁坐标/配色/缎带路径 + OTHERS sentinel→i18n 替换。
  */
 import { computeTopologyLayout, getSankeyPath, FIXED_HEIGHT } from '../topology-layout';
-import type { ConnectionEntry } from '../../../../shared/types';
+import { TOPOLOGY_OTHERS_KEY, type ConnectionsAggregate } from '../../../../shared/types';
 
 const t = (k: string) => k; // 恒等 i18n：home.others→'home.others'、home.myDevice→'home.myDevice'
 
-let idc = 0;
-function conn(o: {
-  host?: string;
-  destinationIP?: string;
-  rule?: string;
-  rulePayload?: string;
-  chain?: string;
-}): ConnectionEntry {
+/** 构造聚合输入：hosts=[name, count, flows([outbound,count])]，outbounds=[name, count]。 */
+function agg(
+  hosts: Array<[string, number, Array<[string, number]>]>,
+  outbounds: Array<[string, number]>
+): ConnectionsAggregate {
   return {
-    id: `c${idc++}`,
-    chains: o.chain ? [o.chain] : [],
-    rule: o.rule ?? 'final',
-    rulePayload: o.rulePayload ?? '',
-    metadata:
-      o.host || o.destinationIP ? { host: o.host, destinationIP: o.destinationIP } : undefined,
-  } as ConnectionEntry;
+    total: hosts.reduce((a, [, c]) => a + c, 0),
+    hosts: hosts.map(([name, count, flows]) => ({
+      name,
+      count,
+      flows: flows.map(([outbound, c]) => ({ outbound, count: c })),
+    })),
+    outbounds: outbounds.map(([name, count]) => ({ name, count })),
+    at: 0,
+  };
 }
 
 const byId = <T extends { id: string }>(nodes: T[], id: string): T =>
   nodes.find((n) => n.id === id)!;
 
 describe('computeTopologyLayout — 空态', () => {
-  it('无连接 → 空', () => {
-    expect(computeTopologyLayout([], 800, t)).toEqual({ nodes: [], links: [] });
+  it('无 host → 空', () => {
+    expect(computeTopologyLayout(agg([], []), 800, t)).toEqual({ nodes: [], links: [] });
   });
   it('width=0 → 空', () => {
-    expect(computeTopologyLayout([conn({ host: 'a.com', chain: 'P' })], 0, t)).toEqual({
+    expect(computeTopologyLayout(agg([['a.com', 1, [['P', 1]]]], [['P', 1]]), 0, t)).toEqual({
       nodes: [],
       links: [],
     });
@@ -42,7 +42,7 @@ describe('computeTopologyLayout — 空态', () => {
 
 describe('computeTopologyLayout — 单连接精确坐标（width=800）', () => {
   const { nodes, links } = computeTopologyLayout(
-    [conn({ host: 'example.com', chain: 'Proxy' })],
+    agg([['example.com', 1, [['Proxy', 1]]]], [['Proxy', 1]]),
     800,
     t
   );
@@ -105,53 +105,45 @@ describe('computeTopologyLayout — 单连接精确坐标（width=800）', () =>
   });
 });
 
-describe('computeTopologyLayout — 聚合', () => {
-  it('同 host+outbound 多连接 → 单节点累加 value', () => {
+describe('computeTopologyLayout — 多 host 比例缩放', () => {
+  it('source.value = 各 host count 之和；同 outbound 累加 outbound 节点高度', () => {
     const { nodes } = computeTopologyLayout(
-      [conn({ host: 'a.com', chain: 'P' }), conn({ host: 'a.com', chain: 'P' })],
+      agg(
+        [
+          ['a.com', 2, [['P', 2]]],
+          ['b.com', 1, [['P', 1]]],
+        ],
+        [['P', 3]]
+      ),
       800,
       t
     );
-    expect(byId(nodes, 'source').value).toBe(2);
+    expect(byId(nodes, 'source').value).toBe(3);
     expect(byId(nodes, 'mid-a.com').value).toBe(2);
-    expect(byId(nodes, 'out-P').value).toBe(2);
-  });
-
-  it('名称优先级 host > destinationIP > rule:payload', () => {
-    const r1 = computeTopologyLayout(
-      [conn({ host: 'h.com', destinationIP: '1.1.1.1', rule: 'r' })],
-      800,
-      t
-    );
-    expect(byId(r1.nodes, 'mid-h.com')).toBeTruthy();
-
-    const r2 = computeTopologyLayout([conn({ destinationIP: '1.2.3.4', rule: 'r' })], 800, t);
-    expect(byId(r2.nodes, 'mid-1.2.3.4')).toBeTruthy();
-
-    const r3 = computeTopologyLayout([conn({ rule: 'GEOIP', rulePayload: 'CN' })], 800, t);
-    expect(byId(r3.nodes, 'mid-GEOIP: CN')).toBeTruthy();
-  });
-
-  it('outbound 取 chains[0]，无链 → Direct', () => {
-    const { nodes } = computeTopologyLayout([conn({ host: 'a.com' })], 800, t);
-    expect(byId(nodes, 'out-Direct')).toBeTruthy();
+    expect(byId(nodes, 'mid-b.com').value).toBe(1);
+    expect(byId(nodes, 'out-P').value).toBe(3);
   });
 });
 
-describe('computeTopologyLayout — Top-N + Others 收敛', () => {
-  it('>15 distinct host → 15 + Others（聚合余量）', () => {
-    // host_k 有 k 条连接（k=1..16）→ 排序后 host1(最小) 落入 Others
-    const conns: ConnectionEntry[] = [];
-    for (let k = 1; k <= 16; k++) {
-      for (let n = 0; n < k; n++) conns.push(conn({ host: `host${k}.com`, chain: 'P' }));
-    }
-    const { nodes } = computeTopologyLayout(conns, 800, t);
-    const mids = nodes.filter((n) => n.type === 'rule');
-    expect(mids).toHaveLength(16); // 15 top + Others
+describe('computeTopologyLayout — OTHERS sentinel → i18n 替换', () => {
+  it('main 下发的 TOPOLOGY_OTHERS_KEY 合并组 → 显示 t(home.others) + slate 配色', () => {
+    const { nodes } = computeTopologyLayout(
+      agg(
+        [
+          ['top.com', 5, [['P', 5]]],
+          [TOPOLOGY_OTHERS_KEY, 3, [['P', 3]]],
+        ],
+        [['P', 8]]
+      ),
+      800,
+      t
+    );
     const others = byId(nodes, 'mid-home.others');
-    expect(others.name).toBe('home.others');
-    expect(others.value).toBe(1); // 仅 host1(1 条) 被收敛
+    expect(others.name).toBe('home.others'); // sentinel 被替换为本地化文案
+    expect(others.value).toBe(3);
     expect(others.color).toBe('fill-muted-foreground'); // Others 用 slate(token)
+    // 非 others 节点保持真实 host 名（不被替换）
+    expect(byId(nodes, 'mid-top.com').color).toBe('fill-success');
   });
 });
 

@@ -1246,8 +1246,8 @@ if (gotTheLock) {
     statsService = new StatsWorkerHost({
       workerPath: path.join(__dirname, 'workers', 'stats-worker.js'),
       onStats: (stats) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_STATS_UPDATED, stats),
-      onConnections: (snap) =>
-        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONNECTIONS_UPDATED, snap),
+      onAggregate: (agg) =>
+        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONNECTIONS_AGGREGATE, agg),
       isUiActive: isUiBroadcastActive,
       getEndpoint: () => proxyManager?.getStatsApiEndpoint() ?? null,
       log: (level, message) => logManager.addLog(level, message, 'StatsWorker'),

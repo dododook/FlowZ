@@ -87,6 +87,10 @@ export type {
   InvalidNodeInfo,
   ConnectionEntry,
   ConnectionsSnapshot,
+  ConnectionsAggregate,
+  ConnectionAggHost,
+  ConnectionAggOutbound,
+  ConnectionAggFlow,
   HelperStatus,
   SystemProxyStatus,
   LogEntry,
@@ -98,7 +102,7 @@ export type {
   PlatformInfo,
 } from './types/runtime';
 
-export { ProxyErrorCode, isProxyErrorCode } from './types/runtime';
+export { ProxyErrorCode, isProxyErrorCode, TOPOLOGY_OTHERS_KEY } from './types/runtime';
 
 // ============================================================================
 // 基础类型

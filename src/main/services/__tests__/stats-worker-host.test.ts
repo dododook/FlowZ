@@ -1,9 +1,10 @@
 /**
  * StatsWorkerHost 单测（T4，issue #225）。覆盖 main 侧宿主逻辑（worker 由 mock electron.utilityProcess 替身）：
  *  1) 构造即 fork worker；resubscribe 下发最新端点 connect / 端点为 null 下发 stop。
- *  2) worker 数据消息：缓存 + 按 isUiActive 门控广播（不活跃只缓存不 onStats/onConnections）。
+ *  2) worker 数据消息：缓存 + 按 isUiActive 门控广播（不活跃只缓存不 onStats/onAggregate；connections 经 host
+ *     侧聚合后 relay 聚合给拓扑，明细只缓存供 pull，issue #227）。
  *  3) resume 补推缓存最新（活跃才推）；stop 不门控清零广播。
- *  4) getSnapshot/getConnectionsSnapshot 读缓存。
+ *  4) getSnapshot/getConnectionsSnapshot/getAggregateSnapshot 读缓存。
  *  5) 'ready' 握手 / 崩溃 exit → 退避 respawn + 自动重连；dispose 终止不再 respawn。
  */
 import type { TrafficStats, ConnectionsSnapshot } from '../../../shared/types';
@@ -46,22 +47,25 @@ const SAMPLE_STATS: TrafficStats = {
   activeConnections: 3,
 };
 const SAMPLE_CONNS: ConnectionsSnapshot = {
-  connections: [{ id: 'c1', chains: [], rule: '', rulePayload: '', metadata: {} }],
+  // 带 host + chain：使 host 侧聚合产出非空 hosts（覆盖 getAggregateSnapshot 实路径，issue #227 review Nit）。
+  connections: [
+    { id: 'c1', chains: ['proxy'], rule: '', rulePayload: '', metadata: { host: 'a.com' } },
+  ],
   at: 123,
 };
 
 function makeHost() {
   const onStats = jest.fn();
-  const onConnections = jest.fn();
+  const onAggregate = jest.fn();
   const state = { active: true, endpoint: ENDPOINT as StatsApiEndpoint | null };
   const host = new StatsWorkerHost({
     workerPath: '/fake/stats-worker.js',
     onStats,
-    onConnections,
+    onAggregate,
     isUiActive: () => state.active,
     getEndpoint: () => state.endpoint,
   });
-  return { host, onStats, onConnections, state };
+  return { host, onStats, onAggregate, state };
 }
 
 beforeEach(() => electron.__reset());
@@ -105,49 +109,50 @@ describe('StatsWorkerHost 数据面门控 (T4)', () => {
     expect(host.getSnapshot()).toEqual(SAMPLE_STATS); // 缓存仍更新
   });
 
-  it('connections 消息同样门控 + 缓存', () => {
-    const { onConnections, host, state } = makeHost();
+  it('connections 消息门控 + host 聚合（明细缓存供 pull、聚合供拓扑，issue #227）', () => {
+    const { onAggregate, host, state } = makeHost();
     host.resubscribe(); // started=true
     state.active = false;
     lastWorker().emit('message', { type: 'connections', payload: SAMPLE_CONNS });
-    expect(onConnections).not.toHaveBeenCalled();
+    expect(onAggregate).not.toHaveBeenCalled(); // 不活跃不广播
+    // 明细缓存（连接页 CONNECTIONS_GET pull）+ host 已 O(N) 聚合（拓扑 CONNECTIONS_AGGREGATE_GET 回填）
     expect(host.getConnectionsSnapshot().connections).toEqual(SAMPLE_CONNS.connections);
+    expect(host.getAggregateSnapshot().total).toBe(1);
+    expect(host.getAggregateSnapshot().hosts.map((h) => h.name)).toEqual(['a.com']); // 聚合产出 host 节点
   });
 
   it('resume 活跃时补推缓存最新；不活跃不推', () => {
-    const { onStats, onConnections, host, state } = makeHost();
+    const { onStats, onAggregate, host, state } = makeHost();
     host.resubscribe(); // started=true
     state.active = false;
     lastWorker().emit('message', { type: 'stats', payload: SAMPLE_STATS });
     lastWorker().emit('message', { type: 'connections', payload: SAMPLE_CONNS });
     onStats.mockClear();
-    onConnections.mockClear();
+    onAggregate.mockClear();
 
     host.resume(); // 仍不活跃 → 不推
     expect(onStats).not.toHaveBeenCalled();
 
     state.active = true;
-    host.resume(); // 活跃 → 补推缓存
+    host.resume(); // 活跃 → 补推缓存（stats + 聚合）
     expect(onStats).toHaveBeenCalledWith(SAMPLE_STATS);
-    expect(onConnections).toHaveBeenCalledWith(
-      expect.objectContaining({ connections: SAMPLE_CONNS.connections })
-    );
+    expect(onAggregate).toHaveBeenCalledWith(expect.objectContaining({ total: 1 }));
   });
 
   it('stop 不门控、清零广播', () => {
-    const { onStats, onConnections, host, state } = makeHost();
+    const { onStats, onAggregate, host, state } = makeHost();
     host.resubscribe(); // started=true，下面的帧进缓存
     lastWorker().emit('message', { type: 'stats', payload: SAMPLE_STATS });
     expect(host.getSnapshot().activeConnections).toBe(3); // 缓存确为非零
     onStats.mockClear();
-    onConnections.mockClear();
+    onAggregate.mockClear();
     state.active = false; // 即便不活跃，stop 仍广播清零
 
     host.stop();
     expect(onStats).toHaveBeenCalledWith(
       expect.objectContaining({ uploadSpeed: 0, downloadSpeed: 0, activeConnections: 0 })
     );
-    expect(onConnections).toHaveBeenCalledWith(expect.objectContaining({ connections: [] }));
+    expect(onAggregate).toHaveBeenCalledWith(expect.objectContaining({ total: 0, hosts: [] }));
     expect(host.getSnapshot().activeConnections).toBe(0);
   });
 

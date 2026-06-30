@@ -5,12 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc';
 import { toast } from 'sonner';
-import type { Rule, RuleAction, ConnectionEntry } from '../../../shared/types';
+import type { Rule, RuleAction, ConnectionsAggregate } from '../../../shared/types';
 import { getRuleActionStyle } from '@/lib/rule-action-style';
 import { computeTopologyLayout, FIXED_HEIGHT, NODE_WIDTH, type Node } from './topology-layout';
 
+const EMPTY_AGGREGATE: ConnectionsAggregate = { total: 0, hosts: [], outbounds: [], at: 0 };
+
 export function ConnectionTopology() {
-  const [connections, setConnections] = useState<ConnectionEntry[]>([]);
+  const [aggregate, setAggregate] = useState<ConnectionsAggregate>(EMPTY_AGGREGATE);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<{ type: 'node' | 'link'; id: string } | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -44,24 +46,24 @@ export function ConnectionTopology() {
     return () => resizeObserver.disconnect();
   }, []);
 
-  // F22：连接数据统一由 main 单一 poller 供给。挂载即用 CONNECTIONS_GET 回填初值，再订阅 EVENT_CONNECTIONS_UPDATED
-  // 收广播。渲染端不再直连 :9090、不再持有 clash secret；停止代理时 main 广播空快照 → 自然落入空态。
-  // main 连接流订阅跟随 started（代理运行即推送），无需渲染端注册——拓扑只 get 回填 + onUpdated 即可。
+  // issue #227：拓扑改消费 main 侧【连接聚合】（小载荷，与连接总数解耦），取代旧「每秒全量 ConnectionEntry[] 广播」。
+  // 挂载即用 CONNECTIONS_AGGREGATE_GET 回填初值，再订阅 EVENT_CONNECTIONS_AGGREGATE 收增量。main 连接流订阅跟随
+  // started（代理运行即推送），停止代理时 main 广播空聚合 → 自然落入空态。渲染端不再直连 :9090、不持 secret。
   useEffect(() => {
     let mounted = true;
-    api.connections
+    api.connections.aggregate
       .get()
-      .then((snap) => {
+      .then((agg) => {
         if (mounted) {
-          setConnections(snap.connections);
+          setAggregate(agg);
           setLoading(false);
         }
       })
       .catch(() => {
         if (mounted) setLoading(false);
       });
-    const unsub = api.connections.onUpdated((snap) => {
-      setConnections(snap.connections);
+    const unsub = api.connections.aggregate.onUpdated((agg) => {
+      setAggregate(agg);
       setLoading(false);
     });
     return () => {
@@ -71,8 +73,8 @@ export function ConnectionTopology() {
   }, []);
 
   const { nodes, links } = useMemo(
-    () => computeTopologyLayout(connections, width, t),
-    [connections, width, t]
+    () => computeTopologyLayout(aggregate, width, t),
+    [aggregate, width, t]
   );
 
   // --- Interaction Logic ---
@@ -314,13 +316,13 @@ export function ConnectionTopology() {
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
-          {loading && connections.length === 0 && (
+          {loading && nodes.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-muted-foreground h-full">
               {t('home.loading')}
             </div>
           )}
 
-          {!loading && connections.length === 0 && (
+          {!loading && nodes.length === 0 && (
             <div className="absolute inset-0 text-muted-foreground text-sm flex flex-col items-center justify-center gap-2 h-full">
               <Network className="h-8 w-8 opacity-50" />
               <span>{proxyRunning ? t('home.noActiveConnections') : t('home.plsStartProxy')}</span>

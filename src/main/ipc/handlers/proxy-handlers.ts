@@ -11,6 +11,7 @@ import type {
   ProxyStatus,
   TrafficStats,
   ConnectionsSnapshot,
+  ConnectionsAggregate,
 } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
@@ -58,9 +59,18 @@ export function registerProxyHandlers(
     proxyManager.probeOutbound(args?.outbound, args?.isEndpoint)
   );
 
-  // 连接快照（topology 统一供数；窗口重建/挂载回填）
+  // 连接明细 pull（连接信息页打开时按 interval 拉；窗口重建/挂载回填）。非每秒全量 push（issue #227）。
   registerIpcHandler<void, ConnectionsSnapshot>(IPC_CHANNELS.CONNECTIONS_GET, async () =>
     statsService ? statsService.getConnectionsSnapshot() : { connections: [], at: Date.now() }
+  );
+
+  // 首页拓扑聚合回填（挂载初值；后续增量走 EVENT_CONNECTIONS_AGGREGATE 广播）。载荷 ~Top-N host + 出口数。
+  registerIpcHandler<void, ConnectionsAggregate>(
+    IPC_CHANNELS.CONNECTIONS_AGGREGATE_GET,
+    async () =>
+      statsService
+        ? statsService.getAggregateSnapshot()
+        : { total: 0, hosts: [], outbounds: [], at: Date.now() }
   );
 
   // 关单条连接：经 ProxyManager（9090 keep-alive agent + Bearer secret 内部封装）发 DELETE /connections/{id}，

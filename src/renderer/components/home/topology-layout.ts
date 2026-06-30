@@ -1,9 +1,9 @@
 /**
  * 连接拓扑（首页 Sankey 图）布局计算 —— 纯函数，从 connection-topology.tsx 抽出（审计 §2/§6 Tier-2：布局计算不可测）。
- * 输入连接快照 + 容器宽度 + i18n 取值器，输出三列 Sankey 的 {nodes, links} 坐标与缎带路径；
- * 无 react/electron/@别名依赖，可被 .test.ts 直接 import 单测。原 useMemo 体逐字保留，t 由参数注入。
+ * 输入【main 已聚合好的连接快照（ConnectionsAggregate，issue #227）】+ 容器宽度 + i18n 取值器，输出三列 Sankey 的
+ * {nodes, links} 坐标与缎带路径；无 react/electron/@别名依赖，可被 .test.ts 直接 import 单测。
  */
-import type { ConnectionEntry } from '../../../shared/types';
+import { TOPOLOGY_OTHERS_KEY, type ConnectionsAggregate } from '../../../shared/types';
 
 export interface Node {
   id: string;
@@ -53,85 +53,43 @@ export function getSankeyPath(
 }
 
 /**
- * 聚合连接 → 三列 Sankey（source / rule[按 host 细分] / outbound）节点与缎带。
- * Top-15 + Others 收敛；高度按连接数比例缩放（MAX_SCALE 封顶）；各列垂直居中。
+ * 把【main 已聚合好的】连接快照摆成三列 Sankey（source / host / outbound）节点与缎带坐标。
+ * 聚合（Top-15 host + others 合并 + 出口分布）已下沉 main 的 aggregateConnections（issue #227）——本函数不再
+ * 遍历全量连接明细，只做坐标布局。高度按连接数比例缩放（MAX_SCALE 封顶）；各列垂直居中。
  */
 export function computeTopologyLayout(
-  connections: ConnectionEntry[],
+  aggregate: ConnectionsAggregate,
   width: number,
   t: (key: string) => string
 ): { nodes: Node[]; links: Link[] } {
-  // Only recalc if we have width and connections
-  if (connections.length === 0 || width === 0) return { nodes: [], links: [] };
+  if (aggregate.hosts.length === 0 || width === 0) return { nodes: [], links: [] };
 
-  // --- 1. Data Aggregation ---
-  // We want to breakdown generic rules (final) by Host to give more detail
+  // host 显示名：main 用 TOPOLOGY_OTHERS_KEY sentinel 标记「其它」合并组（main 不知 i18n）→ 此处替换为本地化文案。
+  const displayName = (name: string): string =>
+    name === TOPOLOGY_OTHERS_KEY ? t('home.others') : name;
 
-  // Better Aggregation Structure
-  const middleNodes = new Map<string, { value: number; flows: Map<string, number> }>();
-  const outboundTotals = new Map<string, number>();
+  // 摆成原布局代码消费的形态。main 已按 count 降序 + Top-N + others 合并，保持其次序（不再渲染端聚合/排序）。
+  // isOthers 由 main 下发的 sentinel 判定（非显示名比较），杜绝真实 host 恰为本地化「其它」文案时被误染/撞 id。
+  const sortedMiddle: Array<
+    [string, { value: number; flows: Map<string, number>; isOthers: boolean }]
+  > = aggregate.hosts.map((h) => [
+    displayName(h.name),
+    {
+      value: h.count,
+      flows: new Map(h.flows.map((f) => [f.outbound, f.count])),
+      isOthers: h.name === TOPOLOGY_OTHERS_KEY,
+    },
+  ]);
+  const sortedOutbounds: Array<[string, number]> = aggregate.outbounds.map((o) => [
+    o.name,
+    o.count,
+  ]);
 
-  connections.forEach((conn) => {
-    let name = conn.rule;
-    const metadata = conn.metadata || {};
-
-    // Prioritize Host/IP for display to show actual websites, falling back to Rule
-    if (metadata.host) {
-      name = metadata.host;
-    } else if (metadata.destinationIP) {
-      name = metadata.destinationIP;
-    } else if (conn.rulePayload) {
-      name = `${conn.rule}: ${conn.rulePayload}`;
-    }
-
-    let outbound = 'Direct';
-    if (conn.chains && conn.chains.length > 0) {
-      outbound = conn.chains[0];
-    }
-
-    // Update Middle Node
-    if (!middleNodes.has(name)) {
-      middleNodes.set(name, { value: 0, flows: new Map() });
-    }
-    const node = middleNodes.get(name)!;
-    node.value += 1;
-    node.flows.set(outbound, (node.flows.get(outbound) || 0) + 1);
-
-    // Update Outbound Totals
-    outboundTotals.set(outbound, (outboundTotals.get(outbound) || 0) + 1);
-  });
-
-  // --- 2. Node Selection (Top N) ---
-  const MAX_NODES = 15;
-  let sortedMiddle = Array.from(middleNodes.entries()).sort((a, b) => b[1].value - a[1].value);
-
-  // Filter out potential noise or empty names if any
-  sortedMiddle = sortedMiddle.filter(([n]) => n && n.trim() !== '');
-
-  if (sortedMiddle.length > MAX_NODES) {
-    const top = sortedMiddle.slice(0, MAX_NODES);
-    const others = sortedMiddle.slice(MAX_NODES);
-
-    const startValue = { value: 0, flows: new Map<string, number>() };
-    const othersNode = others.reduce((acc, [_, data]) => {
-      acc.value += data.value;
-      data.flows.forEach((v, k) => {
-        acc.flows.set(k, (acc.flows.get(k) || 0) + v);
-      });
-      return acc;
-    }, startValue);
-
-    sortedMiddle = [...top, [t('home.others'), othersNode]];
-  }
-
-  // --- 3. Layout Calculation (Responsive) ---
+  // --- Layout Calculation (Responsive) ---
   const nodeList: Node[] = [];
   const availableHeight = FIXED_HEIGHT - 2 * PADDING_Y;
 
-  // Prepare Outbounds
-  const sortedOutbounds = Array.from(outboundTotals.entries()).sort((a, b) => b[1] - a[1]);
-
-  // Determine total connections (for source node)
+  // Determine total connections (for source node)：有名 host 连接数之和（与原 layout 同口径，不含无名连接）。
   const totalConnections = sortedMiddle.reduce((acc, [_, d]) => acc + d.value, 0);
 
   const middleCount = sortedMiddle.length;
@@ -182,7 +140,7 @@ export function computeTopologyLayout(
       x: middleX,
       y: currentY,
       height: h,
-      color: name === t('home.others') ? 'fill-muted-foreground' : 'fill-success', // token: Others slate / 域名 live 绿
+      color: data.isOthers ? 'fill-muted-foreground' : 'fill-success', // token: Others slate / 域名 live 绿（按 sentinel 判定）
     };
     nodeList.push(node);
     midNodeParams.set(name, node);

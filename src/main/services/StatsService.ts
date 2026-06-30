@@ -1,6 +1,8 @@
 /**
- * 流量统计服务：代理运行时经 sing-box 1.14 管理 API（gRPC）订阅 Status / Connections 流，算累计/速率/连接数，
- * 经 EVENT_STATS_UPDATED / EVENT_CONNECTIONS_UPDATED 推给渲染端展示。仅读取、不影响代理；流断开静默（客户端内部 2s 重连）。
+ * 流量统计服务：代理运行时经 sing-box 1.14 管理 API（gRPC）订阅 Status / Connections 流，算累计/速率/连接数。
+ * 本类现运行于 stats utilityProcess（#225），经 onStats/onConnections 回调把帧 post 给 StatsWorkerHost；后者
+ * relay EVENT_STATS_UPDATED（流量）/ EVENT_CONNECTIONS_AGGREGATE（host 侧聚合后的拓扑数据，#227）给渲染端。
+ * 仅读取、不影响代理；流断开静默（客户端内部 2s 重连）。
  *
  * §3-B：取代旧 clash_api `/connections` 每秒轮询。速率（uplink/downlink）由 server 直接给出（无需本地 delta/dt 自算）；
  * 连接以事件流（NEW/UPDATE/CLOSED 增量 + reset 全量重置）维护一份 map，避免每秒拉全量连接列表。

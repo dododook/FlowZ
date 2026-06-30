@@ -111,9 +111,44 @@ export interface ConnectionEntry {
   start?: string; // 连接建立时刻（RFC3339）
 }
 
-/** 连接快照：经 EVENT_CONNECTIONS_UPDATED 推送 / CONNECTIONS_GET 回填。 */
+/** 连接快照：连接信息页经 CONNECTIONS_GET 按需 pull（仅页面打开时定时拉，非每秒全量 push 广播）。 */
 export interface ConnectionsSnapshot {
   connections: ConnectionEntry[];
+  at: number; // 采样时刻 epoch ms
+}
+
+/** 拓扑「其它」分组的 sentinel host 名（聚合 Top-N 截断后剩余的合并条目）。渲染端 topology-layout 见此值 →
+ *  替换为 i18n 文案 t('home.others')。用控制字符前缀确保绝不与真实 host/IP/rule 名冲突。 */
+export const TOPOLOGY_OTHERS_KEY = '\u0000others';
+
+/** 某目标（host）→ 单个出口的连接数分布项。 */
+export interface ConnectionAggFlow {
+  outbound: string;
+  count: number;
+}
+
+/** 按目标聚合的一组连接：host/destIP/rule 显示名 → 连接数 + 各出口分布（topology 中列节点）。 */
+export interface ConnectionAggHost {
+  name: string;
+  count: number;
+  flows: ConnectionAggFlow[];
+}
+
+/** 按出口聚合的连接数（topology 右列节点）。 */
+export interface ConnectionAggOutbound {
+  name: string;
+  count: number;
+}
+
+/**
+ * 连接聚合快照（首页拓扑专用）：StatsWorkerHost 每帧 O(N) 聚合后经 EVENT_CONNECTIONS_AGGREGATE 广播，载荷与连接
+ * 总数解耦（恒 ~Top-N host + 出口数）。取代「每秒全量 ConnectionEntry[] relay」——连接风暴下渲染端不再被全量明细
+ * 序列化 + 每秒 O(N) 重算拖死（issue #227）。hosts 已按 count 降序、截断 Top-N（剩余并入 TOPOLOGY_OTHERS_KEY）。
+ */
+export interface ConnectionsAggregate {
+  total: number; // 活跃连接总数
+  hosts: ConnectionAggHost[];
+  outbounds: ConnectionAggOutbound[];
   at: number; // 采样时刻 epoch ms
 }
 

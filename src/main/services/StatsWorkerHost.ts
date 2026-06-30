@@ -14,7 +14,8 @@
  * 两 client 各连同一 127.0.0.1:apiPort 的不同 RPC 流，互不冲突。
  */
 import { utilityProcess, type UtilityProcess } from 'electron';
-import type { TrafficStats, ConnectionsSnapshot } from '../../shared/types';
+import type { TrafficStats, ConnectionsSnapshot, ConnectionsAggregate } from '../../shared/types';
+import { aggregateConnections } from './connections-aggregate';
 
 /** worker 重建 SingBoxApiClient 所需的运行期管理 API 端点（本地恒无 tls）。 */
 export interface StatsApiEndpoint {
@@ -28,6 +29,7 @@ export interface StatsApiEndpoint {
 export interface StatsProvider {
   getSnapshot(): TrafficStats;
   getConnectionsSnapshot(): ConnectionsSnapshot;
+  getAggregateSnapshot(): ConnectionsAggregate;
 }
 
 /** main → worker 控制消息。 */
@@ -54,13 +56,18 @@ const ZERO_STATS: TrafficStats = {
   activeConnections: 0,
 };
 
+/** 空聚合（stop/初始化用）。 */
+function emptyAggregate(at: number): ConnectionsAggregate {
+  return { total: 0, hosts: [], outbounds: [], at };
+}
+
 export interface StatsWorkerHostOptions {
   /** 已编译 worker 入口绝对路径（dist 下 .js）。 */
   workerPath: string;
   /** 流量快照广播到渲染端（main 侧门控后调用）。 */
   onStats: (s: TrafficStats) => void;
-  /** 连接快照广播到渲染端（main 侧门控后调用）。 */
-  onConnections: (snap: ConnectionsSnapshot) => void;
+  /** 连接聚合广播到渲染端（首页拓扑，main 侧门控后调用，issue #227）。 */
+  onAggregate: (agg: ConnectionsAggregate) => void;
   /** UI 广播活跃谓词：false（不可见/拖动中）时只缓存不广播。 */
   isUiActive: () => boolean;
   /** 取运行期管理 API 端点（核未起返回 null → worker 不开流）。 */
@@ -72,7 +79,10 @@ export interface StatsWorkerHostOptions {
 export class StatsWorkerHost implements StatsProvider {
   private worker: UtilityProcess | null = null;
   private snapshot: TrafficStats = { ...ZERO_STATS };
+  // worker post 来的最近连接明细快照：仅供连接信息页 CONNECTIONS_GET 按需 pull，不再 relay 给渲染端（旧放大器）。
   private connections: ConnectionsSnapshot = { connections: [], at: 0 };
+  // 由 connections 每帧 host 侧 O(N) 聚合而来（首页拓扑供数）：relay EVENT_CONNECTIONS_AGGREGATE + CONNECTIONS_AGGREGATE_GET 回填。
+  private aggregate: ConnectionsAggregate = emptyAggregate(0);
   /** 是否应处于订阅态（代理运行）。崩溃 respawn 后据此自动重连，不丢流。 */
   private started = false;
   private disposed = false;
@@ -170,8 +180,12 @@ export class StatsWorkerHost implements StatsProvider {
         break;
       case 'connections':
         if (!this.started) return; // 同上：停后在途连接帧丢弃，避免残留旧连接列表。
+        // issue #227：worker 仍 post 全量明细（供连接页 pull 缓存），但 host 不再把它 relay 给渲染端（旧每秒全量
+        // EVENT_CONNECTIONS_UPDATED 放大器）。host 侧 O(N) 聚合一次 → 只 relay 小载荷聚合（拓扑），渲染端零 O(N)
+        // 重算。隐藏/拖动期 worker 经 connActive 门控本就不 post connections，故此聚合也随之停。
         this.connections = msg.payload;
-        if (this.opts.isUiActive()) this.opts.onConnections(this.connections);
+        this.aggregate = aggregateConnections(msg.payload.connections, msg.payload.at);
+        if (this.opts.isUiActive()) this.opts.onAggregate(this.aggregate);
         break;
     }
   }
@@ -190,8 +204,9 @@ export class StatsWorkerHost implements StatsProvider {
     this.post({ type: 'stop' });
     this.snapshot = { ...ZERO_STATS };
     this.connections = { connections: [], at: Date.now() };
+    this.aggregate = emptyAggregate(Date.now());
     this.opts.onStats({ ...this.snapshot });
-    this.opts.onConnections({ connections: [], at: Date.now() });
+    this.opts.onAggregate(this.aggregate);
   }
 
   /** 拖动结束：立即补推一帧缓存最新（免等 worker 下一帧滞后）。窗口由隐藏转可见时不另补推——stats/计数走恒流的
@@ -199,7 +214,7 @@ export class StatsWorkerHost implements StatsProvider {
   resume(): void {
     if (!this.opts.isUiActive()) return;
     this.opts.onStats({ ...this.snapshot });
-    this.opts.onConnections({ connections: this.connections.connections, at: Date.now() });
+    this.opts.onAggregate(this.aggregate);
   }
 
   getSnapshot(): TrafficStats {
@@ -207,7 +222,14 @@ export class StatsWorkerHost implements StatsProvider {
   }
 
   getConnectionsSnapshot(): ConnectionsSnapshot {
-    return { connections: this.connections.connections, at: Date.now() };
+    // at 用 worker 真实采样时刻（this.connections.at），非拉取时刻：连接页速率差分以采样间隔为分母，避免 pull
+    // 节奏与 worker 帧节奏漂移时同一缓存被拉两次 → Δbytes=0 报速率 0、下次翻倍的抖动（review Low-2）。
+    return { connections: this.connections.connections, at: this.connections.at };
+  }
+
+  /** 首页拓扑挂载回填（CONNECTIONS_AGGREGATE_GET）：缓存的最近聚合（后续增量走 EVENT_CONNECTIONS_AGGREGATE）。 */
+  getAggregateSnapshot(): ConnectionsAggregate {
+    return this.aggregate;
   }
 
   /** app 退出：终止 worker，停止 respawn。 */

@@ -11,6 +11,7 @@ import type {
   ProxyStatus,
   ProxyErrorCode,
   ConnectionsSnapshot,
+  ConnectionsAggregate,
   LogEntry,
   TrafficStats,
   Rule,
@@ -515,13 +516,24 @@ export const statsApi = {
   },
 };
 
-/** 连接快照 API：topology 经此消费 main 单一 poller 的数据，渲染端不再直连 :9090、不持 secret。 */
+/**
+ * 连接数据 API：渲染端不再直连 :9090、不持 secret。两条独立通道（issue #227 治本）：
+ *  - aggregate：首页拓扑用。StatsWorkerHost 每帧 O(N) 聚合后推小载荷（~Top-N host + 出口数），与连接总数解耦。
+ *  - get：连接信息页明细 pull。仅页面打开时按 interval 拉，不再「每秒全量 push 给所有窗口」。
+ */
 export const connectionsApi = {
+  /** 连接明细 pull（连接信息页打开时定时拉；非每秒 push）。 */
   async get(): Promise<ConnectionsSnapshot> {
     return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_GET);
   },
-  onUpdated(listener: (snap: ConnectionsSnapshot) => void): () => void {
-    return ipcClient.on(IPC_CHANNELS.EVENT_CONNECTIONS_UPDATED, listener);
+  /** 首页拓扑聚合（挂载回填 + 订阅增量广播）。 */
+  aggregate: {
+    async get(): Promise<ConnectionsAggregate> {
+      return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_AGGREGATE_GET);
+    },
+    onUpdated(listener: (agg: ConnectionsAggregate) => void): () => void {
+      return ipcClient.on(IPC_CHANNELS.EVENT_CONNECTIONS_AGGREGATE, listener);
+    },
   },
   /** 关单条连接（main 经 9090 DELETE /connections/{id}；渲染端无 secret）。 */
   async close(id: string): Promise<{ ok: boolean }> {
