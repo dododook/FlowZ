@@ -10,6 +10,7 @@
  */
 
 import { isIpv4 } from './ip';
+import type { ProcessMetricsSummary } from './process-metrics';
 
 /** 打码占位符（定长，不泄露原值长度信息）。 */
 export const REDACTED = '<redacted>';
@@ -278,6 +279,8 @@ export interface DiagnosticReportInput {
   };
   redactedUserConfig: unknown;
   redactedSingboxConfig: unknown;
+  /** 逐进程内存/CPU 快照（issue #242）：一眼看出是哪个子进程内存偏高；type/pid/内存/CPU 非敏感，无需脱敏。 */
+  processMetrics?: ProcessMetricsSummary;
   appLogTail: string;
   singboxLogTail: string;
   /** 节点标识符 → 占位符（P0.6）：构建末尾在全报告统一替换，打码节点身份（域名/IP/SNI/节点名），保留形态与跨段相关性。 */
@@ -378,5 +381,20 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   lines.push('');
 
   // P0.6：末尾在全报告（配置块 + 日志 + 运行态）统一打码节点标识符，跨段占位一致便于关联诊断。
-  return redactIdentifiers(lines.join('\n'), input.nodeIdentifiers ?? []);
+  const redacted = redactIdentifiers(lines.join('\n'), input.nodeIdentifiers ?? []);
+
+  // 进程内存表（issue #242）刻意放在 redactIdentifiers **之后**拼接：表内只有进程 type/pid/内存/CPU/自身进程名，
+  // 无节点标识符、无需脱敏；若纳入打码 pass，机场把节点命名成纯数字（如 "2048"）会撞上表里的内存/PID 数字被误
+  // 替成占位符，反而毁掉本表的定位价值。故与打码隔离，单独在末尾渲染。
+  if (!input.processMetrics) return redacted;
+  const pm = input.processMetrics;
+  const metricsLines = ['', '## 进程内存', ''];
+  metricsLines.push(`- 合计：${pm.totalMemoryMb} MB（${pm.rows.length} 个进程，按内存降序）`, '');
+  metricsLines.push('| 类型 | PID | 内存(MB) | CPU(%) | 标识 |', '|---|---|---|---|---|');
+  for (const r of pm.rows) {
+    metricsLines.push(
+      `| ${r.type} | ${r.pid} | ${r.memoryMb} | ${r.cpuPercent} | ${r.label ?? ''} |`
+    );
+  }
+  return redacted + '\n' + metricsLines.join('\n') + '\n';
 }

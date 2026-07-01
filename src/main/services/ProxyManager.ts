@@ -3,7 +3,7 @@
  * 负责 sing-box 进程的生命周期管理和配置生成
  */
 
-import { BrowserWindow, shell, powerMonitor } from 'electron';
+import { app, BrowserWindow, shell, powerMonitor } from 'electron';
 import { notifyUser } from '../notify-user';
 import { mt } from '../i18n';
 import { spawn, ChildProcess, execFile } from 'child_process';
@@ -102,6 +102,7 @@ import {
 import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
 import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
+import { findMemoryOffenders } from '../../shared/process-metrics';
 import { probeWinTunAdapterPresent, waitForAdapterReleased } from './win-tun-adapter';
 import {
   probeTcpReachable,
@@ -403,10 +404,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 长会话 debug 日志无限增长会撑满磁盘，超过此上限即截断 singbox.log
   // （sing-box 以 O_APPEND 模式写，截断后从 offset 0 续写，不产生 sparse 空洞）
   private static readonly MAX_LOG_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-  // 主进程内存自检阈值（issue #210 可观测性）：健康检查（10s 周期）顺带采样 RSS，超过此值记 warn 日志
-  // 便于早期定位泄漏（pendingWrites 积压 / gRPC 长流保留 / connMap 膨胀等）。仅观测告警，不强制干预——
-  // 阈值取较宽松的 1GB（FlowZ 常态 < 300MB），避免误报；命中后降频记录防刷屏（MEMORY_WARN_COOLDOWN_MS）。
-  private static readonly RSS_WARN_THRESHOLD = 1024 * 1024 * 1024; // 1GB
+  // 逐进程内存自检阈值（issue #210 主进程 + #242 扩展到全进程）：健康检查（10s 周期）经 getAppMetrics 采样每个
+  // 进程，任一超此值记 warn 日志便于早期定位泄漏。仅观测告警，不强制干预——阈值取较宽松的 1GB/进程（FlowZ 单进程
+  // 常态远低于此，#242 的问题进程达 2GB），避免误报；命中后降频记录防刷屏（MEMORY_WARN_COOLDOWN_MS）。
+  private static readonly RSS_WARN_THRESHOLD = 1024 * 1024 * 1024; // 1GB/进程
   private static readonly MEMORY_WARN_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟内不重复告警
   private lastMemoryWarnAt = 0;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
@@ -4801,27 +4802,29 @@ exit 0
   }
 
   /**
-   * 主进程内存自检（issue #210 可观测性）：采样 RSS，超 RSS_WARN_THRESHOLD 记 warn 日志。
-   * 与健康检查同频（10s）调用，但降频记录（MEMORY_WARN_COOLDOWN_MS 内不重复）防刷屏。
-   * 仅观测告警，不强制 GC/干预——为泄漏定位提供早期信号（pendingWrites 积压/gRPC 长流保留等）。
+   * 逐进程内存自检（issue #210 主进程 + #242 扩展到全进程）：经 app.getAppMetrics() 采样每个进程（主/渲染/GPU/
+   * utility），任一超 RSS_WARN_THRESHOLD 记 warn 日志。#242 根因是某子进程内存暴涨、系统监视器分不清是哪个——
+   * getAppMetrics 天然带 type/pid，把「哪个进程在涨」直接写进 app.log，问题在用户察觉前就有据可查（监控闭环）。
+   * 与健康检查同频（10s）调用，但降频记录（MEMORY_WARN_COOLDOWN_MS 内不重复）防刷屏。仅观测告警，不强制 GC/干预。
    */
   private checkMemoryUsage(): void {
-    let rss = 0;
+    let offenders;
     try {
-      rss = process.memoryUsage().rss;
+      offenders = findMemoryOffenders(app.getAppMetrics(), ProxyManager.RSS_WARN_THRESHOLD);
     } catch {
-      return; // memoryUsage 极端异常不阻断健康检查
+      return; // getAppMetrics 极端异常不阻断健康检查
     }
-    if (rss < ProxyManager.RSS_WARN_THRESHOLD) return;
+    if (offenders.length === 0) return;
     const now = Date.now();
     if (now - this.lastMemoryWarnAt < ProxyManager.MEMORY_WARN_COOLDOWN_MS) return;
     this.lastMemoryWarnAt = now;
-    const mb = Math.round(rss / 1024 / 1024);
+    const thresholdMb = Math.round(ProxyManager.RSS_WARN_THRESHOLD / 1024 / 1024);
+    const detail = offenders
+      .map((o) => `${o.type}${o.label ? `(${o.label})` : ''} pid=${o.pid} ${o.memoryMb}MB`)
+      .join('; ');
     this.logToManager(
       'warn',
-      `主进程内存占用 ${mb}MB 偏高（阈值 ${Math.round(
-        ProxyManager.RSS_WARN_THRESHOLD / 1024 / 1024
-      )}MB），可能存在内存泄漏，建议关注日志量/连接数`,
+      `进程内存偏高（阈值 ${thresholdMb}MB/进程）：${detail}；疑内存泄漏，建议「设置→关于→报告问题」导出诊断报告查看逐进程内存`,
       'ProxyManager'
     );
   }

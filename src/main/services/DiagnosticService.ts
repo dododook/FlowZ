@@ -21,6 +21,7 @@ import {
   type DiagnosticReportInput,
 } from '../../shared/diagnostic-redact';
 import { effectiveLogLevel } from '../../shared/log-level';
+import { summarizeProcessMetrics } from '../../shared/process-metrics';
 import { getLogsPath, getSingBoxLogPath } from '../utils/paths';
 import path from 'path';
 import type { LogManager } from './LogManager';
@@ -111,6 +112,15 @@ export class DiagnosticService {
       redactedUserConfig = { error: `脱敏失败: ${e?.message ?? e}` };
     }
 
+    // 逐进程内存/CPU 快照（issue #242）：一次导出即可定位是哪个子进程内存偏高，取代靠用户截系统监视器猜。
+    // best-effort：getAppMetrics 极端异常不阻断报告。
+    let processMetrics;
+    try {
+      processMetrics = summarizeProcessMetrics(app.getAppMetrics());
+    } catch {
+      processMetrics = undefined;
+    }
+
     const effLevel = effectiveLogLevel(config.logLevel || 'info', this.privacyProvider());
     const captureActive = !!config.diagnosticCapture;
     const wantDeeper =
@@ -154,6 +164,7 @@ export class DiagnosticService {
       },
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,
+      processMetrics,
       appLogTail,
       singboxLogTail,
       // issue #147：节点 outbound.server 已恒为域名（不再烧 IP），无额外预解析 IP 需补脱敏 → 仅扫 config.servers。

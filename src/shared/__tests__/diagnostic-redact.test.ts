@@ -205,6 +205,45 @@ describe('buildDiagnosticReport', () => {
     expect(md).toContain('建议开启诊断采集');
   });
 
+  it('有 processMetrics 时渲染逐进程内存表（issue #242）', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      processMetrics: {
+        totalMemoryMb: 2348,
+        rows: [
+          { type: 'Utility', pid: 374035, memoryMb: 2048, cpuPercent: 1, label: 'flowz-stats' },
+          { type: 'Browser', pid: 373944, memoryMb: 300, cpuPercent: 0 },
+        ],
+      },
+    });
+    expect(md).toContain('## 进程内存');
+    expect(md).toContain('| 类型 | PID | 内存(MB) | CPU(%) | 标识 |');
+    expect(md).toContain('| Utility | 374035 | 2048 | 1 | flowz-stats |');
+    expect(md).toContain('| Browser | 373944 | 300 | 0 |  |');
+    expect(md).toContain('2348 MB');
+  });
+
+  it('无 processMetrics 时不渲染进程内存区块（getAppMetrics 失败兜底）', () => {
+    const md = buildDiagnosticReport(base);
+    expect(md).not.toContain('## 进程内存');
+  });
+
+  it('进程内存表不被节点标识符打码误伤（机场把节点命名成纯数字撞表内 PID/内存数字）', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      appLogTail: 'node 2048 connected', // 日志里的节点名 "2048" 应被正常打码
+      nodeIdentifiers: [{ value: '2048', placeholder: '<node-1>' }],
+      processMetrics: {
+        totalMemoryMb: 2048,
+        rows: [{ type: 'Utility', pid: 2048, memoryMb: 2048, cpuPercent: 1, label: 'flowz-stats' }],
+      },
+    });
+    // 表在 redact 之后拼接 → 表内 PID/内存的 2048 原样保留，定位价值不被毁
+    expect(md).toContain('| Utility | 2048 | 2048 | 1 | flowz-stats |');
+    // 但表以外（日志）的同名节点仍被正常打码，脱敏不受影响
+    expect(md).toContain('node <node-1> connected');
+  });
+
   it('F1 回归：日志含 ``` 不破坏围栏（动态升级到更长围栏）', () => {
     // 机场可控的节点名/日志含三反引号 → 朴素 fence 会被提前闭合。动态围栏须用更长的反引号包裹。
     const evil = 'before\n```\n# injected\nafter';

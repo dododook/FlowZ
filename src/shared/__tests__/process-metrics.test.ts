@@ -1,0 +1,92 @@
+/**
+ * process-metrics 纯分析单测（issue #242）：summarizeProcessMetrics 汇总/降序/MB 换算/label；
+ * findMemoryOffenders 阈值筛查（KB↔字节换算、空/无超标）。
+ */
+import {
+  summarizeProcessMetrics,
+  findMemoryOffenders,
+  type ProcessMetricLike,
+} from '../process-metrics';
+
+const KB = 1024;
+const MB_IN_KB = 1024;
+
+function proc(
+  type: string,
+  pid: number,
+  memKb: number,
+  extra?: { cpu?: number; serviceName?: string; name?: string }
+): ProcessMetricLike {
+  return {
+    type,
+    pid,
+    memory: { workingSetSize: memKb },
+    ...(extra?.cpu !== undefined ? { cpu: { percentCPUUsage: extra.cpu } } : {}),
+    ...(extra?.serviceName ? { serviceName: extra.serviceName } : {}),
+    ...(extra?.name ? { name: extra.name } : {}),
+  };
+}
+
+describe('summarizeProcessMetrics', () => {
+  it('按内存降序 + MB 换算 + 合计', () => {
+    const s = summarizeProcessMetrics([
+      proc('Browser', 1, 300 * MB_IN_KB),
+      proc('Utility', 2, 2048 * MB_IN_KB), // 2GB
+      proc('GPU', 3, 80 * MB_IN_KB),
+    ]);
+    expect(s.rows.map((r) => r.pid)).toEqual([2, 1, 3]); // 降序：2048/300/80
+    expect(s.rows[0]).toMatchObject({ type: 'Utility', pid: 2, memoryMb: 2048 });
+    expect(s.rows[1].memoryMb).toBe(300);
+    expect(s.totalMemoryMb).toBe(2048 + 300 + 80);
+  });
+
+  it('cpu 四舍五入整数；label 取 serviceName 优先、其次 name、都无则省略', () => {
+    const s = summarizeProcessMetrics([
+      proc('Utility', 1, 10 * MB_IN_KB, { cpu: 53.7, serviceName: 'flowz-stats', name: 'x' }),
+      proc('Renderer', 2, 10 * MB_IN_KB, { name: 'main-window' }),
+      proc('GPU', 3, 10 * MB_IN_KB),
+    ]);
+    const byPid = Object.fromEntries(s.rows.map((r) => [r.pid, r]));
+    expect(byPid[1].cpuPercent).toBe(54);
+    expect(byPid[1].label).toBe('flowz-stats'); // serviceName 优先
+    expect(byPid[2].label).toBe('main-window'); // 无 serviceName → name
+    expect(byPid[3].label).toBeUndefined(); // 都无
+  });
+
+  it('空输入 → 合计 0、空行', () => {
+    const s = summarizeProcessMetrics([]);
+    expect(s.totalMemoryMb).toBe(0);
+    expect(s.rows).toEqual([]);
+  });
+});
+
+describe('findMemoryOffenders', () => {
+  const oneGb = 1024 * 1024 * 1024;
+
+  it('仅返回 >= 阈值（字节）的进程，按内存降序', () => {
+    const off = findMemoryOffenders(
+      [
+        proc('Browser', 1, 300 * MB_IN_KB), // 300MB < 1GB
+        proc('Utility', 2, 2048 * MB_IN_KB), // 2GB >= 1GB
+        proc('Renderer', 3, 1536 * MB_IN_KB), // 1.5GB >= 1GB
+      ],
+      oneGb
+    );
+    expect(off.map((r) => r.pid)).toEqual([2, 3]); // 降序，300MB 的被排除
+  });
+
+  it('全部低于阈值 → 空数组', () => {
+    expect(findMemoryOffenders([proc('Browser', 1, 500 * MB_IN_KB)], oneGb)).toEqual([]);
+  });
+
+  it('KB↔字节换算正确：workingSetSize 恰好等于阈值 → 命中', () => {
+    const thresholdKb = oneGb / KB; // 阈值对应的 KB 数
+    const off = findMemoryOffenders([proc('GPU', 9, thresholdKb)], oneGb);
+    expect(off).toHaveLength(1);
+    expect(off[0].pid).toBe(9);
+  });
+
+  it('空输入 → 空数组', () => {
+    expect(findMemoryOffenders([], oneGb)).toEqual([]);
+  });
+});
