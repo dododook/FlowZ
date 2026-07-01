@@ -17,7 +17,13 @@ export interface ProcessMetricLike {
   type: string; // 'Browser'（主）/ 'Renderer'|'Tab' / 'GPU' / 'Utility' / ...
   memory: { workingSetSize: number }; // KB
   cpu?: { percentCPUUsage?: number };
-  serviceName?: string; // utility 子类型名（如 stats worker 的 serviceName），辨识用
+  // 注意 name/serviceName 的实际填法与直觉相反（本机 xvfb 探针实测坐实，见 process-metrics.test.ts）：
+  // Electron utilityProcess.fork(path, args, {serviceName:'flowz-stats'}) 传入的自定义名最终落在 `.name`，
+  // 而 `.serviceName` 恒是 Chromium 的通用接口名（如 'node.mojom.NodeService'，等价于该进程命令行里的
+  // --utility-sub-type 值）——对 Electron 自己 fork 出的所有 utilityProcess 都长这样，分不出具体是哪一个。
+  // 故 toRow 取 label 须 name 优先、serviceName 兜底（顺序颠倒会让 FlowZ 自己的 worker 显示成无辨识度的
+  // 泛型接口名，而不是 fork 时起的名字——正是这张表最该认出来的那个进程）。
+  serviceName?: string;
   name?: string;
 }
 
@@ -26,7 +32,7 @@ export interface ProcessMetricRow {
   pid: number;
   memoryMb: number; // 四舍五入 MB
   cpuPercent: number; // 四舍五入整数百分比
-  label?: string; // serviceName / name（utility 辨识用），无则省略
+  label?: string; // name 优先、serviceName 兜底（utility 辨识用，见 ProcessMetricLike 注释），无则省略
 }
 
 export interface ProcessMetricsSummary {
@@ -39,7 +45,7 @@ const KB_PER_MB = 1024;
 function toRow(m: ProcessMetricLike): ProcessMetricRow {
   const memoryMb = Math.round((m.memory?.workingSetSize ?? 0) / KB_PER_MB);
   const cpuPercent = Math.round(m.cpu?.percentCPUUsage ?? 0);
-  const label = m.serviceName || m.name || undefined;
+  const label = m.name || m.serviceName || undefined;
   return { type: m.type, pid: m.pid, memoryMb, cpuPercent, ...(label ? { label } : {}) };
 }
 

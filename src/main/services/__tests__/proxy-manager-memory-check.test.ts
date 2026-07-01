@@ -50,14 +50,19 @@ function makeSvc(): any {
 const THRESHOLD = (ProxyManager as any).RSS_WARN_THRESHOLD as number;
 const COOLDOWN = (ProxyManager as any).MEMORY_WARN_COOLDOWN_MS as number;
 
-/** 造一个进程指标（workingSetSize 单位 KB，与 Electron 口径一致）。 */
-function proc(type: string, pid: number, memKb: number, serviceName?: string) {
+/**
+ * 造一个进程指标（workingSetSize 单位 KB，与 Electron 口径一致）。
+ * name/serviceName 语义见 shared/process-metrics.ts 顶部注释：Electron utilityProcess.fork 传入的
+ * 自定义 serviceName 选项实际落在 getAppMetrics() 的 `.name`，`.serviceName` 恒是 Chromium 通用接口名
+ * （如 'node.mojom.NodeService'）——本机 xvfb 探针实测坐实，非猜测。
+ */
+function proc(type: string, pid: number, memKb: number, name?: string) {
   return {
     type,
     pid,
     memory: { workingSetSize: memKb },
     cpu: { percentCPUUsage: 0 },
-    ...(serviceName ? { serviceName } : {}),
+    ...(name ? { name, serviceName: 'node.mojom.NodeService' } : {}),
   };
 }
 
