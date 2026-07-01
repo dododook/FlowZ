@@ -27,6 +27,8 @@ export interface ConfigChangeDeps {
   getCoreUpdateScheduler: () => CoreUpdateScheduler | null;
   updateTrayMenuState: (isProxyRunning: boolean, hasError?: boolean) => void;
   getPrivacyMode: () => boolean;
+  /** 据最新 config.language（读 configManager 缓存）重设主进程 i18n；注入自 index.ts（需系统偏好，避免本文件依赖 electron）。 */
+  applyLanguageFromConfig: () => void;
 }
 
 /**
@@ -41,6 +43,7 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
     getCoreUpdateScheduler,
     updateTrayMenuState,
     getPrivacyMode,
+    applyLanguageFromConfig,
   } = deps;
 
   mainEventEmitter.on(
@@ -49,6 +52,9 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
       const proxyManager = getProxyManager();
       const autoSwitchService = getAutoSwitchService();
       const coreUpdateScheduler = getCoreUpdateScheduler();
+      // 语言热同步：据最新 config.language（configManager 缓存）重设主进程 i18n，必须在下方 updateTrayMenuState
+      // 之前——托盘菜单经 mt() 取文案，先切语言再重渲染才能立即以新语言呈现（用户在设置页改语言即时生效，无需重启 app）。
+      applyLanguageFromConfig();
       // 0. logLevel 热同步到 LogManager（设置页改日志级别即时生效，无需重启 app；与启动期 setLogLevel 对齐）
       const lvl =
         changedConfig?.logLevel ?? (await configManager.loadConfig().catch(() => null))?.logLevel;

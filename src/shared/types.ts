@@ -388,6 +388,10 @@ export interface UserConfig {
   silentStart: boolean;
   autoConnect: boolean;
   minimizeToTray: boolean;
+  // 界面语言「选择」（单一真值源）：'auto'（跟随系统）或某受支持语言码（zh-CN/zh-TW/en-US/ru/fa）。
+  // 主进程直接据此定托盘/通知语言（不再靠渲染端 IPC 反向告知）；渲染端 i18n 经 additionalArguments 注入同步读取。
+  // 可选：存量配置缺该键 → 渲染端首次从旧 localStorage['app-language'] 回填（见 App.tsx 迁移）。
+  language?: string;
   autoCheckUpdate: boolean;
   autoLightweightMode: boolean;
   desktopNotifications?: boolean; // 桌面通知总开关（默认开）：当前仅严重错误事件发系统通知，关闭则一概不发

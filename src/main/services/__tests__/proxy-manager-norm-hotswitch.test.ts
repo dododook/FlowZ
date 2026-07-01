@@ -185,6 +185,13 @@ describe('ProxyManager.configGenerationNorm', () => {
     expect(svc.configGenerationNorm(a)).toBe(svc.configGenerationNorm(b));
   });
 
+  it('改界面语言 language → norm 等价（纯 UI 偏好，运行中切语言不应重启内核断流）', () => {
+    const svc = makeSvc();
+    const a = { ...makeConfig(), language: 'auto' } as UserConfig;
+    const b = { ...makeConfig(), language: 'zh-CN' } as UserConfig;
+    expect(svc.configGenerationNorm(a)).toBe(svc.configGenerationNorm(b));
+  });
+
   // --- norm 翻转分支（结构变 = 重启）-----------------------------------------
 
   it('改规则条件值（domain 内容）→ norm 翻转（值经 ext 投影的 ok 位承载，值空↔非空翻转）', () => {

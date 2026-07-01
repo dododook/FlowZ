@@ -243,12 +243,7 @@ export const configApi = {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_SET_PRIVACY_MODE, value);
   },
 
-  /**
-   * 设置应用语言 (同步给主进程)
-   */
-  async setLanguage(lang: string): Promise<void> {
-    return ipcClient.invoke(IPC_CHANNELS.APP_SET_LANGUAGE, lang);
-  },
+  // 语言不再经 IPC 同步给主进程：改写 config.language（saveConfig），主进程直接读 config 单一真值源。
 
   /**
    * 同步「节点列表按延迟排序」开关到主进程（使托盘节点列表与下拉同序）。

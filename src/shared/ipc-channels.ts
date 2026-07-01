@@ -163,8 +163,7 @@ export const IPC_CHANNELS = {
   EVENT_TAILSCALE_STATE_CLEARED: 'event:tailscaleStateCleared', // 启动前属主归一删掉某节点 root 残留 state（登录态已失效）→ 渲染端清缓存，避免陈旧 loggedIn=true 与已清空 state 撕裂（payload={serverId}）
   EVENT_SYSTEM_PROXY_RESIDUAL: 'event:systemProxyResidual', // TUN 启动后检测到无 marker 的系统代理残留（非 FlowZ 设的）→ 一次性提示
 
-  // 应用语言同步（渲染进程 -> 主进程）
-  APP_SET_LANGUAGE: 'app:setLanguage',
+  // 界面语言不再经此反向同步：改走 config.language 单一真值源（主进程直接读 config，见 ConfigManager）。
 
   // 节点列表「按延迟排序」开关同步（渲染进程 -> 主进程，使托盘列表与下拉同序）
   APP_SET_NODE_SORT_BY_LATENCY: 'app:setNodeSortByLatency',

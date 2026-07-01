@@ -37,6 +37,13 @@ function getSystemLanguages(): string[] {
   return Array.isArray(sl) ? sl : [];
 }
 
+/** main 经 additionalArguments 注入的语言「选择」（config.language 单一真值源）；空串=未注入/存量缺键。 */
+function getInjectedLanguageChoice(): string {
+  const c = (window as unknown as { electron?: { languageChoice?: string } }).electron
+    ?.languageChoice;
+  return typeof c === 'string' ? c : '';
+}
+
 // RTL 语言集合：以语言前缀匹配（fa / fa-IR / ar / he / ur / ...），新增 RTL 语言时在此追加前缀。
 const RTL_LANGUAGE_PREFIXES = ['fa', 'ar', 'he', 'ur'];
 
@@ -52,15 +59,18 @@ function applyDocumentDirection(lng: string): void {
   document.documentElement.lang = lng;
 }
 
-// 语言选择（localStorage['app-language']）：'auto'（跟随系统，首装默认）或某具体码。
-// 迁移旧 'fa-IR' → 'fa'（回写，使设置页下拉与持久值一致）。
-const rawChoice = localStorage.getItem('app-language');
-const choice = migrateLanguageCode(rawChoice);
-if (rawChoice === 'fa-IR') localStorage.setItem('app-language', 'fa'); // 回写迁移，使下拉回显与持久值一致
+// 语言选择（'auto' 或具体码）的真值源 = config.language，经 additionalArguments 注入、同步可读。
+// 存量迁移：注入为空（旧配置缺 config.language）时回退旧 localStorage['app-language']，供 App.tsx 首次回填 config；
+// 回填后下次启动注入即有值，localStorage 不再被读。旧 'fa-IR' → 'fa' 经 migrateLanguageCode 归一。
+// 用 `||` 而非 `??` 兜底：不仅拦 null/undefined，也拦空串 ''——否则解析出 '' 会让 App.tsx 迁移 effect 的
+// `!config.language` 守卫永不收敛（无限 saveConfig）。initialLanguageChoice 恒为非空（最小 'auto'）。
+export const initialLanguageChoice: string =
+  migrateLanguageCode(getInjectedLanguageChoice() || localStorage.getItem('app-language')) ||
+  AUTO_LANGUAGE;
 
 // 有效界面语言：'auto'/未设 → 按系统偏好（getPreferredSystemLanguages）解析；否则用具体码。
 // 注：绝不能用 app.getLocale()（恒返 app bundle locale=en，与系统脱钩）——故系统语言经 additionalArguments 注入。
-const effectiveLanguage = resolveEffectiveLanguage(choice ?? AUTO_LANGUAGE, getSystemLanguages());
+const effectiveLanguage = resolveEffectiveLanguage(initialLanguageChoice, getSystemLanguages());
 
 i18n.use(initReactI18next).init({
   resources,

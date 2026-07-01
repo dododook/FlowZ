@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { PrivacyOverlay } from './components/layout/privacy-overlay';
 import { api } from './ipc/api-client';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
-import i18n from './i18n';
+import i18n, { initialLanguageChoice } from './i18n';
 
 function App() {
   const currentView = useAppStore((state) => state.currentView);
@@ -26,9 +26,20 @@ function App() {
   const settingsSection = useAppStore((state) => state.settingsSection);
   const setSettingsSection = useAppStore((state) => state.setSettingsSection);
   const loadConfig = useAppStore((state) => state.loadConfig);
+  const config = useAppStore((state) => state.config);
+  const saveConfig = useAppStore((state) => state.saveConfig);
   const refreshConnectionStatus = useAppStore((state) => state.refreshConnectionStatus);
   const setPrivacyMode = useAppStore((state) => state.setPrivacyMode);
   const nodeSortByLatency = useNodeSortStore((state) => state.sortByLatency);
+
+  // 语言真值源迁移（存量）：旧配置无 config.language，i18n 已从旧 localStorage 解析出 initialLanguageChoice 显示，
+  // 此处把它一次性回填进 config，使主进程下次启动能直接读到用户语言（否则主进程只会用系统语言兜底托盘/通知）。
+  // 幂等：config.language 有值即 no-op；回填后 config 更新、守卫即止。新装 config.language 默认 'auto'，天然跳过。
+  useEffect(() => {
+    if (config && !config.language) {
+      saveConfig({ ...config, language: initialLanguageChoice }).catch(console.error);
+    }
+  }, [config, saveConfig]);
 
   // 离开设置页重置子节的逻辑已下沉到 store.setCurrentView，此处直接用 setCurrentView
 
@@ -47,9 +58,7 @@ function App() {
     refreshConnectionStatus();
     // Tailscale 真实登录态由 sing-box 1.14 api STATUS 流（EVENT_TAILSCALE_STATUS，随主核起停推送）驱动，
     // 此处无需主动拉取。
-
-    // Sync initial language to main process for tray menu
-    api.config.setLanguage(i18n.language).catch(console.error);
+    // 语言不再在此推送给主进程：主进程直接读 config.language 单一真值源（见上方迁移 effect + config-change 热同步）。
 
     // Poll connection status every 2 seconds
     const statusInterval = setInterval(() => {

@@ -693,6 +693,16 @@ export class ConfigManager implements IConfigManager {
     if (config.silentStart === undefined) {
       config.silentStart = false; // 默认值
     }
+    // language 是界面语言「选择」（'auto'|具体码）的单一真值源。非 string 或空串一律删（sanitize 不 throw，同纯开关字段标准）——
+    // 删后视为缺省，resolveEffectiveLanguage 会退回系统解析。空串尤其要删：留着会让渲染端迁移 effect 的 `!language` 守卫
+    // 永不收敛（无限回填）。不回填默认（存量缺该键由渲染端从 localStorage 迁移回填）。
+    if (
+      config.language !== undefined &&
+      (typeof config.language !== 'string' || config.language === '')
+    ) {
+      this.log('warn', 'language must be a non-empty string; removing invalid value');
+      delete config.language;
+    }
     // appRoutingEnabled：undefined=关闭（默认关；不回填以减少 config 写放大；gate 用 !== true）。
     // 纯开关字段非法值 sanitize 而非 throw——throw 在 loadConfig 路径会触发默认配置覆盖落盘致全丢，不值当。
     if (config.appRoutingEnabled !== undefined && typeof config.appRoutingEnabled !== 'boolean') {
@@ -1000,6 +1010,7 @@ export class ConfigManager implements IConfigManager {
       disableLogFile: false,
       clashApiSecret: randomBytes(16).toString('hex'),
       uiTheme: 'system',
+      language: 'auto', // 界面语言默认「自动（跟随系统）」；新装即有值，存量缺键由渲染端从 localStorage 迁移回填
     };
   }
 }

@@ -22,6 +22,16 @@ function readSystemLanguages(): string[] {
 }
 
 /**
+ * 界面语言「选择」（config.language 单一真值源）：主进程建窗时经 additionalArguments 注入 `--flowz-lang-choice=<值>`。
+ * 同步可读、无 IPC 时序问题，供 i18n 初始化直接用（取代旧的 localStorage['app-language'] 作真值源）。空串=未注入/存量缺键。
+ */
+function readLanguageChoice(): string {
+  const PREFIX = '--flowz-lang-choice=';
+  const arg = process.argv.find((a) => a.startsWith(PREFIX));
+  return arg ? arg.slice(PREFIX.length) : '';
+}
+
+/**
  * 暴露给渲染进程的 Electron API
  */
 const electronAPI = {
@@ -30,6 +40,8 @@ const electronAPI = {
   arch: process.arch,
   // OS 偏好语言（有序，BCP47）：i18n「自动」解析用；空数组=未注入/取不到。
   systemLanguages: readSystemLanguages(),
+  // 界面语言选择（config.language 注入值）：i18n 初始化的真值源；空串=未注入/存量缺键（回退旧 localStorage）。
+  languageChoice: readLanguageChoice(),
   ipcRenderer: {
     /**
      * 调用主进程方法

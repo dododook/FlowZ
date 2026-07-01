@@ -25,6 +25,9 @@ export function GeneralSettings() {
   const config = useAppStore((state) => state.config);
   const saveConfig = useAppStore((state) => state.saveConfig);
   // F29：密码哈希在 main，渲染端不读明文。输入框 write-only（恒空起始），是否已设密码经 IPC 查询。
+  // macOS 关窗恒不退出 app（红灯关窗是平台惯例，shouldQuitOnAllWindowsClosed 对 darwin 恒 false）→
+  // minimizeToTray 在 macOS 上完全无效，隐藏该开关（否则是个拨了没反应的死开关）。
+  const isMac = window.electron?.platform === 'darwin';
   const [passwordValue, setPasswordValue] = useState('');
   const [hasPrivacyPassword, setHasPrivacyPassword] = useState(false);
   useEffect(() => {
@@ -102,15 +105,17 @@ export function GeneralSettings() {
               onCheckedChange={(c) => handleToggle('autoConnect', c)}
             />
           </SettingsRow>
-          <SettingsRow
-            label={t('settings.general.minimizeToTrayTitle')}
-            description={t('settings.general.minimizeToTrayDesc')}
-          >
-            <Switch
-              checked={config.minimizeToTray}
-              onCheckedChange={(c) => handleToggle('minimizeToTray', c)}
-            />
-          </SettingsRow>
+          {!isMac && (
+            <SettingsRow
+              label={t('settings.general.minimizeToTrayTitle')}
+              description={t('settings.general.minimizeToTrayDesc')}
+            >
+              <Switch
+                checked={config.minimizeToTray}
+                onCheckedChange={(c) => handleToggle('minimizeToTray', c)}
+              />
+            </SettingsRow>
+          )}
         </CardContent>
       </Card>
 

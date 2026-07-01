@@ -12,7 +12,7 @@ import { releaseWindowMemory } from './window-memory';
 import { ServerConfig, ProxyMode, ProxyModeType, SubscriptionConfig } from '../../shared/types';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import { sortServersByLatency } from '../../shared/server-latency-sort';
-import { mt, setMainLanguage } from '../i18n';
+import { mt } from '../i18n';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 
@@ -103,8 +103,8 @@ export class TrayManager implements ITrayManager {
   private selectedServerId: string | null = null;
   private proxyMode: ProxyMode = 'smart';
   private proxyModeType: ProxyModeType = 'systemProxy';
-  // 语言：托盘文案经 mt() 走主进程 i18n 中央语言持有点（index.ts 启动按系统偏好初始化 + APP_SET_LANGUAGE 同步），
-  // 故本类不再自持 currentLanguage——setLanguage 只负责同步持有点并触发重渲染。
+  // 语言：托盘文案经 mt() 走主进程 i18n 中央语言持有点（据 config.language 单一真值源，启动 + config-change
+  // 由 index.ts 重设并重渲染菜单），故本类不自持语言、也不再暴露 setLanguage。
 
   // 回调函数
   private onStartProxy?: () => void;
@@ -268,15 +268,6 @@ export class TrayManager implements ITrayManager {
       proxyMode: this.proxyMode,
       proxyModeType: this.proxyModeType,
     });
-  }
-
-  /**
-   * 设置应用语言（由主进程根据渲染进程 IPC 调用）
-   */
-  setLanguage(lang: string): void {
-    setMainLanguage(lang); // 同步主进程 i18n 持有点（mt() 据此取文案）
-    // 重新渲染菜单以应用新语言
-    this.updateTrayMenu(this.isProxyRunning);
   }
 
   /**

@@ -1797,6 +1797,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       builtinGeoMeta: null,
       subscriptions: null,
       mainSessionViaProxy: null,
+      // 界面语言纯 UI 偏好，不影响 sing-box 生成 → 运行中切语言（写 config.language 触发 CONFIG_CHANGED→switchMode）
+      // 不应重启内核断流。不排除的话每次切语言都会 norm 翻转 → 去抖重启 sing-box（旧 APP_SET_LANGUAGE 路径不写 config、零断流）。
+      language: null,
       // helper 引导/升级「不再提示」纯 UI 偏好，不影响 sing-box 生成 → 运行中勾选不应触发重启断流。
       helperPromptDismissed: null,
       helperDisabledPromptDismissed: null,

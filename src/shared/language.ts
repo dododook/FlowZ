@@ -12,7 +12,7 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 /** 无匹配时的回退语言（国际通用，亦为 i18n fallbackLng）。 */
 export const DEFAULT_LANGUAGE: SupportedLanguage = 'en-US';
 
-/** 语言选择的「自动（跟随系统）」哨兵值（存 localStorage['app-language']）。 */
+/** 语言选择的「自动（跟随系统）」哨兵值（真值源 = config.language；旧版存 localStorage['app-language']）。 */
 export const AUTO_LANGUAGE = 'auto';
 
 /** 旧语言码迁移：`fa-IR` → `fa`（其余原样返回，含 null/undefined 透传）。 */

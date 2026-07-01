@@ -1,13 +1,13 @@
 /**
  * 主进程用户可见文案的轻量 i18n（5 语，与渲染端 SUPPORTED_LANGUAGES 对齐）。
  *
- * 背景：渲染端用 i18next（locales/*.json）做 5 语，但**主进程没有 i18next 实例**——IPC 只同步 currentLanguage
- * 字符串过来。历史上主进程用户串走「zh/en 二元」土办法（TrayManager.t / native dialog），fa/ru/zh-TW 用户看到英文，
- * 部分串甚至纯中文。本模块给主进程一个真 5 语出口：中央语言持有点 + 文案目录，桌面通知/托盘/对话框等调 mt() 即可。
+ * 背景：渲染端用 i18next（locales/*.json）做 5 语，但**主进程没有 i18next 实例**。历史上主进程用户串走
+ * 「zh/en 二元」土办法（TrayManager.t / native dialog），fa/ru/zh-TW 用户看到英文，部分串甚至纯中文。
+ * 本模块给主进程一个真 5 语出口：中央语言持有点 + 文案目录，桌面通知/托盘/对话框等调 mt() 即可。
  *
  * 设计：
  * - 文案主进程私有（渲染端从不显示这些串，故不复用 renderer 的 locale JSON——且 tsconfig.main 也 import 不到它）。
- * - 语言持有点由 index.ts 在启动（系统偏好）+ APP_SET_LANGUAGE（渲染端同步）两处 setMainLanguage 写入。
+ * - 语言持有点据 config.language 单一真值源写入：index.ts 在启动读 config + config-change 变更时 setMainLanguage。
  * - 缺键/未知语言 → 回退 DEFAULT_LANGUAGE，绝不抛。
  * - MESSAGES 用 `satisfies Record<string, Record<SupportedLanguage,string>>`：编译期强制每键 5 语齐全，
  *   且 `MainMessageKey = keyof typeof MESSAGES` 自动派生 key 联合类型（新增键无需手维护 union）。
@@ -527,7 +527,7 @@ export type MainMessageKey = keyof typeof MESSAGES;
 
 let currentLang: SupportedLanguage = DEFAULT_LANGUAGE;
 
-/** 设主进程当前语言（启动按系统偏好 / APP_SET_LANGUAGE 按渲染端同步）。未知/auto/非法 → 回退默认。 */
+/** 设主进程当前语言（据 config.language 单一真值源，启动 + config-change 由 index.ts 调用）。未知/auto/非法 → 回退默认。 */
 export function setMainLanguage(lang: string | null | undefined): void {
   currentLang = resolveEffectiveLanguage(lang, null);
 }

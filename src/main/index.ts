@@ -69,7 +69,7 @@ import { initUserDataPath } from './utils/paths';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../shared/constants';
 import { effectiveLogLevel } from '../shared/log-level';
-import { resolveAutoLanguage } from '../shared/language';
+import { resolveAutoLanguage, resolveEffectiveLanguage } from '../shared/language';
 
 // ── 启动计时探针（真机量化用，纯日志、零行为改动）─────────────────────────────
 // 从「本模块加载」到「窗口首次可见」的各阶段 ms，window-shown 时一行汇总到 app.log（[startup-timing]）。
@@ -262,7 +262,7 @@ let ipInfoService: IpInfoService | null = null;
 let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
 let helperManager: IPrivilegedHelper | null = null;
-let currentLanguage = 'zh-CN'; // 渲染端 APP_SET_LANGUAGE 同步的最近语言；经 setMainLanguage 喂主进程 i18n（mt() 据此取文案）。空值由 handler 的 lang||currentLanguage 兜底保留旧值（不传空给 setMainLanguage）
+// 界面语言不再由渲染端经 IPC 反向告知——主进程直接读 config.language 单一真值源（启动 + config-change）。
 // 渲染端 APP_SET_NODE_SORT_BY_LATENCY 同步的「按延迟排序」开关最近值；持有于此以便 trayManager 在渲染端 mount 推送
 // 早于 tray 创建的极端时序下、于 tray 创建后补应用（否则 push 被 trayManager?.短路丢弃 → 托盘整会话停在默认序）。
 let currentNodeSortByLatency = false;
@@ -620,8 +620,11 @@ async function createWindow(forceShow = false) {
       devTools: isDevelopment, // 仅在开发环境启用开发者工具，生产环境禁用（除非特殊需求）
       // OS 偏好语言注入 preload（同步、无 IPC 时序问题）：供 i18n「自动跟随系统」解析。
       //   app.getLocale() 恒返 app bundle locale=en（与系统脱钩，代码多处实证），故必须用 getPreferredSystemLanguages。
+      // 界面语言选择注入 preload（config.language 单一真值源）：供 i18n 初始化直接用，取代旧 localStorage 真值源。
+      //   每个 additionalArguments 项作为独立 argv 项传递，'auto'/语言码均为安全 ASCII，无需转义。
       additionalArguments: [
         `--flowz-sys-langs=${JSON.stringify(getPreferredSystemLanguagesSafe())}`,
+        `--flowz-lang-choice=${cfg.language ?? ''}`,
       ],
     },
     // macOS：集成式窗口（红绿灯内嵌 + sidebar 半透材质）
@@ -1039,13 +1042,18 @@ if (gotTheLock) {
 
     // Windows toast 前置：设 AppUserModelID（与 electron-builder appId 一致），提升 portable 版通知可靠性（无 NSIS 注册时）。
     if (process.platform === 'win32') app.setAppUserModelId('com.flowz.app');
-    // 主进程 i18n 初值按系统偏好（渲染端 APP_SET_LANGUAGE 同步到达前的桌面通知语言；与 TrayManager 初值口径一致）。
+    // 主进程 i18n 初值先按系统偏好兜底（config 加载完成前的极短窗口，覆盖任何早于配置读取的 mt() 调用）。
     setMainLanguage(resolveAutoLanguage(getPreferredSystemLanguagesSafe()));
     // 桌面通知总开关初始同步（运行期变更由 config-change-handler 同步）。await 确保 enabled 在后续启动步骤
     // （含 proxy 自动连接，error 通知的唯一来源）前就绪——此刻 proxy 未启动，error 不会触发，无竞态；读配置毫秒级。
+    // 同一次 loadConfig 顺带据 config.language 单一真值源精化界面语言（auto→系统解析；存量缺键退回系统，
+    // 与上面兜底一致，待渲染端从 localStorage 迁移回填 config 后下次启动即精确）——主进程不再靠渲染端 IPC 告知语言。
     await configManager
       .loadConfig()
-      .then((c) => setDesktopNotificationsEnabled(c.desktopNotifications))
+      .then((c) => {
+        setMainLanguage(resolveEffectiveLanguage(c.language, getPreferredSystemLanguagesSafe()));
+        setDesktopNotificationsEnabled(c.desktopNotifications);
+      })
       .catch(() => {});
 
     // 启动期系统代理 marker 恢复：上次会话崩溃/强杀/断电导致 disableProxy 未执行时 marker 残留，
@@ -1133,9 +1141,25 @@ if (gotTheLock) {
       );
     }
 
-    await ensureWindow(); // 走串行化入口（forceShow=false 尊重 silentStart），与 activate/托盘/second-instance 共享创建
+    // 静默启动（config.silentStart / --hidden / macOS wasOpenedAsHidden）不创建渲染进程：窗口在首次唤出
+    // （托盘/Dock/second-instance → showWindow）时懒创建，避免整个 Chromium 渲染进程从开机起空占内存
+    // （等价于「开机即进轻量模式」，与关窗释放后的 tray-resident 态同构）。此时 mainWindow 保持 null——启动
+    // 后续代码已容忍该态（proxyManager 构造 mainWindow||undefined、升级检查 setTimeout 兜底、各 getMainWindow
+    // getter 懒取）。configManager.get 读 1120 行已加载的内存缓存（同步、不重复读盘）。
+    const startsHidden =
+      configManager.get<boolean>('silentStart') === true ||
+      process.argv.includes('--hidden') ||
+      (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAsHidden);
+    if (startsHidden) {
+      logManager.addLog('info', 'Silent start: deferring window creation to first show', 'Main');
+      // macOS：无窗口时主动进入菜单栏-only（原静默分支在 presentWindow 内做，现无窗口 → 在此做）；
+      // 首次唤出 showWindow 会 restoreDockPresence 复原。
+      if (process.platform === 'darwin') hideDockIfMenubarOnly();
+    } else {
+      await ensureWindow(); // 走串行化入口，与 activate/托盘/second-instance 共享创建
+    }
 
-    // 初始化 ProxyManager（需要在窗口创建后）
+    // 初始化 ProxyManager（懒创建静默启动窗口时 mainWindow 为 null → undefined，首次建窗经 setMainWindow 刷新）
     proxyManager = new ProxyManager(logManager, mainWindow || undefined);
     // 隐私联动：隐私模式开 → sing-box 日志级别抬到 ≥warn（源头不记访问域名/SNI 到 singbox.log）
     proxyManager.setPrivacyProvider(getPrivacyMode);
@@ -1549,15 +1573,8 @@ if (gotTheLock) {
       updateTrayMenuState(isRunning, hasError);
     });
 
-    // 监听渲染进程语言同步（架构 review：改走 registerIpcHandler 统一 ApiResponse 契约 + 进注册表，
-    // 原裸 ipcMain.handle 是 19 个 handler 中唯一例外，绕过 wrapper 且无返回值）
-    registerIpcHandler<string, void>(IPC_CHANNELS.APP_SET_LANGUAGE, (_event, lang: string) => {
-      currentLanguage = lang || currentLanguage;
-      setMainLanguage(currentLanguage); // 主进程 i18n（桌面通知等）同步语言
-      if (trayManager) {
-        trayManager.setLanguage(lang);
-      }
-    });
+    // 界面语言不再经渲染端 IPC 反向同步：改走 config.language 单一真值源——渲染端改语言写 config，
+    // config-change-handler 据 config.language 重设主进程 i18n 并重渲染托盘（见 applyLanguageFromConfig 注入）。
 
     // 节点列表「按延迟排序」开关同步：渲染端 App.tsx 在 mount（cold-start 一次同步）+ 每次切换时推送，
     // 使托盘节点列表与下拉同序（幂等，TrayManager.setSortByLatency 同态 no-op 不重建菜单）。
@@ -1643,6 +1660,17 @@ if (gotTheLock) {
       getCoreUpdateScheduler: () => coreUpdateScheduler,
       updateTrayMenuState,
       getPrivacyMode,
+      // 语言解析需系统偏好（auto→系统），故在 index.ts 内注入；config-change-handler 本身不依赖 electron。
+      // 读 configManager 缓存而非事件 payload：saveConfig 先更新 currentConfig 再 emit CONFIG_CHANGED（见
+      // config-handlers），故缓存恒是最新值；且不受 payload 形状影响（未来某发射点漏带 language、或恢复缺该键的
+      // 旧备份，都不会把主进程语言静默重置成系统语言）——与「config.language 单一真值源」主旨一致。
+      applyLanguageFromConfig: () =>
+        setMainLanguage(
+          resolveEffectiveLanguage(
+            configManager.get<string>('language'),
+            getPreferredSystemLanguagesSafe()
+          )
+        ),
     });
 
     // 关机/重启早期钩子：powerMonitor 'shutdown' **仅 macOS/Linux 触发**（Electron 文档），Windows 不发。
