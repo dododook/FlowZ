@@ -427,7 +427,7 @@ export class UpdateService {
    * 显示更新对话框
    */
   async showUpdateDialog(updateInfo: UpdateInfo): Promise<'update' | 'later' | 'skip'> {
-    if (!this.mainWindow) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
       return 'later';
     }
 

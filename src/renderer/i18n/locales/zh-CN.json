@@ -347,6 +347,7 @@
       "silentStartDesc": "启动应用时不显示主窗口，直接最小化到系统托盘",
       "autoConnect": "启动时自动连接",
       "minimizeToTrayTitle": "最小化到系统托盘",
+      "minimizeToTrayDesc": "关闭窗口后应用常驻托盘，代理不中断；关闭此项后点击关闭窗口将完全退出应用（仅 Windows/Linux；macOS 遵循系统惯例恒常驻）。",
       "autoLightweightMode": "自动轻量模式",
       "autoLightweightModeDesc": "闲置 10 分钟后关闭界面释放内存，仅托盘驻留，代理不中断；唤出界面即恢复。",
       "desktopNotifications": "桌面通知",

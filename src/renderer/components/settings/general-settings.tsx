@@ -102,7 +102,10 @@ export function GeneralSettings() {
               onCheckedChange={(c) => handleToggle('autoConnect', c)}
             />
           </SettingsRow>
-          <SettingsRow label={t('settings.general.minimizeToTrayTitle')}>
+          <SettingsRow
+            label={t('settings.general.minimizeToTrayTitle')}
+            description={t('settings.general.minimizeToTrayDesc')}
+          >
             <Switch
               checked={config.minimizeToTray}
               onCheckedChange={(c) => handleToggle('minimizeToTray', c)}

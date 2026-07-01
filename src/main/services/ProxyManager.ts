@@ -479,6 +479,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
+   * 刷新主窗口引用（窗口关闭释放内存后重建时调用，见 index.ts createWindow）。构造时只捕获一次的
+   * mainWindow 在窗口销毁重建后会永久指向已销毁对象，导致 sendEventToRenderer 的全部事件（代理启停/
+   * 错误、Tailscale 认证、失效节点告警等）此后静默 no-op——与 TrayManager/UpdateService 同一模式。
+   */
+  setMainWindow(window: BrowserWindow | null): void {
+    this.mainWindow = window;
+  }
+
+  /**
    * 启动代理（public 包装）：失败统一收口清系统代理——重启/切模式场景下旧会话系统代理仍指向现已死的端口，
    * 启动失败必须清掉防全网断（L-2′）。覆盖所有直接 start 入口（PROXY_START/托盘/自动连接）与 restart 的 start 腿，
    * 故 restart() 不再单独 catch-clear。ensureSystemProxyCleared 在非主动 stop 语境 stopping=false → 会真清；

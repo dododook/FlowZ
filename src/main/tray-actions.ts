@@ -19,6 +19,7 @@ import type { ProxyMode, ProxyModeType } from '../shared/types';
 import { ipcEventEmitter } from './ipc/ipc-events';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import { runSpeedTest } from './services/speed-test-runner';
+import { releaseWindowMemory } from './services/window-memory';
 
 /** 注入依赖：服务单例（值，tray 创建前已初始化）+ 可变引用 getter（call-time 取值）+ 主进程局部动作。 */
 export interface TrayActionDeps {
@@ -32,6 +33,12 @@ export interface TrayActionDeps {
   showWindow: () => void;
   updateTrayMenuState: (isProxyRunning: boolean, hasError?: boolean) => void;
   setPrivacyMode: (value: boolean) => void;
+  /**
+   * 标记「即将发生的窗口销毁是轻量模式触发的」，供 window-all-closed 据此跳过 minimizeToTray 退出判定
+   * ——轻量模式（手动/10 分钟空闲自动）语义上恒不应退出 app（代理不中断），与「用户点关闭按钮」是两件
+   * 不同的事，但两者都会让窗口计数归零、触发同一个原生 window-all-closed 事件，需要这个信号区分。
+   */
+  markLightweightModeTransition: () => void;
 }
 
 /**
@@ -49,6 +56,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     showWindow,
     updateTrayMenuState,
     setPrivacyMode,
+    markLightweightModeTransition,
   } = deps;
 
   return {
@@ -230,6 +238,18 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     },
     onEnterPrivacyMode: () => {
       setPrivacyMode(true); // 置主进程 flag（单一真值）并广播；避免渲染端异步回写竞态/窗口重建丢锁
+    },
+    onLightweightMode: () => {
+      const mainWindow = getMainWindow();
+      if (mainWindow) {
+        markLightweightModeTransition();
+        releaseWindowMemory({
+          window: mainWindow,
+          logManager,
+          clearLogsAndGc: true,
+          reason: 'lightweight-mode',
+        });
+      }
     },
   };
 }

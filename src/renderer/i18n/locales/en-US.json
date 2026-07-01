@@ -347,6 +347,7 @@
       "silentStartDesc": "Start minimized to system tray without showing the main window",
       "autoConnect": "Auto-connect on Startup",
       "minimizeToTrayTitle": "Minimize to System Tray",
+      "minimizeToTrayDesc": "Keep the app running in the tray after closing the window; the proxy keeps running. Turn this off to fully quit on close (Windows/Linux only; macOS always stays resident, per platform convention).",
       "autoLightweightMode": "Auto lightweight mode",
       "autoLightweightModeDesc": "After 10 min idle, closes the window to free memory and stays in the tray; the proxy keeps running. Reopening restores it.",
       "desktopNotifications": "Desktop notifications",

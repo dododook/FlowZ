@@ -134,8 +134,9 @@ export class StatsService {
    * @param onUpdate 每次拿到新 Status 时回调（广播给渲染端）
    * @param getApiClient 取运行期管理 API 客户端（ProxyManager.getApiClient；核未起返回 null）。每次开流时取最新。
    * @param onConnections 连接快照回调（topology 统一供数；连接事件流每帧推送）
-   * @param isWindowVisible 窗口可见性谓词。无可见窗口（hide/minimizeToTray/轻量销毁/普通最小化）= 无 UI 消费者
-   *   → 跳过 broadcast（含首页 stats）。缺省（未注入，如单测）= 不门控、始终广播。
+   * @param isWindowVisible 窗口可见性谓词。无可见窗口（已销毁：关窗释放内存/轻量模式，或 macOS Cmd+H
+   *   系统级隐藏、普通最小化）= 无 UI 消费者 → 跳过 broadcast（含首页 stats）。缺省（未注入，如单测）=
+   *   不门控、始终广播。
    */
   constructor(
     private readonly onUpdate: (stats: TrafficStats) => void,

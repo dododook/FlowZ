@@ -347,6 +347,7 @@
       "silentStartDesc": "啟動應用程式時不顯示主視窗，直接最小化到系統匣",
       "autoConnect": "啟動時自動連線",
       "minimizeToTrayTitle": "最小化到系統匣",
+      "minimizeToTrayDesc": "關閉視窗後應用程式常駐系統匣，代理不中斷；關閉此項後點擊關閉視窗將完全退出應用程式（僅 Windows/Linux；macOS 遵循系統慣例恆常駐）。",
       "autoLightweightMode": "自動輕量模式",
       "autoLightweightModeDesc": "閒置 10 分鐘後關閉介面釋放記憶體，僅系統匣常駐，代理不中斷；喚出介面即恢復。",
       "desktopNotifications": "桌面通知",
