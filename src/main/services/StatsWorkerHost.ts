@@ -32,6 +32,19 @@ export interface StatsProvider {
   getAggregateSnapshot(): ConnectionsAggregate;
 }
 
+/**
+ * index.ts 装配点 + 生命周期钩子对 stats 宿主的完整对外面（读快照 + 订阅生命周期）。StatsWorkerHost（生产）
+ * 与 StatsSimulator（issue #242 §5 泄漏定证 harness）两者均实现，使 index.ts 的 statsService 可在两者间替换、
+ * 装配 diff 最小。成员集与 index.ts/proxy-handlers 实际调用点一一对应（resubscribe/stop/resume/dispose +
+ * StatsProvider 三读），无 getStatus——刻意不含未被调用的成员，避免虚假接口面。
+ */
+export interface StatsHost extends StatsProvider {
+  resubscribe(): void;
+  stop(): void;
+  resume(): void;
+  dispose(): void;
+}
+
 /** main → worker 控制消息。 */
 export type HostToWorkerMessage =
   | { type: 'connect'; endpoint: StatsApiEndpoint }
@@ -76,7 +89,7 @@ export interface StatsWorkerHostOptions {
   log?: (level: 'info' | 'warn' | 'error', message: string) => void;
 }
 
-export class StatsWorkerHost implements StatsProvider {
+export class StatsWorkerHost implements StatsHost {
   private worker: UtilityProcess | null = null;
   private snapshot: TrafficStats = { ...ZERO_STATS };
   // worker post 来的最近连接明细快照：仅供连接信息页 CONNECTIONS_GET 按需 pull，不再 relay 给渲染端（旧放大器）。

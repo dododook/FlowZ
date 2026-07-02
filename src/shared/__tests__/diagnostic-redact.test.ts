@@ -217,9 +217,9 @@ describe('buildDiagnosticReport', () => {
       },
     });
     expect(md).toContain('## 进程内存');
-    expect(md).toContain('| 类型 | PID | 内存(MB) | CPU(%) | 标识 |');
-    expect(md).toContain('| Utility | 374035 | 2048 | 1 | flowz-stats |');
-    expect(md).toContain('| Browser | 373944 | 300 | 0 |  |');
+    expect(md).toContain('| 类型 | PID | 内存(MB) | 峰值(MB) | CPU(%) | 标识 | 创建时刻 |');
+    expect(md).toContain('| Utility | 374035 | 2048 |  | 1 | flowz-stats |  |');
+    expect(md).toContain('| Browser | 373944 | 300 |  | 0 |  |  |');
     expect(md).toContain('2348 MB');
   });
 
@@ -239,7 +239,7 @@ describe('buildDiagnosticReport', () => {
       },
     });
     // 表在 redact 之后拼接 → 表内 PID/内存的 2048 原样保留，定位价值不被毁
-    expect(md).toContain('| Utility | 2048 | 2048 | 1 | flowz-stats |');
+    expect(md).toContain('| Utility | 2048 | 2048 |  | 1 | flowz-stats |');
     // 但表以外（日志）的同名节点仍被正常打码，脱敏不受影响
     expect(md).toContain('node <node-1> connected');
   });
@@ -260,6 +260,107 @@ describe('buildDiagnosticReport', () => {
       redactedUserConfig: { name: 'a```b' },
     });
     expect(md).toContain('````json');
+  });
+});
+
+describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => {
+  const base: DiagnosticReportInput = {
+    generatedAt: '2026-07-02T00:00:00.000Z',
+    app: { flowzVersion: '4.1.9', coreVersion: '1.13.0', os: 'linux x64 6.0', electron: '42.0.0' },
+    runtime: {
+      proxyMode: 'smart',
+      proxyModeType: 'tun',
+      proxyRunning: true,
+      logLevel: 'info',
+      captureActive: false,
+    },
+    redactedUserConfig: {},
+    redactedSingboxConfig: {},
+    appLogTail: '',
+    singboxLogTail: '',
+  };
+
+  it('进程内存表含峰值(MB)/创建时刻列（源字段存在时填充）', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      processMetrics: {
+        totalMemoryMb: 2048,
+        rows: [
+          {
+            type: 'Utility',
+            pid: 100,
+            memoryMb: 2048,
+            cpuPercent: 5,
+            label: 'flowz-stats',
+            peakMemoryMb: 2200,
+            creationTime: Date.UTC(2026, 6, 2, 8, 0, 0),
+          },
+        ],
+      },
+    });
+    expect(md).toContain('| 类型 | PID | 内存(MB) | 峰值(MB) | CPU(%) | 标识 | 创建时刻 |');
+    expect(md).toContain(
+      `| Utility | 100 | 2048 | 2200 | 5 | flowz-stats | ${new Date(Date.UTC(2026, 6, 2, 8, 0, 0)).toISOString()} |`
+    );
+  });
+
+  it('渲染进程堆分层：可用时逐字段渲染', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      rendererHeap: {
+        usedHeapMb: 120,
+        totalHeapMb: 180,
+        heapLimitMb: 4096,
+        residentSetMb: 2200,
+        blinkResourceMb: 64,
+      },
+    });
+    expect(md).toContain('## 渲染进程堆分层');
+    expect(md).toContain('- V8 usedHeap：120 MB');
+    expect(md).toContain('- 进程 residentSet：2200 MB');
+    expect(md).toContain('- Blink 资源缓存(live)：64 MB');
+  });
+
+  it('渲染进程堆分层：unavailable 时只渲染原因行', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      rendererHeap: { unavailable: 'unavailable（渲染进程内省超时 >2000ms，疑窗口卡死）' },
+    });
+    expect(md).toContain('## 渲染进程堆分层');
+    expect(md).toContain('内省超时');
+    expect(md).not.toContain('V8 usedHeap');
+  });
+
+  it('sing-box 核进程：可用渲染 PID/RSS/CPU；unavailable 渲染原因', () => {
+    const ok = buildDiagnosticReport({
+      ...base,
+      coreProcess: { pid: 374000, rssMb: 180, cpuPercent: 53 },
+    });
+    expect(ok).toContain('## sing-box 核进程');
+    expect(ok).toContain('PID 374000：RSS 180 MB，CPU 53%');
+
+    const na = buildDiagnosticReport({
+      ...base,
+      coreProcess: { unavailable: 'unavailable（代理未运行）' },
+    });
+    expect(na).toContain('unavailable（代理未运行）');
+  });
+
+  it('内存时间线：CSV 以代码块承载', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      memoryTimelineCsv: 't,label,pid,rssMb\n2026-07-02T00:00:00.000Z,Browser,100,300',
+    });
+    expect(md).toContain('## 内存时间线');
+    expect(md).toContain('```csv');
+    expect(md).toContain('2026-07-02T00:00:00.000Z,Browser,100,300');
+  });
+
+  it('全部新字段缺省 → 不渲染任何观测新区块（向后兼容）', () => {
+    const md = buildDiagnosticReport(base);
+    expect(md).not.toContain('## 渲染进程堆分层');
+    expect(md).not.toContain('## sing-box 核进程');
+    expect(md).not.toContain('## 内存时间线');
   });
 });
 

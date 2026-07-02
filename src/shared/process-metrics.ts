@@ -15,8 +15,9 @@
 export interface ProcessMetricLike {
   pid: number;
   type: string; // 'Browser'（主）/ 'Renderer'|'Tab' / 'GPU' / 'Utility' / ...
-  memory: { workingSetSize: number }; // KB
+  memory: { workingSetSize: number; peakWorkingSetSize?: number }; // KB（peak=进程生命周期内工作集峰值）
   cpu?: { percentCPUUsage?: number };
+  creationTime?: number; // 进程创建时刻（epoch ms，getAppMetrics 提供）——排查「谁重启过/新拉起」
   // 注意 name/serviceName 的实际填法与直觉相反（本机 xvfb 探针实测坐实，见 process-metrics.test.ts）：
   // Electron utilityProcess.fork(path, args, {serviceName:'flowz-stats'}) 传入的自定义名最终落在 `.name`，
   // 而 `.serviceName` 恒是 Chromium 的通用接口名（如 'node.mojom.NodeService'，等价于该进程命令行里的
@@ -33,6 +34,26 @@ export interface ProcessMetricRow {
   memoryMb: number; // 四舍五入 MB
   cpuPercent: number; // 四舍五入整数百分比
   label?: string; // name 优先、serviceName 兜底（utility 辨识用，见 ProcessMetricLike 注释），无则省略
+  peakMemoryMb?: number; // 工作集峰值 MB（源含 peakWorkingSetSize 才有）：与当前值差大=曾高水位后回收
+  creationTime?: number; // 进程创建时刻 epoch ms（源含才有）
+}
+
+/**
+ * 渲染进程堆内省的**原始**样本（preload 经 contextBridge 暴露、main executeJavaScript 取回；issue #242 §6.2）。
+ * 字段单位随 Electron 口径：heap/processMemory 为 **KB**（getHeapStatistics / getProcessMemoryInfo），
+ * resources 为 **bytes**（webFrame.getResourceUsage 的 liveSize）。全 optional：sandbox/平台差异下取不到即缺省，
+ * 映射侧（process-sampler.mapRendererHeapSample）按缺失处理。刻意不 import electron，主/渲染/单测共用。
+ */
+export interface RendererHeapSample {
+  heap?: {
+    usedHeapSize?: number;
+    totalHeapSize?: number;
+    heapSizeLimit?: number;
+    mallocedMemory?: number;
+    peakMallocedMemory?: number;
+  };
+  processMemory?: { residentSet?: number; private?: number; shared?: number };
+  resources?: Record<string, { count?: number; size?: number; liveSize?: number } | undefined>;
 }
 
 export interface ProcessMetricsSummary {
@@ -46,7 +67,17 @@ function toRow(m: ProcessMetricLike): ProcessMetricRow {
   const memoryMb = Math.round((m.memory?.workingSetSize ?? 0) / KB_PER_MB);
   const cpuPercent = Math.round(m.cpu?.percentCPUUsage ?? 0);
   const label = m.name || m.serviceName || undefined;
-  return { type: m.type, pid: m.pid, memoryMb, cpuPercent, ...(label ? { label } : {}) };
+  const peak = m.memory?.peakWorkingSetSize;
+  const peakMemoryMb = typeof peak === 'number' ? Math.round(peak / KB_PER_MB) : undefined;
+  return {
+    type: m.type,
+    pid: m.pid,
+    memoryMb,
+    cpuPercent,
+    ...(label ? { label } : {}),
+    ...(peakMemoryMb !== undefined ? { peakMemoryMb } : {}),
+    ...(typeof m.creationTime === 'number' ? { creationTime: m.creationTime } : {}),
+  };
 }
 
 /** 汇总逐进程内存/CPU，按内存降序。诊断导出表与自检共用。 */

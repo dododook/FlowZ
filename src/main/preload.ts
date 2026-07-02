@@ -3,7 +3,8 @@
  * 在渲染进程中暴露安全的 IPC 接口
  */
 
-import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent, webFrame } from 'electron';
+import type { RendererHeapSample } from '../shared/process-metrics';
 
 /**
  * OS 偏好语言（有序）：主进程经 webPreferences.additionalArguments 注入 `--flowz-sys-langs=<JSON>`。
@@ -42,6 +43,32 @@ const electronAPI = {
   systemLanguages: readSystemLanguages(),
   // 界面语言选择（config.language 注入值）：i18n 初始化的真值源；空串=未注入/存量缺键（回退旧 localStorage）。
   languageChoice: readLanguageChoice(),
+  /**
+   * 渲染进程堆内省（issue #242 §6.2 泄漏观测）：main 经 executeJavaScript('window.electron.getRendererDiagnostics()')
+   * 取一次堆分层用于诊断导出。sandbox:false 下 preload 可用 process/webFrame；各取数独立 try/catch，任一取不到只
+   * 缺省该字段（不整体失败）。返回原始 Electron 口径（heap/processMemory=KB，resources=bytes），main 侧再换算 MB。
+   */
+  getRendererDiagnostics: async (): Promise<RendererHeapSample> => {
+    const out: RendererHeapSample = {};
+    try {
+      const p = process as NodeJS.Process & {
+        getHeapStatistics?: () => Record<string, number>;
+        getProcessMemoryInfo?: () => Promise<Record<string, number>>;
+      };
+      if (typeof p.getHeapStatistics === 'function')
+        out.heap = p.getHeapStatistics() as RendererHeapSample['heap'];
+      if (typeof p.getProcessMemoryInfo === 'function')
+        out.processMemory = (await p.getProcessMemoryInfo()) as RendererHeapSample['processMemory'];
+    } catch {
+      /* 忽略：字段缺省 */
+    }
+    try {
+      out.resources = webFrame.getResourceUsage() as unknown as RendererHeapSample['resources'];
+    } catch {
+      /* 忽略：字段缺省 */
+    }
+    return out;
+  },
   ipcRenderer: {
     /**
      * 调用主进程方法

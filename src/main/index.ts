@@ -49,7 +49,12 @@ import { CoreUpdateScheduler } from './services/CoreUpdateScheduler';
 import { SpeedTestService } from './services/SpeedTestService';
 import { AutoSwitchService } from './services/AutoSwitchService';
 import { SubscriptionScheduler } from './services/SubscriptionScheduler';
-import { StatsWorkerHost } from './services/StatsWorkerHost';
+import {
+  StatsWorkerHost,
+  type StatsWorkerHostOptions,
+  type StatsHost,
+} from './services/StatsWorkerHost';
+import { StatsSimulator } from './services/StatsSimulator';
 import { PlatformPrivilegeService } from './services/PlatformPrivilegeService';
 import { IpInfoService } from './services/IpInfoService';
 import { RuleResourceManager } from './services/RuleResourceManager';
@@ -257,7 +262,7 @@ let speedTestService: SpeedTestService;
 let autoSwitchService: AutoSwitchService;
 let subscriptionScheduler: SubscriptionScheduler;
 let coreUpdateScheduler: CoreUpdateScheduler | null = null;
-let statsService: StatsWorkerHost | null = null;
+let statsService: StatsHost | null = null;
 let ipInfoService: IpInfoService | null = null;
 let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
@@ -1296,7 +1301,7 @@ if (gotTheLock) {
     // 本宿主 fork/看护 worker、缓存最新快照、按 isUiBroadcastActive(可见 && !拖动) 门控后 sendToAll——把 Status/
     // Connections 长流的 per-frame 解析+物化移出主线程，消除拖动期事件循环争用。worker 据 getStatsApiEndpoint 重建
     // 自己的 gRPC client（端口随每次启动可能变 → 'api-client-ready' 时经 resubscribe 重发）。
-    statsService = new StatsWorkerHost({
+    const statsHostOptions: StatsWorkerHostOptions = {
       workerPath: path.join(__dirname, 'workers', 'stats-worker.js'),
       onStats: (stats) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_STATS_UPDATED, stats),
       onAggregate: (agg) =>
@@ -1304,7 +1309,13 @@ if (gotTheLock) {
       isUiActive: isUiBroadcastActive,
       getEndpoint: () => proxyManager?.getStatsApiEndpoint() ?? null,
       log: (level, message) => logManager.addLog(level, message, 'StatsWorker'),
-    });
+    };
+    // 泄漏定证 harness（issue #242 §5）：FLOWZ_STATS_SIM 存在时用合成 churn 注入器取代真实 stats worker——直接向
+    // UI 门控层灌 aggregate/stats（绕内核/流量/TUN），把 reporter 数天暴露压缩到小时级。dev-only，零业务行为变更；
+    // StatsSimulator 构造内经 logManager 打「模拟器激活」warn banner + 解析防御。
+    statsService = process.env.FLOWZ_STATS_SIM
+      ? new StatsSimulator(statsHostOptions, process.env.FLOWZ_STATS_SIM)
+      : new StatsWorkerHost(statsHostOptions);
     // 杀核前静默 StatsService：停其到管理 API 的 Status/Connections gRPC 流（核将死，提前 cancel 避免 RST 噪音）。
     proxyManager.setQuiesceStats(() => {
       statsService?.stop();
@@ -1534,7 +1545,20 @@ if (gotTheLock) {
         logManager,
         proxyManager,
         systemProxyManager,
-        getPrivacyMode
+        getPrivacyMode,
+        // 渲染进程堆内省（issue #242 §6.2）：main→renderer executeJavaScript 取一次；DiagnosticService 内 2s 超时
+        // 兜底，renderer 卡死（正是 #242 场景）不挂住导出。窗口不存在/销毁 → 返回 null（映射为 unavailable）。
+        async () => {
+          const win = mainWindow;
+          if (!win || win.isDestroyed()) return null;
+          try {
+            return await win.webContents.executeJavaScript(
+              'window.electron && window.electron.getRendererDiagnostics ? window.electron.getRendererDiagnostics() : null'
+            );
+          } catch {
+            return null;
+          }
+        }
       );
       registerDiagnosticHandlers(diagnosticService);
     }

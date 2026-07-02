@@ -103,6 +103,11 @@ import { ruleConditions } from '../../shared/rules';
 import { planCustomRule, buildCustomRuleFiles, condMatcherFields } from './custom-rule-files';
 import { resolveWinTunInterfaceName } from '../../shared/tun-interface';
 import { findMemoryOffenders } from '../../shared/process-metrics';
+import {
+  MemoryTimelineRing,
+  sampleProcessRssMb,
+  type MemoryTimelineFrame,
+} from './process-sampler';
 import { probeWinTunAdapterPresent, waitForAdapterReleased } from './win-tun-adapter';
 import {
   probeTcpReachable,
@@ -410,6 +415,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private static readonly RSS_WARN_THRESHOLD = 1024 * 1024 * 1024; // 1GB/进程
   private static readonly MEMORY_WARN_COOLDOWN_MS = 5 * 60 * 1000; // 5 分钟内不重复告警
   private lastMemoryWarnAt = 0;
+  // 内存时间线（issue #242 §6.4）：跟随健康检查节拍（10s）但降频到每 5min 记一帧（Electron 全进程 + 核 RSS），
+  // 环形上限 288 帧（24h）。斜率比单点更能区分泄漏/高水位；诊断导出以紧凑 CSV 承载（几十 KB 量级，可忽略）。
+  private static readonly TIMELINE_FRAME_INTERVAL_MS = 5 * 60 * 1000; // 5min/帧
+  private readonly memoryTimeline = new MemoryTimelineRing(288); // 288 帧 = 24h
+  private lastTimelineFrameAt = 0;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL = 10000; // 10秒检查一次
 
@@ -4842,6 +4852,42 @@ exit 0
   }
 
   /**
+   * 内存时间线记一帧（issue #242 §6.4）：每 TIMELINE_FRAME_INTERVAL_MS（5min）记一次 Electron 全进程 + sing-box
+   * 核的 RSS（MB），入环形 ring（上限 288 帧=24h）。核 RSS 经 process-sampler 异步采（/proc 或 ps），故本方法 async；
+   * 由 performHealthCheck fire-and-forget 调，best-effort：任何异常吞掉，绝不阻断健康检查。
+   */
+  private async recordMemoryTimelineFrame(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastTimelineFrameAt < ProxyManager.TIMELINE_FRAME_INTERVAL_MS) return;
+    this.lastTimelineFrameAt = now;
+    try {
+      const procs: MemoryTimelineFrame['procs'] = [];
+      for (const m of app.getAppMetrics()) {
+        procs.push({
+          label: m.name || m.serviceName || m.type,
+          pid: m.pid,
+          rssMb: Math.round((m.memory?.workingSetSize ?? 0) / 1024),
+        });
+      }
+      // 核不在 Electron 进程树：单独采 RSS。PID 取法与 getStatus 一致（wrapper=singboxPid，直启=pid）。
+      const wrapperMode = this.needsOsascript() || this.needsWindowsUAC();
+      const corePid = wrapperMode ? this.singboxPid : this.singboxPid || this.pid;
+      if (corePid) {
+        const rssMb = await sampleProcessRssMb(corePid).catch(() => null);
+        if (rssMb != null) procs.push({ label: 'sing-box', pid: corePid, rssMb });
+      }
+      this.memoryTimeline.push({ t: now, procs });
+    } catch {
+      /* 采样失败不阻断健康检查 */
+    }
+  }
+
+  /** 内存时间线全部帧（最老→最新）：诊断导出序列化为 CSV。issue #242 §6.4。 */
+  getMemoryTimelineFrames(): readonly MemoryTimelineFrame[] {
+    return this.memoryTimeline.frames();
+  }
+
+  /**
    * 执行健康检查
    */
   private async performHealthCheck(): Promise<void> {
@@ -4853,6 +4899,8 @@ exit 0
     // 主进程内存自检（issue #210 可观测性）：跟随健康检查节拍（10s），但仅在非重启态执行（上方 isRestarting
     // 早退已过滤重启期）。重启循环通常很短，跳过其间的内存采样无碍——长会话泄漏在稳态运行期会持续被采样。
     this.checkMemoryUsage();
+    // 内存时间线采样（issue #242 §6.4）：同节拍触发、内部按 5min 降频记一帧；async best-effort，绝不阻断健康检查。
+    void this.recordMemoryTimelineFrame();
 
     // 判定依据与 getStatus 一致：经包装进程(osascript/UAC)启动才取 singboxPid，否则取 pid。
     // 修复 Linux TUN（直接 spawn，singboxPid 恒 null）下健康检查/自动重启完全失效（issue #33）。

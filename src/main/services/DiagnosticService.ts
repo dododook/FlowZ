@@ -19,9 +19,15 @@ import {
   normalizeKey,
   collectNodeIdentifiers,
   type DiagnosticReportInput,
+  type CoreProcessReport,
 } from '../../shared/diagnostic-redact';
 import { effectiveLogLevel } from '../../shared/log-level';
-import { summarizeProcessMetrics } from '../../shared/process-metrics';
+import { summarizeProcessMetrics, type RendererHeapSample } from '../../shared/process-metrics';
+import {
+  collectRendererHeap,
+  sampleCoreProcess,
+  serializeMemoryTimelineCsv,
+} from './process-sampler';
 import { getLogsPath, getSingBoxLogPath } from '../utils/paths';
 import path from 'path';
 import type { LogManager } from './LogManager';
@@ -43,7 +49,9 @@ export class DiagnosticService {
     private readonly logManager: LogManager,
     private readonly proxyManager: ProxyManager,
     private readonly systemProxyManager: ISystemProxyManager,
-    private readonly privacyProvider: () => boolean = () => false
+    private readonly privacyProvider: () => boolean = () => false,
+    /** 渲染进程堆内省取数（index.ts 注入 executeJavaScript；缺省=不采）。issue #242 §6.2。 */
+    private readonly rendererIntrospect?: () => Promise<RendererHeapSample | null>
   ) {}
 
   /** 读文件尾部最多 maxBytes 字节；不存在/失败返回占位串（绝不抛）。 */
@@ -121,6 +129,32 @@ export class DiagnosticService {
       processMetrics = undefined;
     }
 
+    // 渲染进程堆分层（issue #242 §6.2）：向 renderer 取一次 V8 堆 + RSS + Blink 资源缓存。**2s 超时兜底**——
+    // renderer 卡死正是 #242 场景，collectRendererHeap 超时/无窗口/失败均返回 unavailable，绝不挂住导出。
+    const rendererHeap = await collectRendererHeap(this.rendererIntrospect);
+
+    // sing-box 核进程 RSS/CPU（issue #242 §6.3）：核不在 Electron 进程树（processMetrics 覆盖不到）。核 PID 取
+    // getStatus().pid（wrapper 模式=真实 singboxPid，直启=spawn pid）；helper 托管路径无 pid → unavailable。
+    let coreProcess: CoreProcessReport;
+    if (status.running && status.pid) {
+      const s = await sampleCoreProcess(status.pid).catch(() => null);
+      coreProcess = s
+        ? { pid: s.pid, rssMb: s.rssMb, cpuPercent: s.cpuPercent }
+        : { unavailable: 'unavailable（核进程采样失败/平台不支持，如 Windows 本批未采）' };
+    } else {
+      coreProcess = {
+        unavailable: 'unavailable（代理未运行，或核 PID 不可得，如 Linux helper 托管路径）',
+      };
+    }
+
+    // 内存时间线（issue #242 §6.4）：ProxyManager 周期采样维护的 5min/帧 ring → 紧凑 CSV（斜率判泄漏/高水位）。
+    let memoryTimelineCsv: string | undefined;
+    try {
+      memoryTimelineCsv = serializeMemoryTimelineCsv(this.proxyManager.getMemoryTimelineFrames());
+    } catch {
+      memoryTimelineCsv = undefined;
+    }
+
     const effLevel = effectiveLogLevel(config.logLevel || 'info', this.privacyProvider());
     const captureActive = !!config.diagnosticCapture;
     const wantDeeper =
@@ -165,6 +199,9 @@ export class DiagnosticService {
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,
       processMetrics,
+      rendererHeap,
+      coreProcess,
+      memoryTimelineCsv,
       appLogTail,
       singboxLogTail,
       // issue #147：节点 outbound.server 已恒为域名（不再烧 IP），无额外预解析 IP 需补脱敏 → 仅扫 config.servers。

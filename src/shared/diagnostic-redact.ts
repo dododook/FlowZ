@@ -252,6 +252,27 @@ export function redactIdentifiers(text: string, ids: readonly NodeIdentifier[]):
   return out;
 }
 
+/**
+ * 渲染进程堆分层（issue #242 §6.2）：main 经 executeJavaScript 向 renderer 取一次，映射到 MB。取不到/超时/无窗口
+ * → unavailable 置原因串，其余字段缺省。全 optional 使构建器逐字段渲染。
+ */
+export interface RendererHeapReport {
+  unavailable?: string; // 存在即视为不可用（超时/无窗口/失败），其余字段无意义
+  usedHeapMb?: number;
+  totalHeapMb?: number;
+  heapLimitMb?: number;
+  residentSetMb?: number;
+  blinkResourceMb?: number; // webFrame 资源缓存 liveSize 汇总
+}
+
+/** sing-box 核进程采样（issue #242 §6.3）：核不在 Electron 进程树，单独采 RSS/CPU。取不到 → unavailable。 */
+export interface CoreProcessReport {
+  unavailable?: string;
+  pid?: number;
+  rssMb?: number;
+  cpuPercent?: number;
+}
+
 /** 诊断报告输入（全部已脱敏 / 已 tail；构建器只拼装，不做任何 IO 或脱敏）。 */
 export interface DiagnosticReportInput {
   generatedAt: string; // ISO
@@ -281,6 +302,12 @@ export interface DiagnosticReportInput {
   redactedSingboxConfig: unknown;
   /** 逐进程内存/CPU 快照（issue #242）：一眼看出是哪个子进程内存偏高；type/pid/内存/CPU 非敏感，无需脱敏。 */
   processMetrics?: ProcessMetricsSummary;
+  /** 渲染进程堆分层（issue #242 §6.2）：V8 堆 + 进程 RSS + Blink 资源缓存；取不到为 unavailable。 */
+  rendererHeap?: RendererHeapReport;
+  /** sing-box 核进程 RSS/CPU（issue #242 §6.3）：核不在 Electron 进程树，单独采样。 */
+  coreProcess?: CoreProcessReport;
+  /** 内存时间线（issue #242 §6.4）：每 5min 一帧（Electron 全进程 + 核 RSS）的紧凑 CSV，斜率判泄漏/高水位。 */
+  memoryTimelineCsv?: string;
   appLogTail: string;
   singboxLogTail: string;
   /** 节点标识符 → 占位符（P0.6）：构建末尾在全报告统一替换，打码节点身份（域名/IP/SNI/节点名），保留形态与跨段相关性。 */
@@ -383,18 +410,55 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   // P0.6：末尾在全报告（配置块 + 日志 + 运行态）统一打码节点标识符，跨段占位一致便于关联诊断。
   const redacted = redactIdentifiers(lines.join('\n'), input.nodeIdentifiers ?? []);
 
-  // 进程内存表（issue #242）刻意放在 redactIdentifiers **之后**拼接：表内只有进程 type/pid/内存/CPU/自身进程名，
-  // 无节点标识符、无需脱敏；若纳入打码 pass，机场把节点命名成纯数字（如 "2048"）会撞上表里的内存/PID 数字被误
-  // 替成占位符，反而毁掉本表的定位价值。故与打码隔离，单独在末尾渲染。
-  if (!input.processMetrics) return redacted;
-  const pm = input.processMetrics;
-  const metricsLines = ['', '## 进程内存', ''];
-  metricsLines.push(`- 合计：${pm.totalMemoryMb} MB（${pm.rows.length} 个进程，按内存降序）`, '');
-  metricsLines.push('| 类型 | PID | 内存(MB) | CPU(%) | 标识 |', '|---|---|---|---|---|');
-  for (const r of pm.rows) {
-    metricsLines.push(
-      `| ${r.type} | ${r.pid} | ${r.memoryMb} | ${r.cpuPercent} | ${r.label ?? ''} |`
+  // 技术观测段（进程内存表 + 渲染堆分层 + 核进程 + 内存时间线 CSV，issue #242）刻意放在 redactIdentifiers
+  // **之后**拼接：段内只有进程 type/pid/内存/CPU/进程名/时刻等数字，无节点标识符、无需脱敏；若纳入打码 pass，
+  // 机场把节点命名成纯数字（如 "2048"）会撞上其中的内存/PID 数字被误替成占位符，反而毁掉定位价值。故与打码隔离。
+  const tail: string[] = [];
+
+  if (input.processMetrics) {
+    const pm = input.processMetrics;
+    tail.push('', '## 进程内存', '');
+    tail.push(`- 合计：${pm.totalMemoryMb} MB（${pm.rows.length} 个进程，按内存降序）`, '');
+    tail.push(
+      '| 类型 | PID | 内存(MB) | 峰值(MB) | CPU(%) | 标识 | 创建时刻 |',
+      '|---|---|---|---|---|---|---|'
     );
+    for (const r of pm.rows) {
+      const created =
+        typeof r.creationTime === 'number' ? new Date(r.creationTime).toISOString() : '';
+      tail.push(
+        `| ${r.type} | ${r.pid} | ${r.memoryMb} | ${r.peakMemoryMb ?? ''} | ${r.cpuPercent} | ${r.label ?? ''} | ${created} |`
+      );
+    }
   }
-  return redacted + '\n' + metricsLines.join('\n') + '\n';
+
+  if (input.rendererHeap) {
+    const rh = input.rendererHeap;
+    tail.push('', '## 渲染进程堆分层', '');
+    if (rh.unavailable) {
+      tail.push(`- ${rh.unavailable}`);
+    } else {
+      if (rh.usedHeapMb !== undefined) tail.push(`- V8 usedHeap：${rh.usedHeapMb} MB`);
+      if (rh.totalHeapMb !== undefined) tail.push(`- V8 totalHeap：${rh.totalHeapMb} MB`);
+      if (rh.heapLimitMb !== undefined) tail.push(`- V8 heapLimit：${rh.heapLimitMb} MB`);
+      if (rh.residentSetMb !== undefined) tail.push(`- 进程 residentSet：${rh.residentSetMb} MB`);
+      if (rh.blinkResourceMb !== undefined)
+        tail.push(`- Blink 资源缓存(live)：${rh.blinkResourceMb} MB`);
+    }
+  }
+
+  if (input.coreProcess) {
+    const cp = input.coreProcess;
+    tail.push('', '## sing-box 核进程', '');
+    if (cp.unavailable) tail.push(`- ${cp.unavailable}`);
+    else tail.push(`- PID ${cp.pid ?? ''}：RSS ${cp.rssMb ?? ''} MB，CPU ${cp.cpuPercent ?? ''}%`);
+  }
+
+  if (input.memoryTimelineCsv) {
+    tail.push('', '## 内存时间线（每 5min 一帧，最多 24h）', '');
+    tail.push(fence('csv', input.memoryTimelineCsv));
+  }
+
+  if (tail.length === 0) return redacted;
+  return redacted + '\n' + tail.join('\n') + '\n';
 }
