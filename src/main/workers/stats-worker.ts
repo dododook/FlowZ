@@ -24,9 +24,9 @@ import type { HostToWorkerMessage, WorkerToHostMessage } from '../services/Stats
 // utilityProcess 子进程的父端口（Electron 在子进程 process 上注入）。
 const parentPort = process.parentPort;
 
-// change-driven aggregate 的最小 post 间隔（batch2 §3.6）：内核帧 ~1s 到，签名变化且距上次 post ≥2s 才推——高 churn
-// 最坏 0.5 Hz；拓扑是计数图、落后 ≤2s 可接受，故无需额外 timer（帧本身即驱动）。
-const AGG_MIN_INTERVAL_MS = 2000;
+// change-driven aggregate 的最小 post 间隔（batch2 §3.6；#251 真机观测后 2s→1s 提升拓扑跟手度）：内核帧 ~1s 到，
+// 签名变化且距上次 post ≥1s 才推——高 churn 最坏 1 Hz；拓扑是计数图、落后 ≤1s 可接受，故无需额外 timer（帧本身即驱动）。
+const AGG_MIN_INTERVAL_MS = 1000;
 
 let apiClient: SingBoxApiClient | null = null;
 

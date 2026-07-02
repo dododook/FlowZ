@@ -108,16 +108,16 @@ describe('stats-worker (batch2 数据面核心)', () => {
     expect(postsOf('aggregate')).toHaveLength(1);
   });
 
-  it('rate-cap：内容变但未过 AGG_MIN_INTERVAL_MS(2000) 不 post，过后才 post', () => {
+  it('rate-cap：内容变但未过 AGG_MIN_INTERVAL_MS(1000) 不 post，过后才 post', () => {
     send(CONNECT);
     fireConn([conn('a.com', 'P')]); // t0 首帧 post，lastSentAt=t0
     expect(postsOf('aggregate')).toHaveLength(1);
 
-    nowVal += 1000; // < 2000
+    nowVal += 500; // < 1000
     fireConn([conn('a.com', 'P'), conn('b.com', 'Q')]); // 内容变，但未过 cap → 不 post
     expect(postsOf('aggregate')).toHaveLength(1);
 
-    nowVal += 1500; // 累计 2500 ≥ 2000
+    nowVal += 600; // 累计 1100 ≥ 1000
     fireConn([conn('a.com', 'P'), conn('b.com', 'Q')]); // 仍与 lastSentSig 不同 → post
     expect(postsOf('aggregate')).toHaveLength(2);
   });
