@@ -119,4 +119,29 @@ describe('LinuxServiceHelper', () => {
       });
     });
   });
+
+  describe('installCore 协议（换核免密 socket）', () => {
+    it('发出 [install-core, srcDir, sha256(srcDir/sing-box)] 三元组', async () => {
+      const os = require('os');
+      const fsSync = require('fs');
+      const pathMod = require('path');
+      const dir = fsSync.mkdtempSync(pathMod.join(os.tmpdir(), 'flowz-installcore-'));
+      fsSync.writeFileSync(pathMod.join(dir, 'sing-box'), 'CORE-BYTES');
+      const helper = new LinuxServiceHelper();
+      const sent: string[][] = [];
+      (
+        helper as unknown as { sendCommand: (r: string[], t: number) => Promise<string> }
+      ).sendCommand = async (rest: string[]) => {
+        sent.push(rest);
+        return 'OK installed';
+      };
+      const r = await helper.installCore(dir);
+      expect(r).toEqual({ ok: true });
+      expect(sent).toHaveLength(1);
+      expect(sent[0][0]).toBe('install-core');
+      expect(sent[0][1]).toBe(dir);
+      expect(sent[0][2]).toMatch(/^[0-9a-f]{64}$/); // sha256 hex
+      fsSync.rmSync(dir, { recursive: true, force: true });
+    });
+  });
 });

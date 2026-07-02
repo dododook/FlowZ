@@ -251,6 +251,29 @@ export class UpdateService {
   /**
    * 安装更新（打开下载的安装包）
    */
+  /** Linux deb 安装态判定（双守卫，与 installUpdate 分派逻辑同源）：非 AppImage 运行 + .deb 资产。 */
+  private isDebUpdateForm(installerPath: string): boolean {
+    return process.platform === 'linux' && !process.env.APPIMAGE && installerPath.endsWith('.deb');
+  }
+
+  /** deb 更新前的一次性授权说明框（后续 pkexec 弹的 polkit 通用框文案改不了，先在 app 内解释缘由）。返回 true=继续更新。 */
+  private async confirmDebElevation(): Promise<boolean> {
+    const opts = {
+      type: 'info' as const,
+      title: mt('debUpdateElevationTitle'),
+      message: mt('debUpdateElevationMessage'),
+      detail: mt('debUpdateElevationDetail'),
+      buttons: [mt('debUpdateElevationContinue'), mt('debUpdateElevationCancel')],
+      defaultId: 0,
+      cancelId: 1,
+    };
+    const win = this.mainWindow && !this.mainWindow.isDestroyed() ? this.mainWindow : null;
+    const { response } = win
+      ? await dialog.showMessageBox(win, opts)
+      : await dialog.showMessageBox(opts);
+    return response === 0;
+  }
+
   async installUpdate(installerPath: string): Promise<boolean> {
     try {
       this.logManager.addLog('info', `准备安装更新: ${installerPath}`, 'UpdateService');
@@ -259,6 +282,17 @@ export class UpdateService {
       if (!fs.existsSync(installerPath)) {
         this.logManager.addLog('error', `安装包不存在: ${installerPath}`, 'UpdateService');
         return false;
+      }
+
+      // Linux deb 安装态：后续 pkexec apt 会弹 polkit 通用授权框（文案不可改）——先在 app 内弹一个说清缘由的确认框。
+      // 仅 deb 形态（AppImage/portable/mac/win 全跳过）；取消=不更新。**必须在下方 cleanupCallback 停代理之前** →
+      // 取消即真 no-op（代理未停、脚本未写、未 app.exit），不留「代理被停但没更新」的坏态。
+      if (this.isDebUpdateForm(installerPath)) {
+        const proceed = await this.confirmDebElevation();
+        if (!proceed) {
+          this.logManager.addLog('info', 'deb 更新被用户取消（授权说明框）', 'UpdateService');
+          return false;
+        }
       }
 
       // 在安装更新前，先清理资源（停止代理进程等）
@@ -354,7 +388,7 @@ export class UpdateService {
         const isAppImage = !!appImageTarget && installerPath.endsWith('.AppImage');
         // deb 脚本严格按【运行形态 + 资产形态】双守卫（review Med-2）：仅「非 AppImage 运行（=deb 安装态）+ .deb 资产」
         // 才走 root apt 安装。杜绝「AppImage(loose) 用户因 release 只发 deb 被跨形态兜底选中 → 被 system-wide 装 deb」。
-        const isDeb = !appImageTarget && installerPath.endsWith('.deb');
+        const isDeb = this.isDebUpdateForm(installerPath); // 与顶部确认框谓词同源（双守卫单一真值）
         if (isAppImage || isDeb) {
           const { spawn } = require('child_process');
           const scriptPath = path.join(app.getPath('temp'), 'flowz_update.sh');

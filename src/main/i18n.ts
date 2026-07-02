@@ -62,6 +62,45 @@ const MESSAGES = {
     ru: 'FlowZ не смог заменить переносимый файл при автообновлении. Новая версия загружена по пути ниже — замените её вручную:',
     fa: 'به‌روزرسانی خودکار FlowZ نتوانست فایل قابل‌حمل را جایگزین کند. نسخهٔ جدید در مسیر زیر دانلود شد — لطفاً به‌صورت دستی جایگزین کنید:',
   },
+  // —— deb 更新的一次性授权说明（pkexec polkit 通用框文案改不了，先在 app 内解释缘由） ——
+  debUpdateElevationTitle: {
+    'zh-CN': '更新需要一次管理员授权',
+    'zh-TW': '更新需要一次管理員授權',
+    'en-US': 'Update needs a one-time administrator authorization',
+    ru: 'Для обновления нужна однократная авторизация администратора',
+    fa: 'به‌روزرسانی به یک مجوز مدیر (یک‌بار) نیاز دارد',
+  },
+  debUpdateElevationMessage: {
+    'zh-CN': '即将更新 FlowZ（deb 版）',
+    'zh-TW': '即將更新 FlowZ（deb 版）',
+    'en-US': 'About to update FlowZ (deb build)',
+    ru: 'Обновление FlowZ (сборка deb)',
+    fa: 'در حال به‌روزرسانی FlowZ (نسخهٔ deb)',
+  },
+  debUpdateElevationDetail: {
+    'zh-CN':
+      'deb 版装在系统目录 /opt，安装软件本身需要管理员权限，接下来系统会弹出一次授权框。这与开代理 / 用 TUN 的免密是两码事——提权助手装一次后永久免密；应用更新则每次需要一次授权（并非每次使用）。想彻底免授权更新可改用 AppImage 版。',
+    'zh-TW':
+      'deb 版安裝在系統目錄 /opt，安裝軟體本身需要管理員權限，接下來系統會彈出一次授權框。這與開啟代理 / 使用 TUN 的免密是兩碼事——提權助手安裝一次後永久免密；應用程式更新則每次需要一次授權（並非每次使用）。想徹底免授權更新可改用 AppImage 版。',
+    'en-US':
+      'The deb build is installed under the system directory /opt, and installing software itself requires administrator rights, so the system will show an authorization prompt once. This is separate from running the proxy / using TUN password-free — the privileged helper is a one-time install and then stays password-free; app updates need one authorization each time (not each use). For fully authorization-free updates, switch to the AppImage build.',
+    ru: 'Сборка deb установлена в системный каталог /opt, а установка ПО требует прав администратора, поэтому система один раз покажет запрос авторизации. Это не связано с беспарольным запуском прокси / использованием TUN — привилегированный помощник ставится один раз и далее работает без пароля; обновления приложения требуют по одной авторизации каждый раз (не при каждом использовании). Для полностью беспарольных обновлений перейдите на сборку AppImage.',
+    fa: 'نسخهٔ deb در مسیر سیستمی ‎/opt نصب می‌شود و نصب نرم‌افزار به دسترسی مدیر نیاز دارد، پس سیستم یک بار پنجرهٔ مجوز را نشان می‌دهد. این جدا از اجرای بدون‌رمز پروکسی / استفاده از TUN است — دستیار پرمجوز یک‌بار نصب می‌شود و سپس بدون رمز کار می‌کند؛ اما به‌روزرسانی برنامه هر بار به یک مجوز نیاز دارد (نه در هر بار استفاده). برای به‌روزرسانی کاملاً بدون مجوز، به نسخهٔ AppImage تغییر دهید.',
+  },
+  debUpdateElevationContinue: {
+    'zh-CN': '继续更新',
+    'zh-TW': '繼續更新',
+    'en-US': 'Continue',
+    ru: 'Продолжить',
+    fa: 'ادامه',
+  },
+  debUpdateElevationCancel: {
+    'zh-CN': '取消',
+    'zh-TW': '取消',
+    'en-US': 'Cancel',
+    ru: 'Отмена',
+    fa: 'لغو',
+  },
   // —— 桌面通知（notify-user 出口） ——
   proxyErrorTitle: {
     'zh-CN': 'FlowZ 代理出错',

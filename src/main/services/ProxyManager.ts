@@ -562,7 +562,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 先保存当前配置（needsRootPrivilege 等方法需要用到）
     this.currentConfig = config;
 
-    // Linux 下确保核心在用户目录且可执行，以便支持 setcap 和规避 AppImage EROFS
+    // Linux：解析现役核（helper 模式=root 受管核，setcap 兜底=userData 可写核）并维护 userData 兜底核。每次 start
+    // 重解析（对齐 darwin/win HIGH-1）：探测/校验/实跑对准同一核。ensureWritableCore 内按平台维护 + 返回现役核。
     if (process.platform === 'linux') {
       try {
         this.singboxPath = await resourceManager.ensureWritableCore();
@@ -613,10 +614,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         );
         let reseedError = '';
         try {
-          // §5 两平台统一经 ensureWritableCore(true)：linux force 覆盖可写核；darwin 经注入的 helper installCore
-          // 重播种随包核到受保护目录（root-only，helper 上方 maybePromptHelperGate 已引导在位）。临时目录复制 +
-          // installCore 编排已下沉 ResourceManager（平台感知，免 ProxyManager 内联）。修：app 更新后受保护目录旧核不自愈。
-          // darwin helperManager 恒为 HelperManager（win 才注入 WindowsServiceHelper）；installCore 是具体方法非接口成员，故 cast。
+          // §5 两平台统一经 ensureWritableCore(true)：darwin 经 helper installCore 重播种随包核到受保护目录；
+          // **linux helper 模式同构** —— 经注入的 LinuxServiceHelper.installCore 免密刷新 root 受管核（受管核不在位/
+          // 无 helper 则退化为刷 userData 兜底核，setcap 路径零回归）。临时目录复制 + installCore 编排下沉 ResourceManager。
+          // 修：app 更新后 macOS 受保护目录 / Linux 受管核旧核不自愈。
+          // darwin helperManager 恒为 HelperManager；linux 为注入的 LinuxServiceHelper（installCore 同签名，duck-typing）；故 cast。
           if (process.platform === 'darwin') this.helperManager ??= new HelperManager();
           this.singboxPath = await resourceManager.ensureWritableCore(true, {
             installCore: (seedDir) => (this.helperManager as HelperManager).installCore(seedDir),
