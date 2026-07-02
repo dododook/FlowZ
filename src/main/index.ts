@@ -633,6 +633,9 @@ function getPreferredSystemLanguagesSafe(): string[] {
 }
 
 async function createWindow(forceShow = false) {
+  // Part C：冷重建计时锚点（createWindow 入口 → presentWindow 首次 show）。量化 discard/首唤重建死区，
+  // 为将来「优化重建」提供数据。hide→show 走 showWindow 不经本函数 → 天然不计时（保活路径无死区）。
+  const createT0 = Date.now();
   // macOS 需要设置应用菜单以启用 Cmd+C/V/X/A 等快捷键
   if (process.platform === 'darwin') {
     const template: Electron.MenuItemConstructorOptions[] = [
@@ -870,6 +873,8 @@ async function createWindow(forceShow = false) {
       if (wantShow || (!cfg.silentStart && !isHiddenArg && !isMacHidden)) {
         mainWindow?.show();
         logManager.addLog('info', 'Main window shown', 'Main');
+        // Part C：本次 createWindow 从入口到首帧呈现的耗时（冷重建/首启）。app.log 随诊断导出自然带出。
+        logManager.addLog('info', `[window-recreate-timing] ${Date.now() - createT0}ms`, 'Main');
         logStartupTimingOnce();
       } else {
         logManager.addLog('info', 'Main window kept hidden (Silent Start)', 'Main');
@@ -917,9 +922,10 @@ async function createWindow(forceShow = false) {
     logManager.addLog('error', `Window failed to load: ${errorDescription} (${errorCode})`, 'Main');
   });
 
-  // macOS：Cmd+H（app.hide()）系统级隐藏时摘 Dock 图标（仅驻留菜单栏，不占 Dock / Cmd-Tab），重新显示时
-  // 恢复。关闭窗口现在统一走 destroy（不再 hide），由模块级 browser-window-created 的 'closed' 监听器摘
-  // Dock 图标，不经本分支。经 activation policy 状态机（见 hideDockIfMenubarOnly/restoreDockPresence）。
+  // macOS：Cmd+H（app.hide()）系统级隐藏、或关窗保活档（minimizeToTray）走 window.hide() 时摘 Dock 图标（仅驻留
+  // 菜单栏，不占 Dock / Cmd-Tab），重新显示时恢复。两条路径都触发 'hide' → 本钩子摘 Dock；仅真退出档（shouldQuit）
+  // 走 destroy，由模块级 browser-window-created 的 'closed' 监听器摘。经 activation policy 状态机（见
+  // hideDockIfMenubarOnly/restoreDockPresence）。
   if (process.platform === 'darwin') {
     mainWindow.on('hide', () => {
       // 经 accessory + app.hide() 摘 Dock 图标（机制与 macOS 限制见 hideDockIfMenubarOnly）。
@@ -931,10 +937,11 @@ async function createWindow(forceShow = false) {
     });
   }
 
-  // 处理窗口关闭事件：统一销毁渲染进程释放内存（不再区分平台/minimizeToTray 去 hide 保活——隐藏态
-  // 长期占满渲染进程内存正是 issue #242 的放大器之一，关窗是明确的"暂时不需要看"信号，没有理由继续
-  // 保活）。是否常驻托盘 vs 彻底退出，在销毁的这一刻就算好存进 pendingQuitOnAllClosed，供 window-all-closed
-  // 消费（而非等它触发时才判断——那时可能已经隔了很久、配置或托盘状态都可能变过）。
+  // 处理窗口关闭事件：默认保活（隐藏到托盘，reopen=show() 即显，恢复 4.1.8 语义）——batch2/3/4 后隐藏态
+  // 推送归零、水位死平（异常增长有 renderer-memory watchdog 兜底），无需靠关窗销毁渲染进程重置水位（d6ae203
+  // 的收益在这三批落地后已冗余，代价是 100% reopen 冷重建，见 #251）。仅当 shouldQuitOnAllWindowsClosed
+  // （minimizeToTray=false / 无托盘非 mac）才 destroy + 退出（避免无窗口无托盘的僵尸进程）；是否退出在销毁的
+  // 这一刻就算好存进 pendingQuitOnAllClosed（仅 destroy 分支写），供 window-all-closed 消费。
   mainWindow.on('close', (event) => {
     const window = mainWindow;
     if (!window || window.isDestroyed()) return;
@@ -945,12 +952,22 @@ async function createWindow(forceShow = false) {
 
     event.preventDefault();
     const minimizeToTray = configManager.get<boolean>('minimizeToTray') ?? true;
-    pendingQuitOnAllClosed = shouldQuitOnAllWindowsClosed(
+    const shouldQuit = shouldQuitOnAllWindowsClosed(
       process.platform,
       minimizeToTray,
       !!trayManager?.hasTray()
     );
-    releaseWindowMemory({ window, logManager, reason: 'close' });
+    if (shouldQuit) {
+      // minimizeToTray=false / 无托盘非 mac → 销毁渲染进程 + 退出。pendingQuitOnAllClosed 仅在此 destroy 分支
+      // 就地写入，供随后 window-all-closed 消费最后一次值（无陈旧读：每条 destroy 路径销毁前都重算）。
+      pendingQuitOnAllClosed = true;
+      releaseWindowMemory({ window, logManager, reason: 'close' });
+    } else {
+      // 保活：隐藏到托盘，reopen 走 show() 即显（无冷重建死区）。'hide' 事件由上方 macOS 钩子消费摘 Dock；
+      // hide 不减窗口计数、不触发 window-all-closed，故 pendingQuitOnAllClosed 保持不动（Fable 复审坐实安全）。
+      window.hide();
+      logManager.addLog('info', 'Window hidden to tray', 'Main');
+    }
   });
 
   mainWindow.on('closed', () => {
