@@ -326,7 +326,10 @@
     "stopProxyFailed": "توقف پروکسی ناموفق بود",
     "speedTestDone": "تست سرعت کامل شد",
     "speedTestSummary": "{{count}} گره · سریع‌ترین {{name}} ({{ms}}ms)",
-    "speedTestNoResult": "{{count}} گره · همه ناموفق"
+    "speedTestNoResult": "{{count}} گره · همه ناموفق",
+    "tsExitNoDeviceWarn": "به‌عنوان خروجی تنظیم شده، اما نود خروجی انتخاب نشده — ترافیک اینترنت همچنان مستقیم است.",
+    "tsExitDeviceOfflineWarn": "نود خروجی آفلاین است؛ ممکن است اینترنت از طریق Tailscale مسیردهی نشود.",
+    "tsExitPickDevice": "انتخاب نود خروجی"
   },
   "settings": {
     "nav": {
@@ -459,7 +462,9 @@
       "webrtcLeakOff": "خاموش",
       "webrtcLeakProxy": "از طریق پروکسی",
       "webrtcLeakBlock": "مسدود",
-      "webrtcLeakTunOnlyHint": "حفاظت در برابر نشت WebRTC فقط در حالت TUN کار می‌کند. برای فعال‌سازی به حالت TUN تغییر دهید."
+      "webrtcLeakTunOnlyHint": "حفاظت در برابر نشت WebRTC فقط در حالت TUN کار می‌کند. برای فعال‌سازی به حالت TUN تغییر دهید.",
+      "meshLoginFallback": "بازگشت به اتصال مستقیم هنگام ورود به Mesh",
+      "meshLoginFallbackDesc": "وقتی خروجی Tailscale انتخاب‌شده هنوز متصل نیست، در حین ورود/احراز هویت ترافیک مستقیم مسیردهی می‌شود (تا صفحه احراز هویت به خروجی متصل‌نشده هدایت نشود و قفل نکند) و پس از اتصال به همان خروجی بازمی‌گردد. برای اینکه هنگام ورود هرگز مستقیم نشود آن را خاموش کنید (در این صورت ممکن است احراز هویت شکست بخورد)."
     },
     "proxyMode": {
       "systemProxyMode": "حالت پروکسی سیستم",
@@ -1104,7 +1109,7 @@
     "tsConnCardConnect": "اتصال Tailscale",
     "tsConnCardUseAuthKey": "استفاده از Auth Key",
     "tsConnCardLoggingIn": "در حال اتصال…",
-    "tsConnCardLoggingInDesc": "صفحه مجوز در مرورگر باز شد — پس از تکمیل به‌طور خودکار متصل می‌شود",
+    "tsConnCardLoggingInDesc": "در انتظار احراز هویت در مرورگر — در صورت نیاز روی «باز کردن صفحه ورود» بزنید؛ پس از تأیید به‌طور خودکار متصل می‌شود.",
     "tsConnCardCancel": "لغو",
     "tsConnCardConnected": "متصل",
     "tsConnCardLoggedInPast": "وارد شده (آخرین وضعیت)",
@@ -1171,7 +1176,11 @@
     "warpPlusLegacyHint": "این نود WARP اعتبارنامه‌ای ذخیره ندارد (قدیمی) — برای WARP+ آن را حذف و دوباره بسازید.",
     "warpPlusApplied": "WARP+ اعمال شد",
     "warpPlusMaybeFree": "لایسنس ارسال شد، اما هنوز رایگان است — کلید لایسنس را بررسی کنید.",
-    "warpPlusApplyFailed": "اعمال WARP+ ناموفق بود"
+    "warpPlusApplyFailed": "اعمال WARP+ ناموفق بود",
+    "meshLoginFallbackTitle": "اتصال مستقیم موقت (ورود به Mesh)",
+    "meshLoginFallbackDesc": "خروجی Tailscale انتخاب‌شده هنوز متصل نیست، بنابراین در حین ورود/احراز هویت ترافیک مستقیم است؛ پس از اتصال به‌طور خودکار به خروجی بازمی‌گردد.",
+    "meshLoginFallbackRestored": "به «{{name}}» متصل شد، مسیردهی به این خروجی بازگشت",
+    "tsConnCardOpenLogin": "باز کردن صفحه ورود"
   },
   "rules": {
     "ruleColumn": "قانون",

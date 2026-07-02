@@ -60,6 +60,8 @@ interface NativeEventData {
   coreBaselineWarning: { current: string; bundled: string; kind: string };
   // 提权 helper proto < 期望（如属主根治 v6）：启动后主进程 emit → toast 引导升级（带「升级」action + 「不再提示」）。
   helperUpgradeable: { version: string };
+  // 缺陷1 登录期出口让位：选中 TS 出口未就绪→默认路由让位直连（engaged=true）/隧道 Running 后切回（engaged=false）。
+  meshLoginFallback: { engaged: boolean; serverName?: string };
 }
 
 type NativeEventListener<K extends keyof NativeEventData> = (data: NativeEventData[K]) => void;
@@ -117,6 +119,9 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'helperUpgradeable':
         unsubscribe = api.helper.onUpgradeable(callback as any);
+        break;
+      case 'meshLoginFallback':
+        unsubscribe = api.proxy.onMeshLoginFallback(callback as any);
         break;
       default:
         console.warn(`Unknown event: ${eventName}`);
@@ -253,9 +258,11 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
   // loggedIn=false）一律由 api STATUS（tailscaleStatus）驱动，此处不再据 AUTH_URL 反推 loggedIn=false。
   const idKey = data.serverId ?? data.nodeName;
   const url = data.authURL ?? data.url;
-  // 空 URL = 登录超时/失败信号（main 侧 armLoginTimeout 发）→ 清缓存退出「登录中」回「需登录」，不弹 toast。
+  // 空 URL = 登录超时/失败/取消/停核收尾信号 → 清缓存退出「登录中」回「需登录」，并 dismiss 那条 Infinity「需登录」
+  // toast（缺陷2：核已停时 tailscaleStatus 的离开-NeedsLogin dismiss 分支永不触发，仅清卡片不清 toast → 残留）。
   if (data.serverId && !url) {
     useAppStore.getState().setTailscaleAuthUrl(data.serverId, '');
+    toast.dismiss(tsAuthToastId(data.serverId));
     return;
   }
   // always-emit：无条件全量入表（transient 与主核两路径都存）→ 角标据此可点直开。serverId 缺失（旧主进程/
@@ -285,7 +292,8 @@ function handleTailscaleAuth(data: NativeEventData['tailscaleAuth']) {
 function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   // sing-box 1.14 管理 API 真实态（取代 1.13 stateExists/stdout 启发式）：loggedIn（Running||Starting）即时驱动
   // 「需登录」角标；tailscaleIPs（self.tailscaleIPs）入 store 供节点卡「组网信息」popover 展示内网 IP。
-  // backendState/authURL 仅本地驱动登录 toast（不入 store）。
+  // backendState 仅本地驱动登录 toast（不入 store）；authURL 除驱动 toast 外，NeedsLogin 时【入 store】（缺陷4，下方），
+  // 是主核 always-emit 路径取消后恢复登录 URL 的可靠来源。
   useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
   // 内网 IP（self.tailscaleIPs）入 store，组网卡 popover 据此显示。
   useAppStore.getState().setTailscaleIps(data.serverId, data.tailscaleIPs || []);
@@ -294,6 +302,10 @@ function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   // NeedsLogin 且核给出 authURL → 登录 toast（与瞬态核 AUTH_URL 共用 showTsLoginToast，固定 id 供翻 Running 时
   // dismiss/覆盖）。authURL 缺失则不弹（避免空 action）。
   if (data.backendState === 'NeedsLogin' && data.authURL) {
+    // 缺陷4：把 STATUS 携带的 authURL 入 store（主核 always-emit 唯一可靠 URL 来源）→「需登录」角标可点直开；
+    // 修「主核路径取消后 URL 不可恢复」死端（取消清了 store URL，此帧重填，角标恢复可用）。仅存 URL 不置 initiated，
+    // 故卡片不会因此误进「连接中」（loginInitiated 门控），只回「需登录」可点态。
+    useAppStore.getState().setTailscaleAuthUrl(data.serverId, data.authURL);
     const server = useAppStore.getState().config?.servers.find((s) => s.id === data.serverId);
     showTsLoginToast(data.serverId, server?.name ?? data.serverId, data.authURL);
   } else {
@@ -381,6 +393,30 @@ function handleHelperUpgradeable(_data: NativeEventData['helperUpgradeable']) {
   });
 }
 
+// 缺陷1 登录期出口让位提示（固定 id，engage/restore 互相 dismiss/覆盖）：engage→warning 8s 告知「登录期临时直连」；
+// restore→dismiss + （若带 serverName=真实切回出口）success 3s。stop/切出口触发的 engaged:false 无 serverName → 仅 dismiss。
+const meshLoginFallbackToastId = 'mesh-login-fallback';
+function handleMeshLoginFallback(data: NativeEventData['meshLoginFallback']) {
+  if (data.engaged) {
+    toast.warning(i18n.t('servers.meshLoginFallbackTitle', '组网登录期已临时直连'), {
+      id: meshLoginFallbackToastId,
+      description: i18n.t(
+        'servers.meshLoginFallbackDesc',
+        '所选 Tailscale 出口尚未连接，登录/授权期间流量暂走直连；连接成功后自动切回该出口。'
+      ),
+      duration: 8000,
+    });
+    return;
+  }
+  toast.dismiss(meshLoginFallbackToastId);
+  // 仅「真实切回出口」（带 serverName）弹成功提示；停核/切出口的复位无 serverName，只 dismiss 不打扰。
+  if (data.serverName) {
+    toast.success(i18n.t('servers.meshLoginFallbackRestored', { name: data.serverName }), {
+      duration: 3000,
+    });
+  }
+}
+
 /**
  * Hook to listen to all native events and update store
  */
@@ -400,6 +436,7 @@ export function useNativeEventListeners() {
   useNativeEvent('speedTestResult', handleSpeedTestResult);
   useNativeEvent('coreBaselineWarning', handleCoreBaselineWarning);
   useNativeEvent('helperUpgradeable', handleHelperUpgradeable);
+  useNativeEvent('meshLoginFallback', handleMeshLoginFallback);
 
   // L2 治本：挂载即主动拉一次 Tailscale 状态末帧 → 填 store（self IP + peers），不干等下一帧推送。
   // 根治「状态流 push-only-on-change、无心跳、渲染端错过那一帧即永久陈旧」（内网IP「尚未分配」/peers 拿不到）。

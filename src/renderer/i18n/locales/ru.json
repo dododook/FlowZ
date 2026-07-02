@@ -326,7 +326,10 @@
     "stopProxyFailed": "Не удалось остановить прокси",
     "speedTestDone": "Тест скорости завершён",
     "speedTestSummary": "Проверено: {{count}} · быстрейший {{name}} ({{ms}} мс)",
-    "speedTestNoResult": "Проверено: {{count}} · все недоступны"
+    "speedTestNoResult": "Проверено: {{count}} · все недоступны",
+    "tsExitNoDeviceWarn": "Назначен выходом, но выходной узел не выбран — интернет-трафик идёт напрямую.",
+    "tsExitDeviceOfflineWarn": "Выходной узел офлайн; интернет может не проходить через Tailscale.",
+    "tsExitPickDevice": "Выбрать выходной узел"
   },
   "settings": {
     "nav": {
@@ -459,7 +462,9 @@
       "webrtcLeakOff": "Выкл.",
       "webrtcLeakProxy": "Через прокси",
       "webrtcLeakBlock": "Блокировать",
-      "webrtcLeakTunOnlyHint": "Защита от утечек WebRTC работает только в режиме TUN. Переключитесь на режим TUN, чтобы включить её."
+      "webrtcLeakTunOnlyHint": "Защита от утечек WebRTC работает только в режиме TUN. Переключитесь на режим TUN, чтобы включить её.",
+      "meshLoginFallback": "Прямое подключение при входе в mesh",
+      "meshLoginFallbackDesc": "Когда выбранный выход Tailscale ещё не подключён, во время входа/авторизации трафик идёт напрямую (чтобы страница авторизации не отправлялась на неподключённый выход и не зависала), а после подключения переключается обратно на выход. Выключите, чтобы никогда не подключаться напрямую при входе (тогда авторизация может не пройти)."
     },
     "proxyMode": {
       "systemProxyMode": "Режим системного прокси",
@@ -1104,7 +1109,7 @@
     "tsConnCardConnect": "Подключить Tailscale",
     "tsConnCardUseAuthKey": "Использовать Auth Key",
     "tsConnCardLoggingIn": "Подключение…",
-    "tsConnCardLoggingInDesc": "Страница авторизации открыта в браузере — подключится автоматически после завершения",
+    "tsConnCardLoggingInDesc": "Ожидание авторизации в браузере — нажмите «Открыть страницу входа» при необходимости; подключится автоматически после авторизации.",
     "tsConnCardCancel": "Отмена",
     "tsConnCardConnected": "Подключено",
     "tsConnCardLoggedInPast": "Вход выполнен (последнее)",
@@ -1171,7 +1176,11 @@
     "warpPlusLegacyHint": "У этого узла WARP нет сохранённых учётных данных (устаревший) — для WARP+ удалите и создайте заново.",
     "warpPlusApplied": "WARP+ применён",
     "warpPlusMaybeFree": "Лицензия отправлена, но тариф всё ещё бесплатный — проверьте ключ.",
-    "warpPlusApplyFailed": "Не удалось применить WARP+"
+    "warpPlusApplyFailed": "Не удалось применить WARP+",
+    "meshLoginFallbackTitle": "Временное прямое подключение (вход в mesh)",
+    "meshLoginFallbackDesc": "Выбранный выход Tailscale ещё не подключён, поэтому во время входа/авторизации трафик идёт напрямую; после подключения он автоматически переключится на выход.",
+    "meshLoginFallbackRestored": "Подключено к «{{name}}», маршрутизация вернулась на этот выход",
+    "tsConnCardOpenLogin": "Открыть страницу входа"
   },
   "rules": {
     "ruleColumn": "Правило",

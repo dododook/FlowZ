@@ -21,13 +21,18 @@ export type TsCardState =
 export function deriveTsCardState(
   tsNode: ServerConfig | undefined,
   loggedIn: boolean | undefined,
-  hasAuthUrl: boolean
+  hasAuthUrl: boolean,
+  loginActive = false
 ): TsCardState {
   if (!tsNode) return 'no-node';
   // authKey 形态优先：静态凭据，起核即认证，不进登录态/检测态（与 WG 同质）。
   if (tsNode.tailscaleSettings?.authKey?.trim()) return 'key-ready';
-  // 交互登录：有 URL 且尚未登录成功 → 登录中（loggedIn 一旦转 true 即落 'connected'）。
-  if (hasAuthUrl && loggedIn !== true) return 'logging-in';
+  // 交互登录中：登录【正在进行】(loginActive) 且有 URL 且尚未登录成功。loginActive = 用户显式发起(loginInitiated)
+  // OR 该节点是当前选中出口（app 自动连接它=登录进行中，非被动 always-emit）。1.14 主核 always-emit 会为未选中/
+  // 未就绪节点持续 emit AUTH_URL——若仅凭 hasAuthUrl 判 'logging-in'，卡片会被这些非活跃 URL 误推进「连接中」。
+  // 故门控后：非选中且未手动发起时有 URL 只显 'needs-login'（可点角标登录）；选中出口自动连接 或 用户手点后进
+  // 'logging-in'（修真机：首页弹登录时选中出口卡片应显「连接中」而非初始态）。loggedIn 一旦转 true 即落 'connected'。
+  if (loginActive && hasAuthUrl && loggedIn !== true) return 'logging-in';
   if (loggedIn === true) return 'connected';
   return 'needs-login';
 }

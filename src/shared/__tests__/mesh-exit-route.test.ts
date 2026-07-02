@@ -56,8 +56,15 @@ describe('planMeshExitRoute（不依赖全局选中：exit-capable TS 即装，�
     expect(planMeshExitRoute(cfg([tsNode({ reverseMesh: false })], 'ts1'), false)).toBeNull();
   });
 
-  it('TS System 但无 exit_node(allowInternet=false) → null(不承载全隧道)', () => {
-    expect(planMeshExitRoute(cfg([tsNode({ allowInternet: false })], 'ts1'), false)).toBeNull();
+  it('[P0b] TS 有 exit_node 但存量 allowInternet=false → 仍装（allowInternet 谓词层已忽略，由 exit_node 派生）', () => {
+    expect(planMeshExitRoute(cfg([tsNode({ allowInternet: false })], 'ts1'), false)).toEqual({
+      iface: 'flowz-ts',
+      cidrs: ['0.0.0.0/0'],
+    });
+  });
+
+  it('[P0b] TS 无 exit_node → null（不承载全隧道；治 S-b 黑洞：quick-join allowInternet:true 无 exit_node 也走此）', () => {
+    expect(planMeshExitRoute(cfg([tsNode({ exitNode: undefined })], 'ts1'), false)).toBeNull();
   });
 
   it('TS System + allowInternet=true 但 exitNode 为空(旧/导入配置)→ null(无 exit peer,不装路由防黑洞)', () => {

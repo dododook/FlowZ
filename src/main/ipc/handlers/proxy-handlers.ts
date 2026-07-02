@@ -154,7 +154,11 @@ export function registerProxyHandlers(
   // 入参传整个 server（渲染端从 store 持有，含 id/tailscaleSettings）→ 主进程无需再 loadConfig。
   registerIpcHandler<
     { server: ServerConfig },
-    { started: boolean; reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning' }
+    {
+      started: boolean;
+      reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning';
+      authUrl?: string;
+    }
   >(IPC_CHANNELS.TAILSCALE_LOGIN, async (_event: IpcMainInvokeEvent, args) => {
     if (!args?.server) throw new Error('server required');
     return proxyManager.startTailscaleLogin(args.server);

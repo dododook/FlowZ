@@ -71,6 +71,7 @@ import {
   meshSystemSupportedOnPlatform,
 } from '../../shared/endpoint-routes';
 import { resolveStartRetryBudget } from '../../shared/start-retry-policy';
+import { meshLoginFallbackShouldEngage } from '../../shared/mesh-login-fallback';
 import {
   classifyCoreBuild,
   decideCoreOverride,
@@ -280,6 +281,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // STATUS 流持续推帧，仅 Running 上升沿（首次见该选中节点 Running）发一次 'tailscale-selected-running'，避免每帧触发。
   // 切到别的节点 / 节点掉出 Running（停止/掉线）即清空，使下次重新 Running 能再发（覆盖重连）。
   private lastTsSelectedRunningId: string | null = null;
+  // 缺陷1 登录期出口让位：选中出口为账号制 TS 且隧道未就绪时，默认路由临时 hotSwitch→direct（零重启），
+  // 隧道 Running 后切回。engaged=当前是否处于让位态；serverId=让位所服务的选中出口 id（用户中途切换出口时据此
+  // 判 stale 复位）。仅运行期内存态，随停核/新会话复位。见 shared/mesh-login-fallback + engageLoginFallback。
+  private bootstrapFallbackEngaged = false;
+  private bootstrapFallbackServerId: string | null = null;
+  // reconcileLoginFallback 单飞：多路驱动（STATUS 帧 / switchMode / 健康检查）可能重入，PUT 前状态检查到翻 flag 之间
+  // 有 await 窗口 → 并发调用会各见旧 flag 双 PUT。用此标记序列化：在飞则丢弃后来者（下一 tick/帧会再对账，幂等收敛）。
+  private loginFallbackReconciling = false;
   // P2a：启用代理 / 切接管模式（两者均经 startInternal）后延迟一次「连接 flush」的延时器。stop()/再次 start 时清。
   private connectionFlushTimer: ReturnType<typeof setTimeout> | null = null;
   // 平台提权服务（T16：原提权脚本生成 / 文件权限 / 提权复制等纯函数迁出，经 setPrivilegeService 注入；
@@ -536,6 +545,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 'tailscale-selected-running' 不发射 → 事件驱动出口 re-probe 丢失（退避仍兜底但失去「隧道就绪即抢先出口」）。
     // 与 handleTailscaleStatus 的清除逻辑不冲突：那是运行期掉线/切节点时清，此处只补会话起点的重置。
     this.lastTsSelectedRunningId = null;
+    // 登录期出口让位内存态随新会话复位（下方核起后按 shouldEngageLoginFallback 重新预置；不在此发 UI 事件，
+    // 预置若命中会发 engaged:true，未命中则 UI 无残留态需清）。
+    this.bootstrapFallbackEngaged = false;
+    this.bootstrapFallbackServerId = null;
     // 本次启动是否交互式（非交互=崩溃自动重启）：供 startSingBoxProcess 决定 helper 不可用时是否裸弹 osascript。
     this.startInteractive = options.interactive !== false;
     // 真正 start 即作废未决的去抖重启（崩溃自动重启直走 start、不经 stop，避免窗口内 crash 后被二次拉起）
@@ -1031,6 +1044,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // .finally() 串接：reassert 把 selector 校正回 config 后才安排 flush，使 flush 的重连走的是正确出口。
       // reassert 仍 best-effort、不阻塞 start（链在 void promise 上，scheduleConnectionFlush 自身另有 1500ms 延时 +
       // 世代 token 守卫，被 stop/重启接管即放弃）。flush 绝不丢：reassert 成功或异常 finally 都会安排。
+      // 缺陷1 登录期出口让位【预置】折入 reassert stage1（据 state 目录判未登录则直接 PUT direct 并 markEngaged，
+      // 消除「核起→首帧」黑洞窗口）——不在此单独置 flag，避免 flag 与 selector 脱节（flag 只在 PUT 成功后置）。
       void this.reassertSelectorSelection(config).finally(() =>
         this.scheduleConnectionFlush(config)
       );
@@ -1061,9 +1076,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (!tag) break;
       const client = this.tailscaleApiClient;
       if (!client) break; // 管理 API 客户端未创建（核未起/无管理 API）→ 放弃，cache/default 兜底
+      // 缺陷1 登录期出口让位预置：选中 TS 未登录（据 state 目录判 tunnelReady）→ reassert 直接 PUT 'direct' 而非
+      // 未连上的 TS tag，消除「核起→首帧」黑洞。用 fresh 判定（loginFallbackEligible + !stateExists）而非读 flag，
+      // 且仅在 PUT 成功后 markLoginFallbackEngaged（flag 与 selector 一致，不脱节）。就绪/切走由 reconcile 撤销。
+      const wantDirect =
+        !!targetId &&
+        this.loginFallbackEligible(this.currentConfig ?? config) &&
+        !tailscaleStateExists(targetId as string);
+      const memberTag = wantDirect ? 'direct' : tag;
       try {
         // gRPC SelectOutbound throws on error（与 clash_api 的 {ok,status} 不同）：成功即跳出，异常进重试腿。
-        await client.selectOutbound('proxy-selector', tag);
+        await client.selectOutbound('proxy-selector', memberTag);
+        if (wantDirect) this.markLoginFallbackEngaged(targetId as string);
         break;
       } catch {
         // 管理 API 未就绪/瞬时失败 → 短延迟后重试
@@ -1184,6 +1208,14 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // Phase 2：停止/退出语境一并杀掉残留的瞬态登录核（无孤儿进程）。放早退之前——列表直接点登录时
     // 主核未运行，下方 `!singboxProcess && !singboxPid` 会早退，故在此先收瞬态核。
     this.killAllTailscaleLoginCores();
+    // 缺陷2：停核时清渲染端全部 TS 登录 URL。always-emit 路径的登录态在主核、无瞬态核可杀 → killAll 收不到它，
+    // finalize 不触发 → 渲染端 URL 残留 → 卡片卡「连接中」（此时核已停，点取消也无从收尾）。放在早退之前，
+    // 覆盖「主核未起/已崩溃」与正常停核两条路径。
+    this.broadcastClearTailscaleLogins();
+    // 缺陷1：停核复位登录期出口让位内存态 + 撤 UI 提示（核已停、无 selector 可切；下次 start 重新预置）。
+    this.resetLoginFallbackState();
+    // F1：作废缓存里各 TS 帧的 authURL（跨核会话失效），防下次会话首帧前 startTailscaleLogin 回传死 URL。
+    this.invalidateCachedAuthUrls();
     // issue #147：本地 race DNS server 随核停（绑主核生命周期）。
     this.nodeDnsRaceServer.stop();
     this.raceServerPort = 0;
@@ -1577,6 +1609,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             void this.meshExitRoute.reconcile(newConfig, !!newConfig.enableIPv6);
           }
         }
+        // 缺陷1：热切换出口后对账登录期让位（切到未就绪 TS→engage；切走/切到就绪节点→撤销 stale 让位）。不等 STATUS 帧。
+        void this.reconcileLoginFallback(this.selectedExitBackendState());
         return;
       }
       this.logToManager('warn', '热切换失败，退回重启式切换');
@@ -1595,6 +1629,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 降级桥：上次有外化规则未落盘走 inline（文件无消费者）→ 改走重启重落盘，防「写了没人消费」的值陈旧。
       if (this.customRuleFilesDegraded) this.scheduleDebouncedRestart();
       else await this.syncCustomRuleFiles(newConfig);
+      // 缺陷1：此分支含「切登录期出口让位开关」（meshLoginFallbackDirect 已排除出 norm）→ 关开关须即刻 disengage
+      // 切回出口（不等 STATUS 帧/健康检查）。reconcile 幂等：未 engage / 开关仍开则 no-op。
+      void this.reconcileLoginFallback(this.selectedExitBackendState());
       return;
     }
 
@@ -1798,6 +1835,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       builtinGeoMeta: null,
       subscriptions: null,
       mainSessionViaProxy: null,
+      // 登录期出口让位开关：运行期由 ProxyManager live 读（shouldEngageLoginFallback），不喂 generateSingBoxConfig
+      // → 切它走 hotSwitchSelector 零重启，绝不触发整核重启断流。关开关的 disengage 由 switchMode 无重启腿处理（见 reconcileLoginFallback）。
+      meshLoginFallbackDirect: null,
       // 界面语言纯 UI 偏好，不影响 sing-box 生成 → 运行中切语言（写 config.language 触发 CONFIG_CHANGED→switchMode）
       // 不应重启内核断流。不排除的话每次切语言都会 norm 翻转 → 去抖重启 sing-box（旧 APP_SET_LANGUAGE 路径不写 config、零断流）。
       language: null,
@@ -2057,6 +2097,136 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     }
     this.logToManager('info', `已热切换 ${selectorTag} → ${memberTag}（管理 API，无重启）`);
     return true;
+  }
+
+  /**
+   * 缺陷1：选中出口在【配置层】是否符合登录期出口让位条件（全隧道账号制 TS 出口 + 开关开 + 非 direct 模式 + 无
+   * authKey）。就绪与否的【动态】判断不在此，由 reconcileLoginFallback 按 backendState 决策（本谓词传 tunnelReady=false
+   * 只为在「配置符合」时返回 true）。包 shared/mesh-login-fallback 纯谓词，读 currentConfig 派生输入。
+   */
+  private loginFallbackEligible(config: UserConfig): boolean {
+    const selected = config.servers?.find((s) => s.id === config.selectedServerId);
+    return meshLoginFallbackShouldEngage({
+      fallbackEnabled: config.meshLoginFallbackDirect !== false,
+      proxyModeDirect: (config.proxyMode || 'smart').toLowerCase() === 'direct',
+      selectedExitFallsBackDirect: meshSelectedExitFallsBackToDirect(config),
+      selectedIsTailscale: selected?.protocol?.toLowerCase() === 'tailscale',
+      selectedHasAuthKey: !!selected?.tailscaleSettings?.authKey?.trim(),
+      selectedTunnelReady: false,
+    });
+  }
+
+  /** 选中出口 STATUS 末帧 backendState（读缓存；key 过期视作 NeedsLogin 触发重新登录让位）。无选中/无帧→undefined。 */
+  private selectedExitBackendState(): string | undefined {
+    const selId = this.currentConfig?.selectedServerId;
+    if (!selId) return undefined;
+    const st = this.tailscaleStatusCache.get(selId);
+    if (!st) return undefined;
+    // key 过期即便 backendState 仍 Running 也需重新交互登录 → 视作 NeedsLogin，触发让位避免过期后走死出口黑洞。
+    if (st.expired) return 'NeedsLogin';
+    return st.backendState;
+  }
+
+  /** 置让位 flag（PUT 成功后调，flag 与 selector 一致）。幂等，仅首次 emit engaged:true。 */
+  private markLoginFallbackEngaged(serverId: string): void {
+    if (this.bootstrapFallbackEngaged && this.bootstrapFallbackServerId === serverId) return;
+    const first = !this.bootstrapFallbackEngaged;
+    this.bootstrapFallbackEngaged = true;
+    this.bootstrapFallbackServerId = serverId;
+    if (first) {
+      const name = this.currentConfig?.servers.find((s) => s.id === serverId)?.name;
+      this.logToManager(
+        'info',
+        `组网出口「${name ?? serverId}」尚未登录，登录期默认路由让位直连`,
+        'sing-box'
+      );
+      this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, {
+        engaged: true,
+        serverName: name,
+      });
+    }
+  }
+
+  /**
+   * 缺陷1 登录期出口让位【对账】（单一入口，幂等可重入；PUT 成功才翻 flag → 杜绝「flag 与 selector 脱节永卡 direct」）。
+   * 三态决策（按选中出口 backendState）：
+   *  - 符合条件 且 NeedsLogin（含 key 过期）→ engage：hotSwitch proxy-selector→direct，成功才置 flag；失败不改、下次 tick 重试；
+   *  - 已让位 且（不再符合条件[关开关/切非 TS/direct/authKey] 或 已就绪 Running）→ disengage：
+   *      同一选中出口 → PUT 切回其 tag（关开关时切回=用户明确「宁可授权失败也不直连」）；切走出口 → 仅清 flag（selector 归 planHotSwitch）；
+   *  - 其余过渡态（NoState/Starting/Stopped/无帧）→ 维持现状，不翻转（避免 bootstrap 过渡期抖动 / 已登录节点起核闪直连）。
+   * 由 STATUS 帧 / switchMode 非重启腿 / 健康检查 / reassert 后 共同驱动；核未起时 hotSwitch 返 false → 不改 flag。
+   */
+  private async reconcileLoginFallback(backendState: string | undefined): Promise<void> {
+    if (this.loginFallbackReconciling) return; // 单飞：在飞对账中丢弃后来者（下一帧/tick 再对账，幂等收敛）
+    this.loginFallbackReconciling = true;
+    try {
+      const config = this.currentConfig;
+      if (!config) return;
+      const selId = config.selectedServerId ?? null;
+      const eligible = !!selId && this.loginFallbackEligible(config);
+
+      // engage：符合条件 且 明确需要交互登录（NeedsLogin / 过期）。
+      // 注意：**不**因「已 engaged」提前 return。原短路信任「flag=engaged ⟹ selector=direct」不变量，但 reassert 预置
+      // 与本 reconcile 是两个独立 proxy-selector 写者（reassert 的 raw selectOutbound 不在单飞内），expired-startup 下
+      // reassert 可能 PUT 死 tag 后落地、而 flag 已被本分支置 engaged → 短路会让健康检查永不重 PUT direct → 死锁复活无自愈
+      // （review round-2 N1）。改为 NeedsLogin 时每次都重 PUT direct（gRPC 选同成员=核侧 no-op，无害）→ 10s 健康检查即自愈；
+      // markLoginFallbackEngaged 的 first 守卫保证 UI 只 emit 一次，不刷屏。
+      if (eligible && backendState === 'NeedsLogin') {
+        const ok = await this.hotSwitchSelector('proxy-selector', 'direct');
+        if (!ok) return; // PUT 失败：不改 flag，下次 tick 重试
+        this.markLoginFallbackEngaged(selId!);
+        return;
+      }
+
+      // disengage 条件：已让位 且（不再符合条件 或 已就绪 Running）。过渡态一律维持现状。
+      const shouldDisengage =
+        this.bootstrapFallbackEngaged && (!eligible || backendState === 'Running');
+      if (!shouldDisengage) return;
+
+      const engagedId = this.bootstrapFallbackServerId;
+      if (engagedId && engagedId === selId) {
+        // 同一选中出口撤销让位（就绪 或 用户关开关）→ PUT 切回其 tag（成功才清 flag；关开关切回=用户明确不直连）。
+        const tag = this.currentIdToTagMap?.get(engagedId);
+        if (tag) {
+          const ok = await this.hotSwitchSelector('proxy-selector', tag);
+          if (!ok) return; // PUT 失败：不改 flag，下次 tick 重试
+        } else {
+          // tag 缺失（罕见：核停/gate 剔除）→ 无法 PUT 回；清 flag 避免永卡，selector 由 reassert/planHotSwitch 兜底。
+          this.logToManager(
+            'warn',
+            `组网出口让位撤销：找不到出口 tag（${engagedId}），跳过 selector 切回`,
+            'sing-box'
+          );
+        }
+        const name = config.servers.find((s) => s.id === engagedId)?.name;
+        this.bootstrapFallbackEngaged = false;
+        this.bootstrapFallbackServerId = null;
+        this.logToManager(
+          'info',
+          `组网出口「${name ?? engagedId}」让位撤销，默认路由切回该出口`,
+          'sing-box'
+        );
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, {
+          engaged: false,
+          serverName: name,
+        });
+      } else {
+        // 切走出口：selector 已由 planHotSwitch/config default PUT 到新目标，仅清 flag + 撤 UI（不 PUT，避免打架）。
+        this.bootstrapFallbackEngaged = false;
+        this.bootstrapFallbackServerId = null;
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, { engaged: false });
+      }
+    } finally {
+      this.loginFallbackReconciling = false;
+    }
+  }
+
+  /** 复位登录期出口让位内存态 + 撤销 UI 提示（若在让位中）。停核/清理调用；不切 selector（核已停/将停）。 */
+  private resetLoginFallbackState(): void {
+    if (!this.bootstrapFallbackEngaged && this.bootstrapFallbackServerId === null) return;
+    this.bootstrapFallbackEngaged = false;
+    this.bootstrapFallbackServerId = null;
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, { engaged: false });
   }
 
   /**
@@ -4611,6 +4781,12 @@ exit 0
     // Tailscale 登录 URL 去重集随核会话收尾清空（绑定核会话而非整进程）：下个核会话若再触发交互登录，
     // 同一 URL 应重新弹「需登录」提示。tailscaleAuthPolling 有自身 delete 收尾，不在此动（勿破在飞登录）。
     this.tailscaleAuthSeen.clear();
+    // 缺陷2：崩溃/giveUp 路径也清渲染端 TS 登录 URL（核已死，always-emit 路径的登录态不会再有收尾信号）。
+    this.broadcastClearTailscaleLogins();
+    // 缺陷1：崩溃/giveUp 路径复位登录期出口让位内存态 + 撤 UI 提示。
+    this.resetLoginFallbackState();
+    // F1：崩溃/giveUp 路径同样作废缓存 authURL（跨会话失效），防重启后回传死 URL。
+    this.invalidateCachedAuthUrls();
   }
 
   /** 注入 macOS 提权 helper（index.ts 启动时调用）。 */
@@ -4905,7 +5081,11 @@ exit 0
         // 完全清理
         this.cleanup();
       }
+      return; // 进程已死：不再对账让位（cleanup 已复位或即将重启由 reassert 重建）
     }
+    // 缺陷1 出口让位无帧安全网：STATUS 是 push-on-change、稳态可能不再来帧，若 engage/restore 的 PUT 曾失败则 flag 与
+    // selector 脱节、无后续帧重试 → 每 10s 健康检查读缓存末帧对账一次（幂等，到位则 no-op；核在跑才对账）。
+    void this.reconcileLoginFallback(this.selectedExitBackendState());
   }
 
   /**
@@ -5692,7 +5872,9 @@ exit 0
     }
   }
 
-  /** 已推送过的 Tailscale 登录 URL（核会重复打印同一行，按 url 去重防刷屏）。urls 为一次性 token、量小，不清理。 */
+  /** 已推送过的 Tailscale 登录 URL，按 url 去重防重复上报。注：1.14 内核每登录会话只生成一份 URL、不轮换，sing-box
+   *  watchState 亦按 reportedAuthURL 去重（fork 禁用了上游周期重打循环），故此 Set 实为冗余第二层；真正可靠的当前
+   *  authURL 来源是 tailscaleStatusCache（STATUS 末帧），取消后重开授权页走它兜底，见 startTailscaleLogin/§F.3。 */
   private tailscaleAuthSeen = new Set<string>();
 
   /**
@@ -5761,9 +5943,13 @@ exit 0
    *
    * @returns started=true 已起核（或已在飞）；started=false 时 reason 说明（alreadyLoggedIn / inMainCore）。
    */
-  async startTailscaleLogin(
-    server: ServerConfig
-  ): Promise<{ started: boolean; reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning' }> {
+  async startTailscaleLogin(server: ServerConfig): Promise<{
+    started: boolean;
+    reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning';
+    /** inMainCore/alreadyRunning 时回传主核 STATUS 末帧的当前 authURL（渲染端点「连接」可靠重开授权页，补掉取消后
+     *  的无限空窗——核每会话只生成一份 URL、不轮换，STATUS 事件驱动无 ticker，取消清了 store 就没帧回填，见设计 §F.3）。 */
+    authUrl?: string;
+  }> {
     if (!server || server.protocol?.toLowerCase() !== 'tailscale') {
       throw new Error('startTailscaleLogin: 非 Tailscale 节点');
     }
@@ -5772,18 +5958,17 @@ exit 0
     if (server.tailscaleSettings?.authKey?.trim()) {
       return { started: false, reason: 'alreadyLoggedIn' };
     }
-    // 双写防护：endpoint 已在运行主核里 → 不起瞬态核（避免双写 state_directory 冲突）。
-    if (
-      tailscaleEndpointInRunningCore(
-        server.id,
-        this.getStatus().running,
-        this.currentConfig,
-        tailscaleStateExists(server.id)
-      )
-    ) {
-      return { started: false, reason: 'inMainCore' };
+    // 主核 STATUS 末帧的当前 authURL：作 inMainCore/alreadyRunning 时渲染端重开授权页的可靠来源（取消清了 store 也仍在此）。
+    const liveAuthUrl = this.tailscaleStatusCache.get(server.id)?.authURL || undefined;
+    // 双写防护：endpoint 已在运行主核里 → 不起瞬态核（避免双写 state_directory 冲突）。always-emit 后
+    // 判据 = 节点在运行配置里即在主核（不再看 selected/authKey/stateExists，见 tailscaleEndpointInRunningCore）。
+    if (tailscaleEndpointInRunningCore(server.id, this.getStatus().running, this.currentConfig)) {
+      return { started: false, reason: 'inMainCore', authUrl: liveAuthUrl };
     }
     // 每节点单飞：已有在飞瞬态核则复用（不重复 spawn / 不重复开浏览器）。
+    // 不回传 liveAuthUrl（F2）：瞬态核的 URL 从不进 tailscaleStatusCache（emitTailscaleStatus includeAuthURL=false
+    // 覆盖成 undefined），此处 liveAuthUrl 只可能是 undefined 或别会话的 stale URL；瞬态核会自 stdout 拿 URL 自动开
+    // 浏览器 + 推 store，渲染端「进行中」toast 诚实，回落 store 缓存的新鲜 URL 即可，勿让 stale 压过它。
     if (this.tailscaleLoginCores.has(server.id)) {
       return { started: false, reason: 'alreadyRunning' };
     }
@@ -5978,12 +6163,16 @@ exit 0
     this.logToManager('info', `Tailscale 节点「${server.name}」已打开浏览器登录页`, 'sing-box');
   }
 
-  /** 取消某节点在飞的瞬态登录核（用户手动取消，IPC 入口）。无在飞核为 no-op。 */
+  /** 取消某节点登录（用户手动取消，IPC 入口）。杀在飞瞬态核（若有）+ 恒清渲染端登录态。 */
   cancelTailscaleLogin(serverId: string): void {
     if (this.tailscaleLoginCores.has(serverId)) {
       this.logToManager('info', `已取消 Tailscale 节点登录`, 'sing-box');
     }
     this.killTailscaleLogin(serverId);
+    // 缺陷2：always-emit 路径下 endpoint 在主核里、Map 无瞬态核项 → killTailscaleLogin 是 no-op、finalize 不触发，
+    // 渲染端 tailscaleAuthUrls[serverId] 永不被清 → 卡片卡「连接中」，点取消也无效。故取消恒广播空 AUTH_URL
+    // 清渲染端（不重启核）。瞬态核路径的 finalize 也会发空 URL，重复无害（store 删 key 幂等）。
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, { serverId, url: '' });
   }
 
   /** sing-box 管理 API（services[{type:api}] + 状态订阅）是否可用：要求核 ≥1.14。§5 守卫已保证 start 路径恒满足；
@@ -6005,10 +6194,11 @@ exit 0
         (s) => s.protocol?.toLowerCase() === 'tailscale' && s.name === ep.endpointTag
       );
       if (!server) continue;
-      this.emitTailscaleStatus(server.id, ep);
-      // item 1 事件驱动出口 re-probe：选中节点是账号制 TS 且其隧道 STATUS 翻 Running（DERP/peer 握手完成、
-      // 路由已下发=隧道就绪）→ 立即触发一次代理出口 re-probe（不等满退避）。仅选中节点、仅 Running 上升沿
-      // （lastTsSelectedRunningId 去重，STATUS 持续推帧不会每帧触发）。Starting/NeedsLogin 不算就绪、不触发。
+      this.emitTailscaleStatus(server.id, ep); // 先更新 tailscaleStatusCache（下方 reconcile 读末帧）
+      // item 1 事件驱动出口 re-probe：选中节点是账号制 TS 且其隧道 STATUS 翻 Running（DERP/peer 握手完成、路由已下发
+      // =就绪）→ 触发一次代理出口 re-probe（不等满退避）。仅选中节点、仅 Running 上升沿（lastTsSelectedRunningId 去重）。
+      // 注：出口让位 engage/restore 已【不再】复用此去重（改由下方 reconcileLoginFallback 每帧对账，杜绝 PUT 失败被
+      // 去重扼杀永卡 direct，见 review finding 2）；此去重只服务 re-probe。
       if (
         server.id === selectedId &&
         isAccountBasedProtocol(server.protocol) &&
@@ -6025,6 +6215,9 @@ exit 0
     if (!selectedRunning && this.lastTsSelectedRunningId !== null) {
       this.lastTsSelectedRunningId = null;
     }
+    // 缺陷1 出口让位对账：读选中出口 STATUS 末帧（emitTailscaleStatus 已更新缓存）。每帧对账 → engage/restore 的 PUT
+    // 失败会在后续帧重试，不被上面的 re-probe 去重扼杀。
+    void this.reconcileLoginFallback(this.selectedExitBackendState());
   }
 
   /**
@@ -6091,8 +6284,7 @@ exit 0
     const inRunningCore = tailscaleEndpointInRunningCore(
       serverId,
       this.getStatus().running,
-      this.currentConfig,
-      tailscaleStateExists(serverId)
+      this.currentConfig
     );
     // 节点在运行主核里 → 经 api 让内核原生登出该 endpoint（endpointTag=server.name）。api 不可达/未起则吞错，
     // 仍走下方清 state 目录兜底（瞬态核登录写的会话）。
@@ -6142,6 +6334,41 @@ exit 0
   private killAllTailscaleLoginCores(): void {
     for (const serverId of Array.from(this.tailscaleLoginCores.keys())) {
       this.killTailscaleLogin(serverId);
+    }
+  }
+
+  /**
+   * 停核/清理时清渲染端全部 TS 登录 URL：遍历当前配置的 TS 节点各发一次空 AUTH_URL（缺陷2）。
+   * 停核只 killAllTailscaleLoginCores（杀瞬态核），但 always-emit 路径的登录 URL 是主核经 STATUS/AUTH_URL 推的、
+   * 无瞬态核可杀、finalize 不触发 → 渲染端 URL 残留 → 卡片卡「连接中」。停核时统一广播空 URL，让渲染端各 TS
+   * 卡片退出「连接中」回「需登录/未连接」。渲染端 setTailscaleAuthUrl('') 会一并清 loginInitiated 标记。
+   */
+  private broadcastClearTailscaleLogins(): void {
+    for (const server of this.currentConfig?.servers || []) {
+      if (server.protocol?.toLowerCase() === 'tailscale') {
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
+          serverId: server.id,
+          url: '',
+        });
+      }
+    }
+  }
+
+  /**
+   * F1：停核/清理时作废 tailscaleStatusCache 里各帧的 authURL（一次性登录 token、跨核会话即失效——核每登录会话
+   * 只生成一份 URL、重启核会换新 URL，见 §F.3.1）。**不整表 clear**：内网 IP/peers 是「代理关时显示上次已知 + 灰显」
+   * 的有意设计（mesh-info-popover 依赖 TAILSCALE_GET_STATUS 陈旧值），只清会话作废的 authURL——否则下次会话首帧到达前
+   * startTailscaleLogin 会回传上会话的死 URL、渲染端开死页并回填 store（F1 反例）。
+   */
+  private invalidateCachedAuthUrls(): void {
+    for (const [id, payload] of this.tailscaleStatusCache) {
+      // 同时作废 backendState（跨会话失效的会话态）为空串：否则新会话首帧到达前，switchMode 非重启腿驱动的 reconcile
+      // 可能读到上会话 stale 'Running' → 对新 NeedsLogin 会话误判 disengage、PUT 未连上的 TS tag（Fable F1 附带 Nit）。
+      // 空串经 selectedExitBackendState 既非 'NeedsLogin' 也非 'Running' → reconcile 维持现状(hold)，安全；渲染端
+      // backendState 只从 live 事件读、不读快照，故清空不影响 UI（下会话首帧即覆盖回真值）。
+      if (payload.authURL !== undefined || payload.backendState !== '') {
+        this.tailscaleStatusCache.set(id, { ...payload, authURL: undefined, backendState: '' });
+      }
     }
   }
 

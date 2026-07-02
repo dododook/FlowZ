@@ -326,7 +326,10 @@
     "stopProxyFailed": "停止代理失敗",
     "speedTestDone": "測速完成",
     "speedTestSummary": "已測 {{count}} 個節點 · 最快 {{name}}（{{ms}}ms）",
-    "speedTestNoResult": "已測 {{count}} 個節點 · 均逾時"
+    "speedTestNoResult": "已測 {{count}} 個節點 · 均逾時",
+    "tsExitNoDeviceWarn": "已設為出口，但未選擇出口裝置，外網流量仍走直連。",
+    "tsExitDeviceOfflineWarn": "出口裝置目前離線，外網可能無法經 Tailscale 出網。",
+    "tsExitPickDevice": "選擇出口裝置"
   },
   "settings": {
     "nav": {
@@ -459,7 +462,9 @@
       "webrtcLeakOff": "關閉",
       "webrtcLeakProxy": "走代理",
       "webrtcLeakBlock": "阻斷",
-      "webrtcLeakTunOnlyHint": "WebRTC 防洩漏僅在 TUN 模式生效，請切換到 TUN 模式後啟用。"
+      "webrtcLeakTunOnlyHint": "WebRTC 防洩漏僅在 TUN 模式生效，請切換到 TUN 模式後啟用。",
+      "meshLoginFallback": "組網登入期出口讓位",
+      "meshLoginFallbackDesc": "所選 Tailscale 出口尚未連接時，登入/授權期間預設路由暫時走直連（避免授權頁被導向未連上的出口而卡死），連接成功後自動切回該出口。關閉則登入期不直連（寧可授權失敗也不產生直連流量）。"
     },
     "proxyMode": {
       "systemProxyMode": "系統代理模式",
@@ -1104,7 +1109,7 @@
     "tsConnCardConnect": "連接 Tailscale",
     "tsConnCardUseAuthKey": "用 Auth Key",
     "tsConnCardLoggingIn": "連接中…",
-    "tsConnCardLoggingInDesc": "已在瀏覽器開啟授權頁，完成後自動連接",
+    "tsConnCardLoggingInDesc": "等待瀏覽器完成登入授權，可點「開啟登入頁」，授權後自動連接",
     "tsConnCardCancel": "取消",
     "tsConnCardConnected": "已連接",
     "tsConnCardLoggedInPast": "已登入（上次）",
@@ -1171,7 +1176,11 @@
     "warpPlusLegacyHint": "此 WARP 節點缺少憑據（舊節點）——升級 WARP+ 需刪除後重建。",
     "warpPlusApplied": "已升級 WARP+",
     "warpPlusMaybeFree": "license 已提交，但目前仍是免費版——請檢查 license 是否有效。",
-    "warpPlusApplyFailed": "套用 WARP+ 失敗"
+    "warpPlusApplyFailed": "套用 WARP+ 失敗",
+    "meshLoginFallbackTitle": "組網登入期已暫時直連",
+    "meshLoginFallbackDesc": "所選 Tailscale 出口尚未連接，登入/授權期間流量暫走直連；連接成功後自動切回該出口。",
+    "meshLoginFallbackRestored": "已連接「{{name}}」，已切回該出口",
+    "tsConnCardOpenLogin": "開啟登入頁"
   },
   "rules": {
     "ruleColumn": "規則",

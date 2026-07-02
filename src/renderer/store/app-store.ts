@@ -55,8 +55,9 @@ interface ConnectionStatus {
 interface AppState {
   // UI State
   currentView: string;
-  // 首页空状态跳服务器页时的意图：'add-server' 唤起 ServerConfigDialog，'add-sub' 唤起订阅对话框（SubscriptionDialog），null 为无意图
-  serverPageAction: 'add-server' | 'add-sub' | null;
+  // 首页空状态跳服务器页时的意图：'add-server' 唤起 ServerConfigDialog，'add-sub' 唤起订阅对话框（SubscriptionDialog），
+  // 'ts-settings'（§H）落组网 tab + 自动打开 TS 设置弹窗（选出口设备），null 为无意图
+  serverPageAction: 'add-server' | 'add-sub' | 'ts-settings' | null;
   // 设置页子节（general/about/...）。提升到 store，供非设置页组件（如 naive 横幅「去更新」）跨页导航到指定节
   settingsSection: string;
   // F27：进入设置页前的来源视图，设置页「返回」按钮的导航目标（默认 home）
@@ -97,6 +98,12 @@ interface AppState {
   // 登录成功（setTailscaleLoginState(id,true)）时清该 serverId 的 URL，避免点角标开已失效的旧 URL。
   tailscaleAuthUrls: Record<string, string>;
 
+  // 用户是否【显式发起】了该 TS 节点的交互登录（serverId → initiated）。主核 always-emit AUTH_URL ≠ 用户在登录：
+  // 未选中/未就绪节点的 URL 也会持续入 tailscaleAuthUrls，若据此判「登录中」会把卡片误推进「连接中…已开浏览器」。
+  // 故卡片「logging-in」态须同时满足 initiated（用户点了登录/需登录角标）。登录成功、或收到空 URL（取消/超时/停核
+  // 收尾信号）、或用户点取消时清除。仅会话内存，不持久化（登录发起是瞬时交互态，重启即失效）。
+  tailscaleLoginInitiated: Record<string, boolean>;
+
   // Tailscale 节点内网 IP（serverId → tailnet IP 列表，100.x/fd7a:…）。1.14 api STATUS 流（self.tailscaleIPs）
   // 实时携带，由 setTailscaleIps 写入；供节点卡片「组网信息」popover 展示内网 IP，消「要登录控制台才看得到」黑盒。
   tailscaleIps: Record<string, string[]>;
@@ -119,7 +126,7 @@ interface AppState {
 
   // Actions
   setCurrentView: (view: string) => void;
-  setServerPageAction: (action: 'add-server' | 'add-sub' | null) => void;
+  setServerPageAction: (action: 'add-server' | 'add-sub' | 'ts-settings' | null) => void;
   setSettingsSection: (section: string) => void;
   /** 应用一批测速结果（serverId→latency）：合并 latencyMap + 为这些节点打 latencyTestedAt 时间戳（单一结果应用路径，会话内存态）。 */
   applyLatencyResults: (results: Record<string, number>) => void;
@@ -148,6 +155,8 @@ interface AppState {
   ) => void;
   // Tailscale 交互登录 URL 单条覆盖（serverId → 最新 AUTH_URL），由 EVENT_TAILSCALE_AUTH_URL 驱动。
   setTailscaleAuthUrl: (serverId: string, url: string) => void;
+  // 用户显式发起/退出该 TS 节点交互登录的标记（点登录/需登录角标置 true；点取消置 false）。
+  setTailscaleLoginInitiated: (serverId: string, initiated: boolean) => void;
   // Tailscale 内网 IP 单条覆盖（self.tailscaleIPs），由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleIps: (serverId: string, ips: string[]) => void;
   // Tailscale 对端列表单条覆盖（serverId → peers），由 EVENT_TAILSCALE_STATUS / TAILSCALE_GET_STATUS 驱动。
@@ -188,6 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 启动秒显：从 localStorage 缓存派生登录态初值（代理关时不再 spawn 瞬态核探针，见 use-tailscale-login-cache-store）。
   tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
   tailscaleAuthUrls: {},
+  tailscaleLoginInitiated: {},
   tailscaleIps: {},
   tailscalePeers: {},
   isPrivacyMode: false,
@@ -435,13 +445,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTailscaleLoginState: (serverId, loggedIn, opts) => {
     set((s) => {
       const tailscaleLoginStates = { ...s.tailscaleLoginStates, [serverId]: loggedIn };
+      const patch: Partial<AppState> = { tailscaleLoginStates };
       // 登录成功后旧 AUTH_URL 失效：清掉该 serverId 的缓存 URL，避免点角标开过期登录页（无则原样返回引用）。
       if (loggedIn && s.tailscaleAuthUrls[serverId] !== undefined) {
         const tailscaleAuthUrls = { ...s.tailscaleAuthUrls };
         delete tailscaleAuthUrls[serverId];
-        return { tailscaleLoginStates, tailscaleAuthUrls };
+        patch.tailscaleAuthUrls = tailscaleAuthUrls;
       }
-      return { tailscaleLoginStates };
+      // 登录成功即退出「用户发起登录」态（下次的 always-emit URL 不应再让卡片显「连接中」）。
+      if (loggedIn && s.tailscaleLoginInitiated[serverId]) {
+        const tailscaleLoginInitiated = { ...s.tailscaleLoginInitiated };
+        delete tailscaleLoginInitiated[serverId];
+        patch.tailscaleLoginInitiated = tailscaleLoginInitiated;
+      }
+      return patch;
     });
     // 持久化登录态真值（STATUS 流 / 登出均经此）→ 代理关时下次启动秒显，免起核探针。
     // skipCache：state 文件存在性兜底的「乐观 true」不写缓存——缓存只存 STATUS 流真值（设计契约）；
@@ -453,15 +470,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTailscaleAuthUrl: (serverId, url) => {
     set((s) => {
       if (!url) {
-        if (s.tailscaleAuthUrls[serverId] === undefined) return {};
-        const tailscaleAuthUrls = { ...s.tailscaleAuthUrls };
-        delete tailscaleAuthUrls[serverId];
-        return { tailscaleAuthUrls };
+        // 空 URL = 取消/超时/停核收尾信号：一并退出「用户发起登录」态（否则残留 initiated 会让下次
+        // always-emit 的 URL 又把卡片推回「连接中」）。
+        const clearInitiated = s.tailscaleLoginInitiated[serverId] === true;
+        if (s.tailscaleAuthUrls[serverId] === undefined && !clearInitiated) return {};
+        const patch: Partial<AppState> = {};
+        if (s.tailscaleAuthUrls[serverId] !== undefined) {
+          const tailscaleAuthUrls = { ...s.tailscaleAuthUrls };
+          delete tailscaleAuthUrls[serverId];
+          patch.tailscaleAuthUrls = tailscaleAuthUrls;
+        }
+        if (clearInitiated) {
+          const tailscaleLoginInitiated = { ...s.tailscaleLoginInitiated };
+          delete tailscaleLoginInitiated[serverId];
+          patch.tailscaleLoginInitiated = tailscaleLoginInitiated;
+        }
+        return patch;
       }
       // URL 未变则不重建表（always-emit 同一 URL 反复 emit 时省整表浅拷贝 + 无谓订阅者重渲染）。
       return s.tailscaleAuthUrls[serverId] === url
         ? {}
         : { tailscaleAuthUrls: { ...s.tailscaleAuthUrls, [serverId]: url } };
+    });
+  },
+  // 用户显式发起/退出交互登录标记（内容未变返 {} 免重渲染）。true=点登录/需登录角标；false=点取消。
+  setTailscaleLoginInitiated: (serverId, initiated) => {
+    set((s) => {
+      const current = s.tailscaleLoginInitiated[serverId] === true;
+      if (current === initiated) return {};
+      const tailscaleLoginInitiated = { ...s.tailscaleLoginInitiated };
+      if (initiated) tailscaleLoginInitiated[serverId] = true;
+      else delete tailscaleLoginInitiated[serverId];
+      return { tailscaleLoginInitiated };
     });
   },
   // 单条覆盖：EVENT_TAILSCALE_STATUS 即时更新该节点内网 IP（self.tailscaleIPs，纯单点写无并发竞态）。

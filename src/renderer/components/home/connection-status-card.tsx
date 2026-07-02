@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { deriveConnectionStatus } from './connection-status';
 import { isDirectSelection } from '@shared/direct-selection';
+import { TsExitWarning } from './ts-exit-warning';
 
 export function ConnectionStatusCard() {
   const connectionStatus = useAppStore((state) => state.connectionStatus);
@@ -217,6 +218,9 @@ export function ConnectionStatusCard() {
                 </Select>
               </div>
             </div>
+
+            {/* §H：选中 TS 当出口但出不了公网（未选出口设备 / 设备离线）→ 出口下拉正下方行内 warning 注脚。none→null。 */}
+            <TsExitWarning />
 
             {/* 全局直连：未命中规则的流量直连、仅按规则走代理（与「直连模式」不同，规则仍生效） */}
             {isDirect ? (

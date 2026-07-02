@@ -167,6 +167,16 @@ export const proxyApi = {
   },
 
   /**
+   * 监听「登录期出口让位」事件（缺陷1）：选中 TS 出口未就绪→默认路由让位直连（engaged=true）、隧道 Running 后
+   * 切回（engaged=false）。渲染端据此提示用户「登录期临时直连」。preload 通用 ipcRenderer.on 无 allowlist，无需改 preload。
+   */
+  onMeshLoginFallback(
+    listener: (data: { engaged: boolean; serverName?: string }) => void
+  ): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, listener);
+  },
+
+  /**
    * 监听 TUN 启动后的「无 marker 系统代理残留」提示（非 FlowZ 设的代理仍开着，可能干扰 TUN）。
    */
   onSystemProxyResidual(listener: (data: { proxy: string }) => void): () => void {
@@ -312,9 +322,11 @@ export const serverApi = {
    * Phase 2 按需登录：拉起瞬态登录核取交互登录 URL（主进程自动开浏览器 + 系统通知）。
    * started=false 时 reason 说明（alreadyLoggedIn / inMainCore / alreadyRunning），渲染端据此提示。
    */
-  async tailscaleLogin(
-    server: ServerConfig
-  ): Promise<{ started: boolean; reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning' }> {
+  async tailscaleLogin(server: ServerConfig): Promise<{
+    started: boolean;
+    reason?: 'alreadyLoggedIn' | 'inMainCore' | 'alreadyRunning';
+    authUrl?: string; // inMainCore/alreadyRunning 时回传主核当前 authURL，渲染端可靠重开授权页（补取消后空窗）
+  }> {
     return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_LOGIN, { server });
   },
 

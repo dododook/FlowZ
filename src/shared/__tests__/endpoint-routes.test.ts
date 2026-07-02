@@ -43,6 +43,9 @@ const ts = (routes?: string[], allowInternet?: boolean, reverseMesh?: boolean): 
     tailscaleSettings: {
       routes,
       ...(allowInternet === undefined ? {} : { allowInternet }),
+      // P0b：TS 的 allowInternet 现由 exit_node 派生。helper 的第 2 参语义（true=承载全隧道）在派生规则下靠同置一个
+      // exit_node 保持；false/缺省不置 exit_node（=不承载全隧道）。
+      ...(allowInternet ? { exitNode: '100.64.0.1' } : {}),
       ...(reverseMesh === undefined ? {} : { reverseMesh }),
     },
   }) as any;
@@ -87,12 +90,26 @@ describe('endpointForcedRouteCidrs', () => {
   });
 });
 
-describe('meshAllowsInternet（allowInternet 缺省 true，向后兼容）', () => {
+describe('meshAllowsInternet（WG 缺省 true；TS 由 exit_node 派生 P0b）', () => {
   it('WG 缺字段 → true', () => expect(meshAllowsInternet(wg())).toBe(true));
   it('WG allowInternet=true → true', () => expect(meshAllowsInternet(wg([], true))).toBe(true));
   it('WG allowInternet=false → false', () => expect(meshAllowsInternet(wg([], false))).toBe(false));
-  it('TS 缺字段 → true', () => expect(meshAllowsInternet(ts())).toBe(true));
-  it('TS allowInternet=false → false', () => expect(meshAllowsInternet(ts([], false))).toBe(false));
+  // TS：不信 allowInternet 存储 flag，只看 exit_node（治 S-b）。
+  it('TS 缺 exit_node → false（P0b：allowInternet 由 exit_node 派生，非缺省 true）', () =>
+    expect(meshAllowsInternet(ts())).toBe(false));
+  it('TS 有 exit_node → true', () =>
+    expect(meshAllowsInternet({ protocol: 'tailscale', tailscaleSettings: { exitNode: 'p' } } as any)).toBe(
+      true
+    ));
+  it('TS allowInternet=false → false（无 exit_node）', () =>
+    expect(meshAllowsInternet(ts([], false))).toBe(false));
+  it('[S-b] TS allowInternet=true 但无 exit_node → false（quick-join 硬编码不再误判承载全隧道）', () =>
+    expect(
+      meshAllowsInternet({
+        protocol: 'tailscale',
+        tailscaleSettings: { allowInternet: true },
+      } as any)
+    ).toBe(false));
   it('非组网协议 → 恒 true', () =>
     expect(meshAllowsInternet({ protocol: 'vless' } as any)).toBe(true));
 });

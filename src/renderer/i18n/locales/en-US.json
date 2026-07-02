@@ -326,7 +326,10 @@
     "stopProxyFailed": "Failed to stop proxy",
     "speedTestDone": "Speed test complete",
     "speedTestSummary": "Tested {{count}} nodes · fastest {{name}} ({{ms}}ms)",
-    "speedTestNoResult": "Tested {{count}} nodes · all timed out"
+    "speedTestNoResult": "Tested {{count}} nodes · all timed out",
+    "tsExitNoDeviceWarn": "Set as exit, but no exit node selected — internet traffic still goes direct.",
+    "tsExitDeviceOfflineWarn": "The exit node is offline; internet may not route through Tailscale.",
+    "tsExitPickDevice": "Pick exit node"
   },
   "settings": {
     "nav": {
@@ -459,7 +462,9 @@
       "webrtcLeakOff": "Off",
       "webrtcLeakProxy": "Via proxy",
       "webrtcLeakBlock": "Block",
-      "webrtcLeakTunOnlyHint": "WebRTC leak protection only works in TUN mode. Switch to TUN mode to enable it."
+      "webrtcLeakTunOnlyHint": "WebRTC leak protection only works in TUN mode. Switch to TUN mode to enable it.",
+      "meshLoginFallback": "Fall back to direct during mesh login",
+      "meshLoginFallbackDesc": "When the selected Tailscale exit isn't connected yet, route traffic directly during login/authorization (so the auth page isn't sent to the not-yet-connected exit and deadlocks), then switch back to the exit once connected. Turn off to never go direct during login (authorization may fail instead)."
     },
     "proxyMode": {
       "systemProxyMode": "System Proxy Mode",
@@ -1104,7 +1109,7 @@
     "tsConnCardConnect": "Connect Tailscale",
     "tsConnCardUseAuthKey": "Use Auth Key",
     "tsConnCardLoggingIn": "Connecting…",
-    "tsConnCardLoggingInDesc": "Authorization page opened in your browser — connects automatically once done",
+    "tsConnCardLoggingInDesc": "Waiting for browser authorization — click Open login page if needed; connects automatically after you authorize.",
     "tsConnCardCancel": "Cancel",
     "tsConnCardConnected": "Connected",
     "tsConnCardLoggedInPast": "Logged in (last known)",
@@ -1171,7 +1176,11 @@
     "warpPlusLegacyHint": "This WARP node has no stored credentials (legacy) — to use WARP+, delete it and re-create.",
     "warpPlusApplied": "WARP+ applied",
     "warpPlusMaybeFree": "License submitted, but still free — check the license key.",
-    "warpPlusApplyFailed": "Failed to apply WARP+"
+    "warpPlusApplyFailed": "Failed to apply WARP+",
+    "meshLoginFallbackTitle": "Temporarily connecting directly (mesh login)",
+    "meshLoginFallbackDesc": "The selected Tailscale exit isn't connected yet, so traffic goes directly during login/authorization; it switches back to the exit automatically once connected.",
+    "meshLoginFallbackRestored": "Connected to {{name}}, routing switched back to this exit",
+    "tsConnCardOpenLogin": "Open login page"
   },
   "rules": {
     "ruleColumn": "Rule",

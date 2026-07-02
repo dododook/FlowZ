@@ -275,15 +275,16 @@ describe('finalize 发空 authUrl 清「登录中」（取消/崩溃 → 清；�
     );
   }
 
-  it('用户取消（cancelTailscaleLogin → proc exit）→ 发空 authUrl 退出「登录中」', async () => {
+  it('用户取消（cancelTailscaleLogin → proc exit）→ 发空 authUrl 退出「登录中」（缺陷2：cancel 直发 + finalize 各一次，均幂等）', async () => {
     const { svc, sent } = makeSvc();
     await svc.startTailscaleLogin(tsServer({ id: 'srv-1', name: 'my-ts' }));
     const proc = spawnedProcs[0];
 
-    svc.cancelTailscaleLogin('srv-1'); // 用户手动取消 → killTailscaleLogin → SIGTERM
-    proc.emit('exit', 0, null); // 进程退出 → finalize
+    svc.cancelTailscaleLogin('srv-1'); // 用户手动取消 → 直发空 authUrl（缺陷2）+ killTailscaleLogin → SIGTERM
+    proc.emit('exit', 0, null); // 进程退出 → finalize 再发一次（!loginCompleted）
 
-    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(1);
+    // cancel 直发 1 次 + finalize 1 次 = 2；store 删 key 幂等，重复无害。缺陷2 治法：主核路径无瞬态核时仅 cancel 直发那次生效。
+    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(2);
   });
 
   it('核自行崩溃（无取消，直接 proc exit）→ 发空 authUrl 退出「登录中」', async () => {
@@ -316,5 +317,41 @@ describe('finalize 发空 authUrl 清「登录中」（取消/崩溃 → 清；�
     proc.emit('exit', 0, null); // 被杀退出 → finalize
 
     expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(0);
+  });
+});
+
+// 缺陷2：主核 always-emit 路径（endpoint 在主核里、无瞬态核）取消 / 停核清渲染端登录态。
+describe('缺陷2 主核路径清「连接中」（无瞬态核）', () => {
+  function emptyAuthUrlEvents(sent: { channel: string; data: any }[], serverId: string) {
+    return sent.filter(
+      (e) =>
+        e.channel === IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL &&
+        e.data?.serverId === serverId &&
+        e.data?.url === ''
+    );
+  }
+
+  it('cancelTailscaleLogin 无在飞瞬态核（主核路径）→ 仍发一次空 authUrl 清渲染端', () => {
+    const { svc, sent } = makeSvc();
+    // 不 startTailscaleLogin：tailscaleLoginCores 里无 srv-1（模拟 always-emit 主核路径，登录 URL 由主核推）。
+    expect(svc.tailscaleLoginCores.has('srv-1')).toBe(false);
+    svc.cancelTailscaleLogin('srv-1');
+    expect(emptyAuthUrlEvents(sent, 'srv-1')).toHaveLength(1);
+  });
+
+  it('broadcastClearTailscaleLogins：对 currentConfig 每个 TS 节点各发一次空 authUrl（非 TS 跳过）', () => {
+    const { svc, sent } = makeSvc();
+    svc.currentConfig = {
+      selectedServerId: 'ts-a',
+      servers: [
+        tsServer({ id: 'ts-a', name: 'a' }),
+        tsServer({ id: 'ts-b', name: 'b' }),
+        { id: 'vmess-1', name: 'v', protocol: 'vmess', address: 'x', port: 1 },
+      ],
+    };
+    svc.broadcastClearTailscaleLogins();
+    expect(emptyAuthUrlEvents(sent, 'ts-a')).toHaveLength(1);
+    expect(emptyAuthUrlEvents(sent, 'ts-b')).toHaveLength(1);
+    expect(emptyAuthUrlEvents(sent, 'vmess-1')).toHaveLength(0); // 非 TS 不发
   });
 });

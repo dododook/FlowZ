@@ -81,30 +81,24 @@ export function buildTailscaleLoginConfig(
  * 双写防护判定（关键正确性）：该节点的 tailscale endpoint **是否已在运行中的主核里**。
  *
  * 两个 sing-box 进程同时写同一 state_directory（tailscaled.state 等）会冲突 → 若主核已带该 endpoint，
- * 则**不要**再起瞬态核。主核带该 endpoint 的条件 = buildOutbounds 的就绪门控（singbox-outbound-builder
- * 行 732-740）：核在运行 且（节点被选中 OR 已就绪 authKey||stateExists）。
+ * 则**不要**再起瞬态核。1.14 起 buildOutbounds 对 TS endpoint 已改为 **always-emit**（无就绪/选中门控，见
+ * singbox-outbound-builder「Tailscale：always-emit」段）：只要节点在运行配置里，主核就带它的 endpoint。故本
+ * 判定 = 核在运行 且 该 TS 节点在运行配置里，不再看 selected/authKey/stateExists（旧就绪门控与 always-emit
+ * 脱节，会对未选中未就绪节点误放行瞬态核 → 与主核双写同一 state_directory）。
  *
- * 返回 true（已在主核）时，调用方拒绝起瞬态核——此时该节点要么已登录（state 已落盘），要么主核路径
- * 已在出 URL（Phase 1 的选中即触发登录）。
+ * 返回 true（已在主核）时，调用方拒绝起瞬态核——此时该节点的登录由主核 always-emit 路径承载（STATUS/AUTH_URL）。
  *
  * @param isRunning 主核是否在运行（ProxyManager 进程存活）
  * @param runningConfig 主核当前运行配置（this.currentConfig）；null=未运行
- * @param stateExists 该节点 state 目录是否存在（注入，便于单测；运行期传 tailscaleStateExists(serverId)）
  */
 export function tailscaleEndpointInRunningCore(
   serverId: string,
   isRunning: boolean,
-  runningConfig: UserConfig | null,
-  stateExists: boolean
+  runningConfig: UserConfig | null
 ): boolean {
   if (!isRunning || !runningConfig) return false;
-  const server = runningConfig.servers.find(
+  // always-emit：主核带每个配置的 TS endpoint → 节点在运行配置里即已在主核。
+  return runningConfig.servers.some(
     (s) => s.id === serverId && s.protocol?.toLowerCase() === 'tailscale'
   );
-  if (!server) return false; // 节点不在运行配置里 → 主核没带它的 endpoint
-  // buildOutbounds 发射门控：选中 OR 就绪（authKey || state 目录存在）。
-  const hasAuthKey = !!server.tailscaleSettings?.authKey?.trim();
-  const selected = runningConfig.selectedServerId === serverId;
-  const ready = hasAuthKey || stateExists;
-  return selected || ready;
 }

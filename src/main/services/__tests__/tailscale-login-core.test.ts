@@ -2,8 +2,8 @@
  * tailscale-login-core 单测（Phase 2 按需瞬态登录核的纯逻辑）：
  * - buildTailscaleLoginConfig：登录专用 config 生成（无 inbound、log.level=info+timestamp、state_directory 正确、
  *   auth_key 永不出现、controlUrl/hostname/ephemeral 透传）。
- * - tailscaleEndpointInRunningCore：双写防护判定（节点在运行主核中→true，按 buildOutbounds 发射门控
- *   「选中 OR 就绪(authKey||state)」逐档覆盖）。
+ * - tailscaleEndpointInRunningCore：双写防护判定（always-emit 后：核在运行 且 该 TS 节点在运行配置里 → true，
+ *   不再看 selected/authKey/stateExists）。
  *
  * getUserDataPath 依赖 electron app → mock 成可控 tmp 根，使 tailscaleStateDir 落到该 tmp。
  */
@@ -116,7 +116,7 @@ describe('buildTailscaleLoginConfig', () => {
   });
 });
 
-describe('tailscaleEndpointInRunningCore（双写防护判定）', () => {
+describe('tailscaleEndpointInRunningCore（双写防护判定：always-emit）', () => {
   const runningCfg = (over: Partial<UserConfig> = {}): UserConfig =>
     ({
       servers: [],
@@ -125,39 +125,34 @@ describe('tailscaleEndpointInRunningCore（双写防护判定）', () => {
     }) as UserConfig;
 
   it('主核未运行 → false（可起瞬态核）', () => {
-    expect(tailscaleEndpointInRunningCore('s1', false, runningCfg(), false)).toBe(false);
+    expect(tailscaleEndpointInRunningCore('s1', false, runningCfg())).toBe(false);
   });
 
   it('运行配置为 null → false', () => {
-    expect(tailscaleEndpointInRunningCore('s1', true, null, false)).toBe(false);
+    expect(tailscaleEndpointInRunningCore('s1', true, null)).toBe(false);
   });
 
   it('节点不在运行配置里 → false（主核没带它的 endpoint）', () => {
     const cfg = runningCfg({ servers: [tsServer({ id: 'other' })] });
-    expect(tailscaleEndpointInRunningCore('s1', true, cfg, false)).toBe(false);
+    expect(tailscaleEndpointInRunningCore('s1', true, cfg)).toBe(false);
   });
 
-  it('在配置里但既未选中也未就绪（无 authKey、无 state）→ false（主核就绪门控未发射）', () => {
+  it('在配置里即 true（always-emit）——未选中、无 authKey、无 state 也 true', () => {
     const cfg = runningCfg({ servers: [tsServer({ id: 's1' })], selectedServerId: 'other' });
-    expect(tailscaleEndpointInRunningCore('s1', true, cfg, false)).toBe(false);
+    expect(tailscaleEndpointInRunningCore('s1', true, cfg)).toBe(true);
   });
 
-  it('被选中 → true（选中即发射，主核已带 endpoint）', () => {
+  it('被选中 → true', () => {
     const cfg = runningCfg({ servers: [tsServer({ id: 's1' })], selectedServerId: 's1' });
-    expect(tailscaleEndpointInRunningCore('s1', true, cfg, false)).toBe(true);
+    expect(tailscaleEndpointInRunningCore('s1', true, cfg)).toBe(true);
   });
 
-  it('就绪：有 authKey → true', () => {
+  it('有 authKey → true', () => {
     const cfg = runningCfg({
       servers: [tsServer({ id: 's1', tailscaleSettings: { authKey: 'k' } })],
       selectedServerId: 'other',
     });
-    expect(tailscaleEndpointInRunningCore('s1', true, cfg, false)).toBe(true);
-  });
-
-  it('就绪：state 目录存在（stateExists=true）→ true', () => {
-    const cfg = runningCfg({ servers: [tsServer({ id: 's1' })], selectedServerId: 'other' });
-    expect(tailscaleEndpointInRunningCore('s1', true, cfg, true)).toBe(true);
+    expect(tailscaleEndpointInRunningCore('s1', true, cfg)).toBe(true);
   });
 
   it('非 tailscale 协议的同 id 节点 → false（只防 tailscale 双写）', () => {
@@ -165,7 +160,7 @@ describe('tailscaleEndpointInRunningCore（双写防护判定）', () => {
       servers: [tsServer({ id: 's1', protocol: 'wireguard' })],
       selectedServerId: 's1',
     });
-    expect(tailscaleEndpointInRunningCore('s1', true, cfg, true)).toBe(false);
+    expect(tailscaleEndpointInRunningCore('s1', true, cfg)).toBe(false);
   });
 });
 

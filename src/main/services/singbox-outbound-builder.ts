@@ -856,7 +856,6 @@ export function buildOutbounds(
       // 出口看角标按需点开（详见 detectTailscaleAuthUrl + 渲染端登录态）。登录态(loggedIn)真值只由 STATUS 流
       // （Running/Starting && !expired）给，不复用 state 目录为判据 → 不重蹈 #132。
       if (server.protocol.toLowerCase() === 'tailscale') {
-        const ts = server.tailscaleSettings;
         try {
           const ep = buildTailscaleEndpoint(server, tag);
           if (downgradeMeshToGvisor) {
@@ -865,15 +864,8 @@ export function buildOutbounds(
           }
           pendingEndpoints.push(ep);
           nodeTags.push(tag);
-          // TS 不承载全隧道（=关外网；system 模式不再失效 exit_node，见 meshNodeCarriesFullTunnel 协议口径）但填了
-          // exitNode：exit_node 已被 buildTailscaleEndpoint 丢弃（仅承载 tailnet/routes）。warn 便于排查。
-          if (!meshNodeCarriesFullTunnel(server) && ts?.exitNode?.trim()) {
-            const why = meshNonFullTunnelReason();
-            deps.log(
-              'warn',
-              `组网节点「${server.name}」${why}：已忽略 exit_node，仅访问 tailnet / 子网路由`
-            );
-          }
+          // P0b 后 meshNodeCarriesFullTunnel(TS) ⟺ !!exitNode，故「不承载全隧道但填了 exitNode」组合不可能存在
+          // （原 warn 分支恒 false 死代码，已删）。TS 是否承载全隧道 = 是否配 exit_node，无需再单独 warn「忽略 exit_node」。
         } catch (e: any) {
           deps.log(
             'warn',

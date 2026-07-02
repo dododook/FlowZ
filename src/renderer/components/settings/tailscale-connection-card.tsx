@@ -13,7 +13,7 @@
  * 复用现成 api：连接=api.server.add(+runTailscaleLogin)、断开=tailscaleLogout、删除=tailscaleLogout+delete、
  * 取消=tailscaleLoginCancel。设置=复用 TailscaleForm（包进 Dialog），onSubmit 走 useServerActions().saveServer。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2, Link as LinkIcon, KeyRound, Settings, Plug, Trash2 } from 'lucide-react';
@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import type { ServerConfig } from '@/bridge/types';
 import { deriveTsCardState } from '../../../shared/tailscale-conn-state';
-import { runTailscaleLogin } from '../../lib/tailscale-login';
+import { runTailscaleLogin, openTailscaleLogin } from '../../lib/tailscale-login';
 import { TailscaleForm } from './tailscale-form';
 import { useServerActions } from '../../pages/use-server-actions';
 import { MeshInfoPopover } from './mesh-info-popover';
@@ -51,9 +51,17 @@ interface TailscaleConnectionCardProps {
   tsNode: ServerConfig | undefined;
   /** 代理是否运行——决定副标题文案（已连接·实时 IP vs 已登录·上次），不进状态派生。 */
   proxyRunning: boolean;
+  /** §H：一次性外部指令——首页「选择出口设备」导航进来时自动打开设置弹窗（内含出口设备选择）。消费后回调清除。 */
+  autoOpenSettings?: boolean;
+  onAutoOpenConsumed?: () => void;
 }
 
-export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConnectionCardProps) {
+export function TailscaleConnectionCard({
+  tsNode,
+  proxyRunning,
+  autoOpenSettings,
+  onAutoOpenConsumed,
+}: TailscaleConnectionCardProps) {
   const { t } = useTranslation();
   const { saveServer, deleteServer, selectServer } = useServerActions();
 
@@ -64,7 +72,15 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
   const hasAuthUrl = useAppStore((s) =>
     serverId ? s.tailscaleAuthUrls[serverId] !== undefined : false
   );
+  // 缓存的登录 URL（供「打开登录页」重开；缺失时 openTailscaleLogin 回落 runTailscaleLogin → main 兜底取 live URL）。
+  const authUrl = useAppStore((s) => (serverId ? s.tailscaleAuthUrls[serverId] : undefined));
+  // 用户是否显式发起了本节点登录（区分主核 always-emit 的 URL）——决定卡片是否进「连接中」态。
+  const loginInitiated = useAppStore((s) =>
+    serverId ? !!s.tailscaleLoginInitiated[serverId] : false
+  );
   const setTailscaleLoginState = useAppStore((s) => s.setTailscaleLoginState);
+  const setTailscaleAuthUrl = useAppStore((s) => s.setTailscaleAuthUrl);
+  const setTailscaleLoginInitiated = useAppStore((s) => s.setTailscaleLoginInitiated);
   // 当前主出口是否为本 TS 节点（selectedServerId 单一真值）：单例卡承载「设为出口/当前出口」——批3 把 TS 抽离
   // 列表后，这是登录后选 TS 作主出口的唯一入口（列表点击选中入口已随抽离丢失，否则登录了也用不上 TS 出口）。
   const selectedServerId = useAppStore((s) => s.config?.selectedServerId);
@@ -74,7 +90,19 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
-  const state = deriveTsCardState(tsNode, loggedIn, hasAuthUrl);
+  // §H：首页「选择出口设备」导航进来 → 自动打开设置弹窗（TailscaleForm 内含 ExitNodeField），消费后清除一次性指令。
+  useEffect(() => {
+    if (autoOpenSettings) {
+      setShowKeyForm(false);
+      setSettingsOpen(true);
+      onAutoOpenConsumed?.();
+    }
+  }, [autoOpenSettings, onAutoOpenConsumed]);
+
+  // 登录进行中判据：用户显式发起 OR 该 TS 是当前选中出口（app 自动连接它=登录进行中，首页会弹登录）→ 卡片显「连接中」，
+  // 而非被 always-emit 的非活跃 URL 误判/漏判（修真机：首页弹登录时选中出口卡片曾显初始态）。
+  const loginActive = loginInitiated || isSelectedExit;
+  const state = deriveTsCardState(tsNode, loggedIn, hasAuthUrl, loginActive);
 
   // 设置弹窗里编辑（含填 Auth Key）→ 复用 TailscaleForm，统一走 saveServer（editingServer=现有 TS 节点）。
   // config 形状由 TailscaleForm 产出（{protocol:'tailscale', tailscaleSettings}），name 由现有节点带或默认。
@@ -101,7 +129,9 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
             protocol: 'tailscale',
             address: '',
             port: 0,
-            tailscaleSettings: { allowInternet: true, alwaysRouteSubnets: true },
+            // P0b：TS 的 allowInternet 由 exit_node 派生（meshAllowsInternet），此处不再硬编码 allowInternet:true
+            // （否则造出 allowInternet:true 但无 exit_node 的 S-b 态，谓词已忽略该字段但留着误导读代码者）。
+            tailscaleSettings: { alwaysRouteSubnets: true },
           } as Parameters<typeof saveServer>[0],
           undefined
         );
@@ -117,10 +147,14 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
 
   const handleCancel = async () => {
     if (!serverId) return;
+    // 点「取消」立即本地退出「连接中」态（乐观清）：主核路径 endpoint 在主核里、无瞬态核可杀，
+    // 若等 IPC 回执才清 UI，卡片会一直卡「连接中」（缺陷 2）。清 URL + initiated 双管，卡片当即回落「需登录」。
+    setTailscaleAuthUrl(serverId, '');
+    setTailscaleLoginInitiated(serverId, false);
     try {
       await api.server.tailscaleLoginCancel(serverId);
     } catch {
-      /* 取消失败不阻断：authUrl 会随核退出被清，UI 自然回落 */
+      /* 取消失败不阻断：UI 已乐观回落，瞬态核（若有）也会随核退出被清 */
     }
   };
 
@@ -195,7 +229,10 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
                   : state === 'key-ready'
                     ? t('servers.tsConnCardKeyReadyDesc', '代理启动即自动连接，无需登录')
                     : state === 'logging-in'
-                      ? t('servers.tsConnCardLoggingInDesc', '已在浏览器打开授权页，完成后自动连接')
+                      ? t(
+                          'servers.tsConnCardLoggingInDesc',
+                          '等待浏览器完成登录授权，可点「打开登录页」，授权后自动连接'
+                        )
                       : t('servers.tsConnCardIntro', '账号制组网：登录后本机即加入你的 tailnet')}
               </span>
               {/* 组网信息收进 ⓘ（与列表节点同款，hover 弹内网 IP/路由/出口节点/接受子网路由），卡片不被信息撑大。 */}
@@ -233,6 +270,13 @@ export function TailscaleConnectionCard({ tsNode, proxyRunning }: TailscaleConne
                 <Loader2 className="h-4 w-4 animate-spin" />
                 {t('servers.tsConnCardLoggingIn', '连接中…')}
               </span>
+              {/* 「打开登录页」：可靠重开当前授权页——主核路径不自动开浏览器、且核每会话一份 URL 取消后无帧回填，
+                  用户凭此随时重开完成登录（openTailscaleLogin 有缓存 URL 直开，无则回落 runTailscaleLogin 走 main 兜底）。 */}
+              {tsNode && (
+                <Button size="sm" onClick={() => openTailscaleLogin(tsNode, authUrl)}>
+                  {t('servers.tsConnCardOpenLogin', '打开登录页')}
+                </Button>
+              )}
               <Button size="sm" variant="outline" onClick={() => void handleCancel()}>
                 {t('servers.tsConnCardCancel', '取消')}
               </Button>

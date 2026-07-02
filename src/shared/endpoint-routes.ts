@@ -76,7 +76,11 @@ export function endpointForcedRouteCidrs(server: ServerConfig): string[] {
 export function meshAllowsInternet(server: ServerConfig): boolean {
   const p = server.protocol?.toLowerCase();
   if (p === 'wireguard') return server.wireguardSettings?.allowInternet !== false;
-  if (p === 'tailscale') return server.tailscaleSettings?.allowInternet !== false;
+  // Tailscale：allowInternet 由 exit_node 派生（把表单单一真值 tailscale-form `allowInternet=!!exitNode` 下沉到谓词层，
+  // §H.5/P0b）。治 S-b：quick-join 硬编码 `allowInternet:true` 但无 exit_node 时不再误判「承载全隧道」→ 公网从「进
+  // tsnet 无出口的黑洞」变「回退 direct」（安全），且不为其装 OS 出口路由；与「无出口设备」警示语义严格镜像。
+  // 存量 tailscaleSettings.allowInternet 字段谓词层忽略（向后兼容、不迁移）。
+  if (p === 'tailscale') return !!server.tailscaleSettings?.exitNode?.trim();
   return true;
 }
 

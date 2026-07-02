@@ -602,6 +602,20 @@ export function NetworkSettings() {
               onCheckedChange={(c) => setBool('autoSwitchNode', c)}
             />
           </SettingsRow>
+          {/* 缺陷1 组网登录期出口让位：选中 TS 出口未连上时登录/授权期默认路由临时直连（否则授权页被导向死出口打不开→死锁），
+              连接成功自动切回。关闭则宁可授权失败也不直连（无引导期直连泄漏窗口）。默认开（!== false）。 */}
+          <SettingsRow
+            label={t('settings.network.meshLoginFallback', '组网登录期出口让位')}
+            description={t(
+              'settings.network.meshLoginFallbackDesc',
+              '所选 Tailscale 出口尚未连接时，登录/授权期间默认路由临时走直连（避免授权页打不开导致卡死），连接成功后自动切回该出口。关闭则登录期不直连（宁可授权失败也不产生直连流量）。'
+            )}
+          >
+            <Switch
+              checked={config.meshLoginFallbackDirect !== false}
+              onCheckedChange={(c) => setBool('meshLoginFallbackDirect', c)}
+            />
+          </SettingsRow>
           <SettingsCollapsible
             label={t('settings.network.advancedTraffic', '高级流量')}
             defaultOpen

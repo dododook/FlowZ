@@ -182,6 +182,9 @@ export function ServerPage() {
     setIsDialogOpen(true);
   };
 
+  // §H：首页「选择出口设备」导航进来 → 落组网 tab + 一次性指令组网卡自动打开设置弹窗（选出口设备）。
+  const [tsAutoOpenSettings, setTsAutoOpenSettings] = useState(false);
+
   // 消费首页空状态跳服务器页时的意图：自动唤起对应对话框
   useEffect(() => {
     if (serverPageAction === 'add-server') {
@@ -191,6 +194,10 @@ export function ServerPage() {
     } else if (serverPageAction === 'add-sub') {
       setEditingSub(undefined);
       setIsSubDialogOpen(true);
+      setServerPageAction(null);
+    } else if (serverPageAction === 'ts-settings') {
+      setTabOverride('mesh'); // 兜底落组网 tab（TS=选中出口时 selectedGroupKey 本就 mesh，此处防未选态）
+      setTsAutoOpenSettings(true);
       setServerPageAction(null);
     }
   }, [serverPageAction, setServerPageAction]);
@@ -354,7 +361,12 @@ export function ServerPage() {
         <TabsContent value="mesh">
           <div className="space-y-4">
             <div ref={tailscaleCardRef}>
-              <TailscaleConnectionCard tsNode={tailscaleNode} proxyRunning={proxyRunning} />
+              <TailscaleConnectionCard
+                tsNode={tailscaleNode}
+                proxyRunning={proxyRunning}
+                autoOpenSettings={tsAutoOpenSettings}
+                onAutoOpenConsumed={() => setTsAutoOpenSettings(false)}
+              />
             </div>
             <MeshAccessEntry
               hasTailscale={!!tailscaleNode}

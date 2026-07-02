@@ -67,9 +67,12 @@ export function ProxyControlCard() {
     : hasError || '';
   // D7（+Phase2）：选中「不承载全隧道」的组网节点为主节点（可连接，非置灰）→ 外网回退直连、仅其网段经此节点。
   // 不承载全隧道 = 关外网 或 system 内核接口（meshNodeCarriesFullTunnel），与 meshSelectedExitFallsBackToDirect 对齐。非阻断提示。
+  // §H：TS 收窄排除——TS「未选出口设备→公网回退直连」由 ConnectionStatusCard 行内警示（TsExitWarning）专门承载
+  // （文案可执行=选出口设备），此处不再对 TS 重复提示（否则双提示）。WG/WARP 保留原「外网回退直连」提示原位。
   const meshExitDirect =
     !!selectedServer &&
     isEndpointProtocol(selectedServer.protocol) &&
+    selectedServer.protocol?.toLowerCase() !== 'tailscale' &&
     !meshNodeCarriesFullTunnel(selectedServer) &&
     !meshNoInternet &&
     (config?.proxyMode || 'smart').toLowerCase() !== 'direct';
@@ -212,7 +215,7 @@ export function ProxyControlCard() {
             )}
           </Button>
           {meshExitDirect && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-500">
+            <p className="mt-1 text-xs text-warning">
               {t(
                 'home.meshExitDirectHint',
                 '所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。'
