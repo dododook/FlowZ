@@ -10,8 +10,6 @@ import type {
   ServerConfig,
   ProxyStatus,
   ProxyErrorCode,
-  ConnectionsSnapshot,
-  ConnectionsAggregate,
   LogEntry,
   TrafficStats,
   Rule,
@@ -498,39 +496,20 @@ export const autoStartApi = {
  */
 export const statsApi = {
   /**
-   * 获取流量统计
+   * 获取流量统计快照（一次性读，如 app-store.refreshStatistics）。batch3：stats 增量改走 useStatsTopic('stats')
+   * 订阅（EVENT_STATS_UPDATED），故此处 onUpdated 已删；一次性快照读仍保留 STATS_GET。
    */
   async get(): Promise<TrafficStats> {
     return ipcClient.invoke(IPC_CHANNELS.STATS_GET);
   },
-
-  /**
-   * 监听统计更新事件
-   */
-  onUpdated(listener: (stats: TrafficStats) => void): () => void {
-    return ipcClient.on(IPC_CHANNELS.EVENT_STATS_UPDATED, listener);
-  },
 };
 
 /**
- * 连接数据 API：渲染端不再直连 :9090、不持 secret。两条独立通道（issue #227 治本）：
- *  - aggregate：首页拓扑用。StatsWorkerHost 每帧 O(N) 聚合后推小载荷（~Top-N host + 出口数），与连接总数解耦。
- *  - get：连接信息页明细 pull。仅页面打开时按 interval 拉，不再「每秒全量 push 给所有窗口」。
+ * 连接数据 API（batch3 §3.7）：明细（detail）与拓扑聚合（aggregate）已改订阅驱动——渲染端经 useStatsTopic
+ * ('detail'/'aggregate') 订阅、订阅即回初始帧 + 增量 push，旧 CONNECTIONS_GET / CONNECTIONS_AGGREGATE_GET 双路径
+ * 随之删除。此处仅留关连接的命令式动作；渲染端不直连 :9090、不持 secret。
  */
 export const connectionsApi = {
-  /** 连接明细 pull（连接信息页打开时定时拉；非每秒 push）。 */
-  async get(): Promise<ConnectionsSnapshot> {
-    return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_GET);
-  },
-  /** 首页拓扑聚合（挂载回填 + 订阅增量广播）。 */
-  aggregate: {
-    async get(): Promise<ConnectionsAggregate> {
-      return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_AGGREGATE_GET);
-    },
-    onUpdated(listener: (agg: ConnectionsAggregate) => void): () => void {
-      return ipcClient.on(IPC_CHANNELS.EVENT_CONNECTIONS_AGGREGATE, listener);
-    },
-  },
   /** 关单条连接（main 经 9090 DELETE /connections/{id}；渲染端无 secret）。 */
   async close(id: string): Promise<{ ok: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.CONNECTIONS_CLOSE, { id });

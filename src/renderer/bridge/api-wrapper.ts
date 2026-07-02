@@ -249,8 +249,7 @@ export function addEventListener(event: string, listener: (...args: any[]) => vo
       return api.config.onChanged(listener);
     case 'logReceivedBatch':
       return api.logs.onReceivedBatch(listener);
-    case 'statsUpdated':
-      return api.stats.onUpdated(listener);
+    // 'statsUpdated' 已删（batch3 §3.7：stats 改 useStatsTopic('stats') 订阅，api.stats.onUpdated 随之移除；本 bridge 无该 case 消费者）。
     default:
       return () => {};
   }

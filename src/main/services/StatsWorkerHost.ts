@@ -15,10 +15,7 @@
  */
 import { utilityProcess, type UtilityProcess } from 'electron';
 import type { TrafficStats, ConnectionsSnapshot, ConnectionsAggregate } from '../../shared/types';
-
-// batch2 §3.6：detail 需求存活窗口。连接页每次 pull（getConnectionsSnapshot）刷新 lastPullAt，此窗口内维持 detail
-// 上游明细传输；超时（页面关闭/停拉）则下发 detail=false，worker 停止跨进程克隆明细。
-const PULL_DEMAND_TTL = 5000;
+import type { StatsTopic } from '../../shared/ipc-channels';
 
 /** worker 重建 SingBoxApiClient 所需的运行期管理 API 端点（本地恒无 tls）。 */
 export interface StatsApiEndpoint {
@@ -45,6 +42,11 @@ export interface StatsHost extends StatsProvider {
   resubscribe(): void;
   stop(): void;
   resume(): void;
+  /**
+   * 重算并（变化时）下发 worker demand（batch3 §3.7）：订阅表变化后由 registry 立即调用，让 worker 尽快开/停
+   * 对应上游流，免等下一个 status 帧的惰性同步。StatsSimulator 无 worker demand → no-op。
+   */
+  syncDemand(): void;
   dispose(): void;
 }
 
@@ -52,9 +54,9 @@ export interface StatsHost extends StatsProvider {
 export type HostToWorkerMessage =
   | { type: 'connect'; endpoint: StatsApiEndpoint }
   | { type: 'stop' }
-  // batch2 §3.6（取代 setConnActive）：需求驱动。connectionsStream=是否订阅上游 SubscribeConnections（窗口可见→拓扑需
-  // aggregate；隐藏→连上游流一起停，削核 CPU）；detail=连接页近 PULL_DEMAND_TTL 内有 pull（true 时 worker 每帧跨进程
-  // 传全量明细）。status 帧不门控、始终流动，故 host 借其惰性下发本需求（见 syncDemand），无需窗口事件接线。
+  // batch3 §3.7（源从「窗口可见」换成「渲染端订阅」）：需求驱动。connectionsStream=是否订阅上游 SubscribeConnections
+  // （aggregate 或 detail 有订阅者→需拓扑/明细；均无→连上游流一起停，削核 CPU）；detail=明细页有订阅者（true 时
+  // worker 每帧跨进程传全量明细）。由 registry 订阅变化即时触发 + status 帧惰性重发（reconnect 自愈），见 syncDemand。
   | { type: 'setDemand'; connectionsStream: boolean; detail: boolean }
   | { type: 'dispose' };
 
@@ -84,12 +86,22 @@ function emptyAggregate(at: number): ConnectionsAggregate {
 export interface StatsWorkerHostOptions {
   /** 已编译 worker 入口绝对路径（dist 下 .js）。 */
   workerPath: string;
-  /** 流量快照广播到渲染端（main 侧门控后调用）。 */
+  /** 流量帧 relay（batch3：经 registry 只发给 'stats' 订阅者；main 侧 isUiActive 门控后调用）。 */
   onStats: (s: TrafficStats) => void;
-  /** 连接聚合广播到渲染端（首页拓扑，main 侧门控后调用，issue #227）。 */
+  /** 连接聚合 relay（首页拓扑；batch3：经 registry 只发给 'aggregate' 订阅者；门控后调用，issue #227）。 */
   onAggregate: (agg: ConnectionsAggregate) => void;
-  /** UI 广播活跃谓词：false（不可见/拖动中）时只缓存不广播。 */
+  /** 连接明细 relay（batch3 §3.7：detail 由 pull 改 push topic；经 registry 只发给 'detail' 订阅者；门控后调用）。 */
+  onDetail: (conns: ConnectionsSnapshot) => void;
+  /**
+   * relay 安全门（belt-and-suspenders）：false（窗口不可见 / Windows 拖动中）时只缓存不 relay。batch3 里订阅本身
+   * 已由渲染端 visibility 暂停，此为兜底（订阅在但窗口不可见——如拖动期——仍不发）。**非** demand 源（见 hasSubscribers）。
+   */
   isUiActive: () => boolean;
+  /**
+   * demand 源（batch3 §3.7，取代 isUiActive）：某 topic 是否有渲染端订阅者。syncDemand 据此派生 worker 上游流开关
+   * （connectionsStream = aggregate||detail 有订阅；detail = detail 有订阅）。无订阅者 → 逐级停机。
+   */
+  hasSubscribers: (topic: StatsTopic) => boolean;
   /** 取运行期管理 API 端点（核未起返回 null → worker 不开流）。 */
   getEndpoint: () => StatsApiEndpoint | null;
   /** 可选日志钩子（接 logManager）。 */
@@ -99,10 +111,10 @@ export interface StatsWorkerHostOptions {
 export class StatsWorkerHost implements StatsHost {
   private worker: UtilityProcess | null = null;
   private snapshot: TrafficStats = { ...ZERO_STATS };
-  // worker 'detail' 消息缓存的最近连接明细：仅供连接信息页 CONNECTIONS_GET 按需 pull，不 relay 给渲染端（旧放大器）。
+  // worker 'detail' 消息缓存的最近连接明细（batch3：detail 变 push topic）：relay 给 'detail' 订阅者 + 作订阅初始帧。
   private connections: ConnectionsSnapshot = { connections: [], at: 0 };
-  // worker 'aggregate' 消息缓存的最近拓扑聚合（batch2：聚合已下沉 worker，host 不再自算）：relay
-  // EVENT_CONNECTIONS_AGGREGATE + CONNECTIONS_AGGREGATE_GET 回填。
+  // worker 'aggregate' 消息缓存的最近拓扑聚合（batch2：聚合已下沉 worker，host 不再自算）：relay 给 'aggregate'
+  // 订阅者 + 作订阅初始帧（合并原 CONNECTIONS_AGGREGATE_GET 回填）。
   private aggregate: ConnectionsAggregate = emptyAggregate(0);
   /** 是否应处于订阅态（代理运行）。崩溃 respawn 后据此自动重连，不丢流。 */
   private started = false;
@@ -112,8 +124,6 @@ export class StatsWorkerHost implements StatsHost {
   /** 上次下发给 worker 的需求（batch2，取代 lastConnActiveSent）。null=未发过（reconnect/respawn 后重置，
    *  强制下个 status 帧重新下发 setDemand）。仅任一字段变化才重发。 */
   private lastDemandSent: { connectionsStream: boolean; detail: boolean } | null = null;
-  /** 连接页最近一次 pull（getConnectionsSnapshot 调用）时刻 epoch ms；驱动 detail 需求（近 PULL_DEMAND_TTL 内=需 detail）。 */
-  private lastPullAt = 0;
 
   constructor(private readonly opts: StatsWorkerHostOptions) {
     this.spawn();
@@ -172,17 +182,17 @@ export class StatsWorkerHost implements StatsHost {
   }
 
   /**
-   * 惰性下发需求（batch2 §3.6，取代 syncConnActive）：借「始终流动」的 status 帧驱动，仅需求变化才 post setDemand——
-   * 无需监听窗口 show/hide/minimize 事件，且 status 不门控 → worker 不会卡死在停用态。
-   * - connectionsStream = isUiActive()：窗口可见→拓扑需 aggregate（订阅上游 Connections 流）；隐藏→连上游流一起停
-   *   （worker cancel SubscribeConnections，削核 CPU 面）。自愈延迟 ≤1 个 status 间隔（~1s）。
-   * - detail = 连接页近 PULL_DEMAND_TTL 内有 pull（lastPullAt）：仅页面真正拉取时 worker 才跨进程传全量明细。
-   *   转 true 后明细恢复最坏 ~2 个流间隔（先 status 帧下发 detail=true，worker 再等下一 connections 帧才 post），
-   *   与旧 connActive 语义一致；隐藏期本无明细消费者，可接受。
+   * 重算并（变化时）下发 worker demand（batch3 §3.7，取代 batch2 的 isUiActive / lastPullAt 源）。两条驱动路径：
+   *  ① registry 订阅/退订后立即调（低延迟：连接页一打开 detail 即开流、一关即停，不等下个 status 帧）；
+   *  ② case 'stats' 每个 status 帧惰性调（reconnect/respawn 后 lastDemandSent 被 postConnect 复位 null → 借常流
+   *     status 帧把当前 demand 重发给新 worker，自愈）；无订阅变化时靠 lastDemandSent 去重、绝不重复 post。
+   * demand 源 = 订阅集（**非**窗口可见）：connectionsStream = 拓扑或明细有订阅（订上游 Connections 流；均无 →
+   * 连 aggregate 一起停，削核 CPU）；detail = 明细页有订阅（true 时 worker 才跨进程传全量明细）。
    */
-  private syncDemand(): void {
-    const connectionsStream = this.opts.isUiActive();
-    const detail = Date.now() - this.lastPullAt < PULL_DEMAND_TTL;
+  syncDemand(): void {
+    const connectionsStream =
+      this.opts.hasSubscribers('aggregate') || this.opts.hasSubscribers('detail');
+    const detail = this.opts.hasSubscribers('detail');
     const prev = this.lastDemandSent;
     if (!prev || prev.connectionsStream !== connectionsStream || prev.detail !== detail) {
       this.lastDemandSent = { connectionsStream, detail };
@@ -202,7 +212,7 @@ export class StatsWorkerHost implements StatsHost {
         // started 门控：stop() 后 worker 在途旧帧（stop 消息送达前 worker 可能刚 post 一帧非零）必须丢弃，
         // 否则缓存被旧值覆盖 + 广播残留非零速率/总量，直到下次 connect → 违反 stop「停止即清零」不变量。
         if (!this.started) return;
-        this.syncDemand(); // 借常流的 status 帧惰性下发 worker 的 setDemand（batch2）
+        this.syncDemand(); // 借常流 status 帧惰性重发 demand（reconnect 自愈路径；订阅变化的即时路径在 registry）
         this.snapshot = msg.payload;
         if (this.opts.isUiActive()) this.opts.onStats(this.snapshot);
         break;
@@ -215,9 +225,10 @@ export class StatsWorkerHost implements StatsHost {
         break;
       case 'detail':
         if (!this.started) return; // 停后在途旧帧丢弃，避免残留旧连接列表。
-        // 仅缓存供连接页 CONNECTIONS_GET pull，不 relay（每秒全量明细 relay 放大器已删，issue #227）。detail 仅
-        // detailDemand（连接页 pull 期）才由 worker post，故此缓存只在页面活跃期新鲜。
+        // batch3 §3.7：detail 由 pull 改 push topic——缓存 + 按可见性门控 relay 给 'detail' 订阅者（连接页）。worker
+        // 仅 detail 有订阅（detailDemand）时才 post，故此缓存只在连接页订阅期新鲜；也作后来订阅者的初始帧。
         this.connections = msg.payload;
+        if (this.opts.isUiActive()) this.opts.onDetail(this.connections);
         break;
     }
   }
@@ -230,7 +241,8 @@ export class StatsWorkerHost implements StatsHost {
     this.postConnect();
   }
 
-  /** 停止订阅 + 清零广播（对齐 StatsService.stop：不门控、直接清 UI，避免停后残留旧值）。 */
+  /** 停止订阅 + 清零直推（不门控、直接清 UI，避免停后残留旧值）。batch3：detail 亦为 push topic，须同样清空
+   *  推给订阅者（连接页），否则停止后旧连接列表滞留（旧 pull 模型靠下次 pull 拿空缓存自然清，push 模型须显式推）。 */
   stop(): void {
     this.started = false;
     this.post({ type: 'stop' });
@@ -239,15 +251,16 @@ export class StatsWorkerHost implements StatsHost {
     this.aggregate = emptyAggregate(Date.now());
     this.opts.onStats({ ...this.snapshot });
     this.opts.onAggregate(this.aggregate);
+    this.opts.onDetail(this.connections);
   }
 
-  /** 拖动结束：立即补推一帧缓存最新（免等 worker 下一帧滞后）。窗口由隐藏转可见时不另补推——stats/计数走恒流的
-   *  status 帧 ≤1s 自然广播；拓扑 aggregate 经 connectionsStream 需求重新激活后 ≤2 个流间隔恢复（见 syncDemand），
-   *  与原行为大致一致。 */
+  /** 拖动结束（Windows）：立即把缓存最新帧补推给各 topic 订阅者（免等 worker 下一帧 ~1s 滞后）。窗口由隐藏转可见
+   *  由渲染端重订自然拿初始帧（见 registry），无需在此另补。relay 均经 registry 落到对应 topic 订阅者（无订阅者即 no-op）。 */
   resume(): void {
     if (!this.opts.isUiActive()) return;
     this.opts.onStats({ ...this.snapshot });
     this.opts.onAggregate(this.aggregate);
+    this.opts.onDetail(this.connections);
   }
 
   getSnapshot(): TrafficStats {
@@ -255,15 +268,13 @@ export class StatsWorkerHost implements StatsHost {
   }
 
   getConnectionsSnapshot(): ConnectionsSnapshot {
-    // batch2：记录本次 pull 时刻，驱动 detail 需求（syncDemand 据 lastPullAt 判「连接页近 PULL_DEMAND_TTL 内活跃」→
-    // 下发 detail=true，worker 才跨进程传全量明细）。CONNECTIONS_GET 是唯一调用点（proxy-handlers），语义精确。
-    this.lastPullAt = Date.now();
-    // at 用 worker 真实采样时刻（this.connections.at），非拉取时刻：连接页速率差分以采样间隔为分母，避免 pull
-    // 节奏与 worker 帧节奏漂移时同一缓存被拉两次 → Δbytes=0 报速率 0、下次翻倍的抖动（review Low-2）。
+    // batch3：detail 订阅的初始帧来源（registry.getInitialFrame('detail')）。at 用 worker 真实采样时刻
+    // （this.connections.at），非读取时刻：连接页速率差分以采样间隔为分母，避免同一缓存被读两次 → Δbytes=0 报
+    // 速率 0、下次翻倍的抖动（review Low-2）。detail 需求已改由订阅驱动（hasSubscribers），不再记 lastPullAt。
     return { connections: this.connections.connections, at: this.connections.at };
   }
 
-  /** 首页拓扑挂载回填（CONNECTIONS_AGGREGATE_GET）：缓存的最近聚合（后续增量走 EVENT_CONNECTIONS_AGGREGATE）。 */
+  /** aggregate 订阅的初始帧来源（registry.getInitialFrame('aggregate')）：缓存的最近聚合（增量走同一通道 push）。 */
   getAggregateSnapshot(): ConnectionsAggregate {
     return this.aggregate;
   }

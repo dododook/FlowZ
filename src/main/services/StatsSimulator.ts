@@ -227,6 +227,11 @@ export class StatsSimulator implements StatsHost {
     this.log?.('info', 'stats 模拟器 stop()（dev 工具，ticker 持续，忽略）');
   }
 
+  /** batch3：合成器无 worker demand（ticker 自跑），registry 订阅变化对其无意义 → no-op。 */
+  syncDemand(): void {
+    /* 无 worker demand：合成 aggregate/stats 经 opts.onStats/onAggregate → registry.broadcast 已按订阅落地 */
+  }
+
   /** 拖动结束补推缓存最新（活跃才推），与 StatsWorkerHost.resume 语义一致。 */
   resume(): void {
     if (!this.isUiActive()) return;

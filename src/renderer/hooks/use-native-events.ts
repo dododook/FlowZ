@@ -4,6 +4,7 @@
 
 import { useEffect } from 'react';
 import { api } from '../ipc';
+import { useStatsTopic } from './use-stats-topic';
 import { useAppStore } from '../store/app-store';
 import { useTailscaleLoginCacheStore } from '../store/use-tailscale-login-cache-store';
 import { ErrorHandler, ErrorCategory, proxyErrorCategory } from '../lib/error-handler';
@@ -33,7 +34,6 @@ interface NativeEventData {
     signal?: string | null;
   };
   configChanged: { key?: string; oldValue?: any; newValue?: any };
-  statsUpdated: TrafficStats;
   ipInfoUpdated: IpInfoSnapshot;
   navigateToPage: string;
   proxyModeSwitched: { success: boolean; newMode: string };
@@ -84,9 +84,6 @@ export function useNativeEvent<K extends keyof NativeEventData>(
         break;
       case 'configChanged':
         unsubscribe = api.config.onChanged(callback as any);
-        break;
-      case 'statsUpdated':
-        unsubscribe = api.stats.onUpdated(callback as any);
         break;
       case 'ipInfoUpdated':
         unsubscribe = api.ipInfo.onUpdated(callback as any);
@@ -189,8 +186,9 @@ function handleConfigChanged(data: NativeEventData['configChanged']) {
   }
 }
 
-function handleStatsUpdated(data: NativeEventData['statsUpdated']) {
-  // 事件 payload 即最新 TrafficStats，直接写 store（省去 refreshStatistics 的二次 IPC 拉取）
+// batch3 §3.7：stats 帧改经 useStatsTopic('stats') 订阅（取代旧全局 api.stats.onUpdated）。payload 即最新
+// TrafficStats，直接写 store（省去 refreshStatistics 的二次 IPC 拉取）。
+function handleStatsUpdated(data: TrafficStats) {
   useAppStore.setState({ stats: data });
 }
 
@@ -389,7 +387,8 @@ export function useNativeEventListeners() {
   useNativeEvent('processStopped', handleProcessStopped);
   useNativeEvent('processError', handleProcessError);
   useNativeEvent('configChanged', handleConfigChanged);
-  useNativeEvent('statsUpdated', handleStatsUpdated);
+  // batch3 §3.7：stats 走订阅驱动 useStatsTopic（App 常驻，可见即订阅、隐藏退订），取代全局 statsUpdated 事件。
+  useStatsTopic<TrafficStats>('stats', handleStatsUpdated);
   useNativeEvent('ipInfoUpdated', handleIpInfoUpdated);
   useNativeEvent('autoNodeSwitched', handleAutoNodeSwitched);
   useNativeEvent('invalidNodes', handleInvalidNodes);

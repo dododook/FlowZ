@@ -111,7 +111,7 @@ export interface ConnectionEntry {
   start?: string; // 连接建立时刻（RFC3339）
 }
 
-/** 连接快照：连接信息页经 CONNECTIONS_GET 按需 pull（仅页面打开时定时拉，非每秒全量 push 广播）。 */
+/** 连接快照：连接信息页订阅 'detail' topic（batch3 §3.7）——订阅即回初始帧 + worker 每帧 push，仅页面打开且可见时传（无订阅者 → worker 逐级停机），非旧「每秒全量广播给所有窗口」。 */
 export interface ConnectionsSnapshot {
   connections: ConnectionEntry[];
   at: number; // 采样时刻 epoch ms

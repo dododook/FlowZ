@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Network } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
-import { api } from '@/ipc';
+import { useStatsTopic } from '@/hooks/use-stats-topic';
 import { toast } from 'sonner';
 import type { Rule, RuleAction, ConnectionsAggregate } from '../../../shared/types';
 import { getRuleActionStyle } from '@/lib/rule-action-style';
@@ -46,31 +46,16 @@ export function ConnectionTopology() {
     return () => resizeObserver.disconnect();
   }, []);
 
-  // issue #227：拓扑改消费 main 侧【连接聚合】（小载荷，与连接总数解耦），取代旧「每秒全量 ConnectionEntry[] 广播」。
-  // 挂载即用 CONNECTIONS_AGGREGATE_GET 回填初值，再订阅 EVENT_CONNECTIONS_AGGREGATE 收增量。main 连接流订阅跟随
-  // started（代理运行即推送），停止代理时 main 广播空聚合 → 自然落入空态。渲染端不再直连 :9090、不持 secret。
-  useEffect(() => {
-    let mounted = true;
-    api.connections.aggregate
-      .get()
-      .then((agg) => {
-        if (mounted) {
-          setAggregate(agg);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (mounted) setLoading(false);
-      });
-    const unsub = api.connections.aggregate.onUpdated((agg) => {
+  // batch3 §3.7：拓扑订阅 'aggregate' topic——挂载即拿初始帧（= 原 CONNECTIONS_AGGREGATE_GET 回填），之后增量 push
+  // 同一通道；隐藏/卸载自动退订。非首页可见视图下本组件不挂载 → 无 aggregate 订阅者 → main 停上游 Connections 流
+  // （逐级停机）。载荷仍是小聚合（~Top-N host + 出口数），渲染端不直连 :9090、不持 secret。
+  useStatsTopic<ConnectionsAggregate>(
+    'aggregate',
+    useCallback((agg: ConnectionsAggregate) => {
       setAggregate(agg);
       setLoading(false);
-    });
-    return () => {
-      mounted = false;
-      unsub();
-    };
-  }, []);
+    }, [])
+  );
 
   const { nodes, links } = useMemo(
     () => computeTopologyLayout(aggregate, width, t),

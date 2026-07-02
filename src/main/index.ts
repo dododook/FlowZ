@@ -40,6 +40,7 @@ import {
   registerIpInfoHandlers,
   registerSystemHandlers,
   registerRuleResourceHandlers,
+  registerStatsSubscriptionHandlers,
 } from './ipc/handlers';
 import { setIpcLogger, registerIpcHandler } from './ipc/ipc-handler';
 import { createAutoStartManager } from './services/AutoStartManager';
@@ -55,6 +56,7 @@ import {
   type StatsHost,
 } from './services/StatsWorkerHost';
 import { StatsSimulator } from './services/StatsSimulator';
+import { StatsSubscriptionRegistry } from './services/StatsSubscriptionRegistry';
 import { PlatformPrivilegeService } from './services/PlatformPrivilegeService';
 import { IpInfoService } from './services/IpInfoService';
 import { RuleResourceManager } from './services/RuleResourceManager';
@@ -72,7 +74,7 @@ import { scheduleStartupTasks } from './startup-tasks';
 import { registerConfigChangeListener } from './config-change-handler';
 import { mainEventEmitter, MAIN_EVENTS } from './ipc/main-events';
 import { initUserDataPath } from './utils/paths';
-import { IPC_CHANNELS } from '../shared/ipc-channels';
+import { IPC_CHANNELS, type StatsTopic } from '../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../shared/constants';
 import { effectiveLogLevel } from '../shared/log-level';
 import { resolveAutoLanguage, resolveEffectiveLanguage } from '../shared/language';
@@ -1334,12 +1336,47 @@ if (gotTheLock) {
     // 本宿主 fork/看护 worker、缓存最新快照、按 isUiBroadcastActive(可见 && !拖动) 门控后 sendToAll——把 Status/
     // Connections 长流的 per-frame 解析+物化移出主线程，消除拖动期事件循环争用。worker 据 getStatsApiEndpoint 重建
     // 自己的 gRPC client（端口随每次启动可能变 → 'api-client-ready' 时经 resubscribe 重发）。
+    // batch3 §3.7：订阅驱动数据面。registry 持 topic→订阅 wc 集，订阅即回初始帧（合并原 CONNECTIONS_AGGREGATE_GET/
+    // CONNECTIONS_GET 初值 pull）、只 relay 给对应 topic 订阅者、订阅变化即驱动 host demand。demand 源从「窗口可见」
+    // (isUiActive) 换成「渲染端按 topic 订阅」——非首页可见视图（设置页）下拓扑/明细流亦停（无订阅者逐级停机）；
+    // isUiActive 降为 relay 侧兜底安全门（订阅在但窗口不可见——如 Windows 拖动期——仍不发）。
+    const statsSubscriptionRegistry = new StatsSubscriptionRegistry({
+      // 订阅即回初始帧：取 host 缓存快照（核未起/未连时为零态，UI 自然落空态）。
+      getInitialFrame: (topic: StatsTopic) => {
+        if (topic === 'stats')
+          return (
+            statsService?.getSnapshot() ?? {
+              uploadSpeed: 0,
+              downloadSpeed: 0,
+              totalUpload: 0,
+              totalDownload: 0,
+              activeConnections: 0,
+            }
+          );
+        if (topic === 'aggregate')
+          return (
+            statsService?.getAggregateSnapshot() ?? {
+              total: 0,
+              hosts: [],
+              outbounds: [],
+              at: Date.now(),
+            }
+          );
+        return statsService?.getConnectionsSnapshot() ?? { connections: [], at: Date.now() };
+      },
+      // 订阅/退订即时重算 worker demand（连接页一打开 detail 即开流、一关即停，不等下个 status 帧的惰性同步）。
+      onDemandChange: () => statsService?.syncDemand(),
+    });
     const statsHostOptions: StatsWorkerHostOptions = {
       workerPath: path.join(__dirname, 'workers', 'stats-worker.js'),
-      onStats: (stats) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_STATS_UPDATED, stats),
-      onAggregate: (agg) =>
-        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONNECTIONS_AGGREGATE, agg),
+      // relay：只发给对应 topic 的订阅者（registry.broadcast）；host 侧已按 isUiActive 门控后才调这些。
+      onStats: (stats) => statsSubscriptionRegistry.broadcast('stats', stats),
+      onAggregate: (agg) => statsSubscriptionRegistry.broadcast('aggregate', agg),
+      onDetail: (conns) => statsSubscriptionRegistry.broadcast('detail', conns),
+      // relay 安全门（兜底，非 demand 源）：窗口不可见 / Windows 拖动中 → host 只缓存不 relay。
       isUiActive: isUiBroadcastActive,
+      // demand 源（取代 isUiActive）：某 topic 是否有渲染端订阅者。
+      hasSubscribers: (topic) => statsSubscriptionRegistry.hasSubscribers(topic),
       getEndpoint: () => proxyManager?.getStatsApiEndpoint() ?? null,
       log: (level, message) => logManager.addLog(level, message, 'StatsWorker'),
     };
@@ -1551,6 +1588,8 @@ if (gotTheLock) {
     registerServerHandlers(protocolParser, configManager, logManager);
     registerLogHandlers(logManager, proxyManager, isUiBroadcastActive);
     registerProxyHandlers(proxyManager, statsService);
+    // batch3 §3.7：STATS_SUBSCRIBE/STATS_UNSUBSCRIBE（渲染端 useStatsTopic 声明/撤销 topic 订阅）。
+    registerStatsSubscriptionHandlers(statsSubscriptionRegistry);
     registerIpInfoHandlers(ipInfoService);
     registerSystemHandlers();
     registerRuleResourceHandlers(ruleResourceManager);

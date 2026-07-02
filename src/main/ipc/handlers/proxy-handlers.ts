@@ -5,14 +5,7 @@
 
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
-import type {
-  UserConfig,
-  ServerConfig,
-  ProxyStatus,
-  TrafficStats,
-  ConnectionsSnapshot,
-  ConnectionsAggregate,
-} from '../../../shared/types';
+import type { UserConfig, ServerConfig, ProxyStatus, TrafficStats } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
 import { tailscaleStateExists } from '../../services/tailscale-state';
@@ -43,7 +36,9 @@ export function registerProxyHandlers(
 ): void {
   // 注：系统代理 enable/clear 已收口于 ProxyManager（start reconcile + ensureSystemProxyCleared），
   // 本 handler 不再直接持有 systemProxyManager（拆双轨，修 C1/M4）。
-  // 流量统计快照（窗口重建/挂载时回填初值）
+  // 流量统计快照（一次性读；app-store.refreshStatistics 等非订阅型消费者，batch3 保留 STATS_GET）。连接明细
+  // （CONNECTIONS_GET）与拓扑聚合（CONNECTIONS_AGGREGATE_GET）已改订阅驱动（STATS_SUBSCRIBE + 订阅即回初始帧），
+  // 两 handler 随 batch3 删除。
   registerIpcHandler<void, TrafficStats>(IPC_CHANNELS.STATS_GET, async () =>
     statsService
       ? statsService.getSnapshot()
@@ -57,20 +52,6 @@ export function registerProxyHandlers(
     { ok: boolean; indeterminate?: boolean; error?: string }
   >(IPC_CHANNELS.KERNEL_PROBE_OUTBOUND, async (_event, args) =>
     proxyManager.probeOutbound(args?.outbound, args?.isEndpoint)
-  );
-
-  // 连接明细 pull（连接信息页打开时按 interval 拉；窗口重建/挂载回填）。非每秒全量 push（issue #227）。
-  registerIpcHandler<void, ConnectionsSnapshot>(IPC_CHANNELS.CONNECTIONS_GET, async () =>
-    statsService ? statsService.getConnectionsSnapshot() : { connections: [], at: Date.now() }
-  );
-
-  // 首页拓扑聚合回填（挂载初值；后续增量走 EVENT_CONNECTIONS_AGGREGATE 广播）。载荷 ~Top-N host + 出口数。
-  registerIpcHandler<void, ConnectionsAggregate>(
-    IPC_CHANNELS.CONNECTIONS_AGGREGATE_GET,
-    async () =>
-      statsService
-        ? statsService.getAggregateSnapshot()
-        : { total: 0, hosts: [], outbounds: [], at: Date.now() }
   );
 
   // 关单条连接：经 ProxyManager（9090 keep-alive agent + Bearer secret 内部封装）发 DELETE /connections/{id}，

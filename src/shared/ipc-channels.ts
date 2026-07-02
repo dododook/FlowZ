@@ -77,10 +77,10 @@ export const IPC_CHANNELS = {
   AUTO_START_SET: 'autoStart:set',
   AUTO_START_GET_STATUS: 'autoStart:getStatus',
 
-  // 统计信息
-  STATS_GET: 'stats:get',
-  CONNECTIONS_GET: 'connections:get', // 连接信息页明细 pull（仅页面打开时定时拉，非每秒全量 push）
-  CONNECTIONS_AGGREGATE_GET: 'connections:aggregateGet', // 首页拓扑聚合回填（挂载初值；后续走 EVENT_CONNECTIONS_AGGREGATE）
+  // 统计信息（batch3 §3.7：订阅驱动数据面。renderer 按 topic 声明订阅，main 据订阅集派生 worker demand + 精确 relay）
+  STATS_GET: 'stats:get', // 一次性流量快照读（app-store.refreshStatistics 非订阅型消费者，保留）
+  STATS_SUBSCRIBE: 'stats:subscribe', // 订阅某 topic（stats|aggregate|detail）：main 挂订阅 + 即回初始帧（合并旧 GET 初值路径）
+  STATS_UNSUBSCRIBE: 'stats:unsubscribe', // 退订某 topic（unmount/窗口隐藏/暂停）：无订阅者 → worker 逐级停机
   CONNECTIONS_CLOSE: 'connections:close', // 关单条连接（main 经 9090 DELETE /connections/{id}）
   CONNECTIONS_CLOSE_ALL: 'connections:closeAll', // 关全部连接（main 经 9090 DELETE /connections，触发 ResetNetwork）
 
@@ -143,7 +143,11 @@ export const IPC_CHANNELS = {
   EVENT_STATS_UPDATED: 'event:statsUpdated',
   // 首页拓扑连接聚合（StatsWorkerHost 每帧 O(N) 聚合后广播，载荷 ~Top-N host + 出口数，与连接总数解耦）。
   // 取代旧 EVENT_CONNECTIONS_UPDATED（每秒全量 ConnectionEntry[] relay）——连接风暴下渲染端被全量明细拖死（issue #227）。
+  // batch3 §3.7：兼作 aggregate topic 的初始帧 + 增量 push 通道（订阅即回缓存帧，之后 seq 变更才推）。
   EVENT_CONNECTIONS_AGGREGATE: 'event:connectionsAggregate',
+  // 连接明细 push（batch3 §3.7）：detail topic 订阅期 worker→main→订阅 renderer 的全量连接快照（取代旧 CONNECTIONS_GET
+  // 按需 pull）。初始帧 + 增量同一通道；仅连接页订阅期流动，无订阅者 worker 不 post（逐级停机）。
+  EVENT_CONNECTIONS_DETAIL: 'event:connectionsDetail',
   EVENT_ENTER_PRIVACY_MODE: 'event:enterPrivacyMode',
   EVENT_EXIT_PRIVACY_MODE: 'event:exitPrivacyMode', // 退出隐私模式（解锁/idle 计时复位）
   EVENT_NAVIGATE: 'navigate', // 托盘菜单 -> 渲染端路由跳转
@@ -187,3 +191,19 @@ export const IPC_CHANNELS = {
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
+
+/**
+ * stats 订阅 topic（batch3 §3.7 订阅驱动数据面）：renderer 按 topic 精确声明订阅，main 据订阅集派生 worker
+ * demand（aggregate|detail → 上游 Connections 流；detail → 跨进程明细）并只 relay 给对应 topic 的订阅者。
+ */
+export type StatsTopic = 'stats' | 'aggregate' | 'detail';
+
+/**
+ * topic → 事件推送通道（订阅即回的初始帧 + 后续增量 push 共用同一通道）。主/渲两侧订阅与 relay 的单一真值，
+ * 防裸字符串通道名两处漂移（tsc 不查字符串值相等，见 IPC 通道收敛陷阱教训）。
+ */
+export const STATS_TOPIC_EVENT: Record<StatsTopic, IpcChannel> = {
+  stats: IPC_CHANNELS.EVENT_STATS_UPDATED,
+  aggregate: IPC_CHANNELS.EVENT_CONNECTIONS_AGGREGATE,
+  detail: IPC_CHANNELS.EVENT_CONNECTIONS_DETAIL,
+};

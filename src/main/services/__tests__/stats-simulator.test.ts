@@ -19,7 +19,10 @@ function makeSim(rawConfig: string, active = true) {
     workerPath: '/fake/stats-worker.js',
     onStats,
     onAggregate,
+    // batch3 新增字段：合成器不产 detail、无 worker demand（onDetail/hasSubscribers 仅为满足 options 形状）。
+    onDetail: jest.fn(),
     isUiActive: () => state.active,
+    hasSubscribers: () => false,
     getEndpoint: () => null,
     log: (level, message) => logs.push({ level, message }),
   };
