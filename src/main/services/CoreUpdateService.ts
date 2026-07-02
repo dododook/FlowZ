@@ -75,7 +75,9 @@ const BUNDLED_CEILING = encodeMajorMinor(coreManifest.bundledCoreVersion);
 export class CoreUpdateService {
   private logManager: LogManager;
   private proxyManager: ProxyManager | null = null;
-  private helperManager: HelperManager | null = null; // B 块：macOS 经 helper v5 install-core 写受保护目录
+  // helper 的 install-core 能力窄视图（mac HelperManager / linux LinuxServiceHelper 均满足 getStatus+installCore；
+  // Windows 无 install-core）。B 块：经 helper install-core 写 root 受保护/受管核目录。
+  private helperManager: Pick<HelperManager, 'getStatus' | 'installCore'> | null = null;
   private privilegeService: PlatformPrivilegeService | null = null; // T16：copyFileElevatedWindows delegate
   private isUpdating: boolean = false;
   // 更新后等待「首次成功运行」验证的新版本号；首启成功→清除并删备份，首启失败→自动回滚
@@ -115,8 +117,8 @@ export class CoreUpdateService {
     this.coreDownloader.setUpdateNetwork(updateNetwork);
   }
 
-  /** B 块：注入 helper（macOS 持久化内核更新经 helper v5 install-core 写受保护目录）。 */
-  setHelperManager(helperManager: HelperManager): void {
+  /** B 块：注入 helper（macOS/Linux 持久化内核更新经 helper install-core 写 root 受保护/受管核目录）。 */
+  setHelperManager(helperManager: Pick<HelperManager, 'getStatus' | 'installCore'>): void {
     this.helperManager = helperManager;
   }
 
@@ -382,10 +384,10 @@ export class CoreUpdateService {
   ): Promise<void> {
     // B 块：macOS + helper v5 → 整个核心目录经 install-core 由 root 写入受保护目录（含 libcronet：先 ensureCronetBeside
     // 把配套放进 sourceDir，再整目录交 helper）。不经普通用户 fs.copy（受保护目录 root-only）。受保护目录回滚靠 B5。
-    if (process.platform === 'darwin' && this.helperManager) {
+    if ((process.platform === 'darwin' || process.platform === 'linux') && this.helperManager) {
       const st = await this.helperManager.getStatus();
       if (st.ready && !st.upgradeable) {
-        await this.backupCurrentCore(); // 备份现役(受保护目录可读)→userData，供首启失败回滚（[HIGH-1]）
+        await this.backupCurrentCore(); // 备份现役(受保护/受管核可读)→userData，供首启失败回滚（[HIGH-1]）
         onBackupDone?.();
         await resourceManager.ensureCronetBeside(sourceDir);
         const res = await this.helperManager.installCore(sourceDir);
@@ -547,7 +549,8 @@ export class CoreUpdateService {
 
   /** B 块 macOS：当前是否启用受保护目录持久化（helper v5 在位且 ready）。回滚/恢复据此决定经 helper 还是普通写。 */
   private async isProtectedCoreActive(): Promise<boolean> {
-    if (process.platform !== 'darwin' || !this.helperManager) return false;
+    if ((process.platform !== 'darwin' && process.platform !== 'linux') || !this.helperManager)
+      return false;
     const st = await this.helperManager.getStatus();
     return st.ready && !st.upgradeable;
   }
@@ -1276,11 +1279,15 @@ export class CoreUpdateService {
 
         // 写入新核心：macOS + helper v5 → install-core 进受保护目录；否则 → bundle 写入腿（含签名 + 落位后预检）。
         // 源已 preSrc 预检过；install-core 内 sha256 校验保证落位字节 == 预检源，无需二次预检。
-        if (process.platform === 'darwin' && this.helperManager) {
+        if ((process.platform === 'darwin' || process.platform === 'linux') && this.helperManager) {
           const st = await this.helperManager.getStatus();
           if (st.ready && !st.upgradeable) {
             await this.installSingleCoreViaHelper(sourcePath);
-            this.logManager.addLog('info', '手动替换核心已写入受保护目录', 'CoreUpdateService');
+            this.logManager.addLog(
+              'info',
+              '手动替换核心已写入受保护/受管核目录',
+              'CoreUpdateService'
+            );
           } else {
             await this.writeManualCoreToBundle(sourcePath);
           }
@@ -1566,9 +1573,9 @@ export class CoreUpdateService {
     if (process.platform === 'win32') {
       return path.join(app.getPath('userData'), 'sing-box.exe.bak');
     }
-    // macOS：B 块受保护目录是 root-only，.bak 不能落那 → 统一放 userData（用户可写）；备份内容从 getSingBoxPath
-    // （受保护目录或 bundle，均可读）复制来。Linux 原同 bundle，这里一并归并到 userData 更稳。
-    if (process.platform === 'darwin') {
+    // macOS 受保护目录 / Linux root 受管核目录都是 root-only，.bak 不能落那 → 统一放 userData（用户可写）；备份内容
+    // 从 getSingBoxPath（受保护/受管核或 bundle，均可读）复制来。（Linux setcap 兜底态核在 userData 亦可读，一致。）
+    if (process.platform === 'darwin' || process.platform === 'linux') {
       return path.join(app.getPath('userData'), 'core-backup', 'sing-box.bak');
     }
     return resourceManager.getSingBoxPath() + '.bak';

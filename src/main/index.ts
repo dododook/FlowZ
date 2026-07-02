@@ -58,6 +58,7 @@ import { seedBuiltinRuleSets } from './services/builtin-geo-rulesets';
 import { RuleResourceScheduler } from './services/RuleResourceScheduler';
 import { HelperManager } from './services/HelperManager';
 import { WindowsServiceHelper } from './services/WindowsServiceHelper';
+import { LinuxServiceHelper } from './services/LinuxServiceHelper';
 import type { IPrivilegedHelper } from './services/IPrivilegedHelper';
 import type { HelperStatus, UserConfig } from '../shared/types';
 import { ipcEventEmitter } from './ipc/ipc-events';
@@ -304,6 +305,34 @@ async function promptHelperGate(
       cancelId: 2,
       message: mt('dlgWinInstallServiceMsg'),
       detail: mt('dlgWinInstallDetail'),
+    });
+    if (response === 2) return 'abort';
+    if (response === 0) await helperManager.install().catch(() => {});
+    return 'proceed';
+  }
+  if (process.platform === 'linux') {
+    // Linux：needsRepair(已装未就绪) → 修复；未装 → 安装。任一路径仅一次 pkexec（装 systemd 服务需授权一次）；
+    // 「用系统授权启动」= 本次回退 setcap+pkexec（每次启停授权）。无「允许在后台」/plist 概念，不落 mac 分支。
+    if (hs.needsRepair) {
+      const { response } = await dialog.showMessageBox({
+        type: 'question',
+        buttons: [mt('btnRepairStart'), mt('btnUseSystemAuth'), mt('btnCancel')],
+        defaultId: 0,
+        cancelId: 2,
+        message: mt('dlgLinuxRepairServiceMsg'),
+        detail: mt('dlgLinuxRepairDetail'),
+      });
+      if (response === 2) return 'abort';
+      if (response === 0) await helperManager.install().catch(() => {});
+      return 'proceed';
+    }
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: [mt('btnInstallStart'), mt('btnUseSystemAuth'), mt('btnCancel')],
+      defaultId: 0,
+      cancelId: 2,
+      message: mt('dlgLinuxInstallServiceMsg'),
+      detail: mt('dlgLinuxInstallDetail'),
     });
     if (response === 2) return 'abort';
     if (response === 0) await helperManager.install().catch(() => {});
@@ -1201,14 +1230,18 @@ if (gotTheLock) {
       ipcEventEmitter.sendToAll(channel, payload)
     );
 
-    // 提权 helper：装一次后 TUN 模式启停 sing-box 免提权；未装则回退平台提权路径（macOS osascript / Windows UAC）。
-    // macHelper 始终创建：macOS 真用（含 v5 install-core + 提权复制，注入 CoreUpdateService/PlatformPrivilegeService）；
-    // Windows/Linux 上 supported=false 安全降级（这些 macOS 专属消费者不会真用它）。模块级 helperManager（供 ProxyManager
-    // 路由 / 引导门控 / IPC 处理器）：Windows=WindowsServiceHelper，其余=macHelper。互不进入对方分支 → 跨平台零回归。
+    // 提权 helper：装一次后 TUN 模式启停 sing-box 免提权；未装则回退平台提权路径（macOS osascript / Windows UAC / Linux setcap）。
+    // 平台实现：Windows=WindowsServiceHelper、Linux=LinuxServiceHelper、macOS=macHelper（供 ProxyManager 路由 / 引导门控 / IPC）。
+    // 互不进入对方分支 → 跨平台零回归。CoreUpdateService 的 install-core 消费者：mac→macHelper、linux→linuxHelper（均有
+    // installCore 写 root 受保护/受管核目录）；Windows 无 install-core，核更新走 UAC 直写、不调用。
     const macHelper = new HelperManager(logManager);
-    helperManager = process.platform === 'win32' ? new WindowsServiceHelper(logManager) : macHelper;
+    const linuxHelper = process.platform === 'linux' ? new LinuxServiceHelper(logManager) : null;
+    helperManager =
+      process.platform === 'win32'
+        ? new WindowsServiceHelper(logManager)
+        : (linuxHelper ?? macHelper);
     proxyManager.setHelperManager(helperManager);
-    coreUpdateService.setHelperManager(macHelper); // B 块：install-core 仅 macOS（Windows/Linux 得降级实例，不真用）
+    coreUpdateService.setHelperManager(linuxHelper ?? macHelper);
     proxyManager.setHelperGate(promptHelperGate);
     // 启动后检测 helper 是否可升级（已装 proto < 期望，如属主根治 v6）→ 发事件让渲染端 toast 主动引导升级
     // （否则用户不去设置页就不知道要升级、根治不生效）。**跟随渲染端首屏加载完成**再发；但单次定时发射有竞态：

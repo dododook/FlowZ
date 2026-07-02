@@ -249,7 +249,7 @@ export function NetworkSettings() {
 
   return (
     <div className="space-y-6">
-      {(isMac || isWin) && <HelperManagementCard />}
+      {(isMac || isWin || isLinux) && <HelperManagementCard />}
 
       {/* DNS */}
       <Card>
