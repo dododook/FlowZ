@@ -2679,6 +2679,7 @@ done
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
         updateInPort: this.updateInPort,
+        log: (level, message) => this.logToManager(level, message),
       }),
       outbounds: outboundsResult.outbounds,
       route: buildRouteConfig(config, idToTagMap, {

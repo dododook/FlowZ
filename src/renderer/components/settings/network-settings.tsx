@@ -470,6 +470,38 @@ export function NetworkSettings() {
             )}
           </div>
 
+          {/* TUN「连入来源排除」：本机作服务端被 off-subnet 私网连入（如经 ZeroTier→路由器 DNAT 访问本机服务）时，
+              声明来源网段绕过 TUN 捕获（route_exclude_address），使回包走物理网卡、不被 TUN 用户态栈误劫持中断。
+              仅 TUN 模式显示（三平台适用；生成期减组网段/fakeip 段，macOS 额外减本机物理 LAN 段）。 */}
+          {config.proxyModeType?.toLowerCase() === 'tun' && (
+            <div>
+              <SettingsRow
+                label={t('settings.advanced.tunInboundExclude', 'TUN 连入来源排除')}
+                description={t(
+                  'settings.advanced.tunInboundExcludeDesc',
+                  '被这些网段远程连入本机（如经组网/NAT 访问本机服务）时，让回包绕过 TUN、走物理网卡，避免连接被劫持中断。'
+                )}
+                tooltip={t(
+                  'settings.advanced.tunInboundExcludeDescFull',
+                  '区别于「绕过局域网」：后者是分流直连偏好、不影响是否进 TUN；本项直接把网段排除出 TUN 捕获。注意这是**双向**的——被排除的段出/入两个方向都绕过 TUN 走直连，故这些段也不再经代理/自定义规则出网。与组网(WG/Tailscale)路由段重叠的会自动跳过（组网优先）；macOS 会跳过本机物理局域网段。一般用户无需设置。'
+                )}
+              />
+              <ExceptionList
+                value={config.tunConfig?.inboundExcludeCidrs}
+                defaults={[]}
+                onChange={(v) => updateTun({ inboundExcludeCidrs: v })}
+                placeholder={t(
+                  'settings.advanced.tunInboundExcludePlaceholder',
+                  '每行一个 IP 段（CIDR），例如：\n10.147.0.0/16\n192.168.5.0/24'
+                )}
+                hint={t(
+                  'settings.advanced.tunInboundExcludeHint',
+                  '每行一个 CIDR；非法项保存时自动剔除。用于「本机被远程管理/被连入」场景。'
+                )}
+              />
+            </div>
+          )}
+
           {/* P6 局域网网关（sing-box 1.14 LAN 设备识别）：邻居短名解析（Linux/macOS）+ TUN MAC 过滤（仅 Linux）。
               仅 TUN 模式 + 受支持平台显示——非 TUN/非支持平台时这些字段构建期不发射，UI 隐藏避免误导。 */}
           {config.proxyModeType?.toLowerCase() === 'tun' && (isLinux || isMac) && (

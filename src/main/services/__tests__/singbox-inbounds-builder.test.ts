@@ -275,3 +275,86 @@ describe('buildInbounds — TUN MAC 过滤（P6 LAN 网关）', () => {
     expect(tun.include_mac_address).toBeUndefined();
   });
 });
+
+describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () => {
+  it('Linux：用户段追加进 route_exclude_address，保留回环', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg({
+          proxyModeType: 'tun',
+          // 用文档保留段 203.0.113.0/24(TEST-NET-3)避免撞真机接口；10.147.x 模拟 ZeroTier 连入源
+          tunConfig: { inboundExcludeCidrs: ['203.0.113.0/24', '10.147.0.0/16'] },
+        } as Partial<UserConfig>),
+        undefined,
+        deps()
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.route_exclude_address).toContain('127.0.0.0/8');
+    expect(tun.route_exclude_address).toContain('203.0.113.0/24');
+    expect(tun.route_exclude_address).toContain('10.147.0.0/16');
+  });
+
+  it('与【生效】组网 force-route 段重叠的用户段被剔除（mesh 优先）+ 记 warn', () => {
+    const warns: string[] = [];
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg({
+          proxyModeType: 'tun',
+          // 选中该 WG 节点 → engaged，其 force-route 段生效 → 与之重叠的用户段被剔除
+          selectedServerId: 'wg1',
+          tunConfig: { inboundExcludeCidrs: ['203.0.113.0/24', '192.168.50.0/24'] },
+          servers: [
+            {
+              id: 'wg1',
+              protocol: 'wireguard',
+              wireguardSettings: { allowedIPs: ['192.168.50.0/24'] },
+            },
+          ],
+        } as unknown as Partial<UserConfig>),
+        undefined,
+        deps({
+          log: (lvl, msg) => {
+            if (lvl === 'warn') warns.push(msg);
+          },
+        })
+      )
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.route_exclude_address).toContain('203.0.113.0/24'); // 非重叠段保留
+    expect(tun.route_exclude_address).not.toContain('192.168.50.0/24'); // 与生效 mesh 段重叠 → 剔除
+    expect(warns.some((w) => w.includes('组网') && w.includes('192.168.50.0/24'))).toBe(true);
+  });
+
+  it('未 engaged 的「仅出网」组网节点段不减（engaged-only）：alwaysRouteSubnets=false 且未选中时用户段保留', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(
+        cfg({
+          proxyModeType: 'tun',
+          selectedServerId: 'other', // WG 未选中、无规则指向
+          tunConfig: { inboundExcludeCidrs: ['192.168.50.0/24'] },
+          servers: [
+            {
+              id: 'wg1',
+              protocol: 'wireguard',
+              // alwaysRouteSubnets=false（「仅出网」语义）→ 段只在 engaged 时 force-route；未选中=不 engaged=不 force-route
+              wireguardSettings: { allowedIPs: ['192.168.50.0/24'], alwaysRouteSubnets: false },
+            },
+          ],
+        } as unknown as Partial<UserConfig>),
+        undefined,
+        deps()
+      )
+    );
+    // 未 engaged 的段不实际 force-route，故不误剔用户段（避免假告警 + 静默架空合法段）——对比全量 servers 会误剔
+    expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('192.168.50.0/24');
+  });
+
+  it('无 inboundExcludeCidrs → route_exclude 仅回环（零变化）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+    );
+    const tun = byTag(ibs, 'tun-in');
+    expect(tun.route_exclude_address).toEqual(['127.0.0.0/8', '::1/128']);
+  });
+});

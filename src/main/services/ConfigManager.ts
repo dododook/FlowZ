@@ -37,6 +37,8 @@ import {
 import { isAccountBasedProtocol } from '../../shared/endpoint-routes';
 import { isDirectSelection } from '../../shared/direct-selection';
 import { TUN_STACK_VALUES, migrateTunStackConfig } from '../../shared/tun-stack';
+import { dedupe } from '../../shared/collections';
+import { normalizeTunExcludeCidr } from '../../shared/tun-route-exclude';
 
 export interface IConfigManager {
   loadConfig(): Promise<UserConfig>;
@@ -572,6 +574,35 @@ export class ConfigManager implements IConfigManager {
     }
     if (typeof config.tunConfig.strictRoute !== 'boolean') {
       throw new Error('tunConfig.strictRoute must be a boolean');
+    }
+
+    // inboundExcludeCidrs sanitize（「连入来源排除」网段，一律不 throw——防单条脏数据触发整配置回落默认）：
+    // normalizeTunExcludeCidr 规范化：裸 IP 补 /32|/128、拒 catch-all/过宽（0.0.0.0/0 等会排空 TUN→代理失效）、
+    // 严格校验（sing-box netip 口径：段≤255/前缀合法/禁前导零）。非法/过宽静默剔除并告警——否则直通
+    // route_exclude_address 致 sing-box check FATAL（裸 IP `no '/'` / 过宽排空 TUN）。dropped 只计真·非法（不含去重）。
+    // 空/全非法 / 非数组 → **删字段**（回落 undefined「无排除」）：保留 [] 会让 configGenerationNorm 翻转触发无谓重启。
+    if (config.tunConfig.inboundExcludeCidrs !== undefined) {
+      if (!Array.isArray(config.tunConfig.inboundExcludeCidrs)) {
+        delete config.tunConfig.inboundExcludeCidrs;
+      } else {
+        const raw = config.tunConfig.inboundExcludeCidrs;
+        const cleaned: string[] = [];
+        let dropped = 0;
+        for (const c of raw) {
+          const n = normalizeTunExcludeCidr(c as string);
+          if (n === null) dropped++;
+          else cleaned.push(n);
+        }
+        const deduped = dedupe(cleaned);
+        if (dropped > 0) {
+          this.log(
+            'warn',
+            `[ConfigManager] tunConfig.inboundExcludeCidrs 剔除 ${dropped} 条非法/过宽网段（须合法 CIDR，不含 0.0.0.0/0 等过宽段）`
+          );
+        }
+        if (deduped.length > 0) config.tunConfig.inboundExcludeCidrs = deduped;
+        else delete config.tunConfig.inboundExcludeCidrs; // 空 → 删（避免 [] 触发 norm 翻转/无谓重启）
+      }
     }
 
     // P2c DNS 查询超时 sanitize（一律不 throw，与上方 CIDR/规则同标准防整配置回落）：

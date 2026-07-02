@@ -293,6 +293,11 @@ export interface TunModeConfig {
   // local DNS 邻居解析：对这些后缀的单标签短名（如 nas.lan）走局域网邻居解析（主机名→IP）。
   // 每条须以 '.' 开头（构建期归一化）；仅 Linux/macOS 生效。供「局域网设备短名访问」场景。
   neighborDomains?: string[];
+  // 「连入来源排除」网段（CIDR，v4/v6）：本机作服务端被 off-subnet 私网连入时（如经 ZeroTier→路由器 DNAT），
+  // 声明这些来源段绕过 TUN 捕获（追加进 route_exclude_address），使回包走物理网卡、不被 TUN 用户态栈误劫持。
+  // 区别于 bypassLANList（route.rules 直连偏好，不影响是否进 TUN）。生成期减 mesh force-route 段 / fakeip 段；
+  // macOS 额外减本机物理 LAN 段（NE 反向路由 guard）。详见 docs/design/flowz-tun-lan-exclusion-scenarios.md。
+  inboundExcludeCidrs?: string[];
 }
 
 // DNS 配置

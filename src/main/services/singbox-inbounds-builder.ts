@@ -16,19 +16,53 @@ import {
   isIpv6Host,
   hostToExcludeCidr,
   effectiveAppRules,
+  effectiveCustomRules,
   getCustomDomesticDnsEndpoint,
 } from './singbox-config-helpers';
 import { bypassLanCidrs, effectiveBypassLan } from '../../shared/system-proxy-bypass';
-import { partitionCidrsByOverlap } from '../../shared/ip';
+import { partitionCidrsByOverlap, cidrOverlapsAny } from '../../shared/ip';
+import { ruleIpCidrs } from '../../shared/rules';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
 import { usesFakeIp } from './custom-rule-files';
 import { isValidMacAddress, isTunMacFilterSupported } from '../../shared/neighbor';
+import { computeUserTunExclude } from '../../shared/tun-route-exclude';
+import {
+  meshForcedRouteCidrs,
+  meshForceRoutedServers,
+  collectRuleTargetedServerIds,
+} from '../../shared/endpoint-routes';
+import { dedupe } from '../../shared/collections';
+import * as os from 'os';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
 export interface InboundsDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
   updateInPort: number | null;
+  /** 可选日志回调（记「连入来源排除」的 mesh/fakeip/物理 LAN 剔除告警）。缺省（单测）不记。 */
+  log?: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
+}
+
+/**
+ * 本机**所有非回环接口**（物理/VPN/overlay/TUN 自身）的连接网段（CIDR）——macOS「连入来源排除」的反向路由 guard 用。
+ * os.networkInterfaces() 的 `.cidr`（如 '192.168.10.5/24'）含主机位，overlap 判定时 parseIpv4Cidr 会掩到网络地址，故直接用。
+ * 不精确区分"物理 LAN"是刻意的过度包含：多含无害（不排除 = 绝不触发 NE 反向路由 drop，宁可漏排也不误破）。
+ * 已知 efficacy 代价（可接受）：连入源经本机也接着的 overlay 接口（如本机也在同一 ZeroTier）到达时，其段与该接口段
+ * 相交 → 被 guard 剔除 → 该段的排除 no-op；但此时连入源已是"经 overlay 的同段"、多半本就被 sing-tun 最长前缀保护，剔除无害。
+ * 快照语义：在 buildInbounds 运行时读一次；换网络后由重生成刷新（M6 真机复核）。best-effort，取不到接口返空。
+ */
+function getOwnLanCidrs(): string[] {
+  const out: string[] = [];
+  try {
+    for (const addrs of Object.values(os.networkInterfaces())) {
+      for (const a of addrs ?? []) {
+        if (!a.internal && a.cidr) out.push(a.cidr);
+      }
+    }
+  } catch {
+    /* 取不到接口 → 空（macOS guard 退化为不额外剔除，交真机验证兜底） */
+  }
+  return dedupe(out);
 }
 
 export function buildInbounds(
@@ -104,13 +138,12 @@ export function buildInbounds(
     // 注意：macOS 下绝对不能在底层排除物理局域网段，否则 macOS NetworkExtension 的路由逆向拦截机制会导致从 TUN (172.19.0.1) 发回 192.168.x.x 的 TCP 回执包被当作非法源 IP 丢弃，导致网页无限 HANG。
     // 但是在 Windows 下，Wintun 如果不排除局域网物理网关，发往本地路由器的 DHCP/网关查询会被死循环拦截，导致全局断网。
     // FakeIP 护栏：Win TUN 排除清单同样剔除与 fakeip 段相交的条目，否则假 IP 被排除出 TUN→sing-box 收不到→断（同 route 侧）。
-    const winFakeipRanges = usesFakeIp(config)
+    const fakeipRanges = usesFakeIp(config)
       ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]
       : [];
     const excludeAddr =
       process.platform === 'win32' && shouldBypassLAN
-        ? partitionCidrsByOverlap(bypassLanCidrs(effectiveBypassLan(config)), winFakeipRanges)
-            .disjoint
+        ? partitionCidrsByOverlap(bypassLanCidrs(effectiveBypassLan(config)), fakeipRanges).disjoint
         : ['127.0.0.0/8', '::1/128'];
     // 【已知限制 / Windows 真机待验】Windows+bypassLAN 下这里用宽私网段(10/8、192.168/16 等)整体排除出 TUN，
     // 会顺带把落在私网段内的 endpoint(WG/Tailscale) force-route 段(如 mesh 192.168.50.0/24)也排除 → 该段到不了
@@ -160,6 +193,67 @@ export function buildInbounds(
           if (cidr) excludeAddr.push(cidr);
         }
       }
+    }
+
+    // 「连入来源排除」（本机作服务端被 off-subnet 私网连入 → 回包被 TUN 用户态栈误劫持的治本项，见
+    // docs/design/flowz-tun-lan-exclusion-scenarios.md）：把用户声明的来源网段追加进 route_exclude_address，
+    // 使该段（出/入双向）绕过 TUN、走物理网卡。减【生效】组网 force-route 段（mesh 优先，否则误伤组网）/ fakeip 段；
+    // macOS 额外减本机物理 LAN 段（排除物理 LAN 会触发 NE 反向路由丢 TUN 回包，见本函数顶部 line ~130 注释）。
+    // 仅在用户声明了段时才计算（空/未设 → 跳过 getOwnLanCidrs 接口枚举 + mesh 计算，零开销）。
+    const userInboundCidrs = config.tunConfig?.inboundExcludeCidrs;
+    if (userInboundCidrs && userInboundCidrs.length > 0) {
+      // 只减【engaged】组网段（被选中/被规则指向的节点），与 route-builder 块 0c 同口径（shouldForceRouteSubnets）。
+      // 用全量 servers 会把休眠组网节点的段（及每个 Tailscale 无条件贡献的 100.64/10）也误剔 → 合法用户段被
+      // 静默架空 + 假告警；切节点/改规则会触发重生成，engaged 集随之更新。
+      const ruleTargetedServerIds = collectRuleTargetedServerIds([
+        ...effectiveCustomRules(config),
+        ...effectiveAppRules(config),
+      ]);
+      const engagedMeshCidrs = meshForcedRouteCidrs(
+        meshForceRoutedServers(config.servers, config.selectedServerId, ruleTargetedServerIds)
+      );
+      const userExclude = computeUserTunExclude({
+        platform: process.platform,
+        userCidrs: userInboundCidrs,
+        meshCidrs: engagedMeshCidrs,
+        fakeipRanges, // 仅 usesFakeIp 时非空，平台无关
+        ownLanCidrs: process.platform === 'darwin' ? getOwnLanCidrs() : [],
+      });
+      excludeAddr.push(...userExclude.extra);
+      if (userExclude.droppedInvalid > 0) {
+        deps.log?.(
+          'warn',
+          `「连入来源排除」剔除 ${userExclude.droppedInvalid} 条非法/过宽网段（须合法 CIDR、不含 0.0.0.0/0 等过宽段）。`
+        );
+      }
+      if (userExclude.droppedMeshOverlap.length > 0) {
+        deps.log?.(
+          'warn',
+          `「连入来源排除」${userExclude.droppedMeshOverlap.length} 段与生效组网(WG/Tailscale)路由段重叠，已跳过排除（该段经组网节点）：${userExclude.droppedMeshOverlap.join(', ')}`
+        );
+      }
+      if (userExclude.droppedOwnLanMac.length > 0) {
+        deps.log?.(
+          'warn',
+          `macOS：「连入来源排除」${userExclude.droppedOwnLanMac.length} 段与本机物理 LAN 相交，已跳过（排除物理 LAN 会触发 NetworkExtension 反向路由丢包）：${userExclude.droppedOwnLanMac.join(', ')}`
+        );
+      }
+      // 与「走代理」自定义规则段重叠告警（双向语义副作用）：被排除的段出/入均绕过 TUN，若某 enabled 的 proxy
+      // custom rule 想把该段走代理，会被静默架空。刻意**不减**（排除=用户显式声明的"我的连入/远程管理路径"意图更明确，
+      // 且对私网连入源通常正是想直连），仅告警让用户知晓冲突（对齐 route-builder 的 mesh 重叠提醒风格）。
+      const proxyRuleCidrs = effectiveCustomRules(config)
+        .filter((r) => r.enabled && r.action === 'proxy')
+        .flatMap((r) => ruleIpCidrs(r));
+      if (proxyRuleCidrs.length > 0) {
+        const conflict = userExclude.extra.filter((c) => cidrOverlapsAny(c, proxyRuleCidrs));
+        if (conflict.length > 0) {
+          deps.log?.(
+            'warn',
+            `「连入来源排除」${conflict.length} 段与「走代理」自定义规则段重叠：排除使其出/入均绕过 TUN 走直连，该自定义规则对这些段将不生效：${conflict.join(', ')}`
+          );
+        }
+      }
+      // droppedFakeipOverlap 不单独告警：与 Windows 宽排除的 fakeip 护栏同「静默剔除」语义，且极少见。
     }
 
     // 恢复至对应平台最稳定的网段。Windows 在 v3.4.0 使用 /16 时非常完美；Mac 在 v3.3.18 使用 /30 时最完美。
