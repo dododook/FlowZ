@@ -102,6 +102,20 @@ export function cidrOverlapsAny(target: string, candidates: string[]): boolean {
 }
 
 /**
+ * outer 是否（按前缀）**包含** inner（v4/v6 家族感知；跨族/非法恒 false）。区别于 cidrsOverlap 的双向相交：
+ * 仅当 inner ⊆ outer 才 true。供「某片段是否属于某原始条目的自有残余」等需方向性的判定（v4Contains/v6Contains 内部复用）。
+ */
+export function cidrContains(outer: string, inner: string): boolean {
+  const o4 = parseIpv4Cidr(outer);
+  const i4 = parseIpv4Cidr(inner);
+  if (o4 && i4) return v4Contains(o4, i4);
+  const o6 = parseIpv6Cidr(outer);
+  const i6 = parseIpv6Cidr(inner);
+  if (o6 && i6) return v6Contains(o6, i6);
+  return false;
+}
+
+/**
  * 把 cidrs 按"与 ranges 任一相交"分两组（v4+v6）。FakeIP 护栏用：剔除会吃掉假 IP 段（198.18.0.0/15 ·
  * 2001:db8::/32）的旁路/私网直连条目，防假 IP 被当私网直连、绕过 fakeip 反查致服务端收不到域名（v6 撞墙根因）。
  */
@@ -116,4 +130,118 @@ export function partitionCidrsByOverlap(
     else disjoint.push(c);
   }
   return { overlapping, disjoint };
+}
+
+// ---- CIDR 差集（carve）：从宽段中"挖掉"更窄的子段，返回覆盖补集的最小前缀集 ----
+// 用途：Windows bypassLAN 内核排除表须为 engaged 组网(WG/Tailscale) force-route 段"开洞"（让该段进 TUN 走
+// 组网），但**不能整条剔除宽段**——整剔 192.168/16 会连本机网关子网一起脱离排除 → 触发 Windows WinTun
+// DHCP/网关查询死循环。故用算术差集只挖掉 mesh 段、保留其余（含网关子网）仍被排除。CIDR 天然层级（两段
+// 要么无交、要么一含另一），据此递归二分。
+
+/** outer 是否（按前缀）包含 inner（v4；网络地址均已规范化）。 */
+function v4Contains(outer: [number, number], inner: [number, number]): boolean {
+  if (outer[1] > inner[1]) return false;
+  const mask = outer[1] === 0 ? 0 : (0xffffffff << (32 - outer[1])) >>> 0;
+  return (inner[0] & mask) >>> 0 === outer[0];
+}
+/** base ∖ carve（v4）：carve 无交→[base]；carve 覆盖 base→[]；carve 严格更窄→二分 base、含 carve 半递归、另一半整留。 */
+function excludeV4(base: [number, number], carve: [number, number]): Array<[number, number]> {
+  if (!v4Contains(base, carve)) return v4Contains(carve, base) ? [] : [base];
+  if (base[1] === carve[1]) return []; // 等价（carve==base）
+  const childPfx = base[1] + 1;
+  const blockSize = 2 ** (32 - childPfx);
+  const left: [number, number] = [base[0], childPfx];
+  const right: [number, number] = [(base[0] + blockSize) >>> 0, childPfx];
+  return [...excludeV4(left, carve), ...excludeV4(right, carve)];
+}
+function fmtV4(net: number, prefix: number): string {
+  return `${(net >>> 24) & 255}.${(net >>> 16) & 255}.${(net >>> 8) & 255}.${net & 255}/${prefix}`;
+}
+
+/** outer 是否（按前缀）包含 inner（v6）。 */
+function v6Contains(outer: [bigint, number], inner: [bigint, number]): boolean {
+  if (outer[1] > inner[1]) return false;
+  const mask = outer[1] === 0 ? 0n : V6_FULL ^ ((1n << BigInt(128 - outer[1])) - 1n);
+  return (inner[0] & mask) === outer[0];
+}
+/** base ∖ carve（v6）：同 excludeV4 语义。 */
+function excludeV6(base: [bigint, number], carve: [bigint, number]): Array<[bigint, number]> {
+  if (!v6Contains(base, carve)) return v6Contains(carve, base) ? [] : [base];
+  if (base[1] === carve[1]) return [];
+  const childPfx = base[1] + 1;
+  const blockSize = 1n << BigInt(128 - childPfx);
+  const left: [bigint, number] = [base[0], childPfx];
+  const right: [bigint, number] = [base[0] + blockSize, childPfx];
+  return [...excludeV6(left, carve), ...excludeV6(right, carve)];
+}
+function fmtV6(net: bigint, prefix: number): string {
+  const groups: string[] = [];
+  for (let i = 7; i >= 0; i--) groups.push(((net >> BigInt(i * 16)) & 0xffffn).toString(16));
+  // 压缩最长的连续 0 段为 ::（至少 2 组才压缩，符合 RFC5952）。
+  let bestStart = -1;
+  let bestLen = 0;
+  let curStart = -1;
+  let curLen = 0;
+  for (let i = 0; i < 8; i++) {
+    if (groups[i] === '0') {
+      curStart = curStart < 0 ? i : curStart;
+      curLen++;
+      if (curLen > bestLen) {
+        bestLen = curLen;
+        bestStart = curStart;
+      }
+    } else {
+      curStart = -1;
+      curLen = 0;
+    }
+  }
+  const addr =
+    bestLen < 2
+      ? groups.join(':')
+      : `${groups.slice(0, bestStart).join(':')}::${groups.slice(bestStart + bestLen).join(':')}`;
+  return `${addr}/${prefix}`;
+}
+
+/**
+ * CIDR 差集（家族感知）：返回覆盖 (∪base) ∖ (∪carve) 的 CIDR 列表。v4 carve 只作用于 v4 base、v6 只作用于 v6。
+ * base 中无法解析为 v4/v6 CIDR 的条目**原样保留**（不被任何 carve 影响）；无法解析的 carve 条目忽略。
+ * 输出为规范化 CIDR（网络地址 + 前缀）。供 Windows bypassLAN 排除表对 engaged mesh 段开洞（保网关子网仍排除）。
+ */
+export function subtractCidrs(base: string[], carve: string[]): string[] {
+  const carveV4: Array<[number, number]> = [];
+  const carveV6: Array<[bigint, number]> = [];
+  for (const c of carve) {
+    const p4 = parseIpv4Cidr(c);
+    if (p4) {
+      carveV4.push(p4);
+      continue;
+    }
+    const p6 = parseIpv6Cidr(c);
+    if (p6) carveV6.push(p6);
+  }
+  const out: string[] = [];
+  for (const b of base) {
+    const b4 = parseIpv4Cidr(b);
+    if (b4) {
+      let pieces: Array<[number, number]> = [b4];
+      for (const cv of carveV4) {
+        pieces = pieces.flatMap((p) => excludeV4(p, cv));
+        if (pieces.length === 0) break;
+      }
+      for (const [net, pfx] of pieces) out.push(fmtV4(net, pfx));
+      continue;
+    }
+    const b6 = parseIpv6Cidr(b);
+    if (b6) {
+      let pieces: Array<[bigint, number]> = [b6];
+      for (const cv of carveV6) {
+        pieces = pieces.flatMap((p) => excludeV6(p, cv));
+        if (pieces.length === 0) break;
+      }
+      for (const [net, pfx] of pieces) out.push(fmtV6(net, pfx));
+      continue;
+    }
+    out.push(b); // 无法解析（域名等）→ 原样保留
+  }
+  return out;
 }

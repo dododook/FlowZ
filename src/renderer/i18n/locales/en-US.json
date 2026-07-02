@@ -645,6 +645,7 @@
       "subIntervalRange": "Update interval must be 1–168 hours",
       "fakeIpFilterEditHint": "One domain per line; add or remove, restore defaults to reset.",
       "bypassLANEditHint": "Route rules outrank this: to proxy a range, remove it from the list or add a custom rule on the Rules page to override.",
+      "bypassLANEditHintWinTun": "On Windows TUN this list is a kernel-level exclusion: custom rules cannot override it. To proxy a range, remove it from this list (mesh routes are auto-allowed into the TUN).",
       "fakeIpDescFull": "On: nodes receive domains, faster first connect, recommended for TUN. Off: nodes receive real IPs; some strict airports may refuse, overseas first connect is slower.",
       "resolveNodeDomainsAheadDescFull": "When on, node domains are pre-resolved before connecting by racing multiple DoH upstreams for the fastest result, so a single throttled/hijacked DNS can't take down the whole proxy; when off, it falls back to a single upstream (no concurrent fault-tolerance). SNI still uses the original domain; falls back to the domain on failure. Recommended.",
       "takeoverSystemDnsDescFull": "In TUN, temporarily set system DNS to 8.8.8.8 so proxied domains resolve through the tunnel (auto-restored on stop). Off is friendlier for internal domains but some proxied domains may resolve wrong. Recommended on.",

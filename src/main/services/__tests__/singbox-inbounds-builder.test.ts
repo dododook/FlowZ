@@ -7,11 +7,19 @@ jest.mock('electron', () => ({
   app: { getPath: () => '/fake/userData', getAppPath: () => '/fake/app', isPackaged: false },
   net: {},
 }));
+// os.networkInterfaces 属性不可 spyOn 重定义 → 用 module mock；缺省返回空接口（getOwnLanCidrs 得 []），
+// Windows carve 用例在 beforeEach 覆盖为固定接口，避免真机接口与测试 mesh 段偶然重叠致 own-LAN guard flaky。
+jest.mock('os', () => ({
+  ...jest.requireActual('os'),
+  networkInterfaces: jest.fn(() => ({})),
+}));
 
 import { buildInbounds, type InboundsDeps } from '../singbox-inbounds-builder';
 import type { SingBoxInbound } from '../singbox-config-types';
 import type { UserConfig } from '../../../shared/types';
 import { withPlatform } from './platform-test-utils';
+import { cidrOverlapsAny } from '../../../shared/ip';
+import * as os from 'os';
 
 const deps = (over: Partial<InboundsDeps> = {}): InboundsDeps => ({
   probeDirectPort: null,
@@ -356,5 +364,169 @@ describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () =>
     );
     const tun = byTag(ibs, 'tun-in');
     expect(tun.route_exclude_address).toEqual(['127.0.0.0/8', '::1/128']);
+  });
+});
+
+// gap #1 修复：Windows bypassLAN 宽私网段整体排除会架空落在其中的 engaged 组网 force-route 段
+// （tailnet 100.64/10 / WG allowedIPs 私网段）→ 组网整体不可达。修法：对 engaged mesh 段算术差集 carve 开洞。
+describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () => {
+  beforeEach(() => {
+    // 固定本机接口为 192.168.99.0/24：与测试 mesh 段（100.64/10、10.20/16）不重叠 → carve 正常；
+    // own-LAN guard 用例故意用 192.168.99.0/24 mesh 段命中它。
+    (os.networkInterfaces as jest.Mock).mockReturnValue({
+      eth0: [{ internal: false, cidr: '192.168.99.5/24' }],
+    });
+  });
+  afterEach(() => (os.networkInterfaces as jest.Mock).mockReturnValue({}));
+
+  it('Tailscale 节点选中 → tailnet 100.64/10 carve 开洞（不再排除），其余 bypass 仍排除', () => {
+    const c = cfg({
+      proxyModeType: 'tun',
+      selectedServerId: 'ts1',
+      servers: [{ id: 'ts1', protocol: 'tailscale', tailscaleSettings: {} }],
+    } as unknown as Partial<UserConfig>);
+    const excl = byTag(
+      withPlatform('win32', () => buildInbounds(c, undefined, deps())),
+      'tun-in'
+    ).route_exclude_address as string[];
+    expect(excl).not.toContain('100.64.0.0/10'); // tailnet 进 TUN → 组网可达（修零门槛不可达缺口）
+    expect(cidrOverlapsAny('100.64.1.2/32', excl)).toBe(false);
+    expect(excl).toContain('10.0.0.0/8'); // 其余 bypass 仍排除
+    expect(excl).toContain('223.5.5.5/32'); // DNS 回流兜底仍在
+  });
+
+  it('WG 节点选中，allowedIPs 私网段 carve 开洞，其余 10/8 仍排除（含网关）', () => {
+    const c = cfg({
+      proxyModeType: 'tun',
+      selectedServerId: 'wg1',
+      servers: [
+        { id: 'wg1', protocol: 'wireguard', wireguardSettings: { allowedIPs: ['10.20.0.0/16'] } },
+      ],
+    } as unknown as Partial<UserConfig>);
+    const excl = byTag(
+      withPlatform('win32', () => buildInbounds(c, undefined, deps())),
+      'tun-in'
+    ).route_exclude_address as string[];
+    expect(cidrOverlapsAny('10.20.5.5/32', excl)).toBe(false); // mesh 段进 TUN
+    expect(cidrOverlapsAny('10.21.5.5/32', excl)).toBe(true); // 其余 10/8 仍排除
+  });
+
+  it('own-LAN guard：mesh 段与本机物理子网重叠 → 不 carve（保网关排除）+ warn', () => {
+    const warns: string[] = [];
+    const c = cfg({
+      proxyModeType: 'tun',
+      selectedServerId: 'wg1',
+      servers: [
+        {
+          id: 'wg1',
+          protocol: 'wireguard',
+          wireguardSettings: { allowedIPs: ['192.168.99.0/24'] },
+        },
+      ],
+    } as unknown as Partial<UserConfig>);
+    const excl = byTag(
+      withPlatform('win32', () =>
+        buildInbounds(
+          c,
+          undefined,
+          deps({
+            log: (l, m) => {
+              if (l === 'warn') warns.push(m);
+            },
+          })
+        )
+      ),
+      'tun-in'
+    ).route_exclude_address as string[];
+    expect(cidrOverlapsAny('192.168.99.5/32', excl)).toBe(true); // 仍被排除（含在 192.168.0.0/16，网关保护优先）
+    expect(warns.some((w) => w.includes('物理子网') && w.includes('192.168.99.0/24'))).toBe(true);
+  });
+
+  it('无组网节点 → bypassLAN 排除表与旧行为字节等价（tailnet 100.64/10 仍排除）', () => {
+    const excl = byTag(
+      withPlatform('win32', () => buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())),
+      'tun-in'
+    ).route_exclude_address as string[];
+    expect(excl).toContain('100.64.0.0/10'); // 无组网 → 不 carve，现状不变
+    expect(excl).toContain('10.0.0.0/8');
+  });
+
+  it('W2：bypassLAN 段与「走代理」自定义规则重叠 → warn（Windows 内核排除架空规则）', () => {
+    const warns: string[] = [];
+    const c = cfg({
+      proxyModeType: 'tun',
+      customRules: [
+        { id: 'r1', enabled: true, action: 'proxy', type: 'ipCidr', values: ['192.168.5.0/24'] },
+      ],
+    } as unknown as Partial<UserConfig>);
+    withPlatform('win32', () =>
+      buildInbounds(
+        c,
+        undefined,
+        deps({
+          log: (l, m) => {
+            if (l === 'warn') warns.push(m);
+          },
+        })
+      )
+    );
+    // 告警列出被排除的 bypass 段（192.168.0.0/16 ⊃ 规则 192.168.5.0/24）——即用户应从「绕过局域网」清单移除的那条。
+    expect(warns.some((w) => w.includes('绕过局域网') && w.includes('192.168.0.0/16'))).toBe(true);
+  });
+
+  it('W2/M1：carve 生效时告警列出【原始清单条目】而非 carve 合成片段（可操作）', () => {
+    const warns: string[] = [];
+    const c = cfg({
+      proxyModeType: 'tun',
+      selectedServerId: 'wg1', // WG engaged → 其 10.20.0.0/16 把 bypass 的 10.0.0.0/8 carve 成片段
+      servers: [
+        { id: 'wg1', protocol: 'wireguard', wireguardSettings: { allowedIPs: ['10.20.0.0/16'] } },
+      ],
+      // proxy 规则命中 carve 洞外、仍被排除的 10.99.0.0/16 → 应告警，且列出用户清单里的 10.0.0.0/8
+      customRules: [
+        { id: 'r1', enabled: true, action: 'proxy', type: 'ipCidr', values: ['10.99.0.0/16'] },
+      ],
+    } as unknown as Partial<UserConfig>);
+    withPlatform('win32', () =>
+      buildInbounds(
+        c,
+        undefined,
+        deps({
+          log: (l, m) => {
+            if (l === 'warn') warns.push(m);
+          },
+        })
+      )
+    );
+    // 报原始条目 10.0.0.0/8（carve 前 win.exclude 不含它、只含片段 → 若报片段则不会出现 10.0.0.0/8，此断言唯一验证 M1 修复）
+    expect(warns.some((w) => w.includes('绕过局域网') && w.includes('10.0.0.0/8'))).toBe(true);
+  });
+
+  it('W2/N-1：清单含嵌套条目（/16+其内 /24）时只报真正阻断的宽条目，不误列被包含的子条目', () => {
+    const warns: string[] = [];
+    const c = cfg({
+      proxyModeType: 'tun',
+      // 用户保留默认 /16 又冗余添加自己子网 /24（常见）；无组网 → 无 carve，两条都在排除表
+      bypassLANList: ['192.168.0.0/16', '192.168.50.0/24'],
+      // 规则命中 /16 内、/24 外 → 只有 /16 真正阻断它（移除 /24 是 no-op）
+      customRules: [
+        { id: 'r1', enabled: true, action: 'proxy', type: 'ipCidr', values: ['192.168.80.0/24'] },
+      ],
+    } as unknown as Partial<UserConfig>);
+    withPlatform('win32', () =>
+      buildInbounds(
+        c,
+        undefined,
+        deps({
+          log: (l, m) => {
+            if (l === 'warn') warns.push(m);
+          },
+        })
+      )
+    );
+    const w2 = warns.find((w) => w.includes('绕过局域网') && w.includes('自定义规则'));
+    expect(w2).toBeTruthy();
+    expect(w2).toContain('192.168.0.0/16'); // 真正阻断的宽条目
+    expect(w2).not.toContain('192.168.50.0/24'); // 被 /16 包含的子条目：移除它 no-op，不误列
   });
 });

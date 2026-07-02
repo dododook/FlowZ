@@ -16,7 +16,7 @@
  * 已有真机踩坑注释）。纯函数、无 electron；调用方追加 extra 进排除清单并按 dropped* 记 warn。
  */
 
-import { partitionCidrsByOverlap } from './ip';
+import { partitionCidrsByOverlap, cidrOverlapsAny, subtractCidrs } from './ip';
 import { isValidIpCidr } from './rules';
 import { dedupe } from './collections';
 
@@ -106,5 +106,76 @@ export function computeUserTunExclude(input: UserTunExcludeInput): UserTunExclud
     droppedMeshOverlap: mesh.overlapping,
     droppedFakeipOverlap: fakeip.overlapping,
     droppedOwnLanMac,
+  };
+}
+
+export interface WinBypassExcludeInput {
+  /** bypassLAN 的 IP CIDR 条目（bypassLanCidrs(effectiveBypassLan(config))，宽私网/保留段）。 */
+  bypassCidrs: string[];
+  /** 当前生效（engaged）的组网 force-route 段（meshForcedRouteCidrs(meshForceRoutedServers(...))，与 route-builder 块 0c 同口径）。 */
+  engagedMeshCidrs: string[];
+  /** 本机所有非回环接口连接网段（getOwnLanCidrs()）——carve guard：mesh 段与本机物理子网相交则不 carve（保网关排除）。 */
+  ownLanCidrs: string[];
+  /** fakeip 段：与之相交的 bypass 条目整条剔除（保持现状语义，防假 IP 被排除出 TUN）。 */
+  fakeipRanges: string[];
+}
+
+export interface WinBypassExcludeResult {
+  /** 追加进 route_exclude_address 的 bypassLAN 派生段（减 fakeip、对 engaged mesh 段 carve 开洞）。 */
+  exclude: string[];
+  /** 实际被 carve 开洞（挖出 TUN 排除表、进 TUN 走组网）的 engaged mesh 段。 */
+  carvedMeshCidrs: string[];
+  /** 因与保护段（本机物理子网 / 回环·链路本地·多播）相交、为保「必须仍排除」段而**未** carve 的 mesh 段（供 warn；该段仍绕过 TUN、其组网远端对等不可达）。 */
+  meshSkippedOwnLan: string[];
+}
+
+// carve 恒不得挖走的「特殊用途保护段」：回环 + 链路本地 + 多播。组网隧道（WG/Tailscale）承载这些无意义，
+// 一旦被超宽 mesh 段（如 wg-quick 半隧道 0.0.0.0/1·128.0.0.0/1，stripCatchAll 只剥 0/0 不剥 /1）carve 进 TUN，
+// 会破坏本地发现（SSDP/mDNS）、DHCP 广播、链路本地寻址。故恒不 carve、保留排除：
+//  · 回环 127/8·::1/128——与 mac/Linux 分支硬编码恒排除的不变量对齐；
+//  · 链路本地 169.254/16·fe80::/10、多播 224/4——本就在默认 bypass 清单，隧道不应承载。
+// 物理子网 guard 另经 ownLanCidrs 传入（Windows WinTun 不排网关→DHCP 死循环）。
+const WIN_BYPASS_CARVE_GUARD = [
+  '127.0.0.0/8',
+  '::1/128',
+  '169.254.0.0/16',
+  'fe80::/10',
+  '224.0.0.0/4',
+];
+
+/**
+ * Windows bypassLAN 内核排除表：对 engaged 组网段做**算术差集 carve**，修复「宽私网段整体排除出 TUN → 落在其中
+ * 的组网 force-route 段（如 tailnet 100.64.0.0/10、WG allowedIPs 私网段）接不到 route.rules → 组网整体架空」缺口。
+ *
+ * 为什么不能像「连入来源排除」那样整条剔除：bypass 条目是 /8·/12·/16 宽段，整剔会连**本机网关子网**一起脱离排除
+ * → 触发 Windows WinTun DHCP/网关查询死循环硬约束。故只用算术差集挖掉 mesh 段、其余（含网关/回环）仍排除。
+ *
+ * 分流：① 只考虑【确实落在某 bypass 排除条目内】的 mesh 段（不相交的段本就不被排除、无需开洞，计入会产生假
+ * 「已开洞」日志 + 无谓重格式化）；② 与「保护段」（本机物理子网 ownLanCidrs **或**回环）相交的段不 carve
+ * （carve 会连网关/回环一起放出）、保留排除并记入 meshSkippedOwnLan；③ 其余算术差集 carve。无可 carve 段 →
+ * 原样返回（与旧行为字节等价：无组网 / 组网段不在排除表时零变化）。
+ */
+export function computeWinBypassExclude(input: WinBypassExcludeInput): WinBypassExcludeResult {
+  // 1. fakeip 整条剔除（保持现状语义，防假 IP 被排除出 TUN → 绕过 fakeip 反查、服务端收不到域名）。
+  const afterFakeip = partitionCidrsByOverlap(input.bypassCidrs, input.fakeipRanges).disjoint;
+  // 2. 只对【落在某 bypass 排除条目内】的 engaged mesh 段考虑 carve（不相交=本就不被排除，无需开洞）。
+  const relevantMesh = dedupe(input.engagedMeshCidrs).filter((m) =>
+    cidrOverlapsAny(m, afterFakeip)
+  );
+  // 3. 分流：与保护段（物理子网 + 回环/链路本地/多播）相交的段不 carve（开洞会连网关/回环/本地发现段一起放出）
+  //    → meshSkippedOwnLan；其余 carve。
+  const { overlapping: meshSkippedOwnLan, disjoint: carveMesh } = partitionCidrsByOverlap(
+    relevantMesh,
+    [...input.ownLanCidrs, ...WIN_BYPASS_CARVE_GUARD]
+  );
+  // 4. 无可 carve 段 → 原样返回（Windows 排除表零变化，与旧行为字节等价）。
+  if (carveMesh.length === 0) {
+    return { exclude: afterFakeip, carvedMeshCidrs: [], meshSkippedOwnLan };
+  }
+  // 5. 算术差集：只挖掉 engaged mesh 段，其余（含网关子网/回环）仍排除。
+  return {
+    exclude: subtractCidrs(afterFakeip, carveMesh),
+    carvedMeshCidrs: carveMesh,
+    meshSkippedOwnLan,
   };
 }

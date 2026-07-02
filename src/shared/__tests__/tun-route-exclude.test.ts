@@ -1,8 +1,11 @@
 import {
   computeUserTunExclude,
+  computeWinBypassExclude,
   normalizeTunExcludeCidr,
   UserTunExcludeInput,
+  WinBypassExcludeInput,
 } from '../tun-route-exclude';
+import { cidrOverlapsAny } from '../ip';
 
 /** 造入参：只填关心的字段，其余给安全缺省。 */
 function input(over: Partial<UserTunExcludeInput>): UserTunExcludeInput {
@@ -140,5 +143,127 @@ describe('computeUserTunExclude', () => {
     expect(r.extra).toEqual([]);
     expect(r.droppedInvalid).toBe(0);
     expect(r.droppedMeshOverlap).toEqual([]);
+  });
+});
+
+/** 造 Windows bypassLAN carve 入参：只填关心字段，其余安全缺省。 */
+function winInput(over: Partial<WinBypassExcludeInput>): WinBypassExcludeInput {
+  return {
+    bypassCidrs: [],
+    engagedMeshCidrs: [],
+    ownLanCidrs: [],
+    fakeipRanges: [],
+    ...over,
+  };
+}
+
+describe('computeWinBypassExclude — Windows bypassLAN 对 engaged mesh 段 carve', () => {
+  it('tailnet 100.64/10 被 carve → 不再排除（修 Windows+TS 组网不可达零门槛缺口）', () => {
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['10.0.0.0/8', '100.64.0.0/10', '192.168.0.0/16'],
+        engagedMeshCidrs: ['100.64.0.0/10'],
+      })
+    );
+    expect(r.carvedMeshCidrs).toEqual(['100.64.0.0/10']);
+    expect(r.meshSkippedOwnLan).toEqual([]);
+    expect(cidrOverlapsAny('100.64.1.2/32', r.exclude)).toBe(false); // tailnet 进 TUN → 组网可达
+    expect(cidrOverlapsAny('10.5.5.5/32', r.exclude)).toBe(true); // 其余 bypass 仍排除
+    expect(cidrOverlapsAny('192.168.1.1/32', r.exclude)).toBe(true);
+  });
+
+  it('WG allowedIPs 私网段被 carve，其余宽段仍排除', () => {
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
+        engagedMeshCidrs: ['10.20.0.0/16'],
+      })
+    );
+    expect(r.carvedMeshCidrs).toEqual(['10.20.0.0/16']);
+    expect(cidrOverlapsAny('10.20.5.5/32', r.exclude)).toBe(false); // mesh 段开洞
+    expect(cidrOverlapsAny('10.21.5.5/32', r.exclude)).toBe(true); // 其余 10/8 仍排除（含网关）
+    expect(cidrOverlapsAny('192.168.1.1/32', r.exclude)).toBe(true);
+  });
+
+  it('own-LAN guard：mesh 段与本机物理子网重叠 → 不 carve，保网关排除 + 计入 meshSkippedOwnLan', () => {
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['192.168.0.0/16'],
+        engagedMeshCidrs: ['192.168.50.0/24'],
+        ownLanCidrs: ['192.168.50.10/24'], // 本机物理子网 == mesh 段
+      })
+    );
+    expect(r.carvedMeshCidrs).toEqual([]);
+    expect(r.meshSkippedOwnLan).toEqual(['192.168.50.0/24']);
+    expect(cidrOverlapsAny('192.168.50.5/32', r.exclude)).toBe(true); // 仍被排除（网关保护优先）
+  });
+
+  it('fakeip 段先整条剔除（保持现状语义）', () => {
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['10.0.0.0/8', '198.18.0.0/16'],
+        fakeipRanges: ['198.18.0.0/15'],
+      })
+    );
+    expect(r.exclude).toEqual(['10.0.0.0/8']); // 198.18 剔除；无 mesh → 无 carve、原样
+    expect(r.carvedMeshCidrs).toEqual([]);
+  });
+
+  it('无 engaged mesh → 原样返回（与旧行为字节等价，无组网时 Windows 排除表零变化）', () => {
+    const bypass = ['10.0.0.0/8', '100.64.0.0/10', '192.168.0.0/16', 'fc00::/7'];
+    const r = computeWinBypassExclude(winInput({ bypassCidrs: bypass, engagedMeshCidrs: [] }));
+    expect(r.exclude).toEqual(bypass); // 未经 subtractCidrs 重格式化，逐字节等价
+    expect(r.carvedMeshCidrs).toEqual([]);
+    expect(r.meshSkippedOwnLan).toEqual([]);
+  });
+
+  it('v6：ULA fc00::/7 内的 mesh /64 被 carve', () => {
+    const r = computeWinBypassExclude(
+      winInput({ bypassCidrs: ['fc00::/7'], engagedMeshCidrs: ['fd00::/64'] })
+    );
+    expect(r.carvedMeshCidrs).toEqual(['fd00::/64']);
+    expect(cidrOverlapsAny('fd00::1/128', r.exclude)).toBe(false);
+    expect(cidrOverlapsAny('fc00::1/128', r.exclude)).toBe(true);
+  });
+
+  it('公网 mesh 段（不在任何 bypass 条目内）→ 不计入 carve、字节等价（L1：无假「已开洞」/无谓重格式化）', () => {
+    const bypass = ['10.0.0.0/8', '192.168.0.0/16'];
+    const r = computeWinBypassExclude(
+      winInput({ bypassCidrs: bypass, engagedMeshCidrs: ['203.0.113.0/24'] }) // TEST-NET-3，公网、不在 bypass
+    );
+    expect(r.carvedMeshCidrs).toEqual([]);
+    expect(r.exclude).toEqual(bypass); // 未 carve → 原样、不重格式化
+  });
+
+  it('回环 guard：半隧道 mesh 0.0.0.0/1 覆盖 127/8 → 不 carve，回环仍排除（L2：与 mac/Linux 恒排回环对齐）', () => {
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['10.0.0.0/8', '127.0.0.0/8', '100.64.0.0/10'],
+        engagedMeshCidrs: ['0.0.0.0/1'], // wg-quick 半隧道写法，stripCatchAll 不剥离 → 可能进 engaged
+      })
+    );
+    expect(r.carvedMeshCidrs).toEqual([]); // 覆盖回环 → 不 carve
+    expect(r.meshSkippedOwnLan).toEqual(['0.0.0.0/1']);
+    expect(cidrOverlapsAny('127.0.0.1/32', r.exclude)).toBe(true); // 回环仍排除
+    expect(cidrOverlapsAny('10.5.5.5/32', r.exclude)).toBe(true);
+  });
+
+  it('特殊用途 guard：链路本地/多播段不被 mesh carve（OBS：隧道承载无意义，防破坏本地发现/DHCP 广播）', () => {
+    // mesh 精确命中多播段（或超宽半隧道覆盖它）→ guard 拦下、仍排除
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['10.0.0.0/8', '169.254.0.0/16', '224.0.0.0/4'],
+        engagedMeshCidrs: ['224.0.0.0/4', '169.254.0.0/16'],
+      })
+    );
+    expect(r.carvedMeshCidrs).toEqual([]); // 多播/链路本地 → 不 carve
+    expect(cidrOverlapsAny('224.0.0.1/32', r.exclude)).toBe(true); // 多播仍排除
+    expect(cidrOverlapsAny('169.254.1.1/32', r.exclude)).toBe(true); // 链路本地仍排除
+    // 正常私网 mesh 段不受 guard 影响，仍正常 carve
+    const r2 = computeWinBypassExclude(
+      winInput({ bypassCidrs: ['10.0.0.0/8'], engagedMeshCidrs: ['10.20.0.0/16'] })
+    );
+    expect(r2.carvedMeshCidrs).toEqual(['10.20.0.0/16']);
+    expect(cidrOverlapsAny('10.20.5.5/32', r2.exclude)).toBe(false);
   });
 });

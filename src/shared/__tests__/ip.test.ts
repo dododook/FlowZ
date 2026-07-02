@@ -4,7 +4,9 @@ import {
   ipv6CidrsOverlap,
   cidrsOverlap,
   cidrOverlapsAny,
+  cidrContains,
   partitionCidrsByOverlap,
+  subtractCidrs,
 } from '../ip';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../fakeip-filter';
 import { DEFAULT_BYPASS_LAN, bypassLanCidrs } from '../system-proxy-bypass';
@@ -117,5 +119,96 @@ describe('partitionCidrsByOverlap + FakeIP 段护栏不变量', () => {
       ranges
     );
     expect(overlapping).toEqual([]);
+  });
+});
+
+describe('cidrContains — 方向性包含（inner ⊆ outer）', () => {
+  it('包含（更宽含更窄）→ true；反向/相邻 → false', () => {
+    expect(cidrContains('192.168.0.0/16', '192.168.50.0/24')).toBe(true);
+    expect(cidrContains('192.168.50.0/24', '192.168.0.0/16')).toBe(false); // 方向性：窄不含宽
+    expect(cidrContains('10.0.0.0/8', '10.0.0.0/8')).toBe(true); // 相等即含
+    expect(cidrContains('192.168.0.0/16', '192.168.80.0/24')).toBe(true);
+    expect(cidrContains('192.168.50.0/24', '192.168.80.0/24')).toBe(false); // 相邻不含
+  });
+  it('v6 + 跨族/非法 → 家族分派，跨族恒 false', () => {
+    expect(cidrContains('fc00::/7', 'fd00::/64')).toBe(true);
+    expect(cidrContains('fd00::/64', 'fc00::/7')).toBe(false);
+    expect(cidrContains('fc00::/7', '10.0.0.0/8')).toBe(false); // 跨族
+    expect(cidrContains('bad', '10.0.0.0/8')).toBe(false);
+  });
+});
+
+describe('subtractCidrs — CIDR 差集（Windows bypassLAN carve 底座）', () => {
+  it('/24 carve 出 /16 = 8 条覆盖前缀，且不再覆盖被挖段', () => {
+    const r = subtractCidrs(['192.168.0.0/16'], ['192.168.50.0/24']);
+    expect(r.length).toBe(8);
+    expect(r.sort()).toEqual(
+      [
+        '192.168.0.0/19',
+        '192.168.32.0/20',
+        '192.168.48.0/23',
+        '192.168.51.0/24',
+        '192.168.52.0/22',
+        '192.168.56.0/21',
+        '192.168.64.0/18',
+        '192.168.128.0/17',
+      ].sort()
+    );
+    // 挖掉的段不再被覆盖；其余仍完整覆盖
+    expect(cidrOverlapsAny('192.168.50.5/32', r)).toBe(false);
+    expect(cidrOverlapsAny('192.168.49.5/32', r)).toBe(true);
+    expect(cidrOverlapsAny('192.168.51.5/32', r)).toBe(true);
+    expect(cidrOverlapsAny('192.168.200.1/32', r)).toBe(true);
+  });
+
+  it('carve 段 == base（tailnet 100.64/10 场景）→ 整条移除', () => {
+    expect(subtractCidrs(['100.64.0.0/10'], ['100.64.0.0/10'])).toEqual([]);
+  });
+
+  it('carve 覆盖 base（更宽）→ base 消失', () => {
+    expect(subtractCidrs(['10.5.0.0/16'], ['10.0.0.0/8'])).toEqual([]);
+  });
+
+  it('carve 与 base 不相交 → base 原样（规范化）', () => {
+    expect(subtractCidrs(['10.0.0.0/8'], ['192.168.1.0/24'])).toEqual(['10.0.0.0/8']);
+  });
+
+  it('多重 carve 顺序无关，逐个挖洞', () => {
+    const r = subtractCidrs(['10.0.0.0/8'], ['10.1.0.0/16', '10.2.0.0/16']);
+    expect(cidrOverlapsAny('10.1.5.5/32', r)).toBe(false);
+    expect(cidrOverlapsAny('10.2.5.5/32', r)).toBe(false);
+    expect(cidrOverlapsAny('10.3.5.5/32', r)).toBe(true);
+  });
+
+  it('跨族互不影响：v4 carve 不动 v6 base，反之亦然', () => {
+    expect(subtractCidrs(['fc00::/7'], ['192.168.1.0/24'])).toEqual(['fc00::/7']);
+    expect(subtractCidrs(['10.0.0.0/8'], ['fd00::/64'])).toEqual(['10.0.0.0/8']);
+  });
+
+  it('v6：/64 carve 出 /7（ULA）= 57 条，且不覆盖被挖段', () => {
+    const r = subtractCidrs(['fc00::/7'], ['fd00::/64']);
+    expect(r.length).toBe(57);
+    expect(cidrOverlapsAny('fd00::1/128', r)).toBe(false);
+    expect(cidrOverlapsAny('fc00::1/128', r)).toBe(true);
+    expect(cidrOverlapsAny('fd00:0:0:1::1/128', r)).toBe(true); // /64 之外仍覆盖
+  });
+
+  it('非法 carve 条目忽略、不腐蚀 base', () => {
+    const r = subtractCidrs(['10.0.0.0/8'], ['not-a-cidr', '10.5.0.0/16', '999.1.1.1/8']);
+    expect(cidrOverlapsAny('10.5.5.5/32', r)).toBe(false); // 合法 carve 生效
+    expect(cidrOverlapsAny('10.6.5.5/32', r)).toBe(true); // 其余保留（非法项未误伤）
+  });
+
+  it('无法解析的 base 条目（域名）原样透传', () => {
+    const r = subtractCidrs(['example.com', '10.0.0.0/8'], ['10.5.0.0/16']);
+    expect(r).toContain('example.com');
+    expect(cidrOverlapsAny('10.5.5.5/32', r)).toBe(false);
+  });
+
+  it('空 carve → base 原样（规范化，无变化）', () => {
+    expect(subtractCidrs(['10.0.0.0/8', '192.168.0.0/16'], [])).toEqual([
+      '10.0.0.0/8',
+      '192.168.0.0/16',
+    ]);
   });
 });

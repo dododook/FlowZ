@@ -645,6 +645,7 @@
       "subIntervalRange": "更新間隔需為 1–168 小時",
       "fakeIpFilterEditHint": "每行一個網域；可增刪，恢復預設回到內建清單。",
       "bypassLANEditHint": "路由規則優先級高於此：需讓某段走代理，可以從清單刪除或者去「路由規則」加自訂規則即可覆蓋。",
+      "bypassLANEditHintWinTun": "Windows TUN 下此清單為內核級排除：自訂規則無法覆蓋。需讓某段走代理請從此清單移除該段（組網路由段已自動放行進 TUN）。",
       "fakeIpDescFull": "開啟：節點收到網域、首連更快，TUN 推薦。關閉：節點收到真實 IP，部分嚴格機場可能拒連、海外首連變慢。",
       "resolveNodeDomainsAheadDescFull": "開啟後連線前用多個 DoH 上游並行預解析節點網域取最快結果，避免單點 DNS 被限速/劫持導致整條代理連不上；關閉則退回單一上游解析（無並行容錯）。SNI 仍用原網域，解析失敗自動回退網域。建議開啟。",
       "takeoverSystemDnsDescFull": "TUN 模式暫時把系統 DNS 改為 8.8.8.8，讓代理網域經隧道正確解析（停止自動還原）。關閉更利於內網網域，但部分代理網域可能解析異常。建議開啟。",
