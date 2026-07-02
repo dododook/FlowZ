@@ -5,6 +5,7 @@
 
 import { ipcClient } from './ipc-client';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import type { CoreBuildKind } from '../../shared/core-build';
 import type {
   UserConfig,
   ServerConfig,
@@ -783,17 +784,25 @@ export const coreUpdateApi = {
 
   /**
    * 手动替换核心。
-   * - 无参：弹文件选择器 + 预检 + 同版本检测。目标与当前同版本时返回
-   *   `{ ok:false, needConfirm:true, sameVersion, filePath }`，由 UI 弹确认框；否则直接换核返回 `{ ok:true }`。
-   * - 传 `{ filePath, force:true }`：跳过同版本确认，直接换该文件。
+   * - 无参：弹文件选择器 + 预检 + 同版本/基线检测。返回 needConfirm 的两种情形，均由 UI 弹确认框：
+   *   · 同版本：`{ ok:false, needConfirm:true, sameVersion, filePath }`；
+   *   · 基线预判（官方核旧于随包基线，B-2）：`{ ok:false, needConfirm:true, baselineOverride:true, uploadVersion, bundledVersion, filePath }`。
+   *   否则直接换核返回 `{ ok:true, build }`（build 供 UI 对 fork/unknown 追加来源提示，B-3）。
+   * - 传 `{ filePath, force:true }`：跳过同版本/基线确认，直接换该文件。
    * 用户取消文件选择器时主进程返回 `{ ok:false }`（无 needConfirm），UI 静默不提示。
    */
-  async replaceManual(opts?: {
-    filePath?: string;
-    force?: boolean;
-  }): Promise<
-    | { ok: true }
-    | { ok: false; needConfirm?: boolean; sameVersion?: string; filePath?: string; error?: string }
+  async replaceManual(opts?: { filePath?: string; force?: boolean }): Promise<
+    | { ok: true; build?: CoreBuildKind }
+    | {
+        ok: false;
+        needConfirm?: boolean;
+        sameVersion?: string;
+        baselineOverride?: boolean;
+        uploadVersion?: string;
+        bundledVersion?: string;
+        filePath?: string;
+        error?: string;
+      }
   > {
     return ipcClient.invoke(IPC_CHANNELS.CORE_REPLACE_MANUAL, opts);
   },

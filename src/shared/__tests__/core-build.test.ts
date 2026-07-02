@@ -6,11 +6,14 @@
 
 import {
   classifyCoreBuild,
+  comparableCoreVersion,
   decideCoreOverride,
   extractVersionToken,
+  parseUploadedCoreVersion,
   reseedApplied,
   classifyReseedResult,
 } from '../core-build';
+import { compareSemver } from '../version';
 
 describe('extractVersionToken', () => {
   it('从完整 version 行提取 token', () => {
@@ -25,6 +28,81 @@ describe('extractVersionToken', () => {
     expect(extractVersionToken('')).toBe('');
     expect(extractVersionToken('   ')).toBe('');
     expect(extractVersionToken(undefined as any)).toBe('');
+  });
+});
+
+describe('parseUploadedCoreVersion — 手动上传版本解析（完整后缀 + 形状校验，B-1）', () => {
+  it('官方 release：完整 token + 原始首行', () => {
+    expect(parseUploadedCoreVersion('sing-box version 1.14.0\nEnvironment: go1.25')).toEqual({
+      version: '1.14.0',
+      versionLine: 'sing-box version 1.14.0',
+    });
+  });
+  it('官方 prerelease：保留 -alpha.N 后缀（B-1 病灶：旧正则会剥成 1.14.0）', () => {
+    expect(parseUploadedCoreVersion('sing-box version 1.14.0-alpha.37').version).toBe(
+      '1.14.0-alpha.37'
+    );
+  });
+  it('官方 dev：保留 base + 短 commit hex 完整尾段', () => {
+    expect(parseUploadedCoreVersion('sing-box version 1.14.0-alpha.37-abcdef1').version).toBe(
+      '1.14.0-alpha.37-abcdef1'
+    );
+  });
+  it('fork：保留完整复合后缀（供 classifyCoreBuild / B-3 识别）', () => {
+    const r = parseUploadedCoreVersion('sing-box version 1.14.0-alpha.31-nekolsd-test');
+    expect(r.version).toBe('1.14.0-alpha.31-nekolsd-test');
+    expect(r.versionLine).toBe('sing-box version 1.14.0-alpha.31-nekolsd-test');
+  });
+  it('纯 int / 脏行 / 空：version=null 不谎报，versionLine 仍保留原始行', () => {
+    expect(parseUploadedCoreVersion('sing-box version 20260101').version).toBeNull();
+    expect(parseUploadedCoreVersion('garbage output')).toEqual({
+      version: null,
+      versionLine: 'garbage output',
+    });
+    expect(parseUploadedCoreVersion('')).toEqual({ version: null, versionLine: '' });
+    expect(parseUploadedCoreVersion(undefined as any)).toEqual({
+      version: null,
+      versionLine: '',
+    });
+  });
+  it('只取第一行（version 恒在首行，避免 Environment 行 go1.25.x 误匹配）', () => {
+    expect(
+      parseUploadedCoreVersion(
+        'sing-box version 1.14.0-alpha.37\nEnvironment: go1.25.10 linux/amd64'
+      ).version
+    ).toBe('1.14.0-alpha.37');
+  });
+});
+
+describe('comparableCoreVersion — 可比较版本规范化（与 getCoreVersion 截断同形，M-1 契约）', () => {
+  it('截断 fork 尾段（第二个 - 起）', () => {
+    expect(comparableCoreVersion('1.14.0-alpha.31-nekolsd-test')).toBe('1.14.0-alpha.31');
+  });
+  it('截断官方 dev 短 commit hex 尾段', () => {
+    expect(comparableCoreVersion('1.14.0-alpha.31-abcdef1')).toBe('1.14.0-alpha.31');
+  });
+  it('保留官方 prerelease / release / 剥前缀 v', () => {
+    expect(comparableCoreVersion('1.14.0-alpha.37')).toBe('1.14.0-alpha.37');
+    expect(comparableCoreVersion('1.14.0')).toBe('1.14.0');
+    expect(comparableCoreVersion('v1.13.13')).toBe('1.13.13');
+  });
+  it('非版本串（纯 int / 空）原样返回（unknown 核不参与 reseed 决策，无害）', () => {
+    expect(comparableCoreVersion('20260101')).toBe('20260101');
+    expect(comparableCoreVersion('')).toBe('');
+  });
+
+  // M-1 核心契约：完整后缀喂 compareSemver 会把尾段并入 prerelease 段污染比较（数字段 < 字母段），误判「更新」；
+  // comparable 截断后正确判「更旧」——使 B-2 预判与 startInternal 实际 reseed（getCoreVersion 截断形）同向，
+  // 消除官方 dev / fork 象限的空头支票。同一 quirk 也是「否决把 getCoreVersion 收敛到完整 token」的理由。
+  it('M-1 契约：完整 dev/fork token 污染比较，comparable 修正为正确的「旧于基线」', () => {
+    const bundled = '1.14.0-alpha.37';
+    // 完整 dev token 的 -abcdef1 并入第二 prerelease 段 '31-abcdef1'（字母段）> '37'（数字段）→ 误判 +1（更新）
+    expect(compareSemver('1.14.0-alpha.31-abcdef1', bundled)).toBe(1);
+    // comparable 截断后 → 1.14.0-alpha.31 < 1.14.0-alpha.37 → 正确 -1（更旧，触发预判/reseed）
+    expect(compareSemver(comparableCoreVersion('1.14.0-alpha.31-abcdef1'), bundled)).toBe(-1);
+    // fork 同理（这正是若收敛 getCoreVersion 会让 fork warn: cmp<=0 失效的回归根因）
+    expect(compareSemver('1.14.0-alpha.31-nekolsd-test', bundled)).toBe(1);
+    expect(compareSemver(comparableCoreVersion('1.14.0-alpha.31-nekolsd-test'), bundled)).toBe(-1);
   });
 });
 

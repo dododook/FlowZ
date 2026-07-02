@@ -15,7 +15,13 @@ import { resourceManager } from './ResourceManager';
 
 import type { UserConfig } from '../../shared/types';
 import { encodeMajorMinor, sameMajorMinor, compareSemver } from '../../shared/version';
-import { classifyCoreBuild, type CoreBuildKind } from '../../shared/core-build';
+import {
+  classifyCoreBuild,
+  comparableCoreVersion,
+  decideCoreOverride,
+  parseUploadedCoreVersion,
+  type CoreBuildKind,
+} from '../../shared/core-build';
 import { CoreUpdateStateStore } from './core-update-state-store';
 import type { StagedCoreInfo, CoreAutoUpdateState } from './core-update-state-store';
 import { CoreDownloader } from './core-downloader';
@@ -1216,6 +1222,10 @@ export class CoreUpdateService {
     ok: boolean;
     needConfirm?: boolean;
     sameVersion?: string;
+    baselineOverride?: boolean;
+    uploadVersion?: string;
+    bundledVersion?: string;
+    build?: CoreBuildKind;
     filePath?: string;
     error?: string;
   }> {
@@ -1245,10 +1255,38 @@ export class CoreUpdateService {
       };
     }
 
-    // 同版本短路（提示确认）：目标版本与当前完全一致且未 force → 返回 needConfirm 由前端弹确认框，保留「换不同
-    // build / 重签修损坏核」的能力，又避免误操作的无谓替换。
+    // 内核来源 + 可比较版本：uploadBuild 判官方/fork/unknown；uploadComparable 截断 fork/dev 尾段，与启动时
+    // startInternal 的 reseed 决策（this.coreVersion 经 getCoreVersion 同款截断）喂进 compareSemver 的 token **同形**。
+    // 否则官方 dev（X.Y.Z-alpha.N-hex）/ fork 的完整后缀会污染 prerelease 段比较，令预判与实际 reseed 分歧（B-2 空头支票复发）。
+    const uploadBuild = classifyCoreBuild(preSrc.versionLine);
+    const uploadComparable = comparableCoreVersion(preSrc.version ?? '');
+
+    // B-2 基线预判（诚实告知，**先于同版本短路**：官方旧核即便与现役同版也应告知「会被刷回」，而非只弹同版本框）：
+    // 上传的官方核旧于随包种子基线 → 下次连接 startInternal 必 reseed 打回随包核，「替换成功」将是空头支票。
+    // 预判 decideCoreOverride（与 startInternal 同函数、同基线 coreManifest.bundledCoreVersion、同形 token），
+    // 若会被 reseed 则返回 needConfirm+baselineOverride，前端弹框告知；用户确认（force）后照常替换，临时用到下次连接为止。
+    // fork/unknown 不会被 reseed（decideCoreOverride 恒 keep）→ 不触发此闸，走后续短路/替换 + B-3 来源提示。
+    const { reseed: willReseed } = decideCoreOverride(
+      uploadBuild,
+      uploadComparable,
+      coreManifest.bundledCoreVersion
+    );
+    if (willReseed && !opts?.force) {
+      return {
+        ok: false,
+        needConfirm: true,
+        baselineOverride: true,
+        uploadVersion: preSrc.version ?? undefined, // 展示用完整 token
+        bundledVersion: coreManifest.bundledCoreVersion,
+        filePath: sourcePath,
+      };
+    }
+
+    // 同版本短路（提示确认）：可比较版本与当前一致且未 force → needConfirm 由前端弹确认框，保留「换不同 build /
+    // 重签修损坏核」的能力。用 comparable 形两侧比较（current 侧 getCoreVersion 本就是截断形），使 fork / 官方 dev
+    // 上传同一核也能正确短路（B-1 完整覆盖，不再只兑现 prerelease 半边）。
     const currentVersion = await this.getCurrentVersion();
-    if (!opts?.force && preSrc.version && preSrc.version === currentVersion) {
+    if (!opts?.force && preSrc.version && uploadComparable === currentVersion) {
       return { ok: false, needConfirm: true, sameVersion: preSrc.version, filePath: sourcePath };
     }
 
@@ -1314,7 +1352,8 @@ export class CoreUpdateService {
       } else {
         await this.recordSuccessfulVersion();
       }
-      return { ok: true };
+      // B-3：回传内核来源（预检 versionLine 判定），前端替换成功后据此对 fork/unknown 追加来源提示。
+      return { ok: true, build: uploadBuild };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logManager.addLog('error', `手动替换核心失败: ${msg}`, 'CoreUpdateService');
@@ -1391,15 +1430,20 @@ export class CoreUpdateService {
 
   // === 核心更新健壮性：预检 / 问题版本跳过 / 备份生命周期 / 自动回滚 ===
 
-  /** 取任意 sing-box 二进制的版本号（执行 `<bin> version` 解析）；不可执行返回 null。 */
-  private async getBinaryVersion(binPath: string): Promise<string | null> {
+  /**
+   * 取任意 sing-box 二进制的版本（执行 `<bin> version` 解析）。返回 { version, versionLine }：
+   * version=完整 token（保留 prerelease/fork 后缀，形状不符或不可执行 → null）、versionLine=原始首行（供来源判定）。
+   */
+  private async getBinaryVersion(
+    binPath: string
+  ): Promise<{ version: string | null; versionLine: string }> {
     try {
       const execFileAsync = require('util').promisify(require('child_process').execFile);
       const { stdout } = await execFileAsync(binPath, ['version']);
-      const m = String(stdout).match(/(?:version\s+|v)(\d+\.\d+(?:\.\d+)?)/i);
-      return m ? m[1] : null;
+      // 保留完整后缀：同版本短路需精确匹配预览版、B-2 基线预判 / B-3 来源识别需原始行（单一真值 shared/core-build）。
+      return parseUploadedCoreVersion(String(stdout));
     } catch {
-      return null;
+      return { version: null, versionLine: '' };
     }
   }
 
@@ -1433,10 +1477,15 @@ export class CoreUpdateService {
    */
   private async preflightValidate(
     newCorePath: string
-  ): Promise<{ ok: boolean; version: string | null; reason?: string }> {
-    const version = await this.getBinaryVersion(newCorePath);
+  ): Promise<{ ok: boolean; version: string | null; versionLine: string; reason?: string }> {
+    const { version, versionLine } = await this.getBinaryVersion(newCorePath);
     if (!version) {
-      return { ok: false, version: null, reason: '新核心无法执行（架构不符或文件损坏）' };
+      return {
+        ok: false,
+        version: null,
+        versionLine,
+        reason: '新核心无法执行（架构不符或文件损坏）',
+      };
     }
 
     const cfgJson = this.proxyManager ? this.proxyManager.buildPreflightConfigJson(version) : null;
@@ -1447,7 +1496,7 @@ export class CoreUpdateService {
         `预检：新核心 ${version} 可执行（无活动配置，跳过 check）`,
         'CoreUpdateService'
       );
-      return { ok: true, version };
+      return { ok: true, version, versionLine };
     }
 
     const tmpCfg = path.join(app.getPath('temp'), `flowz-preflight-${Date.now()}.json`);
@@ -1460,10 +1509,10 @@ export class CoreUpdateService {
         `预检通过：新核心 ${version} 可解析当前配置`,
         'CoreUpdateService'
       );
-      return { ok: true, version };
+      return { ok: true, version, versionLine };
     } catch (e: any) {
       const detail = String(e?.stderr || e?.message || e).split('\n')[0];
-      return { ok: false, version, reason: `新核心无法解析当前配置：${detail}` };
+      return { ok: false, version, versionLine, reason: `新核心无法解析当前配置：${detail}` };
     } finally {
       try {
         fs.unlinkSync(tmpCfg);

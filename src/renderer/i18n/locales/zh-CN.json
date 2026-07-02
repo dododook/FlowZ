@@ -375,7 +375,8 @@
       "rollingBack": "回滚中...",
       "rollbackSuccess": "回滚成功，重新启动应用后生效",
       "rollbackFail": "回滚失败",
-      "sameVersionGoManage": "请到「内核管理」卡片确认替换同版本内核。"
+      "sameVersionGoManage": "请到「内核管理」卡片确认替换同版本内核。",
+      "baselineOverrideGoManage": "所选内核旧于随包基线，请到「内核管理」卡片确认临时替换。"
     },
     "coreManagement": {
       "title": "内核管理",
@@ -407,6 +408,11 @@
       "sameVersionConfirmTitle": "内核版本相同",
       "sameVersionConfirmDesc": "目标内核与当前同为 {{version}}，仍要替换吗？",
       "sameVersionConfirmBtn": "仍然替换",
+      "baselineOverrideConfirmTitle": "内核旧于随包基线",
+      "baselineOverrideConfirmDesc": "所选官方内核 {{upload}} 旧于随包基线 {{bundled}}。替换后下次连接时将被自动刷回随包内核。仍要临时替换吗？",
+      "baselineOverrideConfirmBtn": "临时替换",
+      "manualForkNotice": "检测到第三方内核，在线更新与自动更新已禁用（可回滚或重置到出厂恢复）。",
+      "manualUnknownNotice": "无法确认内核来源。",
       "dangerZone": "危险操作",
       "dangerZoneDesc": "以下操作不可逆，请谨慎使用。",
       "resetFactory": "重置内核到出厂",

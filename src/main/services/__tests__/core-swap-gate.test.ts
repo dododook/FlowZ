@@ -50,6 +50,7 @@ import { ProxyManager } from '../ProxyManager';
 import { CoreUpdateService } from '../CoreUpdateService';
 import { ProxyErrorCode } from '../../../shared/types';
 import type { UserConfig } from '../../../shared/types';
+import coreManifest from '../../../shared/core-manifest.json';
 
 afterAll(() => {
   try {
@@ -210,7 +211,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     jest
       .spyOn((svc as any).coreDownloader, 'extractCore')
       .mockResolvedValue({ corePath: '/tmp/x/sing-box', extractDir: '/tmp/x' });
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     const installSpy = jest.spyOn(svc as any, 'installCoreFromDir').mockResolvedValue(undefined);
     jest.spyOn(svc as any, 'saveAutoState').mockImplementation(() => {});
 
@@ -228,7 +231,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     jest
       .spyOn((svc as any).coreDownloader, 'extractCore')
       .mockResolvedValue({ corePath: '/tmp/x/sing-box', extractDir: '/tmp/x' });
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'installCoreFromDir').mockRejectedValue(new Error('disk full'));
     // restoreBackup 在 catch 兜底（已备份才调，此处 install 失败前未备份 → 不调）
     const restoreSpy = jest.spyOn(svc as any, 'restoreBackup').mockResolvedValue(undefined);
@@ -250,7 +255,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     jest.spyOn(svc as any, 'emitAutoStatus').mockImplementation(() => {});
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     jest.spyOn(svc as any, 'isKnownBad').mockReturnValue(false);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'hasBackup').mockReturnValue(true);
     const installSpy = jest.spyOn(svc as any, 'installCoreFromDir').mockResolvedValue(undefined);
 
@@ -270,7 +277,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     jest.spyOn(svc as any, 'emitAutoStatus').mockImplementation(() => {});
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     jest.spyOn(svc as any, 'isKnownBad').mockReturnValue(false);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'installCoreFromDir').mockImplementation(async (...args: any[]) => {
       const onBackupDone = args[2] as (() => void) | undefined;
       onBackupDone?.(); // 备份完成
@@ -289,7 +298,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
   it('replaceManualCore：写核成功 → [true, false]', async () => {
     const { proxy, calls } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
     // 非 macOS 走 writeManualCoreToBundle 腿
@@ -306,7 +317,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
   it('replaceManualCore：写核抛错 → finally 仍清位 [true, false]', async () => {
     const { proxy, calls } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
     jest.spyOn(svc as any, 'writeManualCoreToBundle').mockRejectedValue(new Error('write fail'));
@@ -411,7 +424,9 @@ describe('T3：replaceManualCore skipBackup 分支（reset 到出厂）', () => 
   it('skipBackup=true：backupCurrentCore 未被调（backupMade 始终 false）', async () => {
     const { proxy } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     const backupSpy = jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
     jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
@@ -432,7 +447,9 @@ describe('T3：replaceManualCore skipBackup 分支（reset 到出厂）', () => 
   it('skipBackup=true：armPendingValidation 未被调、recordSuccessfulVersion 被调', async () => {
     const { proxy } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
     jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
@@ -456,7 +473,9 @@ describe('T3：replaceManualCore skipBackup 分支（reset 到出厂）', () => 
   it('skipBackup=true：写核抛错 → restoreBackup 未被调（backupMade=false）', async () => {
     const { proxy } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     // 未 spy backupCurrentCore → 走真实路径前因 skipBackup=true 根本不进 backup 分支，backupMade=false
     jest.spyOn(svc as any, 'writeManualCoreToBundle').mockRejectedValue(new Error('write fail'));
@@ -480,7 +499,9 @@ describe('T3：replaceManualCore skipBackup 分支（reset 到出厂）', () => 
   it('skipBackup=false：backupCurrentCore + armPendingValidation 正常触发（对照 skipBackup=true）', async () => {
     const { proxy } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     const backupSpy = jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
     jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
@@ -527,5 +548,160 @@ describe('T3：replaceManualCore skipBackup 分支（reset 到出厂）', () => 
     });
     // 关键断言：成功后清理残留 .bak
     expect(pruneSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ============================================================================
+// T4：replaceManualCore B-2 基线预判（诚实告知）+ B-3 来源识别（build 回传）
+// ============================================================================
+
+describe('T4：replaceManualCore B-2 基线预判 + B-3 来源识别', () => {
+  function makeLogManager() {
+    return { addLog: jest.fn() } as any;
+  }
+
+  // running=false：不走停代理/arm 分支，聚焦预判逻辑与返回值（build/baselineOverride）。
+  function makeProxy() {
+    return {
+      getStatus: jest.fn(() => ({ running: false })),
+      getCoreVersion: jest.fn().mockResolvedValue(coreManifest.bundledCoreVersion),
+      buildPreflightConfigJson: () => null,
+      hasNaiveNodes: () => false,
+      setAutoRestartSuppressed: jest.fn(),
+      setCoreSwapInProgress: jest.fn(),
+      stop: jest.fn().mockResolvedValue(undefined),
+      start: jest.fn().mockResolvedValue(undefined),
+    } as any;
+  }
+
+  function makeSvc(proxy: any) {
+    const svc = new CoreUpdateService(makeLogManager());
+    svc.setProxyManager(proxy);
+    svc.setConfigProvider(() => Promise.resolve({ autoUpdateCore: true } as any));
+    svc.setEventSender(() => {});
+    return svc;
+  }
+
+  // 官方核，旧于随包基线（bundledCoreVersion 现为 1.14.0-alpha.37）。
+  const OLDER_OFFICIAL = '1.13.13';
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('官方核旧于随包基线（未 force）→ baselineOverride，预判在写核前返回、现役核不动', async () => {
+    const svc = makeSvc(makeProxy());
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: OLDER_OFFICIAL,
+      versionLine: `sing-box version ${OLDER_OFFICIAL}`,
+    });
+    jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue(coreManifest.bundledCoreVersion);
+    const backupSpy = jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
+    const writeSpy = jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
+
+    const r = await svc.replaceManualCore({ filePath: '/tmp/old-official' });
+    expect(r).toEqual({
+      ok: false,
+      needConfirm: true,
+      baselineOverride: true,
+      uploadVersion: OLDER_OFFICIAL,
+      bundledVersion: coreManifest.bundledCoreVersion,
+      filePath: '/tmp/old-official',
+    });
+    // 预判先于停代理/备份/写核返回 → 现役核不动（永不 brick）
+    expect(backupSpy).not.toHaveBeenCalled();
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it('官方核旧于基线 + force → 越过预判正常替换，build=official（临时用到下次连接）', async () => {
+    const svc = makeSvc(makeProxy());
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: OLDER_OFFICIAL,
+      versionLine: `sing-box version ${OLDER_OFFICIAL}`,
+    });
+    jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue(coreManifest.bundledCoreVersion);
+    jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
+    const writeSpy = jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
+    jest.spyOn(svc as any, 'recordSuccessfulVersion').mockResolvedValue(undefined);
+
+    const r = await svc.replaceManualCore({ filePath: '/tmp/old-official', force: true });
+    expect(r).toEqual({ ok: true, build: 'official' });
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('官方核新于基线（未 force）→ 不触发预判，正常替换，build=official', async () => {
+    const svc = makeSvc(makeProxy());
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: '2.0.0',
+      versionLine: 'sing-box version 2.0.0',
+    });
+    jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue(coreManifest.bundledCoreVersion);
+    jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
+    const writeSpy = jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
+    jest.spyOn(svc as any, 'recordSuccessfulVersion').mockResolvedValue(undefined);
+
+    const r = await svc.replaceManualCore({ filePath: '/tmp/newer-official' });
+    expect(r).toEqual({ ok: true, build: 'official' });
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('fork 核旧于基线（未 force）→ 不触发 baselineOverride（fork 恒 keep），成功 build=fork（B-3）', async () => {
+    const svc = makeSvc(makeProxy());
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: '1.13.3-nekolsd',
+      versionLine: 'sing-box version 1.13.3-nekolsd',
+    });
+    jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue(coreManifest.bundledCoreVersion);
+    jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
+    const writeSpy = jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
+    jest.spyOn(svc as any, 'recordSuccessfulVersion').mockResolvedValue(undefined);
+
+    const r = await svc.replaceManualCore({ filePath: '/tmp/fork-core' });
+    expect(r).toEqual({ ok: true, build: 'fork' });
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('官方 dev 核（X.Y.Z-alpha.N-hex）旧于基线（未 force）→ baselineOverride（M-1：闸门用 comparable 形防完整后缀污染比较）', async () => {
+    const svc = makeSvc(makeProxy());
+    // 1.13.0-rc.1-abcdef1：OFFICIAL_DEV(base+prerelease+短hex) 判 official；跨 minor 旧于任何 1.14.x 基线（不依赖基线具体 alpha 号）
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: '1.13.0-rc.1-abcdef1',
+      versionLine: 'sing-box version 1.13.0-rc.1-abcdef1',
+    });
+    jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue(coreManifest.bundledCoreVersion);
+    const writeSpy = jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
+
+    const r = await svc.replaceManualCore({ filePath: '/tmp/dev-core' });
+    // comparable 截断 -abcdef1 → 1.13.0-rc.1 < 基线 → 预判触发；uploadVersion 展示仍是完整 token
+    expect(r).toEqual({
+      ok: false,
+      needConfirm: true,
+      baselineOverride: true,
+      uploadVersion: '1.13.0-rc.1-abcdef1',
+      bundledVersion: coreManifest.bundledCoreVersion,
+      filePath: '/tmp/dev-core',
+    });
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  it('unknown 核（X.Y 两段，过预检但非 X.Y.Z）→ 不触发 baselineOverride，成功 build=unknown（B-3 文案仅告知来源、不谎报禁用）', async () => {
+    const svc = makeSvc(makeProxy());
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: '1.14',
+      versionLine: 'sing-box version 1.14',
+    });
+    jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue(coreManifest.bundledCoreVersion);
+    jest.spyOn(svc as any, 'backupCurrentCore').mockResolvedValue(undefined);
+    const writeSpy = jest.spyOn(svc as any, 'writeManualCoreToBundle').mockResolvedValue(undefined);
+    jest.spyOn(svc as any, 'recordSuccessfulVersion').mockResolvedValue(undefined);
+
+    const r = await svc.replaceManualCore({ filePath: '/tmp/unknown-core' });
+    // unknown 恒 keep（decideCoreOverride 不 reseed）→ 无 baselineOverride；成功回传 build=unknown
+    expect(r).toEqual({ ok: true, build: 'unknown' });
+    expect(writeSpy).toHaveBeenCalledTimes(1);
   });
 });

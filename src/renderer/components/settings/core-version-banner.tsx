@@ -81,11 +81,21 @@ export function CoreVersionBanner() {
       setIsReplacing(true);
       const result = await api.coreUpdate.replaceManual();
       if (result.ok) {
-        // 替换成功：主进程已执行完替换流程
+        // 替换成功：主进程已执行完替换流程；fork/unknown 追加来源提示（B-3）
         toast.success(t('settings.about.coreManualReplaceSuccess'), {
-          description: t('settings.about.newCoreActive'),
+          description:
+            result.build === 'fork'
+              ? t('settings.coreManagement.manualForkNotice')
+              : result.build === 'unknown'
+                ? t('settings.coreManagement.manualUnknownNotice')
+                : t('settings.about.newCoreActive'),
         });
         setDismissed(true);
+      } else if (result.needConfirm && result.baselineOverride) {
+        // 官方核旧于随包基线需确认：本横幅不承载确认框，引导用户去内核管理卡处理（B-2）
+        toast.info(t('settings.coreManagement.baselineOverrideConfirmTitle'), {
+          description: t('settings.coreVersion.baselineOverrideGoManage'),
+        });
       } else if (result.needConfirm && result.sameVersion && result.filePath) {
         // 同版本需确认：本横幅不承载确认框，引导用户去内核管理卡处理
         toast.info(t('settings.coreManagement.sameVersionConfirmTitle'), {

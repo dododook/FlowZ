@@ -375,7 +375,8 @@
       "rollingBack": "Rolling back...",
       "rollbackSuccess": "Rollback successful — reopen the app to apply the previous core",
       "rollbackFail": "Rollback failed",
-      "sameVersionGoManage": "Please confirm the same-version replacement in the Core Management card."
+      "sameVersionGoManage": "Please confirm the same-version replacement in the Core Management card.",
+      "baselineOverrideGoManage": "The selected core is older than the bundled baseline; confirm the temporary replacement in the Core Management card."
     },
     "coreManagement": {
       "title": "Core Management",
@@ -407,6 +408,11 @@
       "sameVersionConfirmTitle": "Same core version",
       "sameVersionConfirmDesc": "The selected core is the same version as the current one ({{version}}). Replace anyway?",
       "sameVersionConfirmBtn": "Replace anyway",
+      "baselineOverrideConfirmTitle": "Core older than bundled baseline",
+      "baselineOverrideConfirmDesc": "The selected official core {{upload}} is older than the bundled baseline {{bundled}}. It will be automatically restored to the bundled core the next time you connect. Replace temporarily anyway?",
+      "baselineOverrideConfirmBtn": "Replace temporarily",
+      "manualForkNotice": "Third-party core detected — online and automatic updates are disabled (roll back or reset to factory to restore).",
+      "manualUnknownNotice": "Core source could not be verified.",
       "dangerZone": "Danger zone",
       "dangerZoneDesc": "The actions below are irreversible. Proceed with caution.",
       "resetFactory": "Reset core to factory",

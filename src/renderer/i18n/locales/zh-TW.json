@@ -375,7 +375,8 @@
       "rollingBack": "回復中...",
       "rollbackSuccess": "回復成功，重新啟動應用程式後生效",
       "rollbackFail": "回復失敗",
-      "sameVersionGoManage": "請到「核心管理」卡片確認替換同版本核心。"
+      "sameVersionGoManage": "請到「核心管理」卡片確認替換同版本核心。",
+      "baselineOverrideGoManage": "所選核心舊於隨附基準，請到「核心管理」卡片確認暫時替換。"
     },
     "coreManagement": {
       "title": "核心管理",
@@ -407,6 +408,11 @@
       "sameVersionConfirmTitle": "核心版本相同",
       "sameVersionConfirmDesc": "目標核心與目前同為 {{version}}，仍要替換嗎？",
       "sameVersionConfirmBtn": "仍然替換",
+      "baselineOverrideConfirmTitle": "核心舊於隨附基準",
+      "baselineOverrideConfirmDesc": "所選官方核心 {{upload}} 舊於隨附基準 {{bundled}}。替換後下次連線時將自動刷回隨附核心。仍要暫時替換嗎？",
+      "baselineOverrideConfirmBtn": "暫時替換",
+      "manualForkNotice": "偵測到第三方核心，線上更新與自動更新已停用（可回滾或重置到出廠還原）。",
+      "manualUnknownNotice": "無法確認核心來源。",
       "dangerZone": "危險操作",
       "dangerZoneDesc": "以下操作不可逆，請謹慎使用。",
       "resetFactory": "重設核心到出廠",

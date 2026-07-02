@@ -38,6 +38,7 @@ import { checkCoreUpdate, updateCore } from '@/bridge/api-wrapper';
 import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
+import type { CoreBuildKind } from '../../../shared/core-build';
 
 interface AutoStatus {
   // autoUpdateEnabled 不在此快照消费（开关 UI 直接读 config.autoUpdateCore）；事件也不再推送该字段。
@@ -72,6 +73,12 @@ export function CoreManagementCard() {
   // 同版本换核确认（手动替换返回 needConfirm 时打开）
   const [sameVersionConfirm, setSameVersionConfirm] = useState<{
     sameVersion: string;
+    filePath: string;
+  } | null>(null);
+  // B-2 基线预判确认（上传官方核旧于随包基线，替换后下次连接将被 reseed 打回，弹框诚实告知）
+  const [baselineConfirm, setBaselineConfirm] = useState<{
+    uploadVersion: string;
+    bundledVersion: string;
     filePath: string;
   } | null>(null);
   // B6 两个确认框
@@ -219,16 +226,33 @@ export function CoreManagementCard() {
     }
   };
 
-  // 手动替换：无参调用 → 弹文件选择器 + 预检 + 同版本检测；同版本返回 needConfirm 时弹确认框。
+  // 替换成功提示：fork/unknown 内核追加来源提示（B-3），官方内核提示已生效。
+  const showReplaceSuccess = (build?: CoreBuildKind) => {
+    toast.success(t('settings.about.coreManualReplaceSuccess'), {
+      description:
+        build === 'fork'
+          ? t('settings.coreManagement.manualForkNotice')
+          : build === 'unknown'
+            ? t('settings.coreManagement.manualUnknownNotice')
+            : t('settings.about.newCoreActive'),
+    });
+  };
+
+  // 手动替换：无参调用 → 弹文件选择器 + 预检 + 同版本/基线检测；needConfirm 时弹对应确认框。
   const handleReplaceManual = async () => {
     try {
       setReplacingManual(true);
       const result = await api.coreUpdate.replaceManual();
       if (result.ok) {
-        toast.success(t('settings.about.coreManualReplaceSuccess'), {
-          description: t('settings.about.newCoreActive'),
-        });
+        showReplaceSuccess(result.build);
         await loadVersionInfo();
+      } else if (result.needConfirm && result.baselineOverride && result.filePath) {
+        // 官方核旧于随包基线：替换后下次连接会被 reseed 打回，弹框诚实告知（B-2）
+        setBaselineConfirm({
+          uploadVersion: result.uploadVersion ?? '',
+          bundledVersion: result.bundledVersion ?? '',
+          filePath: result.filePath,
+        });
       } else if (result.needConfirm && result.sameVersion && result.filePath) {
         // 目标内核与当前同版本：交给用户确认后再换
         setSameVersionConfirm({ sameVersion: result.sameVersion, filePath: result.filePath });
@@ -254,9 +278,30 @@ export function CoreManagementCard() {
       setReplacingManual(true);
       const result = await api.coreUpdate.replaceManual({ filePath: target.filePath, force: true });
       if (result.ok) {
-        toast.success(t('settings.about.coreManualReplaceSuccess'), {
-          description: t('settings.about.newCoreActive'),
-        });
+        showReplaceSuccess(result.build);
+        await loadVersionInfo();
+      } else if (result.error) {
+        toast.error(t('settings.about.coreUpdateFail'), { description: result.error });
+      }
+    } catch (error) {
+      toast.error(t('settings.about.coreUpdateFail'), {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setReplacingManual(false);
+    }
+  };
+
+  // 基线预判确认后临时替换（force 越过 reseed 预判；用到下次连接为止）
+  const handleConfirmBaselineReplace = async () => {
+    const target = baselineConfirm;
+    setBaselineConfirm(null);
+    if (!target) return;
+    try {
+      setReplacingManual(true);
+      const result = await api.coreUpdate.replaceManual({ filePath: target.filePath, force: true });
+      if (result.ok) {
+        showReplaceSuccess(result.build);
         await loadVersionInfo();
       } else if (result.error) {
         toast.error(t('settings.about.coreUpdateFail'), { description: result.error });
@@ -637,6 +682,34 @@ export function CoreManagementCard() {
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmSameVersionReplace}>
               {t('settings.coreManagement.sameVersionConfirmBtn')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* B-2 基线预判确认框（官方核旧于随包基线，替换后下次连接将被 reseed 打回） */}
+      <AlertDialog
+        open={baselineConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setBaselineConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings.coreManagement.baselineOverrideConfirmTitle')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.coreManagement.baselineOverrideConfirmDesc', {
+                upload: baselineConfirm?.uploadVersion ?? '',
+                bundled: baselineConfirm?.bundledVersion ?? '',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmBaselineReplace}>
+              {t('settings.coreManagement.baselineOverrideConfirmBtn')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

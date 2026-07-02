@@ -29,6 +29,37 @@ export function extractVersionToken(versionLine: string): string {
 }
 
 /**
+ * 解析 `sing-box version` 完整输出为 { version, versionLine }（手动上传 / 预检专用）。
+ *  - versionLine：stdout 第一行原始串（含 fork 后缀），供 classifyCoreBuild 判来源。
+ *  - version：完整版本 token（保留 prerelease + fork 后缀），经 /^\d+\.\d+/ 形状校验；
+ *    不符（纯数字 int / 脏行 / 空）→ null，绝不谎报。
+ * 语义区别于 ProxyManager.getCoreVersion（后者刻意截断 fork 尾段落到可比较 token 供 compareSemver 覆盖决策）：
+ * 此处要完整来源信息用于「同版本短路 / 基线预判 / fork 即时识别」，不参与版本排序。
+ */
+export function parseUploadedCoreVersion(stdout: string): {
+  version: string | null;
+  versionLine: string;
+} {
+  const versionLine = (String(stdout ?? '').split('\n')[0] ?? '').trim();
+  const token = extractVersionToken(versionLine);
+  const version = /^\d+\.\d+/.test(token) ? token : null;
+  return { version, versionLine };
+}
+
+/**
+ * 把版本 token 规范化为「可比较形」：保留 major.minor[.patch][-prerelease.N]，**截断 fork/dev 尾段**（第二个 `-` 起）。
+ * 与 `ProxyManager.getCoreVersion` 落到 `this.coreVersion` 的截断口径**同形**（同款 `-[0-9A-Za-z.]+` 到下一个 `-` 停）——
+ * 使「手动上传基线预判 / 同版本短路」与「启动 reseed 决策」喂进 `compareSemver` 的 token 一致。
+ * 否则官方 dev（`1.14.0-alpha.31-abcdef1`）/ fork（`1.14.0-alpha.31-nekolsd-test`）的完整尾段会并入 prerelease 段
+ * 污染比较（`compareSemver` 规范：数字段 < 字母段 → `'31-abcdef1' > '37'`），令预判判「更新」而实际 reseed 判「更旧」→ 空头支票。
+ * 展示/同版本标识仍用完整 token；仅**比较**前经此规范化。非版本串（纯 int / 脏行）原样返回。
+ */
+export function comparableCoreVersion(version: string): string {
+  const m = (version || '').match(/^v?(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.]+)?)/i);
+  return m ? m[1] : version || '';
+}
+
+/**
  * 判定内核构建来源。
  *  - official：纯 semver / 官方预发布(-alpha|beta|rc.N) / 官方 dev(base + '-' + 7+hex 短 commit)。
  *    手动上传的官方跨版本（任意 X.Y.Z）零误报——规则不依赖具体版本号。

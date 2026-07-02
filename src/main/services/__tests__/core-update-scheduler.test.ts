@@ -221,9 +221,11 @@ describe('CoreUpdateService.runAutoUpdateCycle', () => {
     jest
       .spyOn((svc as any).coreDownloader, 'extractCore')
       .mockResolvedValue({ corePath: '/tmp/x/sing-box', extractDir: '/tmp/x' });
-    jest
-      .spyOn(svc as any, 'preflightValidate')
-      .mockResolvedValue({ ok: true, version: opts.checkResult.latestVersion });
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: true,
+      version: opts.checkResult.latestVersion,
+      versionLine: `sing-box version ${opts.checkResult.latestVersion}`,
+    });
     const stageSpy = jest.spyOn(svc as any, 'stageCore').mockImplementation((_d: any, v: any) => ({
       version: v,
       dir: '/tmp/staged',
@@ -397,7 +399,9 @@ describe('CoreUpdateService.tryApplyStaged / applyStagedNow', () => {
     jest.spyOn(svc as any, 'saveAutoState').mockImplementation(() => {});
     jest.spyOn(svc as any, 'getCurrentVersion').mockResolvedValue('1.13.13');
     jest.spyOn(svc as any, 'isKnownBad').mockReturnValue(false);
-    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({ ok: true, version: '1.13.14' });
+    jest
+      .spyOn(svc as any, 'preflightValidate')
+      .mockResolvedValue({ ok: true, version: '1.13.14', versionLine: 'sing-box version 1.13.14' });
     jest.spyOn(svc as any, 'hasBackup').mockReturnValue(true);
     const restoreSpy = jest.spyOn(svc as any, 'restoreBackup').mockResolvedValue(undefined);
     const installSpy = jest
@@ -480,9 +484,12 @@ describe('CoreUpdateService.tryApplyStaged / applyStagedNow', () => {
   it('落位前重预检失败 → markKnownBad + clearStaged → discarded', async () => {
     const { svc, clearSpy, installSpy } = makeSvc({ running: false });
     // 重预检返回 ok:false（下载到落位间 config 变）→ 标记坏 + 清 staged，绝不落位
-    jest
-      .spyOn(svc as any, 'preflightValidate')
-      .mockResolvedValue({ ok: false, version: '1.13.14', reason: 'config invalid' });
+    jest.spyOn(svc as any, 'preflightValidate').mockResolvedValue({
+      ok: false,
+      version: '1.13.14',
+      versionLine: 'sing-box version 1.13.14',
+      reason: 'config invalid',
+    });
     const markBadSpy = jest.spyOn(svc as any, 'markKnownBad').mockImplementation(() => {});
     const r = await svc.tryApplyStaged('proxy-stopped');
     expect(r).toBe('discarded');
