@@ -37,8 +37,9 @@ const SOCKET_PATH = `${SYSTEM_SUPPORT}/helper.sock`;
  *  MIN_USABLE ≤ proto < EXPECTED → upgradeable（旧版仍能 TUN，仅温和提示可升级、不强制重装）；proto < MIN_USABLE 才 needsRepair。
  *  v3=SIGTERM 收割 child；v4=freeport；v5=install-core（root 写受保护目录持久化内核 + 哈希校验防 TOCTOU）；
  *  v6=chownRuntimeDirs（root 跑的 sing-box 退出后归还 tailscale/dashboard/ui 属主给登录用户，根治跨提权态属主冲突）；
- *  v7=route-add/route-del（出口托管 ifscope 拆半默认路由）；v8=default-restore（停核补回被 EEXIST 善后误删的全局 default）。 */
-const EXPECTED_PROTO = '8';
+ *  v7=route-add/route-del（出口托管 ifscope 拆半默认路由）；v8=default-restore（停核补回被 EEXIST 善后误删的全局 default）；
+ *  v9=flush-dns（root 刷系统 DNS 缓存：dscacheutil + HUP mDNSResponder 两层全清）。 */
+const EXPECTED_PROTO = '9';
 const MIN_USABLE_PROTO = 4;
 /** launchctl 加载态探测缓存 TTL：getStatus 被首页/设置页高频轮询，避免每次都 spawn launchctl。 */
 const LOADED_PROBE_TTL_MS = 10_000;
@@ -359,6 +360,20 @@ export class HelperManager implements IPrivilegedHelper {
   async restoreDefaultRoute(gateway: string): Promise<{ ok: boolean; error?: string }> {
     try {
       const resp = await this.sendCommand(['default-restore', gateway], 5000);
+      return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** 经 helper(root, v9) 刷系统 DNS 缓存（dscacheutil + killall -HUP mDNSResponder，两层全清）。
+   *  dscacheutil 成功而 HUP 失败时 helper 回 `OK flushed-partial <原因>` → {ok:true, partial:应答原文}（不降级：
+   *  用户级同样无权 HUP，重复无益；partial 供调用方降格 warn 留痕）；proto<9 旧 helper 回 ERR unknown →
+   *  {ok:false}，调用方（os-dns-flush）降级用户级 dscacheutil。 */
+  async flushDns(): Promise<{ ok: boolean; partial?: string; error?: string }> {
+    try {
+      const resp = await this.sendCommand(['flush-dns'], 5000);
+      if (resp.startsWith('OK flushed-partial')) return { ok: true, partial: resp.trim() };
       return resp.startsWith('OK') ? { ok: true } : { ok: false, error: resp.trim() };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };

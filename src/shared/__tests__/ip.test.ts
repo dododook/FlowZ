@@ -95,21 +95,21 @@ describe('cidrsOverlap / cidrOverlapsAny — 家族感知(v4+v6)', () => {
 });
 
 describe('partitionCidrsByOverlap + FakeIP 段护栏不变量', () => {
-  it('剔除与 fakeip 段相交的旁路条目（v4 198.18/15 + v6 2001:db8::/32）', () => {
-    const ranges = [FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE]; // [198.18.0.0/15, 2001:db8::/32]
+  it('剔除与 fakeip 段相交的旁路条目（v4 198.18/15 + v6 2001:2::/48）', () => {
+    const ranges = [FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE]; // [198.18.0.0/15, 2001:2::/48]
     const r = partitionCidrsByOverlap(
-      ['10.0.0.0/8', 'fc00::/7', '2001:db8:1::/48', '198.18.0.0/16'],
+      ['10.0.0.0/8', 'fc00::/7', '2001:2:0:1::/64', '198.18.0.0/16'],
       ranges
     );
-    // fc00::/7（ULA 旁路）现与 fakeip 公网假段不相交 → 保留；2001:db8 子段命中 v6 假段、198.18/16 命中 v4 假段 → 剔除
-    expect(r.overlapping.sort()).toEqual(['198.18.0.0/16', '2001:db8:1::/48'].sort());
+    // fc00::/7（ULA 旁路）与 fakeip 假段不相交 → 保留；2001:2 子段命中 v6 假段、198.18/16 命中 v4 假段 → 剔除
+    expect(r.overlapping.sort()).toEqual(['198.18.0.0/16', '2001:2:0:1::/64'].sort());
     expect(r.disjoint).toEqual(['10.0.0.0/8', 'fc00::/7']);
   });
   it('ranges 空 → 全保留（不启 fakeip 时不剔）', () => {
     expect(partitionCidrsByOverlap(['fc00::/7'], []).disjoint).toEqual(['fc00::/7']);
   });
-  // 回归不变量：默认旁路清单 CIDR 必须与 fakeip 段全不相交（旁路含完整 ULA fc00::/7，fakeip v6 在公网文档段 2001:db8::/32，
-  // 二者不相交；防未来把 fakeip 段改回 ULA 私网段再撞墙）。
+  // 回归不变量：默认旁路清单 CIDR 必须与 fakeip 段全不相交（旁路含完整 ULA fc00::/7，fakeip v6 在 benchmarking
+  // 保留段 2001:2::/48，二者不相交；防未来把 fakeip 段改回 ULA 私网段再撞墙）。
   it('DEFAULT_BYPASS_LAN 与 FakeIP 段零相交（v4+v6 永久免疫同类撞墙）', () => {
     const ranges = [FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE];
     const { overlapping } = partitionCidrsByOverlap(

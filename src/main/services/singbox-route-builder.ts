@@ -630,7 +630,7 @@ export function buildRouteConfig(
     // 与 mesh force-route 块一致：空数组不发射规则（用户把 bypassLANList 编辑成只剩域名时 cidrs 为空，
     // 避免 `ip_cidr:[]` 空规则；域名直连仍由下方 geosite-private 兜底）。
     // FakeIP 护栏：剔除与 fakeip 假 IP 段相交的旁路条目，否则假 IP 被当私网直连→绕过 fakeip 反查→服务端收不到域名。
-    // 现 fakeip v4=198.18/15(私网外)、v6=2001:db8::/32(全局单播文档段) 均与 LAN 旁路(含 fc00::/7 ULA、私网 v4)天然不相交，
+    // 现 fakeip v4=198.18/15(私网外)、v6=2001:2::/48(RFC 5180 benchmarking 保留段) 均与 LAN 旁路(含 fc00::/7 ULA、私网 v4)天然不相交，
     // 护栏对默认清单退化为 no-op；保留以防用户自定义清单或未来改动再撞（曾因 fakeip v6=fc00::/18 被旁路 fc00::/7 吃掉撞墙）。
     const fakeipRanges = usesFakeIp(config)
       ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]

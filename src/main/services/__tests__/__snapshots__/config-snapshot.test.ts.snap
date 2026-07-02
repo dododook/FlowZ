@@ -807,7 +807,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "inet4_range": "198.18.0.0/15",
-          "inet6_range": "2001:db8::/32",
+          "inet6_range": "2001:2::/48",
           "tag": "fakeip",
           "type": "fakeip",
         },

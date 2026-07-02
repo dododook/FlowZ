@@ -313,12 +313,13 @@ describe('§B：enableIPv6 收敛 AAAA（IPv4-only 节点防 ERR_CONNECTION_CLOS
     expect(fakeip(cfg)?.inet6_range).toBeUndefined();
   });
 
-  it('enableIPv6=true → strategy=prefer_ipv4 + fakeip 带 inet6_range=2001:db8::/32（公网文档段，避开 Chrome LNA）', () => {
+  it('enableIPv6=true → strategy=prefer_ipv4 + fakeip 带 inet6_range=2001:2::/48（benchmarking 保留段，Chrome LNA 判 public）', () => {
     const v6cfg = { ...tunFx.config, enableIPv6: true } as AnyCfg;
     const cfg = new ProxyManager().generateSingBoxConfig(v6cfg) as AnyCfg;
     expect(cfg.dns.strategy).toBe('prefer_ipv4');
-    // 公网文档段（非旧 ULA fc00::/18）：浏览器 Chrome Local Network Access 判 public、不拦 public 页面取该段子资源。
-    expect(fakeip(cfg)?.inet6_range).toBe('2001:db8::/32');
+    // RFC 5180 benchmarking 段不在 Chromium LNA 的 NonPublicAddressSpaceMap → 判 public，与 v4 假段同空间；
+    // 文档段 2001:db8::/32 在表内判 local，会触发 LNA 整批拦截，不可用。详见 shared/fakeip-filter。
+    expect(fakeip(cfg)?.inet6_range).toBe('2001:2::/48');
   });
 });
 

@@ -11,7 +11,8 @@
 // 协议（每行以 \n 结尾，路径整行传递 → 容忍含空格的路径，如 "Application Support/FlowZ"）：
 //
 //	行1: <token>
-//	行2: <command>           ping | version | start | stop | status
+//	行2: <command>           ping | version | start | stop | status | cleanup | freeport | install-core |
+//	                         route-add | route-del | default-restore | flush-dns
 //	start 追加: 行3=<cfg> 行4=<log，可空> 行5=<fwd: 0|1> 行6=<父appPID，可选；缺失/空=不启父死看护（兼容旧客户端）>
 //
 // 仅依赖 Go 标准库（无第三方依赖，便于交叉编译与审计）。
@@ -63,7 +64,13 @@ import (
 //
 //	善后误删、停核 unsetRoutes 不回填 → Mac 停核后断网。app 侧在停核后检测全局 default 缺失则经本命令 `route add
 //	-inet default <gw>` 补回（best-effort）。proto<8 无此命令 → 回 ERR unknown，断网安全网失效但 TUN 正常。
-const protoVersion = "8"
+//
+// v9：加 flush-dns 命令——root 依次执行 dscacheutil -flushcache 与 killall -HUP mDNSResponder，两层系统 DNS
+//
+//	缓存全清（用户级 dscacheutil 无权 HUP mDNSResponder，清不到其 unicast cache）。核 start/stop 后由 app 侧
+//	best-effort 调用；dscacheutil 成功而 HUP 失败回 OK flushed-partial（app 不降级，用户级重复无益）；
+//	proto<9 无此命令 → 回 ERR unknown，app 降级用户级 dscacheutil。
+const protoVersion = "9"
 
 var (
 	singboxBin string // 安装时锁定的 sing-box 路径
@@ -368,6 +375,21 @@ func handle(conn net.Conn) {
 		}
 		_ = exec.Command("/sbin/route", "-n", "add", "-inet", "default", gw).Run()
 		fmt.Fprintln(conn, "OK default-restore")
+	case "flush-dns":
+		// proto v9：root 刷系统 DNS 缓存——dscacheutil 清 Directory Services 缓存 + HUP mDNSResponder 清 unicast
+		// resolver 缓存（用户级 dscacheutil 无权 HUP，清不到后者）。app 在核 start/stop 后 best-effort 调用，
+		// 清掉「系统解析器受控/还原」边界另一侧的陈旧记录（如 TUN+FakeIP 会话缓存的假 IP 骑跨到直连态）。
+		// 两命令均瞬时完成、无参数注入面。dscacheutil 失败回 ERR（app 降级用户级 dscacheutil 有意义）；
+		// dscacheutil 成功而 HUP 失败回 OK flushed-partial（app 不降级——用户级同样无权 HUP，重复无益）。
+		if out, err := exec.Command("/usr/bin/dscacheutil", "-flushcache").CombinedOutput(); err != nil {
+			fmt.Fprintf(conn, "ERR dscacheutil %v %s\n", err, strings.TrimSpace(string(out)))
+			break
+		}
+		if out, err := exec.Command("/usr/bin/killall", "-HUP", "mDNSResponder").CombinedOutput(); err != nil {
+			fmt.Fprintf(conn, "OK flushed-partial killall-hup %v %s\n", err, strings.TrimSpace(string(out)))
+			break
+		}
+		fmt.Fprintln(conn, "OK flushed")
 	case "freeport":
 		// 按端口（root lsof）定位 LISTEN 持有者：是 sing-box 才 kill -9，否则回报占用者名字（不杀）。
 		// 彻底摆脱 app 侧 cmdline 匹配，覆盖「外部 / 旧 app 路径 / 改过 singboxBin 路径」的 9090 占用者（L2）。

@@ -30,6 +30,7 @@ import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
 import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
+import { flushOsDnsCache } from './os-dns-flush';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
 import { resolveTunStack } from '../../shared/tun-stack';
@@ -1005,6 +1006,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       );
     }
 
+    // 核已成功起动、DNS 接管状态已收口 → best-effort 刷 OS DNS 缓存（fire-and-forget，不阻塞启动；让位
+    // CoreStartSupersededError 与失败路径在更早处已抛、到不了这里）。清掉接管边界前系统解析器缓存的陈旧记录
+    // （典型：直连态缓存的真实/错族 IP 在 TUN+FakeIP 态继续被命中 → 绕过 hijack-dns 反查）。**有意全模式触发**：
+    // 非 TUN/非接管（systemProxy/manual）亦刷——上一会话可能是 TUN+FakeIP（假 IP 仍在 OS 缓存），且直连态自身的
+    // 陈旧记录同样受益。
+    this.flushOsDnsCacheBestEffort('start');
+
     // sing-box 1.14 管理 API：核起后连 api service 订阅 Tailscale 状态（断线重连，随主核生命周期）。
     if (this.hasManagementApi()) {
       this.tailscaleApiClient?.stop();
@@ -1217,6 +1225,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (!this.singboxProcess && !this.singboxPid) {
       // 崩溃/外部死亡后停核：主核已不在，文末那条 restore 会被本早退跳过。若 system WG 全隧道用裸 0/0 删了 en0 全局
       // 默认路由而 sing-tun unsetRoutes 未回填，在此补回（restore 自身幂等 + savedDefaultGateway 门控，无关场景 no-op）。
+      // 有意取舍：本早退路径**不刷 OS DNS 缓存**（文末 flushOsDnsCacheBestEffort 同被跳过）——① 崩溃残留的假 IP
+      // 随 DNS TTL 过期自愈，且下次 start 成功尾部必补刷；② 若挪进本分支，每次冷启动的内部 stop 腿（无核可停）
+      // 都会空刷 + 记日志，常态噪声换罕见崩溃场景的边际收益不划算。
       await this.restoreDefaultRouteIfMissing();
       return;
     }
@@ -1240,6 +1251,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // macOS 停核断网安全网（补回腿）：放在最后——sing-box 已完全退出（sing-tun unsetRoutes 已跑），此刻若检测全局
     // default 缺失即补回起核前快照的网关。best-effort、绝不抛，不扰动上方已调试好的拆除时序。非 macOS no-op。
     await this.restoreDefaultRouteIfMissing();
+    // 停核收尾 → best-effort 刷 OS DNS 缓存（fire-and-forget，绝不阻塞停止；restoreDns 由用户停止前置的
+    // ensureSystemProxyCleared → ensureSystemDnsRestored 收口，先于本方法）。清掉 TUN+FakeIP 会话期系统解析器
+    // 缓存的假 IP——停核后仍命中会致直连态撞不可达的假地址。重启经 stop+start 各刷一次，可接受、不去抖。
+    this.flushOsDnsCacheBestEffort('stop');
   }
 
   /**
@@ -5288,6 +5303,31 @@ exit 0
     } finally {
       this.clearingSystemDns = false;
     }
+  }
+
+  /**
+   * best-effort 刷 OS 级 DNS 缓存（fire-and-forget，绝不抛、不阻塞生命周期）：核 start 成功尾部 / stopInner 尾部
+   * 各一次，清掉「系统解析器受控/还原」边界另一侧的陈旧缓存（典型：TUN+FakeIP 会话期缓存的假 IP 停核后仍被命中）。
+   * darwin 优先 root helper（v9 flush-dns，两层缓存全清；flushDns 是具体方法非 IPrivilegedHelper 接口成员，
+   * 与 installCore 同惯例 cast），helper 未装/旧 proto 由 os-dns-flush 降级用户级 dscacheutil。
+   */
+  private flushOsDnsCacheBestEffort(context: 'start' | 'stop'): void {
+    const helperFlushDns =
+      process.platform === 'darwin'
+        ? // 返回类型从 flushDns() 推断（含 partial 字段），签名演进自动跟随、不留漂移面。
+          () => {
+            // darwin helperManager 恒为 HelperManager（与 teardownForQuit 同惯例）；未装时 socket ENOENT 快速失败
+            // → {ok:false} → os-dns-flush 走用户级降级，无额外延迟、不弹框。
+            this.helperManager ??= new HelperManager();
+            return (this.helperManager as HelperManager).flushDns();
+          }
+        : null;
+    void flushOsDnsCache({
+      helperFlushDns,
+      log: (level, message) => this.logToManager(level, `[dns-flush:${context}] ${message}`),
+    }).catch(() => {
+      /* flushOsDnsCache 契约永不 reject；兜实现漂移 */
+    });
   }
 
   /**

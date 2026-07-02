@@ -210,10 +210,11 @@ export function buildDnsConfig(
       // §B：开 IPv6 才给 FakeIP 分配 v6 段（双栈外观：客户端拿到假 AAAA、可用 v6 路径连本机 TUN）；关 IPv6 则不分配
       //   → fakeip 对 AAAA 无段可分配即返空（真机实测：无需改规则 query_type），配合下方 strategy=ipv4_only 客户端纯 v4，
       //   杜绝"双栈站 + 节点无 v6"时浏览器试 v6 失败致 ERR_CONNECTION_CLOSED。
-      // v6 段取公网文档段 2001:db8::/32（非旧 ULA fc00::/18）：浏览器 Chrome Local Network Access 把 ULA(fc00::/7) 判 private、
-      //   拦截 public 页面取该段子资源(net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS，YouTube 图片/字体批量失败)；2001:db8::/32
-      //   在全局单播内判 public、不触发该拦截。假 IP 仅本机占位、真实连接由出口节点反查域名后建立，假 v4/假 v6 对可达性无差别。
-      //   详见 shared/fakeip-filter。
+      // v6 段取 2001:2::/48（RFC 5180 benchmarking，IANA 永久保留、全网不可路由）：Chromium LNA 地址空间表
+      //   （ip_address_space_util.cc 的 NonPublicAddressSpaceMap）把文档段 2001:db8::/32 与 ULA(fc00::/7) 都判 local、
+      //   benchmarking 段不在表内=public → 与 v4 假段 198.18/15 同为 public，同页面两族假 IP 不地址空间分裂，public
+      //   initiator 取假 v6 子资源不触发 net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS 整批拦截。假 IP 仅本机占位、
+      //   真实连接由出口节点反查域名后建立，假 v4/假 v6 对可达性无差别。详见 shared/fakeip-filter。
       ...(config.enableIPv6 ? { inet6_range: FAKEIP_INET6_RANGE } : {}),
     });
   }

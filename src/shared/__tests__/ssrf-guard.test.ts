@@ -117,8 +117,8 @@ describe('assertHostAllowed — DNS rebinding 防护（注入 lookup）', () => 
     );
   });
 
-  it('域名解析到 FakeIP（2001:db8::/32）+ exemptFakeIp=true（经代理）→ 放行（核按域名重解析真实）', async () => {
-    const v6 = async () => [{ address: '2001:db8::57' }];
+  it('域名解析到 FakeIP（2001:2::/48）+ exemptFakeIp=true（经代理）→ 放行（核按域名重解析真实）', async () => {
+    const v6 = async () => [{ address: '2001:2::57' }];
     await expect(
       assertHostAllowed(new URL('https://subscribe.example.com/sub'), v6, true)
     ).resolves.toBeUndefined();
@@ -148,27 +148,28 @@ describe('assertHostAllowed — DNS rebinding 防护（注入 lookup）', () => 
     ).rejects.toThrow(/已拒绝/);
   });
 
-  it('FakeIP（2001:db8）+ 真内网 混合 + exemptFakeIp=true → 拒（豁免假段但真内网仍命中）', async () => {
-    const lookup = async () => [{ address: '2001:db8::57' }, { address: '10.0.0.5' }];
+  it('FakeIP（2001:2）+ 真内网 混合 + exemptFakeIp=true → 拒（豁免假段但真内网仍命中）', async () => {
+    const lookup = async () => [{ address: '2001:2::57' }, { address: '10.0.0.5' }];
     await expect(
       assertHostAllowed(new URL('https://mixed2.example.com/'), lookup, true)
     ).rejects.toThrow(/已拒绝/);
   });
 });
 
-describe('isFlowzFakeIp — FlowZ FakeIP 假段（198.18.0.0/15 + 2001:db8::/32）', () => {
-  it('FakeIP v4（198.18/15）+ v6（2001:db8::/32）→ true', () => {
+describe('isFlowzFakeIp — FlowZ FakeIP 假段（198.18.0.0/15 + 2001:2::/48）', () => {
+  it('FakeIP v4（198.18/15）+ v6（2001:2::/48）→ true', () => {
     expect(isFlowzFakeIp('198.18.0.1')).toBe(true);
     expect(isFlowzFakeIp('198.19.255.255')).toBe(true);
-    expect(isFlowzFakeIp('2001:db8::57')).toBe(true);
-    expect(isFlowzFakeIp('2001:db8:ffff:ffff::1')).toBe(true); // /32 内
+    expect(isFlowzFakeIp('2001:2::57')).toBe(true);
+    expect(isFlowzFakeIp('2001:2:0:ffff::1')).toBe(true); // /48 内（第 4 组任意值仍在段内）
   });
 
   it('FakeIP 段外（真内网 / 真 ULA / link-local / 公网）→ false（豁免不放过真内网）', () => {
     expect(isFlowzFakeIp('198.17.0.1')).toBe(false); // 198.18/15 下界外
     expect(isFlowzFakeIp('198.20.0.1')).toBe(false); // 上界外
-    expect(isFlowzFakeIp('2001:db9::1')).toBe(false); // 超 2001:db8::/32 上界
-    expect(isFlowzFakeIp('2001:db7::1')).toBe(false); // 下界外
+    expect(isFlowzFakeIp('2001:2:1::1')).toBe(false); // 超 2001:2::/48 上界（第 3 组非 0）
+    expect(isFlowzFakeIp('2001:1::1')).toBe(false); // 下界外
+    expect(isFlowzFakeIp('2001:db8::57')).toBe(false); // RFC 3849 文档段：已非 FlowZ 假段（Chromium LNA 判 local）
     expect(isFlowzFakeIp('fc00::57')).toBe(false); // 真实 ULA（已不再是假段）
     expect(isFlowzFakeIp('fd00::1')).toBe(false); // 真实 ULA（fd00::/8）
     expect(isFlowzFakeIp('fe80::1')).toBe(false); // link-local
@@ -180,6 +181,6 @@ describe('isFlowzFakeIp — FlowZ FakeIP 假段（198.18.0.0/15 + 2001:db8::/32�
   // 不因「假段改了、识别没同步」而静默失效（旧硬编码 0x2001/0x0db8 无此保证，是冗余豁免分支唯一仍生效的回归护栏）。
   it('由常量派生：识别段基址跟随 FAKEIP_INET*_RANGE，不漂移', () => {
     expect(isFlowzFakeIp(FAKEIP_INET4_RANGE.split('/')[0])).toBe(true); // 段基址 198.18.0.0
-    expect(isFlowzFakeIp(FAKEIP_INET6_RANGE.replace(/\/\d+$/, '') + '1')).toBe(true); // 2001:db8::1
+    expect(isFlowzFakeIp(FAKEIP_INET6_RANGE.replace(/\/\d+$/, '') + '1')).toBe(true); // 2001:2::1
   });
 });

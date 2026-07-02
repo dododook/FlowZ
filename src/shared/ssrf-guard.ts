@@ -67,7 +67,7 @@ export function isPrivateIp(ip: string): boolean {
 }
 
 /**
- * 是否 FlowZ FakeIP 假地址（FAKEIP_INET4_RANGE=198.18.0.0/15 / FAKEIP_INET6_RANGE=2001:db8::/32）。
+ * 是否 FlowZ FakeIP 假地址（FAKEIP_INET4_RANGE=198.18.0.0/15 / FAKEIP_INET6_RANGE=2001:2::/48）。
  * TUN+FakeIP 下系统 DNS 解析公网订阅域名会返回假 IP；它不是真内网——核连接时按域名反查真实解析。
  * **由 fakeip-filter 常量派生（单一真值）**：裸 IP 视为 /32(v4)·/128(v6) 与假段做家族感知交集，改 FAKEIP_INET*_RANGE
  * 本判定自动跟随、不漂移（旧版手抄 0x2001/0x0db8 是双真值——改回私网段忘同步即静默撞墙）。
