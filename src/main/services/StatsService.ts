@@ -127,6 +127,11 @@ export class StatsService {
   private connMap = new Map<string, SingBoxConnection>();
   private connections: ConnectionEntry[] = [];
   private started = false;
+  // batch2 §3.6：Connections 上游流「需求开关」。worker 在窗口隐藏 / 无 aggregate+detail 消费者时下发 false →
+  // cancel SubscribeConnections（sing-box 少序列化一条每秒长流，顺带削核 CPU 面），Status 流不受影响（流量条恒需）。
+  // 默认 true，保持既有「连接流订阅跟随 started」语义；本标志同时 gate start/resubscribe/30min 周期重建里的连接
+  // 订阅，使停用态不被周期重建复活（#210 周期重建仅作用活跃流，设计 §3.4-3）。
+  private connectionsEnabled = true;
   // 长流周期重建定时器（issue #210 根因 #3）：见 STREAM_RESUBSCRIBE_INTERVAL_MS。null=未运行。
   private resubscribeTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -248,6 +253,21 @@ export class StatsService {
     this.onConnections?.({ connections: [], at: Date.now() }); // 停止即广播空连接快照
   }
 
+  /**
+   * batch2 §3.6：按需求开关「Connections 上游流」（Status 流不受影响，流量条恒需）。worker 在窗口隐藏 / 无
+   * aggregate+detail 消费者时下发 false → cancel SubscribeConnections（sing-box 少序列化一条每秒长流、削核 CPU）；
+   * true → 重订阅（connMap 重建）。复用既有 subscribe/unsubscribeConnectionsStream，不新增流原语。connectionsEnabled
+   * 同时 gate 30min 周期重建里的连接订阅，故停用态不被复活（#210 周期仅作用活跃流）。started=false（未订阅）时仅存
+   * 标志，下次 start/resubscribe 生效。幂等：状态未变直接返回。
+   */
+  setConnectionsStreamEnabled(on: boolean): void {
+    if (on === this.connectionsEnabled) return;
+    this.connectionsEnabled = on;
+    if (!this.started) return; // 未订阅态：仅记标志，下次 subscribe 生效
+    if (on) this.subscribeConnectionsStream();
+    else this.unsubscribeConnectionsStream();
+  }
+
   getSnapshot(): TrafficStats {
     return { ...this.snapshot };
   }
@@ -295,6 +315,7 @@ export class StatsService {
 
   // ── Connections 流 ───────────────────────────────────────────────────────────
   private subscribeConnectionsStream(): void {
+    if (!this.connectionsEnabled) return; // batch2：需求关闭时不订阅（含 start/resubscribe/30min 周期重建路径）
     if (this.connectionsStop) return;
     const client = this.getApiClient();
     if (!client) return;

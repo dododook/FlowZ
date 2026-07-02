@@ -1,13 +1,18 @@
 /**
- * StatsWorkerHost 单测（T4，issue #225）。覆盖 main 侧宿主逻辑（worker 由 mock electron.utilityProcess 替身）：
+ * StatsWorkerHost 单测（T4，issue #225；batch2 协议更新，issue #242）。覆盖 main 侧宿主逻辑（worker 由 mock
+ * electron.utilityProcess 替身）：
  *  1) 构造即 fork worker；resubscribe 下发最新端点 connect / 端点为 null 下发 stop。
- *  2) worker 数据消息：缓存 + 按 isUiActive 门控广播（不活跃只缓存不 onStats/onAggregate；connections 经 host
- *     侧聚合后 relay 聚合给拓扑，明细只缓存供 pull，issue #227）。
- *  3) resume 补推缓存最新（活跃才推）；stop 不门控清零广播。
- *  4) getSnapshot/getConnectionsSnapshot/getAggregateSnapshot 读缓存。
- *  5) 'ready' 握手 / 崩溃 exit → 退避 respawn + 自动重连；dispose 终止不再 respawn。
+ *  2) worker 数据消息（batch2 聚合下沉 worker）：'aggregate' 缓存 + 按 isUiActive 门控 relay 给拓扑；'detail' 仅缓存
+ *     供连接页 pull（不 relay）；'stats' 缓存 + 门控广播。host 不再自算聚合。
+ *  3) setDemand 惰性下发（取代 connActive）：connectionsStream=isUiActive、detail 由连接页 pull 活跃度驱动，变化才发。
+ *  4) resume 补推缓存最新（活跃才推）；stop 不门控清零广播；停后在途旧帧经 started 丢弃。
+ *  5) getSnapshot/getConnectionsSnapshot/getAggregateSnapshot 读缓存；'ready' 握手 / 崩溃 respawn / dispose 生命周期。
  */
-import type { TrafficStats, ConnectionsSnapshot } from '../../../shared/types';
+import type {
+  TrafficStats,
+  ConnectionsSnapshot,
+  ConnectionsAggregate,
+} from '../../../shared/types';
 
 // mock electron：utilityProcess.fork 返回 EventEmitter 替身（postMessage/kill 为 jest.fn）。
 jest.mock('electron', () => {
@@ -47,10 +52,16 @@ const SAMPLE_STATS: TrafficStats = {
   activeConnections: 3,
 };
 const SAMPLE_CONNS: ConnectionsSnapshot = {
-  // 带 host + chain：使 host 侧聚合产出非空 hosts（覆盖 getAggregateSnapshot 实路径，issue #227 review Nit）。
   connections: [
     { id: 'c1', chains: ['proxy'], rule: '', rulePayload: '', metadata: { host: 'a.com' } },
   ],
+  at: 123,
+};
+// batch2：worker 直接 post 聚合（聚合下沉 worker），host 只缓存/relay。此固定值等于 aggregateConnections(SAMPLE_CONNS)。
+const SAMPLE_AGG: ConnectionsAggregate = {
+  total: 1,
+  hosts: [{ name: 'a.com', count: 1, flows: [{ outbound: 'proxy', count: 1 }] }],
+  outbounds: [{ name: 'proxy', count: 1 }],
   at: 123,
 };
 
@@ -109,16 +120,26 @@ describe('StatsWorkerHost 数据面门控 (T4)', () => {
     expect(host.getSnapshot()).toEqual(SAMPLE_STATS); // 缓存仍更新
   });
 
-  it('connections 消息门控 + host 聚合（明细缓存供 pull、聚合供拓扑，issue #227）', () => {
+  it('aggregate 消息门控（batch2 聚合下沉 worker）：不活跃只缓存不广播，活跃广播', () => {
     const { onAggregate, host, state } = makeHost();
     host.resubscribe(); // started=true
     state.active = false;
-    lastWorker().emit('message', { type: 'connections', payload: SAMPLE_CONNS });
+    lastWorker().emit('message', { type: 'aggregate', payload: SAMPLE_AGG });
     expect(onAggregate).not.toHaveBeenCalled(); // 不活跃不广播
-    // 明细缓存（连接页 CONNECTIONS_GET pull）+ host 已 O(N) 聚合（拓扑 CONNECTIONS_AGGREGATE_GET 回填）
-    expect(host.getConnectionsSnapshot().connections).toEqual(SAMPLE_CONNS.connections);
-    expect(host.getAggregateSnapshot().total).toBe(1);
-    expect(host.getAggregateSnapshot().hosts.map((h) => h.name)).toEqual(['a.com']); // 聚合产出 host 节点
+    expect(host.getAggregateSnapshot()).toEqual(SAMPLE_AGG); // host 只缓存 worker 聚合，不再自算
+
+    state.active = true;
+    lastWorker().emit('message', { type: 'aggregate', payload: SAMPLE_AGG });
+    expect(onAggregate).toHaveBeenCalledWith(SAMPLE_AGG); // 活跃 → relay 拓扑
+  });
+
+  it('detail 消息仅缓存供 pull，不 relay（明细放大器已删，issue #227）', () => {
+    const { onAggregate, onStats, host } = makeHost();
+    host.resubscribe(); // started=true（active 默认 true）
+    lastWorker().emit('message', { type: 'detail', payload: SAMPLE_CONNS });
+    expect(onAggregate).not.toHaveBeenCalled(); // detail 从不 relay
+    expect(onStats).not.toHaveBeenCalled();
+    expect(host.getConnectionsSnapshot().connections).toEqual(SAMPLE_CONNS.connections); // 缓存供 CONNECTIONS_GET
   });
 
   it('resume 活跃时补推缓存最新；不活跃不推', () => {
@@ -126,7 +147,7 @@ describe('StatsWorkerHost 数据面门控 (T4)', () => {
     host.resubscribe(); // started=true
     state.active = false;
     lastWorker().emit('message', { type: 'stats', payload: SAMPLE_STATS });
-    lastWorker().emit('message', { type: 'connections', payload: SAMPLE_CONNS });
+    lastWorker().emit('message', { type: 'aggregate', payload: SAMPLE_AGG });
     onStats.mockClear();
     onAggregate.mockClear();
 
@@ -136,7 +157,7 @@ describe('StatsWorkerHost 数据面门控 (T4)', () => {
     state.active = true;
     host.resume(); // 活跃 → 补推缓存（stats + 聚合）
     expect(onStats).toHaveBeenCalledWith(SAMPLE_STATS);
-    expect(onAggregate).toHaveBeenCalledWith(expect.objectContaining({ total: 1 }));
+    expect(onAggregate).toHaveBeenCalledWith(SAMPLE_AGG);
   });
 
   it('stop 不门控、清零广播', () => {
@@ -167,45 +188,69 @@ describe('StatsWorkerHost 数据面门控 (T4)', () => {
     host.stop(); // started=false + 清零
     onStats.mockClear();
     lastWorker().emit('message', { type: 'stats', payload: SAMPLE_STATS }); // 在途旧帧
-    lastWorker().emit('message', { type: 'connections', payload: SAMPLE_CONNS });
+    lastWorker().emit('message', { type: 'aggregate', payload: SAMPLE_AGG });
+    lastWorker().emit('message', { type: 'detail', payload: SAMPLE_CONNS });
     expect(onStats).not.toHaveBeenCalled();
     expect(host.getSnapshot().activeConnections).toBe(0); // 缓存仍为 stop 的零值
     expect(host.getConnectionsSnapshot().connections).toEqual([]);
+    expect(host.getAggregateSnapshot().total).toBe(0); // 聚合缓存亦为 stop 的零值（在途 aggregate 被丢弃）
   });
 });
 
-describe('StatsWorkerHost connActive 惰性同步 (C)', () => {
-  it('isUiActive 变化时经 status 帧下发 setConnActive，未变化不重复下发', () => {
+describe('StatsWorkerHost setDemand 需求同步 (batch2)', () => {
+  it('借 status 帧下发 setDemand：connectionsStream=isUiActive、detail 由 pull 活跃度驱动，变化才发', () => {
     const { host, state } = makeHost();
     host.resubscribe();
     const w = lastWorker();
     w.postMessage.mockClear();
 
-    // 首个 status 帧（active=true，lastSent=null）→ 下发 setConnActive(true)
+    // 首个 status 帧（active=true，未 pull → detail=false，lastSent=null）→ 下发 {stream:true, detail:false}
     w.emit('message', { type: 'stats', payload: SAMPLE_STATS });
-    expect(w.postMessage).toHaveBeenCalledWith({ type: 'setConnActive', active: true });
+    expect(w.postMessage).toHaveBeenCalledWith({
+      type: 'setDemand',
+      connectionsStream: true,
+      detail: false,
+    });
     w.postMessage.mockClear();
 
-    // 再来 status 帧、active 未变 → 不重复下发
+    // 需求未变 → 不重复下发（任何消息都不 post）
     w.emit('message', { type: 'stats', payload: SAMPLE_STATS });
-    expect(w.postMessage).not.toHaveBeenCalledWith({ type: 'setConnActive', active: true });
+    expect(w.postMessage).not.toHaveBeenCalled();
 
-    // 转不活跃（隐藏/拖动）→ 下个 status 帧下发 setConnActive(false)
+    // 连接页 pull（getConnectionsSnapshot 刷新 lastPullAt）→ 下个 status 帧 detail 转 true
+    host.getConnectionsSnapshot();
+    w.emit('message', { type: 'stats', payload: SAMPLE_STATS });
+    expect(w.postMessage).toHaveBeenCalledWith({
+      type: 'setDemand',
+      connectionsStream: true,
+      detail: true,
+    });
+    w.postMessage.mockClear();
+
+    // 窗口隐藏（isUiActive=false）→ connectionsStream 转 false（detail 仍 true，刚 pull 过）
     state.active = false;
     w.emit('message', { type: 'stats', payload: SAMPLE_STATS });
-    expect(w.postMessage).toHaveBeenCalledWith({ type: 'setConnActive', active: false });
+    expect(w.postMessage).toHaveBeenCalledWith({
+      type: 'setDemand',
+      connectionsStream: false,
+      detail: true,
+    });
   });
 
-  it('reconnect 后重置同步态，强制下个 status 帧重新下发 setConnActive', () => {
+  it('reconnect 后重置需求态，强制下个 status 帧重新下发 setDemand', () => {
     const { host } = makeHost();
     host.resubscribe();
     const w = lastWorker();
-    w.emit('message', { type: 'stats', payload: SAMPLE_STATS }); // 已下发 setConnActive(true)
+    w.emit('message', { type: 'stats', payload: SAMPLE_STATS }); // 已下发一次 setDemand
     w.postMessage.mockClear();
 
-    host.resubscribe(); // reconnect → postConnect 重置 lastConnActiveSent=null
+    host.resubscribe(); // reconnect → postConnect 重置 lastDemandSent=null
     w.emit('message', { type: 'stats', payload: SAMPLE_STATS });
-    expect(w.postMessage).toHaveBeenCalledWith({ type: 'setConnActive', active: true }); // 重新下发
+    expect(w.postMessage).toHaveBeenCalledWith({
+      type: 'setDemand',
+      connectionsStream: true,
+      detail: false,
+    }); // 重新下发（未 pull → detail=false）
   });
 });
 

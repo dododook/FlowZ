@@ -85,3 +85,26 @@ export function aggregateConnections(
 
   return { total: conns.length, hosts, outbounds, at };
 }
+
+/**
+ * 聚合内容签名（batch2 §3.6 change-driven）：**内容规范化后**稳定序列化 `{total, hosts, outbounds}`，**剔 `at`**。
+ * aggregateConnections 的展示序按 count 降序，但等计数兄弟（host / outbound / host 内 flow）的相对次序会随入参连接
+ * 数组顺序漂移——connMap 的 #167 LRU 每个 UPDATE 事件 delete+set 把活跃连接移到末尾，故等计数兄弟每帧重排。裸
+ * JSON.stringify 对「同内容不同顺序」产出不同签名，会把 change-driven 架空成稳定集也每帧 post（退化到 rate-cap
+ * 下限）。故签名内部按内容规范排序（与展示序解耦，仅用于比对）：hosts 按 `name` 升序、每个 host 的 flows 按
+ * `outbound` 升序、outbounds 按 `name` 升序（三者均为唯一键，无并列，全序确定）。同内容（任意兄弟重排）→ 同签名；
+ * host/outbound 计数或成员变 → 签名变。worker 用它与上帧签名比对，仅内容真变才 post aggregate。纯函数、无副作用——
+ * 只读入参并构造新排序数组（slice 后再 sort），绝不原地 mutate agg 的 hosts / flows / outbounds。供单测。
+ */
+export function aggregateSignature(agg: ConnectionsAggregate): string {
+  const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const hosts = agg.hosts
+    .map((h) => ({
+      name: h.name,
+      count: h.count,
+      flows: h.flows.slice().sort((a, b) => cmp(a.outbound, b.outbound)),
+    }))
+    .sort((a, b) => cmp(a.name, b.name));
+  const outbounds = agg.outbounds.slice().sort((a, b) => cmp(a.name, b.name));
+  return JSON.stringify({ total: agg.total, hosts, outbounds });
+}

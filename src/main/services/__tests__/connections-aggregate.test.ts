@@ -3,7 +3,7 @@
  * 同 host 累加 count+flows / Top-N + Others 合并到 sentinel / 无名连接计入 total+outbound 但不建 host /
  * outbounds 降序。原 topology-layout 的聚合语义逐字移此（layout 单测只剩坐标）。
  */
-import { aggregateConnections, TOPOLOGY_TOP_N } from '../connections-aggregate';
+import { aggregateConnections, aggregateSignature, TOPOLOGY_TOP_N } from '../connections-aggregate';
 import {
   TOPOLOGY_OTHERS_KEY,
   type ConnectionEntry,
@@ -114,5 +114,84 @@ describe('aggregateConnections', () => {
       outbounds: [],
       at: 123,
     });
+  });
+});
+
+/**
+ * aggregateSignature 单测（batch2 §3.6 change-driven）：签名稳定性（剔 at + 顺序无关）+ 变化敏感（host/outbound
+ * 计数或分布变）+ 空聚合稳定 + 不 mutate 入参。worker 靠它区分「内容真变」与「仅 at 变 / 仅兄弟重排的零信息增量」，
+ * 仅前者才 post aggregate。排列不变性用例锁死 M1：入参连接数组每帧被 connMap #167 LRU 重排，若签名顺序敏感则等
+ * 计数兄弟每帧「内容变」→ change-driven 退化到 rate-cap 下限。
+ */
+describe('aggregateSignature', () => {
+  it('排列不变性：同一 multiset 不同数组顺序 → 同签名（等计数兄弟重排不改签名）', () => {
+    // a.com / b.com 等计数（各 2）；出口 P / Q 等计数（各 2）；a.com、b.com 内 P/Q 两 flow 各等计数（各 1）。
+    // 这些等计数兄弟的相对次序随入参顺序漂移；顺序敏感的签名会因此对「同内容」产出不同签名（修复前本断言 fail）。
+    const cs = [
+      conn({ host: 'a.com', chain: 'P' }),
+      conn({ host: 'a.com', chain: 'Q' }),
+      conn({ host: 'b.com', chain: 'P' }),
+      conn({ host: 'b.com', chain: 'Q' }),
+    ];
+    const permuted = [cs[3], cs[1], cs[2], cs[0]]; // 同 multiset，打乱顺序（host / flow / outbound 兄弟均换位）
+    const sigA = aggregateSignature(aggregateConnections(cs, 111));
+    const sigB = aggregateSignature(aggregateConnections(permuted, 222));
+    expect(sigB).toBe(sigA);
+  });
+
+  it('同内容不同 at → 同签名（剔 at）', () => {
+    const conns = [conn({ host: 'a.com', chain: 'P' }), conn({ host: 'b.com', chain: 'Q' })];
+    expect(aggregateSignature(aggregateConnections(conns, 1000))).toBe(
+      aggregateSignature(aggregateConnections(conns, 9_999_999))
+    );
+  });
+
+  it('host 计数变 → 签名变', () => {
+    const base = aggregateSignature(aggregateConnections([conn({ host: 'a.com', chain: 'P' })], 0));
+    const more = aggregateSignature(
+      aggregateConnections(
+        [conn({ host: 'a.com', chain: 'P' }), conn({ host: 'a.com', chain: 'P' })],
+        0
+      )
+    );
+    expect(more).not.toBe(base);
+  });
+
+  it('outbound 分布变 → 签名变', () => {
+    const p = aggregateSignature(aggregateConnections([conn({ host: 'a.com', chain: 'P' })], 0));
+    const q = aggregateSignature(aggregateConnections([conn({ host: 'a.com', chain: 'Q' })], 0));
+    expect(p).not.toBe(q);
+  });
+
+  it('空聚合 → 稳定签名（不同 at 同签名）', () => {
+    expect(aggregateSignature(aggregateConnections([], 1))).toBe(
+      aggregateSignature(aggregateConnections([], 2))
+    );
+  });
+
+  it('不 mutate 入参（hosts / flows / outbounds 数组引用与顺序不变）', () => {
+    // x.com 内 flows 展示序 [Z(2), A(1)]（插入序）、outbounds 展示序 [Z(2), A(1)]（count 降序）均与签名内部的
+    // name 升序 [A, Z] 相反——若签名原地 sort 会翻转它们，故可捕获 mutate。
+    const agg = aggregateConnections(
+      [
+        conn({ host: 'x.com', chain: 'Z' }),
+        conn({ host: 'x.com', chain: 'Z' }),
+        conn({ host: 'x.com', chain: 'A' }),
+      ],
+      0
+    );
+    const hostsRef = agg.hosts;
+    const flowsRef = agg.hosts[0].flows;
+    const flowsSnapshot = agg.hosts[0].flows.slice();
+    const outboundsRef = agg.outbounds;
+    const outboundsSnapshot = agg.outbounds.slice();
+
+    aggregateSignature(agg);
+
+    expect(agg.hosts).toBe(hostsRef); // 顶层 hosts 数组引用不变
+    expect(agg.hosts[0].flows).toBe(flowsRef); // flows 数组引用不变
+    expect(agg.hosts[0].flows).toEqual(flowsSnapshot); // flows 顺序不变（未被原地 sort）
+    expect(agg.outbounds).toBe(outboundsRef); // outbounds 数组引用不变
+    expect(agg.outbounds).toEqual(outboundsSnapshot); // outbounds 顺序不变
   });
 });

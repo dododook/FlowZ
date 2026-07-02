@@ -15,7 +15,10 @@
  */
 import { utilityProcess, type UtilityProcess } from 'electron';
 import type { TrafficStats, ConnectionsSnapshot, ConnectionsAggregate } from '../../shared/types';
-import { aggregateConnections } from './connections-aggregate';
+
+// batch2 §3.6：detail 需求存活窗口。连接页每次 pull（getConnectionsSnapshot）刷新 lastPullAt，此窗口内维持 detail
+// 上游明细传输；超时（页面关闭/停拉）则下发 detail=false，worker 停止跨进程克隆明细。
+const PULL_DEMAND_TTL = 5000;
 
 /** worker 重建 SingBoxApiClient 所需的运行期管理 API 端点（本地恒无 tls）。 */
 export interface StatsApiEndpoint {
@@ -49,17 +52,21 @@ export interface StatsHost extends StatsProvider {
 export type HostToWorkerMessage =
   | { type: 'connect'; endpoint: StatsApiEndpoint }
   | { type: 'stop' }
-  // C（issue #225 review）：门控 worker 的 connections 跨进程 post——不活跃（隐藏/拖动）时 worker 跳过把连接表
-  // 克隆推给 main（隐藏挂托盘 + 上千连接时的主要浪费）。status 帧不门控、始终流动，故本标志靠 host 在每个 status
-  // 帧上惰性同步（见 syncConnActive），无需窗口事件接线、无 worker 卡死风险。
-  | { type: 'setConnActive'; active: boolean }
+  // batch2 §3.6（取代 setConnActive）：需求驱动。connectionsStream=是否订阅上游 SubscribeConnections（窗口可见→拓扑需
+  // aggregate；隐藏→连上游流一起停，削核 CPU）；detail=连接页近 PULL_DEMAND_TTL 内有 pull（true 时 worker 每帧跨进程
+  // 传全量明细）。status 帧不门控、始终流动，故 host 借其惰性下发本需求（见 syncDemand），无需窗口事件接线。
+  | { type: 'setDemand'; connectionsStream: boolean; detail: boolean }
   | { type: 'dispose' };
 
 /** worker → main 数据/握手消息。 */
 export type WorkerToHostMessage =
   | { type: 'ready' }
   | { type: 'stats'; payload: TrafficStats }
-  | { type: 'connections'; payload: ConnectionsSnapshot };
+  // batch2 §3.6（取代 connections）：聚合下沉 worker——worker 每帧本地聚合 + 签名比对，仅内容真变才 post 小载荷
+  // aggregate（拓扑供数，杀「每秒全量克隆」B2 + 「零信息增量每秒重渲染」放大器）。
+  | { type: 'aggregate'; payload: ConnectionsAggregate }
+  // detail=全量明细，仅 detailDemand（连接页 pull 期）才 post，host 缓存供 CONNECTIONS_GET pull（不 relay）。
+  | { type: 'detail'; payload: ConnectionsSnapshot };
 
 const ZERO_STATS: TrafficStats = {
   uploadSpeed: 0,
@@ -92,17 +99,21 @@ export interface StatsWorkerHostOptions {
 export class StatsWorkerHost implements StatsHost {
   private worker: UtilityProcess | null = null;
   private snapshot: TrafficStats = { ...ZERO_STATS };
-  // worker post 来的最近连接明细快照：仅供连接信息页 CONNECTIONS_GET 按需 pull，不再 relay 给渲染端（旧放大器）。
+  // worker 'detail' 消息缓存的最近连接明细：仅供连接信息页 CONNECTIONS_GET 按需 pull，不 relay 给渲染端（旧放大器）。
   private connections: ConnectionsSnapshot = { connections: [], at: 0 };
-  // 由 connections 每帧 host 侧 O(N) 聚合而来（首页拓扑供数）：relay EVENT_CONNECTIONS_AGGREGATE + CONNECTIONS_AGGREGATE_GET 回填。
+  // worker 'aggregate' 消息缓存的最近拓扑聚合（batch2：聚合已下沉 worker，host 不再自算）：relay
+  // EVENT_CONNECTIONS_AGGREGATE + CONNECTIONS_AGGREGATE_GET 回填。
   private aggregate: ConnectionsAggregate = emptyAggregate(0);
   /** 是否应处于订阅态（代理运行）。崩溃 respawn 后据此自动重连，不丢流。 */
   private started = false;
   private disposed = false;
   private respawnTimer: ReturnType<typeof setTimeout> | null = null;
   private respawnDelayMs = 500;
-  /** 上次下发给 worker 的 connActive（C）。null=未发过（reconnect/respawn 后重置，强制下个 status 帧重新同步）。 */
-  private lastConnActiveSent: boolean | null = null;
+  /** 上次下发给 worker 的需求（batch2，取代 lastConnActiveSent）。null=未发过（reconnect/respawn 后重置，
+   *  强制下个 status 帧重新下发 setDemand）。仅任一字段变化才重发。 */
+  private lastDemandSent: { connectionsStream: boolean; detail: boolean } | null = null;
+  /** 连接页最近一次 pull（getConnectionsSnapshot 调用）时刻 epoch ms；驱动 detail 需求（近 PULL_DEMAND_TTL 内=需 detail）。 */
+  private lastPullAt = 0;
 
   constructor(private readonly opts: StatsWorkerHostOptions) {
     this.spawn();
@@ -150,8 +161,8 @@ export class StatsWorkerHost implements StatsHost {
   }
 
   private postConnect(): void {
-    // reconnect/respawn 后强制下个 status 帧重新同步 connActive（worker 可能是新进程、默认 connActive=true）。
-    this.lastConnActiveSent = null;
+    // reconnect/respawn 后强制下个 status 帧重新下发 setDemand（worker 可能是新进程、connect 已把需求态复位默认）。
+    this.lastDemandSent = null;
     const endpoint = this.opts.getEndpoint();
     if (!endpoint) {
       this.post({ type: 'stop' });
@@ -161,17 +172,21 @@ export class StatsWorkerHost implements StatsHost {
   }
 
   /**
-   * 惰性同步 worker 的 connActive（C）：仅在 isUiActive 变化时下发，借「始终流动」的 status 帧驱动——故无需
-   * 监听窗口 show/hide/minimize 事件，且 status 不门控 → worker 不会卡死在 inactive。
-   * 自愈延迟分两档：**stats/连接计数 ≤1 个 status 间隔（~1s）**（status 恒流、转活跃下一帧即经 relay 广播）；
-   * **连接明细列表最坏 ~2 个流间隔**（先一个 status 帧触发本同步 setConnActive(true)，worker 收到后再等下一个
-   * connections 帧才 post）。功能正确、仅列表多 ~1s 滞后，隐藏期本无列表消费者，可接受。
+   * 惰性下发需求（batch2 §3.6，取代 syncConnActive）：借「始终流动」的 status 帧驱动，仅需求变化才 post setDemand——
+   * 无需监听窗口 show/hide/minimize 事件，且 status 不门控 → worker 不会卡死在停用态。
+   * - connectionsStream = isUiActive()：窗口可见→拓扑需 aggregate（订阅上游 Connections 流）；隐藏→连上游流一起停
+   *   （worker cancel SubscribeConnections，削核 CPU 面）。自愈延迟 ≤1 个 status 间隔（~1s）。
+   * - detail = 连接页近 PULL_DEMAND_TTL 内有 pull（lastPullAt）：仅页面真正拉取时 worker 才跨进程传全量明细。
+   *   转 true 后明细恢复最坏 ~2 个流间隔（先 status 帧下发 detail=true，worker 再等下一 connections 帧才 post），
+   *   与旧 connActive 语义一致；隐藏期本无明细消费者，可接受。
    */
-  private syncConnActive(): void {
-    const active = this.opts.isUiActive();
-    if (active !== this.lastConnActiveSent) {
-      this.lastConnActiveSent = active;
-      this.post({ type: 'setConnActive', active });
+  private syncDemand(): void {
+    const connectionsStream = this.opts.isUiActive();
+    const detail = Date.now() - this.lastPullAt < PULL_DEMAND_TTL;
+    const prev = this.lastDemandSent;
+    if (!prev || prev.connectionsStream !== connectionsStream || prev.detail !== detail) {
+      this.lastDemandSent = { connectionsStream, detail };
+      this.post({ type: 'setDemand', connectionsStream, detail });
     }
   }
 
@@ -187,18 +202,22 @@ export class StatsWorkerHost implements StatsHost {
         // started 门控：stop() 后 worker 在途旧帧（stop 消息送达前 worker 可能刚 post 一帧非零）必须丢弃，
         // 否则缓存被旧值覆盖 + 广播残留非零速率/总量，直到下次 connect → 违反 stop「停止即清零」不变量。
         if (!this.started) return;
-        this.syncConnActive(); // 借常流的 status 帧惰性同步 worker 的 connActive（C）
+        this.syncDemand(); // 借常流的 status 帧惰性下发 worker 的 setDemand（batch2）
         this.snapshot = msg.payload;
         if (this.opts.isUiActive()) this.opts.onStats(this.snapshot);
         break;
-      case 'connections':
-        if (!this.started) return; // 同上：停后在途连接帧丢弃，避免残留旧连接列表。
-        // issue #227：worker 仍 post 全量明细（供连接页 pull 缓存），但 host 不再把它 relay 给渲染端（旧每秒全量
-        // EVENT_CONNECTIONS_UPDATED 放大器）。host 侧 O(N) 聚合一次 → 只 relay 小载荷聚合（拓扑），渲染端零 O(N)
-        // 重算。隐藏/拖动期 worker 经 connActive 门控本就不 post connections，故此聚合也随之停。
-        this.connections = msg.payload;
-        this.aggregate = aggregateConnections(msg.payload.connections, msg.payload.at);
+      case 'aggregate':
+        if (!this.started) return; // 停后在途旧帧丢弃，避免残留旧拓扑。
+        // 聚合已下沉 worker（change-driven + rate-cap，杀 B2 每秒全量克隆 + 零信息增量重渲染）：host 只缓存 + 按
+        // 可见性门控 relay，不再自算 O(N)。隐藏期 worker 经 connectionsStream 需求本就不 post aggregate。
+        this.aggregate = msg.payload;
         if (this.opts.isUiActive()) this.opts.onAggregate(this.aggregate);
+        break;
+      case 'detail':
+        if (!this.started) return; // 停后在途旧帧丢弃，避免残留旧连接列表。
+        // 仅缓存供连接页 CONNECTIONS_GET pull，不 relay（每秒全量明细 relay 放大器已删，issue #227）。detail 仅
+        // detailDemand（连接页 pull 期）才由 worker post，故此缓存只在页面活跃期新鲜。
+        this.connections = msg.payload;
         break;
     }
   }
@@ -223,7 +242,8 @@ export class StatsWorkerHost implements StatsHost {
   }
 
   /** 拖动结束：立即补推一帧缓存最新（免等 worker 下一帧滞后）。窗口由隐藏转可见时不另补推——stats/计数走恒流的
-   *  status 帧 ≤1s 自然广播；连接列表经 connActive 重新激活后 ~2 个流间隔恢复（见 syncConnActive），与原行为大致一致。 */
+   *  status 帧 ≤1s 自然广播；拓扑 aggregate 经 connectionsStream 需求重新激活后 ≤2 个流间隔恢复（见 syncDemand），
+   *  与原行为大致一致。 */
   resume(): void {
     if (!this.opts.isUiActive()) return;
     this.opts.onStats({ ...this.snapshot });
@@ -235,6 +255,9 @@ export class StatsWorkerHost implements StatsHost {
   }
 
   getConnectionsSnapshot(): ConnectionsSnapshot {
+    // batch2：记录本次 pull 时刻，驱动 detail 需求（syncDemand 据 lastPullAt 判「连接页近 PULL_DEMAND_TTL 内活跃」→
+    // 下发 detail=true，worker 才跨进程传全量明细）。CONNECTIONS_GET 是唯一调用点（proxy-handlers），语义精确。
+    this.lastPullAt = Date.now();
     // at 用 worker 真实采样时刻（this.connections.at），非拉取时刻：连接页速率差分以采样间隔为分母，避免 pull
     // 节奏与 worker 帧节奏漂移时同一缓存被拉两次 → Δbytes=0 报速率 0、下次翻倍的抖动（review Low-2）。
     return { connections: this.connections.connections, at: this.connections.at };

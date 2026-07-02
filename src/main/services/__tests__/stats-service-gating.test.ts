@@ -485,3 +485,78 @@ describe('StatsService 流式门控（gRPC streams）', () => {
     });
   });
 });
+
+/**
+ * setConnectionsStreamEnabled 单测（batch2 §3.6 / §3.4-3）：worker 据窗口可见性 / 消费者需求开关「Connections 上游流」，
+ * Status 流恒不受影响；且停用态不被 30min 周期重建复活（#210 周期仅作用活跃流）。
+ */
+describe('StatsService.setConnectionsStreamEnabled（batch2：Connections 上游流按需开关）', () => {
+  it('运行期 disable → cancel Connections 流；Status 流不受影响', () => {
+    const { service, mock } = setup();
+    service.start();
+    expect(mock.calls.subscribeConnections).toBe(1);
+    expect(mock.hasConnCb()).toBe(true);
+
+    service.setConnectionsStreamEnabled(false);
+    expect(mock.calls.connStop).toBe(1); // Connections 流被 cancel
+    expect(mock.hasConnCb()).toBe(false);
+    expect(mock.calls.statusStop).toBe(0); // Status 流不动（流量条恒需）
+    expect(mock.hasStatusCb()).toBe(true);
+    service.stop();
+  });
+
+  it('re-enable → 重新订阅 Connections', () => {
+    const { service, mock } = setup();
+    service.start();
+    service.setConnectionsStreamEnabled(false);
+    expect(mock.hasConnCb()).toBe(false);
+
+    service.setConnectionsStreamEnabled(true);
+    expect(mock.calls.subscribeConnections).toBe(2); // 再订阅一次
+    expect(mock.hasConnCb()).toBe(true);
+    service.stop();
+  });
+
+  it('幂等：状态未变直接返回（不重复订阅/退订）', () => {
+    const { service, mock } = setup();
+    service.start();
+    service.setConnectionsStreamEnabled(true); // 已是 true → no-op
+    expect(mock.calls.subscribeConnections).toBe(1);
+    expect(mock.calls.connStop).toBe(0);
+
+    service.setConnectionsStreamEnabled(false);
+    service.setConnectionsStreamEnabled(false); // 已是 false → no-op
+    expect(mock.calls.connStop).toBe(1);
+    service.stop();
+  });
+
+  it('start 前 disable → start 只订 Status 不订 Connections', () => {
+    const { service, mock } = setup();
+    service.setConnectionsStreamEnabled(false); // started=false → 仅存标志
+    service.start();
+    expect(mock.calls.subscribeStatus).toBe(1);
+    expect(mock.calls.subscribeConnections).toBe(0); // Connections 被 gate
+    expect(mock.hasConnCb()).toBe(false);
+    service.stop();
+  });
+
+  it('disabled 态不被 30min 周期重建复活（#210 周期仅作用活跃流）', () => {
+    jest.useFakeTimers();
+    try {
+      const { service, mock } = setup();
+      service.start();
+      service.setConnectionsStreamEnabled(false);
+      const connSubsBefore = mock.calls.subscribeConnections; // =1（start 时订过、已被 disable cancel）
+      const statusSubsBefore = mock.calls.subscribeStatus; // =1
+
+      jest.advanceTimersByTime(30 * 60 * 1000); // 触发 resubscribeStreamsOnly
+
+      expect(mock.calls.subscribeStatus).toBe(statusSubsBefore + 1); // Status 周期重订
+      expect(mock.calls.subscribeConnections).toBe(connSubsBefore); // Connections 仍不订（gate 生效）
+      expect(mock.hasConnCb()).toBe(false);
+      service.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
