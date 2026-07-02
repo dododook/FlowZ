@@ -308,6 +308,8 @@ export interface DiagnosticReportInput {
   coreProcess?: CoreProcessReport;
   /** 内存时间线（issue #242 §6.4）：每 5min 一帧（Electron 全进程 + 核 RSS）的紧凑 CSV，斜率判泄漏/高水位。 */
   memoryTimelineCsv?: string;
+  /** 渲染进程内存 watchdog（issue #242 §4）：本会话隐藏态回收(discard)/可见态告警(warn)次数 + 触发阈值，纯数字。 */
+  rendererWatchdog?: { discardCount: number; warnCount: number; thresholdMb: number };
   appLogTail: string;
   singboxLogTail: string;
   /** 节点标识符 → 占位符（P0.6）：构建末尾在全报告统一替换，打码节点身份（域名/IP/SNI/节点名），保留形态与跨段相关性。 */
@@ -457,6 +459,14 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   if (input.memoryTimelineCsv) {
     tail.push('', '## 内存时间线（每 5min 一帧，最多 24h）', '');
     tail.push(fence('csv', input.memoryTimelineCsv));
+  }
+
+  if (input.rendererWatchdog) {
+    const rw = input.rendererWatchdog;
+    tail.push('', '## 渲染进程内存看护', '');
+    tail.push(`- 阈值：${rw.thresholdMb} MB`);
+    tail.push(`- 隐藏态回收（discard）：${rw.discardCount} 次`);
+    tail.push(`- 可见态告警（warn）：${rw.warnCount} 次`);
   }
 
   if (tail.length === 0) return redacted;

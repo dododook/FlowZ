@@ -51,7 +51,13 @@ export class DiagnosticService {
     private readonly systemProxyManager: ISystemProxyManager,
     private readonly privacyProvider: () => boolean = () => false,
     /** 渲染进程堆内省取数（index.ts 注入 executeJavaScript；缺省=不采）。issue #242 §6.2。 */
-    private readonly rendererIntrospect?: () => Promise<RendererHeapSample | null>
+    private readonly rendererIntrospect?: () => Promise<RendererHeapSample | null>,
+    /** 渲染进程内存 watchdog 计数取数（index.ts 注入本会话 discard/warn 次数 + 阈值；缺省=不纳入）。issue #242 §4。 */
+    private readonly rendererWatchdogStats?: () => {
+      discardCount: number;
+      warnCount: number;
+      thresholdMb: number;
+    }
   ) {}
 
   /** 读文件尾部最多 maxBytes 字节；不存在/失败返回占位串（绝不抛）。 */
@@ -155,6 +161,14 @@ export class DiagnosticService {
       memoryTimelineCsv = undefined;
     }
 
+    // 渲染进程内存 watchdog 计数（issue #242 §4）：本会话隐藏态回收/可见态告警次数 + 阈值；best-effort 不阻断报告。
+    let rendererWatchdog;
+    try {
+      rendererWatchdog = this.rendererWatchdogStats?.();
+    } catch {
+      rendererWatchdog = undefined;
+    }
+
     const effLevel = effectiveLogLevel(config.logLevel || 'info', this.privacyProvider());
     const captureActive = !!config.diagnosticCapture;
     const wantDeeper =
@@ -202,6 +216,7 @@ export class DiagnosticService {
       rendererHeap,
       coreProcess,
       memoryTimelineCsv,
+      rendererWatchdog,
       appLogTail,
       singboxLogTail,
       // issue #147：节点 outbound.server 已恒为域名（不再烧 IP），无额外预解析 IP 需补脱敏 → 仅扫 config.servers。

@@ -6,6 +6,11 @@ import { ProtocolParser } from './services/ProtocolParser';
 import { LogManager } from './services/LogManager';
 import { TrayManager } from './services/TrayManager';
 import { releaseWindowMemory } from './services/window-memory';
+import {
+  parseRendererRssLimitMb,
+  rendererRssMbFromMetrics,
+  decideRendererMemoryAction,
+} from './services/renderer-memory-watchdog';
 import { shouldQuitOnAllWindowsClosed } from './window-close-policy';
 import { ProxyManager } from './services/ProxyManager';
 import { DiagnosticService } from './services/DiagnosticService';
@@ -248,6 +253,68 @@ async function checkIdleAutoModes(): Promise<void> {
     }
   } catch {
     // ignore
+  }
+}
+
+// 渲染进程内存 watchdog（issue #242 §4 视图生命周期）：批次 2/3 的 change-driven / 订阅驱动只把更新降频，泄漏
+// 本体（若在 Blink/V8/Electron 层）未根除；本 watchdog 是对其的**确定性兜底**——渲染 RSS 超阈值时隐藏态 destroy
+// 窗口全额回收、可见态只告警。定位=lifecycle hygiene（同浏览器 tab discard），非泄漏修复。high 阈值 1.5GB 远超
+// 正常 ~250MB，隐藏态回收对用户透明 → 「用户永远看不到 2GB」。**always-on 安全网**（非 gate 在 autoLightweightMode：
+// 那是用户偏好的空闲省电，本 watchdog 是防失控的红线兜底，两者正交；隐藏态回收无副作用，无需开关门）。
+const RENDERER_RSS_LIMIT_MB = parseRendererRssLimitMb(process.env.FLOWZ_RENDERER_RSS_LIMIT_MB);
+const RENDERER_MEM_WARN_COOLDOWN_MS = 5 * 60 * 1000; // 可见态告警冷却 5min，防刷屏
+let lastRendererWarnAt = 0;
+let rendererDiscardCount = 0; // 本会话隐藏态回收次数（诊断导出）
+let rendererWarnCount = 0; // 本会话可见态告警次数（诊断导出）
+
+/**
+ * 渲染进程内存 watchdog 一轮采样 + 处置（接在 idleCheckInterval 的 60s 节拍，watchdog 对小时级泄漏足够，不新增
+ * interval）。取渲染主窗口 pid → getAppMetrics 采其 RSS → 纯决策：
+ * - 'discard'（超阈值 + 窗口隐藏）：走既有轻量原语 enterLightweightMode 销毁窗口全额回收（ensureWindow 下次 show
+ *   重建；轻量原语内 markLightweightModeTransition 已保「有托盘不误退 app」，仅无托盘僵尸态才退——与空闲轻量同语义）。
+ * - 'warn'（超阈值 + 窗口可见）：主进程无现成通用 toast-to-renderer 通道（既有 EVENT 均为专用 payload）→ 退化为
+ *   app.log 面包屑 + 诊断计数（不硬造 renderer UI，见批次报告）；带 5min 冷却防刷屏。
+ * 全程 try/catch 吞异常：绝不因采样/回收失败崩掉空闲主循环。
+ */
+function checkRendererMemory(): void {
+  try {
+    const win = mainWindow;
+    const windowExists = !!win && !win.isDestroyed();
+    // 渲染主窗口 OS pid（与 getAppMetrics 的 pid 同口径）；无窗口/销毁 → null。
+    const rendererPid = windowExists ? win!.webContents.getOSProcessId() : null;
+    const rssMb = rendererRssMbFromMetrics(app.getAppMetrics(), rendererPid);
+    // 可见 = 未隐藏且未最小化：Cmd+H / 关到托盘 / 最小化均判「不可见」→ 允许销毁回收；拖动中窗口仍可见 → 只告警
+    // 不销毁（故用 isVisible/!minimized，而非含 !isDragging 的 isUiBroadcastActive）。
+    const windowVisible = windowExists && win!.isVisible() && !win!.isMinimized();
+    const now = Date.now();
+    const action = decideRendererMemoryAction({
+      rssMb,
+      thresholdMb: RENDERER_RSS_LIMIT_MB,
+      windowExists,
+      windowVisible,
+      lastWarnAt: lastRendererWarnAt,
+      now,
+      warnCooldownMs: RENDERER_MEM_WARN_COOLDOWN_MS,
+    });
+    if (action === 'discard') {
+      logManager.addLog(
+        'warn',
+        `Renderer RSS ${rssMb}MB > ${RENDERER_RSS_LIMIT_MB}MB 且窗口隐藏，进入轻量模式回收`,
+        'Main'
+      );
+      rendererDiscardCount++;
+      trayManager?.enterLightweightMode();
+    } else if (action === 'warn') {
+      logManager.addLog(
+        'warn',
+        `Renderer RSS ${rssMb}MB > ${RENDERER_RSS_LIMIT_MB}MB（窗口可见），建议刷新页面释放内存`,
+        'Main'
+      );
+      rendererWarnCount++;
+      lastRendererWarnAt = now;
+    }
+  } catch {
+    // 采样/回收失败不阻断空闲主循环（getAppMetrics 极端异常、窗口在途销毁等）
   }
 }
 
@@ -1456,8 +1523,12 @@ if (gotTheLock) {
     );
     coreUpdateScheduler.start();
 
-    // 自动空闲模式：powerMonitor 真实系统输入空闲轮询（app ready 后才可用），替代窗口 blur/hide 边沿武装
-    idleCheckInterval = setInterval(() => void checkIdleAutoModes(), IDLE_POLL_MS);
+    // 自动空闲模式：powerMonitor 真实系统输入空闲轮询（app ready 后才可用），替代窗口 blur/hide 边沿武装。
+    // 同节拍搭车渲染进程内存 watchdog（issue #242 §4）：60s 采一次 renderer RSS，超阈值兜底回收/告警（不新增 interval）。
+    idleCheckInterval = setInterval(() => {
+      void checkIdleAutoModes();
+      checkRendererMemory();
+    }, IDLE_POLL_MS);
 
     // 规则资源自动更新调度（sing-box 不自更新本地 .srs，由 FlowZ 周期重下载；静默、不打断连接）
     ruleResourceScheduler = new RuleResourceScheduler(
@@ -1630,7 +1701,13 @@ if (gotTheLock) {
           } catch {
             return null;
           }
-        }
+        },
+        // 渲染进程内存 watchdog 计数（issue #242 §4）：本会话隐藏态回收/可见态告警次数 + 阈值，随诊断导出。
+        () => ({
+          discardCount: rendererDiscardCount,
+          warnCount: rendererWarnCount,
+          thresholdMb: RENDERER_RSS_LIMIT_MB,
+        })
       );
       registerDiagnosticHandlers(diagnosticService);
     }

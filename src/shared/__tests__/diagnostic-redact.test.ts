@@ -356,11 +356,23 @@ describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => 
     expect(md).toContain('2026-07-02T00:00:00.000Z,Browser,100,300');
   });
 
+  it('渲染进程内存看护：阈值 + discard/warn 计数逐行渲染（issue #242 §4）', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      rendererWatchdog: { discardCount: 2, warnCount: 3, thresholdMb: 1536 },
+    });
+    expect(md).toContain('## 渲染进程内存看护');
+    expect(md).toContain('- 阈值：1536 MB');
+    expect(md).toContain('- 隐藏态回收（discard）：2 次');
+    expect(md).toContain('- 可见态告警（warn）：3 次');
+  });
+
   it('全部新字段缺省 → 不渲染任何观测新区块（向后兼容）', () => {
     const md = buildDiagnosticReport(base);
     expect(md).not.toContain('## 渲染进程堆分层');
     expect(md).not.toContain('## sing-box 核进程');
     expect(md).not.toContain('## 内存时间线');
+    expect(md).not.toContain('## 渲染进程内存看护');
   });
 });
 
