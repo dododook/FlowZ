@@ -1,0 +1,98 @@
+name: Package
+
+# 打包（出安装包）与验证分离：验证在 ci.yml（每个 PR/push 都跑）。本 workflow 只在真正需要出包/验证打包链时跑：
+#   - push main：合并后完整打包，Windows 上传 artifact（当日可取，dogfood main + 完整打包链兜底暴露）。
+#   - PR 碰打包敏感 paths：只跑 `electron-builder --dir` 冒烟（验证 helper 编译/资产 fetch/asar 组装/extraResources 布局），
+#     不出安装包、不上传——绝大多数纯 UI/逻辑 PR 不触发本 workflow，由 push main 完整打包兜底。
+#   - workflow_dispatch：手动取包逃生舱（替代「从 PR 拿包」）。
+# runner 钉版本对齐 release.yml（macos-14/windows-2022），使冒烟真正代表发布路径。本 workflow 不设 required check
+# （paths 过滤的 check 设 required 会遇「check 从未上报 → merge 卡 expected」死锁）。
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'electron-builder.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/**'
+      - 'helper/**'
+      - 'helper-win/**'
+      - 'helper-linux/**'
+      - 'src/shared/core-manifest.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+concurrency:
+  group: package-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win
+          - os: macos-14
+            platform: mac
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+      REQUIRE_HELPER: "1"
+      ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
+      ELECTRON_BUILDER_BINARIES_MIRROR: "https://npmmirror.com/mirrors/electron-builder-binaries/"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      # 提权 helper 二进制不入库（.gitignore），现编现打；mac + win 均需 Go，否则该平台包缺 helper（issue #57）。
+      - name: Setup Go (提权 helper)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: helper/go.mod
+          cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      # PR 冒烟：完整 prep（helper 编译 + 资产 fetch + build）+ `electron-builder --dir`——验证打包链能过，
+      # 跳过 nsis/portable/压缩/签名/上传（省 PR 时长且语义诚实：冒烟就是冒烟，不假装出安装包）。
+      - name: Package smoke (PR, --dir, no artifact)
+        if: github.event_name == 'pull_request'
+        run: |
+          npm run build:helper
+          npm run fetch:core
+          npm run fetch:cronet
+          npm run fetch:dashboard
+          npm run build
+          npx electron-builder --${{ matrix.platform }} --dir
+
+      # main push / 手动：完整打包（与 release.yml 同源脚本，含正确 arch flag）。
+      - name: Package full (main push / manual)
+        if: github.event_name != 'pull_request'
+        run: npm run package:${{ matrix.platform }}
+
+      # 仅 Windows 完整打包上传 artifact（当日可取）；retention 3d 控存储。
+      # macOS 不上传：electron-builder.json mac target=dir 不产 .exe/.dmg（DMG 只在 release.yml 用 hdiutil 手搓），
+      # 旧 build.yml 的 mac upload 匹配不到文件、artifact 恒为 0——本次一并去除这个空动作。
+      - name: Upload Windows installer (main push / manual)
+        if: github.event_name != 'pull_request' && matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-win-${{ github.sha }}
+          path: dist-package/*.exe
+          retention-days: 3

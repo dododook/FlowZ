@@ -1,0 +1,53 @@
+name: CI
+
+# 验证门禁：lint + test + build（tsc/vite），双平台。职责=「改动是否正确」，快速反馈。
+# 打包（出安装包）已拆到 package.yml，不再在每个 PR/push 上跑——CI 只做验证，约 2min。
+# 建议：main 开 ruleset，把本 workflow 的 test (macos-latest) / test (windows-latest) 设为 required checks。
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# 同一分支新 push 取消在途 PR 跑（省算力、加快反馈）；main push 不取消，保证每次合并都完整验证。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 双平台必留：主进程平台分支密集、有 Windows path 分隔符 CI 翻车前科（config-snapshot），
+        # test 每 leg 仅约 1.5-2min，是全流程性价比最高的部分。
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: 'npm'
+
+      - name: Install dependencies
+        env:
+          ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
+        run: npm ci
+
+      - name: Lint code
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build application
+        run: npm run build
