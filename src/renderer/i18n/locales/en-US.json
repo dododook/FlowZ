@@ -487,7 +487,8 @@
       "confirmBtn": "Confirm Switch",
       "successUpdate": "Proxy mode updated",
       "failUpdate": "Failed to save settings",
-      "reconnectToast": "Restarting the proxy to apply the new takeover mode…"
+      "reconnectToast": "Restarting the proxy to apply the new takeover mode…",
+      "fakeIpAutoEnabled": "FakeIP was enabled automatically for TUN mode (recommended). You can turn it off in Settings → Network."
     },
     "advanced": {
       "title": "Advanced",

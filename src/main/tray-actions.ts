@@ -16,6 +16,9 @@ import type { UpdateService } from './services/UpdateService';
 import type { SpeedTestService } from './services/SpeedTestService';
 import type { TrayManager } from './services/TrayManager';
 import type { ProxyMode, ProxyModeType } from '../shared/types';
+import { applyFakeIpTunEntry } from '../shared/fakeip-tun-entry';
+import { notifyUser } from './notify-user';
+import { mt } from './i18n';
 import { ipcEventEmitter } from './ipc/ipc-events';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
 import { runSpeedTest } from './services/speed-test-runner';
@@ -162,10 +165,17 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     onChangeProxyModeType: async (modeType: ProxyModeType) => {
       const proxyManager = getProxyManager();
       try {
-        const config = await configManager.loadConfig();
-        config.proxyModeType = modeType;
+        const loaded = await configManager.loadConfig();
+        loaded.proxyModeType = modeType;
+        // 切模式前过 FakeIP-TUN 待纠正（同 proxy-control-card）：迁移冻结的 enableFakeIp:false 首次进 TUN 回 true。
+        const { config, corrected } = applyFakeIpTunEntry(loaded);
         await configManager.saveConfig(config);
         logManager.addLog('info', `Takeover mode changed from tray: ${modeType}`, 'Main');
+        if (corrected) {
+          logManager.addLog('info', 'FakeIP 已随 TUN 自动启用（迁移冻结纠正）', 'Main');
+          // 托盘切换常在窗口关闭时发生 → 桌面通知告知（notifyUser 内部尊重 desktopNotifications 开关）。
+          notifyUser(mt('fakeIpTunAutoEnabledTitle'), mt('fakeIpTunAutoEnabledBody'));
+        }
 
         // 运行中则重启以应用新接管方式（走 restart()：start 腿失败清残留系统代理；成功则 start reconcile
         // 按新模式 enable/clear——覆盖 systemProxy↔TUN 双向切换的系统代理一致性）

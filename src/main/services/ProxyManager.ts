@@ -1872,9 +1872,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       helperPromptDismissed: null,
       helperDisabledPromptDismissed: null,
       helperUpgradePromptDismissed: null,
-      // fakeIpToggleMigrated 是一次性迁移元数据标记，不影响生成（enableFakeIp 本身仍在 norm 内 → 影响生成保留）。
-      //   若不排除：未来某路径重建 dnsConfig 丢标记 → norm 翻转无谓重启，且再次迁移可能覆盖用户手动改的值。
-      dnsConfig: c.dnsConfig ? { ...c.dnsConfig, fakeIpToggleMigrated: null } : c.dnsConfig,
+      // fakeIpToggleMigrated / fakeIpTunAutoEnable / nodeResolverMigrated 都是一次性迁移元数据标记，不影响生成
+      //   （enableFakeIp / nodeResolver* 本身仍在 norm 内 → 影响生成保留）。若不排除：未来某路径重建 dnsConfig 丢/带
+      //   该标记 → norm 翻转无谓重启断流 + 迁移重跑可能从 deprecated 字段回灌覆盖用户自选值。
+      dnsConfig: c.dnsConfig
+        ? {
+            ...c.dnsConfig,
+            fakeIpToggleMigrated: null,
+            fakeIpTunAutoEnable: null,
+            nodeResolverMigrated: null,
+          }
+        : c.dnsConfig,
       // 规则投影：禁用规则不进生成（generateCustomRules / DNS 侧均跳过 disabled）→ 内容/增删不触发重启；
       //   remarks 纯展示元数据，不影响生成。顺序保留（reorder 仍重启，语义正确）。
       // 非 smart（global/direct）：用户路由不进生成 → 整体投影为 []（增删/编辑/换节点都不翻转 norm，免无谓重启）。

@@ -239,8 +239,11 @@ export function registerBackupHandlers(
       // 末尾归零（validateConfig 对失效引用是 throw、非归零，否则整份导入失败）。
       await configManager.saveConfig(merged);
 
-      ipcEventEmitter.sendToAll('event:configChanged', { newValue: merged });
-      mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, merged);
+      // 重新 loadConfig 让迁移（含 FakeIP-TUN 待纠正评估）对导入配置即时生效，再广播 fresh——否则导入的 systemProxy
+      // 冻结态直接广播 merged（flag 未评估）会漏掉 FakeIP-TUN 纠正窗口、被同会话切 TUN 永久消费（复审 L3）。
+      const fresh = await configManager.loadConfig();
+      ipcEventEmitter.sendToAll('event:configChanged', { newValue: fresh });
+      mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, fresh);
 
       // 备份只含 config(ruleResources 元数据)、不含 .srs 本体：恢复后缺失 → 立即补缺（fire-and-forget，离线留 scheduler 兜底）。
       void ruleResourceManager

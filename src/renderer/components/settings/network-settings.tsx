@@ -147,6 +147,12 @@ export function NetworkSettings() {
     saveConfig(updated).catch(() => toast.error(t('common.saveFailed')));
   };
 
+  // 用户手动改 FakeIP 开关：同写 fakeIpTunAutoEnable:false 撤销「待纠正」快照——之后切模式绝不再自动改
+  // enableFakeIp（意图即撤销，防误伤 TUN 下主动关 FakeIP 的用户）。三处写入点（toggle / TUN 关闭确认 / IPv6 提示）统一走此。
+  const writeFakeIp = (checked: boolean) => {
+    updateDns({ enableFakeIp: checked, fakeIpTunAutoEnable: false });
+  };
+
   // P6 局域网网关：更新 tunConfig 子字段（MAC 过滤 / 邻居解析后缀），保留其余 TUN 设置。
   const updateTun = (patch: Partial<NonNullable<typeof config.tunConfig>>) =>
     saveConfig({ ...config, tunConfig: { ...config.tunConfig, ...patch } }).catch(() =>
@@ -161,7 +167,7 @@ export function NetworkSettings() {
       setFakeIpOffConfirmOpen(true);
       return;
     }
-    updateDns({ enableFakeIp: checked });
+    writeFakeIp(checked);
   };
 
   // F1：DNS 改为提交时保存（onBlur），而非逐键 saveConfig（代理运行时逐键会触发全量重启 + 受控回显竞态）。
@@ -309,7 +315,7 @@ export function NetworkSettings() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                <AlertDialogAction onClick={() => updateDns({ enableFakeIp: false })}>
+                <AlertDialogAction onClick={() => writeFakeIp(false)}>
                   {t('settings.advanced.fakeIpTunOffConfirmOk')}
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -744,11 +750,7 @@ export function NetworkSettings() {
                       '若节点不支持 IPv6，部分网站可能无法访问；建议开启 FakeIP。'
                     )}
                   </p>
-                  <Button
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => updateDns({ enableFakeIp: true })}
-                  >
+                  <Button size="sm" className="shrink-0" onClick={() => writeFakeIp(true)}>
                     {t('settings.network.enableFakeIpAction', '开启 FakeIP')}
                   </Button>
                 </div>

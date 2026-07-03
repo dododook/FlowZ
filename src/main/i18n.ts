@@ -116,6 +116,21 @@ const MESSAGES = {
     ru: 'Прокси остановлен. Откройте FlowZ, чтобы узнать подробности.',
     fa: 'پروکسی متوقف شد. برای جزئیات FlowZ را باز کنید.',
   },
+  fakeIpTunAutoEnabledTitle: {
+    'zh-CN': '已自动启用 FakeIP',
+    'zh-TW': '已自動啟用 FakeIP',
+    'en-US': 'FakeIP enabled automatically',
+    ru: 'FakeIP включён автоматически',
+    fa: 'FakeIP به‌طور خودکار فعال شد',
+  },
+  fakeIpTunAutoEnabledBody: {
+    'zh-CN': '切换到 TUN 模式后已自动启用 FakeIP（推荐）。可在 设置 → 网络 关闭。',
+    'zh-TW': '切換到 TUN 模式後已自動啟用 FakeIP（建議）。可在 設定 → 網路 關閉。',
+    'en-US':
+      'FakeIP was enabled automatically for TUN mode (recommended). Turn it off in Settings → Network.',
+    ru: 'FakeIP включён автоматически для режима TUN (рекомендуется). Отключить можно в «Настройки → Сеть».',
+    fa: 'FakeIP برای حالت TUN به‌طور خودکار فعال شد (توصیه‌شده). در تنظیمات ← شبکه خاموش کنید.',
+  },
   helperDisabledTitle: {
     'zh-CN': 'FlowZ 提权助手被关闭',
     'zh-TW': 'FlowZ 提權助手被關閉',

@@ -33,6 +33,7 @@ import { usesFakeIp } from '../custom-rule-files';
 import { ConfigManager } from '../ConfigManager';
 import { ProxyManager } from '../ProxyManager';
 import type { UserConfig, ProxyModeType } from '../../../shared/types';
+import { applyFakeIpTunEntry } from '../../../shared/fakeip-tun-entry';
 
 type AnyCfg = any;
 
@@ -331,5 +332,177 @@ describe('C. generateDnsConfig：关 FakeIP 注入 reverse_mapping；开则不�
   it('systemProxy 关 FakeIP 同样注入 reverse_mapping（统一行为）', () => {
     const dns = genDns(false, 'systemProxy');
     expect(dns.reverse_mapping).toBe(true);
+  });
+});
+
+describe('E. migrateFakeIpTunPending 评估（经 loadConfig 真实路径）', () => {
+  let dir: string;
+  function write(config: any): string {
+    const p = path.join(dir, `cfg-${Math.random().toString(36).slice(2)}.json`);
+    fs.writeFileSync(p, JSON.stringify(config, null, 2));
+    return p;
+  }
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-fakeip-tunpending-'));
+  });
+
+  it('systemProxy 存量 enableFakeIp:false → 判迁移冻结，fakeIpTunAutoEnable:true', async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'systemProxy',
+        dnsConfig: { domesticDns: 'x', foreignDns: 'y', enableFakeIp: false } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect(loaded.dnsConfig?.enableFakeIp).toBe(false); // migrateFakeIpToggle 保留
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(true); // 待纠正
+  });
+
+  it("TUN 手动关（tun+false+已 migrated）→ 不植 flag（不误伤 A'）", async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'tun',
+        dnsConfig: {
+          domesticDns: 'x',
+          foreignDns: 'y',
+          enableFakeIp: false,
+          fakeIpToggleMigrated: true,
+        } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect(loaded.dnsConfig?.enableFakeIp).toBe(false); // migrated 幂等跳过，保留用户关闭
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(false);
+  });
+
+  it('manual + false + 已 migrated → 不植 flag（非 systemProxy）', async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'manual',
+        dnsConfig: {
+          domesticDns: 'x',
+          foreignDns: 'y',
+          enableFakeIp: false,
+          fakeIpToggleMigrated: true,
+        } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(false);
+  });
+
+  it('systemProxy + enableFakeIp:true → 不植 flag（enableFakeIp 非 false）', async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'systemProxy',
+        dnsConfig: { domesticDns: 'x', foreignDns: 'y', enableFakeIp: true } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(false);
+  });
+
+  it('幂等/防跨重启泄漏：已评估否决（false）→ 再 load 不复植 true', async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'systemProxy',
+        dnsConfig: {
+          domesticDns: 'x',
+          foreignDns: 'y',
+          enableFakeIp: false,
+          fakeIpToggleMigrated: true,
+          fakeIpTunAutoEnable: false,
+        } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(false);
+  });
+
+  it('中间版本升级主路径：已 migrated + flag undefined + systemProxy+false → 判 true', async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'systemProxy',
+        dnsConfig: {
+          domesticDns: 'x',
+          foreignDns: 'y',
+          enableFakeIp: false,
+          fakeIpToggleMigrated: true,
+        } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(true);
+  });
+
+  it('已植 true → 再 load 幂等保持 true（存续到消费，不被重评估掉）', async () => {
+    const p = write(
+      makeConfig({
+        proxyModeType: 'systemProxy',
+        dnsConfig: {
+          domesticDns: 'x',
+          foreignDns: 'y',
+          enableFakeIp: false,
+          fakeIpToggleMigrated: true,
+          fakeIpTunAutoEnable: true,
+        } as any,
+      })
+    );
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(true);
+  });
+
+  it('新装无配置文件 → createDefaultConfig flag:false', async () => {
+    const p = path.join(dir, `nonexistent-${Math.random().toString(36).slice(2)}.json`);
+    const loaded = await new ConfigManager(p).loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(false);
+  });
+});
+
+describe('G. 端到端序列：冻结用户生命周期不复发（核心回归护栏）', () => {
+  let dir: string;
+  function write(config: any): string {
+    const p = path.join(dir, `cfg-${Math.random().toString(36).slice(2)}.json`);
+    fs.writeFileSync(p, JSON.stringify(config, null, 2));
+    return p;
+  }
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-fakeip-seq-'));
+  });
+
+  it('植 flag→切 TUN 纠正→手动关→切回 systemProxy→再进 TUN 保持关（尊重意图，不复发）', async () => {
+    // 1) 存量 systemProxy+false 升级：评估植 flag
+    const p = write(
+      makeConfig({
+        proxyModeType: 'systemProxy',
+        dnsConfig: { domesticDns: 'x', foreignDns: 'y', enableFakeIp: false } as any,
+      })
+    );
+    const cm = new ConfigManager(p);
+    const loaded = await cm.loadConfig();
+    expect((loaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(true);
+
+    // 2) 切 TUN：消费，enableFakeIp 回 true
+    const entered = applyFakeIpTunEntry({ ...loaded, proxyModeType: 'tun' });
+    expect(entered.corrected).toBe(true);
+    expect(entered.config.dnsConfig!.enableFakeIp).toBe(true);
+    expect(entered.config.dnsConfig!.fakeIpTunAutoEnable).toBe(false);
+
+    // 3) 用户在 TUN 下手动关 FakeIP（writeFakeIp 效果：enableFakeIp false + flag false），落盘
+    const manualOff = {
+      ...entered.config,
+      dnsConfig: { ...entered.config.dnsConfig!, enableFakeIp: false, fakeIpTunAutoEnable: false },
+    };
+    await cm.saveConfig(manualOff as any);
+
+    // 4) 切回 systemProxy 再启动：不复植 flag（已 false，非 undefined）
+    await cm.saveConfig({ ...manualOff, proxyModeType: 'systemProxy' } as any);
+    const reloaded = await cm.loadConfig();
+    expect((reloaded.dnsConfig as any)?.fakeIpTunAutoEnable).toBe(false);
+
+    // 5) 再进 TUN：不纠正（尊重用户主动关）
+    const reentered = applyFakeIpTunEntry({ ...reloaded, proxyModeType: 'tun' });
+    expect(reentered.corrected).toBe(false);
+    expect(reentered.config.dnsConfig!.enableFakeIp).toBe(false);
   });
 });

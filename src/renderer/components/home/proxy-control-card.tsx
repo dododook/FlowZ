@@ -18,6 +18,7 @@ import type { ProxyMode, ProxyModeType } from '@/bridge/types';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { isServerComplete } from '../../../shared/server-completeness';
+import { applyFakeIpTunEntry } from '../../../shared/fakeip-tun-entry';
 import {
   isMeshNodeUnroutable,
   isEndpointProtocol,
@@ -81,10 +82,17 @@ export function ProxyControlCard() {
   const applyTakeover = async (modeType: ProxyModeType) => {
     if (!config) return;
     try {
-      await saveConfig({ ...config, proxyModeType: modeType });
+      // 切模式前过 FakeIP-TUN 待纠正：systemProxy 迁移冻结的 enableFakeIp:false 首次进 TUN 时回 true（消费快照），
+      // 避免节点收真实 IP 被严格机场拒连。仅迁移冻结态触发，用户主动关的已在写入时撤销 flag，不误伤。
+      const { config: next, corrected } = applyFakeIpTunEntry({
+        ...config,
+        proxyModeType: modeType,
+      });
+      await saveConfig(next);
       toast.success(t('settings.proxyMode.successUpdate'), {
         description: isConnected ? t('settings.proxyMode.reconnectToast') : undefined,
       });
+      if (corrected) toast.info(t('settings.proxyMode.fakeIpAutoEnabled'));
     } catch {
       toast.error(t('settings.proxyMode.failUpdate'));
     }

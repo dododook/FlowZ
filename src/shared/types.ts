@@ -309,6 +309,10 @@ export interface DnsConfig {
   // migrateFakeIpToggle 按迁移时刻 proxyModeType 写 effective 值（TUN/manual→true、systemProxy→保留）后置 true。
   // undefined=未迁移（旧配置）；迁移幂等，置 true 后永不再改写，避免覆盖用户后续手动改的值。
   fakeIpToggleMigrated?: boolean;
+  // FakeIP-TUN 待纠正快照（三态，见 shared/fakeip-tun-entry.ts + ConfigManager.migrateFakeIpTunPending）：
+  // undefined=未评估（仅存量升级瞬间）；true=enableFakeIp:false 判定为 systemProxy 迁移冻结产物，首次进入 TUN
+  // 时自动回 true 并消费；false=已消费/已否决/用户已手动表达 FakeIP 意图，永不自动改。
+  fakeIpTunAutoEnable?: boolean;
   // ── 节点域名解析上游选择（issue #147 多源 race，取代 #57 单选档位 + 烧 IP）。设计 docs/design/issue147-node-dns-race-resolver.md ──
   // @deprecated 旧单选档位，仅供迁移读取（auto→pool[ali,dnspod] / dnspod→[dnspod] / system→[system]）；
   // 迁移后不再写入，新逻辑读 nodeResolverPool/nodeResolverSingle。旧配置无此字段 → 视为 'auto'。

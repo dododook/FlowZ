@@ -183,6 +183,11 @@ export class ConfigManager implements IConfigManager {
       // 按迁移时刻 proxyModeType 写 effective 值，置标记防重复执行覆盖用户后续手动改的值。
       await this.migrateFakeIpToggle(config);
 
+      // FakeIP-TUN 待纠正快照一次性评估（幂等、绝不抛）：区分「systemProxy 迁移冻结的 enableFakeIp:false」（待
+      // 首次进 TUN 纠正）vs「用户主动关 / 其余态」（否决）。须在 migrateFakeIpToggle 之后（依赖 enableFakeIp +
+      // fakeIpToggleMigrated 已冻结）；消费在切模式入口经 shared/fakeip-tun-entry.applyFakeIpTunEntry。
+      await this.migrateFakeIpTunPending(config);
+
       // 节点域名解析器一次性迁移（issue #147，幂等、绝不抛）：旧单选档位 nodeDomainResolver → 新多源 race 模型
       // nodeResolverPool(on 多选)+nodeResolverSingle(off 单选)。须在 migrateFakeIpToggle 之后（依赖 dnsConfig 已补齐）。
       await this.migrateNodeResolver(config);
@@ -929,6 +934,37 @@ export class ConfigManager implements IConfigManager {
   }
 
   /**
+   * FakeIP-TUN 待纠正快照一次性评估（幂等、绝不抛、不阻断启动）。
+   *
+   * 背景：migrateFakeIpToggle 对 systemProxy 冻结 enableFakeIp:false（systemProxy 无 TUN，FakeIP 近 no-op）。
+   * 但这类用户后续切到 TUN 时 flag 不随模式翻转 → 无感落入 TUN+FakeIP-off（节点收真实 IP → 严格机场拒连，
+   * sing-box 1.14 无 sniff_override_destination 缓解）。落盘态 tun/manual+false 与 systemProxy+false 的 proxyModeType
+   * 不同、可区分（前者已否决）；真正不可 post-hoc 区分的是**升级前的历史序列**（中间版本期曾在 systemProxy 下手动关、
+   * 或 TUN 下关后切回 systemProxy 再升级）——这类会被误植 true、下次进 TUN 违背意图自动开回（toast + 一次性 + 再关即
+   * 永久 false 缓解，属快照方案固有边界）。故快照资格只取升级时刻可判态：仅 systemProxy+enableFakeIp:false+migrated
+   * 判为迁移冻结（待纠正），其余一律否决（含 tun/manual+false 的用户主动态、enableFakeIp:true、新装）。消费见 shared/fakeip-tun-entry。
+   *
+   * 只评估一次（fakeIpTunAutoEnable===undefined 时）；必须对否决态显式写 false（防「TUN 手动关的用户切回
+   * systemProxy 后再启动」被重新评估误植 flag 的跨重启泄漏）。落盘 best-effort（同 migrateFakeIpToggle）。
+   */
+  private async migrateFakeIpTunPending(config: UserConfig): Promise<void> {
+    try {
+      if (!config.dnsConfig) return; // migrateFakeIpToggle 已补齐；防御
+      if (config.dnsConfig.fakeIpTunAutoEnable !== undefined) return; // 已评估：幂等跳过，不落盘
+      const modeType = (config.proxyModeType || 'systemProxy').toLowerCase();
+      config.dnsConfig.fakeIpTunAutoEnable =
+        modeType === 'systemproxy' &&
+        config.dnsConfig.enableFakeIp === false &&
+        config.dnsConfig.fakeIpToggleMigrated === true;
+      await this.saveConfig(config).catch((e) =>
+        this.log('warn', `FakeIP-TUN 待纠正评估落盘失败（不阻断，下次重试）: ${e}`)
+      );
+    } catch (e) {
+      this.log('warn', `FakeIP-TUN 待纠正评估失败（吞掉，不影响启动）: ${e}`);
+    }
+  }
+
+  /**
    * 节点域名解析器迁移（issue #147）：旧单选档位 nodeDomainResolver(auto/dnspod/system) → 新多源模型
    * nodeResolverPool(race on 多选)+nodeResolverSingle(race off 单选)。幂等(nodeResolverMigrated 守卫)、绝不抛。
    * 保留用户原意图：dnspod→[dnspod]/single dnspod；system→[system]/single system；auto/缺省→[ali,dnspod]/single ali。
@@ -1016,6 +1052,7 @@ export class ConfigManager implements IConfigManager {
         foreignDns: 'https://dns.google/dns-query',
         enableFakeIp: true, // 新装默认开（usesFakeIp 已统一为纯看开关；存量经 migrateFakeIpToggle 一次性迁移）
         fakeIpToggleMigrated: true, // 新装无需迁移：直接落 effective 默认，标记防 migrate 再改写
+        fakeIpTunAutoEnable: false, // 新装 enableFakeIp 已 true，无迁移冻结待纠正（对齐 fakeIpToggleMigrated 新装置位）
         takeoverSystemDns: true, // TUN 模式接管系统 DNS 默认开（缺省本已 ?? true 视为开，此处显式声明）
         // issue #147 节点域名解析（多源 race）：新装默认 race-on、池=AliDNS+DNSPod；off 单选默认 Ali。
         nodeResolverPool: ['ali', 'dnspod'],

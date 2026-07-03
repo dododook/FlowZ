@@ -487,7 +487,8 @@
       "confirmBtn": "确认切换",
       "successUpdate": "代理模式已更新",
       "failUpdate": "保存设置失败",
-      "reconnectToast": "正在重启代理以应用新接管方式…"
+      "reconnectToast": "正在重启代理以应用新接管方式…",
+      "fakeIpAutoEnabled": "已随 TUN 模式自动启用 FakeIP（推荐）。可在 设置 → 网络 中关闭。"
     },
     "advanced": {
       "title": "高级",
