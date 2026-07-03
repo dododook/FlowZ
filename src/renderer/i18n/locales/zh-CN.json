@@ -682,6 +682,7 @@
       "tunInboundExcludeDesc": "被这些网段远程连入本机（如经组网/NAT 访问本机服务）时，让回包绕过 TUN、走物理网卡，避免连接被劫持中断。",
       "tunInboundExcludeDescFull": "区别于「绕过局域网」：后者是分流直连偏好、不影响是否进 TUN；本项直接把网段排除出 TUN 捕获。注意这是双向的——被排除的段出/入两个方向都绕过 TUN 走直连，故这些段也不再经代理/自定义规则出网。与组网(WG/Tailscale)路由段重叠的会自动跳过（组网优先）；macOS 会跳过本机物理局域网段。一般用户无需设置。",
       "tunInboundExcludeHint": "每行一个 CIDR；非法项保存时自动剔除。用于「本机被远程管理/被连入」场景。",
+      "tunInboundExcludeLinuxNote": "Linux 下服务端连入回包已由内核策略路由天然保护，此项不生效、已忽略（填写不会有效果）。",
       "tunInboundExcludePlaceholder": "每行一个 IP 段（CIDR），例如：\n10.147.0.0/16\n192.168.5.0/24",
       "macFilter": "按 MAC 过滤设备",
       "macFilterDesc": "限定/排除哪些局域网设备的流量进入 TUN（按 MAC）。",

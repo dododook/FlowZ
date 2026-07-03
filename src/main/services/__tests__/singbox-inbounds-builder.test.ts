@@ -167,7 +167,7 @@ describe('buildInbounds — TUN', () => {
       servers: [{ id: 's1', address: '1.2.3.4', protocol: 'vless', port: 443 }],
       selectedServerId: 's1',
     } as unknown as Partial<UserConfig>);
-    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
+    const ibs = withPlatform('darwin', () => buildInbounds(c, undefined, deps()));
     expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('1.2.3.4/32');
   });
 
@@ -177,7 +177,7 @@ describe('buildInbounds — TUN', () => {
       servers: [{ id: 's1', address: '2001:db8::1', protocol: 'vless', port: 443 }],
       selectedServerId: 's1',
     } as unknown as Partial<UserConfig>);
-    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
+    const ibs = withPlatform('darwin', () => buildInbounds(c, undefined, deps()));
     expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('2001:db8::1/128');
   });
 
@@ -188,10 +188,92 @@ describe('buildInbounds — TUN', () => {
       servers: [{ id: 's1', address: '[::1]', protocol: 'vless', port: 443 }],
       selectedServerId: 's1',
     } as unknown as Partial<UserConfig>);
-    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
+    const ibs = withPlatform('darwin', () => buildInbounds(c, undefined, deps()));
     const excl = byTag(ibs, 'tun-in').route_exclude_address as string[];
     expect(excl).toContain('::1/128');
     expect(excl).not.toContain('[::1]/128');
+  });
+
+  // ── Linux 加法翻转（§12/§12.7，VM185 实测坐实）：route_exclude 恒空、节点 IP 不排除、连入来源排除忽略 ──
+  it('Linux TUN 加法态：route_exclude_address 字段省略（v4+v6 全清）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+    );
+    expect(byTag(ibs, 'tun-in').route_exclude_address).toBeUndefined();
+  });
+
+  it('Linux TUN：选中 IP 节点也不进 route_exclude（加法态跳过节点排除块，拨号回环靠 auto_detect_interface）', () => {
+    const c = cfg({
+      proxyModeType: 'tun',
+      servers: [{ id: 's1', address: '1.2.3.4', protocol: 'vless', port: 443 }],
+      selectedServerId: 's1',
+    } as unknown as Partial<UserConfig>);
+    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps()));
+    expect(byTag(ibs, 'tun-in').route_exclude_address).toBeUndefined();
+  });
+
+  it('Linux TUN：inboundExcludeCidrs 忽略+warn（加法态毒丸，不进排除）', () => {
+    const log = jest.fn();
+    const c = cfg({
+      proxyModeType: 'tun',
+      tunConfig: { inboundExcludeCidrs: ['10.99.0.0/16'] },
+    } as unknown as Partial<UserConfig>);
+    const ibs = withPlatform('linux', () => buildInbounds(c, undefined, deps({ log })));
+    expect(byTag(ibs, 'tun-in').route_exclude_address).toBeUndefined();
+    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('连入来源排除'));
+  });
+
+  it('darwin/win32 未被 Linux 翻转影响：route_exclude 仍含回环/私网（零回归）', () => {
+    const dar = withPlatform('darwin', () =>
+      buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+    );
+    expect(byTag(dar, 'tun-in').route_exclude_address).toContain('127.0.0.0/8');
+    const win = withPlatform('win32', () =>
+      buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+    );
+    expect(byTag(win, 'tun-in').route_exclude_address).toContain('10.0.0.0/8');
+  });
+
+  it('Linux TUN：engaged 组网段与本机接口网段重叠 → warn（mesh∩ownLan，加法态告知本地按直连）', () => {
+    (os.networkInterfaces as jest.Mock).mockReturnValue({
+      eth0: [{ internal: false, cidr: '192.168.50.5/24' }],
+    });
+    const log = jest.fn();
+    const c = cfg({
+      proxyModeType: 'tun',
+      selectedServerId: 'wg1',
+      servers: [
+        {
+          id: 'wg1',
+          protocol: 'wireguard',
+          wireguardSettings: { allowedIPs: ['192.168.50.0/24'] },
+        },
+      ],
+    } as unknown as Partial<UserConfig>);
+    withPlatform('linux', () => buildInbounds(c, undefined, deps({ log })));
+    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('192.168.50.0/24'));
+    (os.networkInterfaces as jest.Mock).mockReturnValue({}); // 复原，防污染后续
+  });
+
+  it('Linux TUN：engaged 组网段与本机接口不重叠 → 不 warn', () => {
+    (os.networkInterfaces as jest.Mock).mockReturnValue({
+      eth0: [{ internal: false, cidr: '10.0.0.5/24' }],
+    });
+    const log = jest.fn();
+    const c = cfg({
+      proxyModeType: 'tun',
+      selectedServerId: 'wg1',
+      servers: [
+        {
+          id: 'wg1',
+          protocol: 'wireguard',
+          wireguardSettings: { allowedIPs: ['192.168.50.0/24'] },
+        },
+      ],
+    } as unknown as Partial<UserConfig>);
+    withPlatform('linux', () => buildInbounds(c, undefined, deps({ log })));
+    expect(log).not.toHaveBeenCalledWith('warn', expect.stringContaining('接口网段重叠'));
+    (os.networkInterfaces as jest.Mock).mockReturnValue({});
   });
 });
 
@@ -285,8 +367,8 @@ describe('buildInbounds — TUN MAC 过滤（P6 LAN 网关）', () => {
 });
 
 describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () => {
-  it('Linux：用户段追加进 route_exclude_address，保留回环', () => {
-    const ibs = withPlatform('linux', () =>
+  it('用户段追加进 route_exclude_address，保留回环（darwin——inboundExcludeCidrs 现 mac/win-only，linux 忽略）', () => {
+    const ibs = withPlatform('darwin', () =>
       buildInbounds(
         cfg({
           proxyModeType: 'tun',
@@ -303,9 +385,9 @@ describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () =>
     expect(tun.route_exclude_address).toContain('10.147.0.0/16');
   });
 
-  it('与【生效】组网 force-route 段重叠的用户段被剔除（mesh 优先）+ 记 warn', () => {
+  it('与【生效】组网 force-route 段重叠的用户段被剔除（mesh 优先）+ 记 warn（darwin）', () => {
     const warns: string[] = [];
-    const ibs = withPlatform('linux', () =>
+    const ibs = withPlatform('darwin', () =>
       buildInbounds(
         cfg({
           proxyModeType: 'tun',
@@ -334,8 +416,8 @@ describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () =>
     expect(warns.some((w) => w.includes('组网') && w.includes('192.168.50.0/24'))).toBe(true);
   });
 
-  it('未 engaged 的「仅出网」组网节点段不减（engaged-only）：alwaysRouteSubnets=false 且未选中时用户段保留', () => {
-    const ibs = withPlatform('linux', () =>
+  it('未 engaged 的「仅出网」组网节点段不减（engaged-only）：alwaysRouteSubnets=false 且未选中时用户段保留（darwin）', () => {
+    const ibs = withPlatform('darwin', () =>
       buildInbounds(
         cfg({
           proxyModeType: 'tun',
@@ -358,8 +440,8 @@ describe('buildInbounds — TUN 连入来源排除 (inboundExcludeCidrs)', () =>
     expect(byTag(ibs, 'tun-in').route_exclude_address).toContain('192.168.50.0/24');
   });
 
-  it('无 inboundExcludeCidrs → route_exclude 仅回环（零变化）', () => {
-    const ibs = withPlatform('linux', () =>
+  it('无 inboundExcludeCidrs → route_exclude 仅回环（零变化，darwin）', () => {
+    const ibs = withPlatform('darwin', () =>
       buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
     );
     const tun = byTag(ibs, 'tun-in');
@@ -379,7 +461,7 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
   });
   afterEach(() => (os.networkInterfaces as jest.Mock).mockReturnValue({}));
 
-  it('Tailscale 节点选中 → tailnet 100.64/10 carve 开洞（不再排除），其余 bypass 仍排除', () => {
+  it('Tailscale 节点选中 → 两族 tailnet（v4 100.64/10 + v6 fd7a::/48）carve 开洞，其余 bypass 仍排除', () => {
     const c = cfg({
       proxyModeType: 'tun',
       selectedServerId: 'ts1',
@@ -389,8 +471,12 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
       withPlatform('win32', () => buildInbounds(c, undefined, deps())),
       'tun-in'
     ).route_exclude_address as string[];
-    expect(excl).not.toContain('100.64.0.0/10'); // tailnet 进 TUN → 组网可达（修零门槛不可达缺口）
+    expect(excl).not.toContain('100.64.0.0/10'); // v4 tailnet 进 TUN → 组网可达（修零门槛不可达缺口）
     expect(cidrOverlapsAny('100.64.1.2/32', excl)).toBe(false);
+    // v6 tailnet fd7a::/48 从 bypassLAN 的 fc00::/7 carve 开洞 → 进 TUN（否则 enableIPv6 开启时 v6 tailnet 去 exit）
+    expect(cidrOverlapsAny('fd7a:115c:a1e0::1/128', excl)).toBe(false);
+    expect(excl).not.toContain('fc00::/7'); // fc00::/7 被挖洞、不再整段排除
+    expect(cidrOverlapsAny('fc01::1/128', excl)).toBe(true); // fc00::/7 其余（非 fd7a）仍排除
     expect(excl).toContain('10.0.0.0/8'); // 其余 bypass 仍排除
     expect(excl).toContain('223.5.5.5/32'); // DNS 回流兜底仍在
   });

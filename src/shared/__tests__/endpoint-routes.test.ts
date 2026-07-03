@@ -1,6 +1,7 @@
 import {
   endpointForcedRouteCidrs,
   TAILNET_CGNAT,
+  TAILNET_ULA_V6,
   meshAllowsInternet,
   meshUsesSystemInterface,
   meshSystemSupportedOnPlatform,
@@ -62,23 +63,28 @@ describe('endpointForcedRouteCidrs', () => {
   it('WG: 空 allowedIPs → 空', () => {
     expect(endpointForcedRouteCidrs(wg())).toEqual([]);
   });
-  it('TS: 自动含 tailnet 段 + routes', () => {
+  it('TS: 自动含两族 tailnet 段（v4 CGNAT + v6 ULA）+ routes', () => {
     expect(endpointForcedRouteCidrs(ts(['192.168.50.0/24']))).toEqual([
       TAILNET_CGNAT,
+      TAILNET_ULA_V6,
       '192.168.50.0/24',
     ]);
   });
-  it('TS: 无 routes → 仅 tailnet 段（达 tailnet peer 的必需路由）', () => {
-    expect(endpointForcedRouteCidrs(ts())).toEqual([TAILNET_CGNAT]);
+  it('TS: 无 routes → 仅两族 tailnet 段（达 tailnet v4/v6 peer 的必需路由）', () => {
+    expect(endpointForcedRouteCidrs(ts())).toEqual([TAILNET_CGNAT, TAILNET_ULA_V6]);
   });
-  it('TS: routes 含 catch-all(0/0) → 被剥、tailnet 保留（与 WG 对齐）', () => {
+  it('TS: routes 含 catch-all(0/0,::/0) → 被剥、两族 tailnet 保留（与 WG 对齐）', () => {
     expect(endpointForcedRouteCidrs(ts(['0.0.0.0/0', '::/0', '192.168.50.0/24']))).toEqual([
       TAILNET_CGNAT,
+      TAILNET_ULA_V6,
       '192.168.50.0/24',
     ]);
   });
-  it('TS: routes 仅 catch-all → 仅 tailnet 段（0/0 全剥）', () => {
-    expect(endpointForcedRouteCidrs(ts(['0.0.0.0/0', '::/0']))).toEqual([TAILNET_CGNAT]);
+  it('TS: routes 仅 catch-all → 仅两族 tailnet 段（0/0+::/0 全剥）', () => {
+    expect(endpointForcedRouteCidrs(ts(['0.0.0.0/0', '::/0']))).toEqual([
+      TAILNET_CGNAT,
+      TAILNET_ULA_V6,
+    ]);
   });
   it('trim/去空/去重', () => {
     expect(endpointForcedRouteCidrs(wg([' 10.10.10.0/24 ', '10.10.10.0/24', '', '  ']))).toEqual([
@@ -98,9 +104,9 @@ describe('meshAllowsInternet（WG 缺省 true；TS 由 exit_node 派生 P0b）',
   it('TS 缺 exit_node → false（P0b：allowInternet 由 exit_node 派生，非缺省 true）', () =>
     expect(meshAllowsInternet(ts())).toBe(false));
   it('TS 有 exit_node → true', () =>
-    expect(meshAllowsInternet({ protocol: 'tailscale', tailscaleSettings: { exitNode: 'p' } } as any)).toBe(
-      true
-    ));
+    expect(
+      meshAllowsInternet({ protocol: 'tailscale', tailscaleSettings: { exitNode: 'p' } } as any)
+    ).toBe(true));
   it('TS allowInternet=false → false（无 exit_node）', () =>
     expect(meshAllowsInternet(ts([], false))).toBe(false));
   it('[S-b] TS allowInternet=true 但无 exit_node → false（quick-join 硬编码不再误判承载全隧道）', () =>

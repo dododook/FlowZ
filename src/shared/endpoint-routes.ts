@@ -40,6 +40,13 @@ export function hasCatchAll(cidrs: string[] | undefined): boolean {
 
 /** Tailscale tailnet 自身段（CGNAT）。tailnet peer 的 IP 都在此；不在 bypass-LAN 私网表，故必须 force-route。 */
 export const TAILNET_CGNAT = '100.64.0.0/10';
+/**
+ * Tailscale v6 tailnet 段（固定 ULA 前缀，Tailscale 官方把所有 tailnet v6 地址分配于此）。tailnet peer 的 v6 IP
+ * 都在此；**⊂ bypass-LAN 的 `fc00::/7`（v6 ULA 全段）** → Windows 下会被 bypassLAN 内核排除出 TUN，须与 v4 tailnet
+ * 同样 force-route + Windows carve 开洞（`subtractCidrs` v6-aware 自动挖 fd7a 洞），否则 enableIPv6 开启时 v6 tailnet
+ * 流量去 exit 而非走 tailnet（缺此段的原 bug）。FakeIP 假 v6 段 `2001:2::/48` 在 benchmarking 保留段、不占 ULA，与此零相交。
+ */
+export const TAILNET_ULA_V6 = 'fd7a:115c:a1e0::/48';
 
 // System 模式内核接口固定名（下发 sing-box system_interface_name）。出口托管 MeshExitRouteManager
 // 按此名在内核接口装/清 exit 拆半默认路由 + 精确定位（见 mesh-exit-route.ts）。WG 端点名选项待证，
@@ -61,7 +68,9 @@ export function endpointForcedRouteCidrs(server: ServerConfig): string[] {
     raw = stripCatchAll(server.wireguardSettings?.allowedIPs);
   } else if (p === 'tailscale') {
     // 与 WireGuard 分支对齐：剥 catch-all（0/0），TS 全隧道走 exitNode，routes 不该承载 0.0.0.0/0。
-    raw = [TAILNET_CGNAT, ...stripCatchAll(server.tailscaleSettings?.routes)];
+    // 两族 tailnet 段恒发（v4 CGNAT + v6 ULA）：v6 段实际生效由全局 enableIPv6 门控——关闭时 AAAA 抑制、无 v6 流量，
+    // force-route 规则携 v6 ip_cidr 无害；开启时确保 v6 tailnet peer（fd7a:115c:a1e0::/48）走 tailnet 而非 exit（原缺此段=bug）。
+    raw = [TAILNET_CGNAT, TAILNET_ULA_V6, ...stripCatchAll(server.tailscaleSettings?.routes)];
   } else {
     return [];
   }

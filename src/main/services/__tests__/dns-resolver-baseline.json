@@ -358,11 +358,7 @@
       },
       {
         "type": "tun",
-        "tag": "tun-in",
-        "route_exclude_address": [
-          "127.0.0.0/8",
-          "::1/128"
-        ]
+        "tag": "tun-in"
       }
     ],
     "outboundResolvers": [
@@ -715,11 +711,7 @@
       },
       {
         "type": "tun",
-        "tag": "tun-in",
-        "route_exclude_address": [
-          "127.0.0.0/8",
-          "::1/128"
-        ]
+        "tag": "tun-in"
       }
     ],
     "outboundResolvers": [

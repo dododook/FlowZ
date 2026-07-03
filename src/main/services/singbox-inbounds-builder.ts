@@ -138,9 +138,12 @@ export function buildInbounds(
     // 注意：macOS 下绝对不能在底层排除物理局域网段，否则 macOS NetworkExtension 的路由逆向拦截机制会导致从 TUN (172.19.0.1) 发回 192.168.x.x 的 TCP 回执包被当作非法源 IP 丢弃，导致网页无限 HANG。
     // 但是在 Windows 下，Wintun 如果不排除局域网物理网关，发往本地路由器的 DHCP/网关查询会被死循环拦截，导致全局断网。
     // FakeIP 护栏：Win TUN 排除清单同样剔除与 fakeip 段相交的条目，否则假 IP 被排除出 TUN→sing-box 收不到→断（同 route 侧）。
-    const fakeipRanges = usesFakeIp(config)
-      ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]
-      : [];
+    // fakeipRanges 仅供 Windows carve（computeWinBypassExclude）与 inboundExclude 的 computeUserTunExclude（mac/win）
+    // 消费——Linux 加法态两者都不走（excludeAddr 恒空、inboundExclude 忽略+warn 短路），故加 linux 守卫避免死计算（复审 NIT-1）。
+    const fakeipRanges =
+      usesFakeIp(config) && process.platform !== 'linux'
+        ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]
+        : [];
     // engaged（生效）组网 force-route 段——Windows bypassLAN carve 与下方「连入来源排除」共用单一真值（口径同
     // route-builder 块 0c shouldForceRouteSubnets：alwaysRouteSubnets ON / 被选中 / 被 enabled 规则显式指向）。
     const engagedMeshCidrs = meshForcedRouteCidrs(
@@ -207,6 +210,14 @@ export function buildInbounds(
           );
         }
       }
+    } else if (process.platform === 'linux') {
+      // Linux 加法翻转（§12/§12.7，VM185 实测坐实）：route_exclude 恒空。sing-tun 的 Linux 策略路由本就是精确捕获
+      // 系统——表 2022 空时单条 0/0、9001 恒被 suppress、9002 main 具体路由优先（内核级 same-subnet 直连）、9003
+      // 只捕获「源未绑定的本机新建连接」；服务端回包（源=物理地址）不匹配捕获规则，fall-through 走物理网卡。而
+      // route_exclude 非空即触发表 2022 两族分解 → 9001 全抓 → same/off-subnet 服务端连入 + allowLan 回包全断
+      // （v4 A 相 33/33、v6 X6 相 0/54 实测；#242 断连根因是我们的排除清单本身）。回环无需排除（`0: from all
+      // lookup local` 恒先于 9000 处理 127/8+::1，两条回环排除唯一实效就是触发分解）。清空后连入/组网/私网天然治愈。
+      excludeAddr = [];
     } else {
       excludeAddr = ['127.0.0.0/8', '::1/128'];
     }
@@ -231,25 +242,27 @@ export function buildInbounds(
       }
     }
 
-    // 绝杀级修复（多服务器版本）：如果在 应用分流 (App Policy) 中选择了其他节点，那么这些节点的 IP 也必须被排除。
-    // 否则，FlowZ 去连接这些次选节点的流量也会回流进入 TUN 产生死循环。
-    const allServerIds = new Set([
-      config.selectedServerId as string,
-      ...effectiveAppRules(config).map((r) => r.targetServerId),
-    ]);
-
-    // 去除会导致 macOS 崩溃的 shouldBypassLAN 全局排除逻辑，回到 3.3.18 时代的精简状态
-    for (const serverId of allServerIds) {
-      if (!serverId) continue;
-      const server = config.servers.find((s) => s.id === serverId);
-      if (server?.address) {
-        if (isIpv4Host(server.address) || isIpv6Host(server.address)) {
-          const cidr = hostToExcludeCidr(server.address);
-          if (cidr) excludeAddr.push(cidr);
-        } else if (resolvedIps && resolvedIps[serverId]) {
-          // 使用预解析的 IP（域名节点）
-          const cidr = hostToExcludeCidr(resolvedIps[serverId]);
-          if (cidr) excludeAddr.push(cidr);
+    // 节点 IP 排除（防 FlowZ 连节点的流量回流进 TUN 死循环）：Linux 加法态跳过整块（§12）——节点 /32(/128) 进
+    // route_exclude 同样触发表分解害连入；拨号回环由 auto_detect_interface bind/oif 逸出 TUN 防（v6 侧 Y6 相
+    // EGRESS6 已佐证 direct 重拨经 oif 逸出，v4 侧真实节点走 L-B2 裁决）。darwin/win32 维持双保险。
+    if (process.platform !== 'linux') {
+      // 绝杀级修复（多服务器版本）：应用分流选中的其它节点 IP 也必须排除，否则连它们的流量回流进 TUN 死循环。
+      const allServerIds = new Set([
+        config.selectedServerId as string,
+        ...effectiveAppRules(config).map((r) => r.targetServerId),
+      ]);
+      for (const serverId of allServerIds) {
+        if (!serverId) continue;
+        const server = config.servers.find((s) => s.id === serverId);
+        if (server?.address) {
+          if (isIpv4Host(server.address) || isIpv6Host(server.address)) {
+            const cidr = hostToExcludeCidr(server.address);
+            if (cidr) excludeAddr.push(cidr);
+          } else if (resolvedIps && resolvedIps[serverId]) {
+            // 使用预解析的 IP（域名节点）
+            const cidr = hostToExcludeCidr(resolvedIps[serverId]);
+            if (cidr) excludeAddr.push(cidr);
+          }
         }
       }
     }
@@ -261,7 +274,15 @@ export function buildInbounds(
     // 仅在用户声明了段时才进入本块（空/未设 → 跳过 getOwnLanCidrs 接口枚举 + computeUserTunExclude）。
     // 注：engagedMeshCidrs 已 hoist 到 TUN 块顶层恒算（Windows carve 与本块共用），非本块条件计算。
     const userInboundCidrs = config.tunConfig?.inboundExcludeCidrs;
-    if (userInboundCidrs && userInboundCidrs.length > 0) {
+    if (userInboundCidrs && userInboundCidrs.length > 0 && process.platform === 'linux') {
+      // Linux 加法态：「连入来源排除」是毒丸（VM185 Z6 相实证——填任何段即 route_exclude 非空 → v4/v6 表分解 → 修
+      // 声明段的同时杀掉所有其它 same-subnet 服务端连入）。Linux 服务端回包已由内核策略路由天然保护，此项不生效且
+      // 会重新引入回归。忽略 + warn（§12/§12.7）；UI 已按平台提示。
+      deps.log?.(
+        'warn',
+        `Linux：服务端回包已由内核策略路由天然保护，「连入来源排除」不生效且会重新触发路由表分解引入回归，已忽略 ${userInboundCidrs.length} 条声明段。`
+      );
+    } else if (userInboundCidrs && userInboundCidrs.length > 0) {
       // 只减【engaged】组网段（复用上方 hoisted engagedMeshCidrs，与 route-builder 块 0c / Windows bypassLAN carve
       // 同口径）。用全量 servers 会把休眠组网节点的段（及每个 Tailscale 无条件贡献的 100.64/10）也误剔 → 合法用户段
       // 被静默架空 + 假告警；切节点/改规则会触发重生成，engaged 集随之更新。
@@ -309,6 +330,21 @@ export function buildInbounds(
       // droppedFakeipOverlap 不单独告警：与 Windows 宽排除的 fakeip 护栏同「静默剔除」语义，且极少见。
     }
 
+    // Linux 加法态：组网段与本机接口网段（getOwnLanCidrs=所有非回环接口，含物理/overlay/TUN，刻意过包含）重叠告警
+    // （对齐 Windows meshSkippedOwnLan 文案风格；两族——cidrOverlapsAny 家族感知 v4/v6）。加法态下本机接口网段内的
+    // 目的地走内核 main 表直连、优先于组网 force-route，此告警提示用户该段本地侧按直连（远端组网对等仍经组网可达）。
+    if (process.platform === 'linux' && engagedMeshCidrs.length > 0) {
+      const meshOwnLanOverlap = engagedMeshCidrs.filter((m) =>
+        cidrOverlapsAny(m, getOwnLanCidrs())
+      );
+      if (meshOwnLanOverlap.length > 0) {
+        deps.log?.(
+          'warn',
+          `Linux：${meshOwnLanOverlap.length} 个组网段与本机接口网段重叠，本机侧按直连优先（远端组网对等仍经组网可达）：${meshOwnLanOverlap.join(', ')}`
+        );
+      }
+    }
+
     // 恢复至对应平台最稳定的网段。Windows 在 v3.4.0 使用 /16 时非常完美；Mac 在 v3.3.18 使用 /30 时最完美。
     const tunAddress = [
       config.tunConfig?.inet4Address ||
@@ -350,7 +386,8 @@ export function buildInbounds(
       strict_route: config.tunConfig?.strictRoute ?? true,
       // 具体栈由 resolveTunStack 解析（Auto→平台默认 / 显式选择 verbatim），恒 system|gvisor|mixed，永不省略。
       stack: effectiveStack,
-      route_exclude_address: excludeAddr,
+      // 空数组省略字段（Linux 加法态恒空）——与 sing-box 上游默认字节一致，避免下发 `route_exclude_address: []`。
+      ...(excludeAddr.length > 0 ? { route_exclude_address: excludeAddr } : {}),
     };
 
     // Windows：下发固定可辨的接口名（wintun 适配器名），使 issue #159 的「起核前等本名网卡释放」门控能按名锚定，

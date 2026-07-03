@@ -216,8 +216,8 @@ byteDiffDescribe(
           );
         expect(JSON.stringify(stripNodeIp(cur.routeRules))).toBe(JSON.stringify(base.routeRules));
 
-        // --- E. default_domain_resolver / inbounds(含 route_exclude_address) 零变化 ---
-        //    (Linux 测试环境：Windows excludeAddr 分支不触发，故 inbounds 对本平台逐字节相同) ---
+        // --- E. default_domain_resolver / inbounds 零变化 ---
+        //    (Linux 加法态 §12：route_exclude_address 已省略、baseline 同步删除；win/mac 的 carve/回环分支不在此平台触发) ---
         expect(cur.routeDefaultDomainResolver).toBe(base.routeDefaultDomainResolver);
         expect(JSON.stringify(cur.inbounds)).toBe(JSON.stringify(base.inbounds));
 

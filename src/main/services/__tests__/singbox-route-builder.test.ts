@@ -99,6 +99,15 @@ describe('buildRouteConfig — D-direct 组网 force-route', () => {
     expect(r.ip_cidr).toContain('10.8.0.0/24');
   });
 
+  it('TS 节点 force-route 含两族 tailnet 段（v4 100.64/10 + v6 fd7a::/48，块 0c 不按族裁剪）', () => {
+    const ts = tsNode('t1', 'TS');
+    const rc = buildRouteConfig(cfg([ts], { proxyMode: 'smart' }), idMap([ts]), deps([tsEp('TS')]));
+    const r = meshRule(rc, 'TS');
+    expect(r).toBeDefined();
+    expect(r.ip_cidr).toContain('100.64.0.0/10');
+    expect(r.ip_cidr).toContain('fd7a:115c:a1e0::/48'); // v6 tailnet force-route（否则 v6 peer 去 exit）
+  });
+
   it('system endpoint（reverseMesh）在 direct 模式同样 force-route（egress 仍经 route.rules）', () => {
     const sysNode = wgNode('w1', 'WGsys', ['10.9.0.0/24'], { reverseMesh: true });
     const rc = buildRouteConfig(

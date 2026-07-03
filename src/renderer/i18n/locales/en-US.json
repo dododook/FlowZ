@@ -682,6 +682,7 @@
       "tunInboundExcludeDesc": "When these networks connect in to this machine (e.g. reaching a local service via mesh/NAT), let reply traffic bypass TUN and use the physical interface, so the connection isn't hijacked and dropped.",
       "tunInboundExcludeDescFull": "Unlike \"Bypass LAN\" (a routing direct-connect preference that does not affect whether traffic enters TUN), this excludes the networks from TUN capture directly. Note this is BIDIRECTIONAL — an excluded range bypasses TUN in both directions (outbound too), so it can no longer be routed through a proxy/custom rule. Ranges overlapping mesh (WireGuard/Tailscale) routes are skipped automatically (mesh wins); on macOS the machine's own physical LAN is skipped. Most users don't need this.",
       "tunInboundExcludeHint": "One CIDR per line; invalid entries are dropped on save. For \"this machine is remotely managed / connected in to\" scenarios.",
+      "tunInboundExcludeLinuxNote": "On Linux, inbound server reply packets are already protected natively by kernel policy routing; this option has no effect and is ignored.",
       "tunInboundExcludePlaceholder": "One IP range (CIDR) per line, e.g.:\n10.147.0.0/16\n192.168.5.0/24",
       "macFilter": "Filter devices by MAC",
       "macFilterDesc": "Limit or exclude which LAN devices' traffic enters the TUN (by MAC).",

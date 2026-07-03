@@ -172,6 +172,20 @@ describe('computeWinBypassExclude — Windows bypassLAN 对 engaged mesh 段 car
     expect(cidrOverlapsAny('192.168.1.1/32', r.exclude)).toBe(true);
   });
 
+  it('v6 tailnet fd7a::/48 从 fc00::/7 carve 开洞（v6-aware，修 Windows+TS v6 tailnet 去 exit 缺口）', () => {
+    const r = computeWinBypassExclude(
+      winInput({
+        bypassCidrs: ['10.0.0.0/8', 'fc00::/7', 'fe80::/10'],
+        engagedMeshCidrs: ['fd7a:115c:a1e0::/48'],
+      })
+    );
+    expect(r.carvedMeshCidrs).toEqual(['fd7a:115c:a1e0::/48']);
+    expect(cidrOverlapsAny('fd7a:115c:a1e0::1/128', r.exclude)).toBe(false); // v6 tailnet 进 TUN
+    expect(cidrOverlapsAny('fc01::1/128', r.exclude)).toBe(true); // fc00::/7 其余仍排除
+    expect(cidrOverlapsAny('fe80::1/128', r.exclude)).toBe(true); // link-local 不受影响
+    expect(cidrOverlapsAny('10.5.5.5/32', r.exclude)).toBe(true); // v4 bypass 不受影响
+  });
+
   it('WG allowedIPs 私网段被 carve，其余宽段仍排除', () => {
     const r = computeWinBypassExclude(
       winInput({

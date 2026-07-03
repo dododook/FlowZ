@@ -499,6 +499,14 @@ export function NetworkSettings() {
                   '区别于「绕过局域网」：后者是分流直连偏好、不影响是否进 TUN；本项直接把网段排除出 TUN 捕获。注意这是**双向**的——被排除的段出/入两个方向都绕过 TUN 走直连，故这些段也不再经代理/自定义规则出网。与组网(WG/Tailscale)路由段重叠的会自动跳过（组网优先）；macOS 会跳过本机物理局域网段。一般用户无需设置。'
                 )}
               />
+              {isLinux && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                  {t(
+                    'settings.advanced.tunInboundExcludeLinuxNote',
+                    'Linux 下服务端连入回包已由内核策略路由天然保护，此项不生效、已忽略（填写不会有效果）。'
+                  )}
+                </p>
+              )}
               <ExceptionList
                 value={config.tunConfig?.inboundExcludeCidrs}
                 defaults={[]}
