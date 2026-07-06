@@ -130,6 +130,19 @@ describe('redactDeep — 密钥脱敏（红线：零明文密钥）', () => {
     expect(out.server).toBe('1.2.3.4');
   });
 
+  it('userkey 在全局黑名单（snell 一等公民 snellSettings.userkey / 自定义 JSON 兜底）', () => {
+    const out = redactDeep({
+      type: 'snell',
+      userkey: 'MULTIUSER-KEY',
+      snellSettings: { version: 4, userkey: 'ALSO-SECRET' },
+      server: '1.2.3.4',
+    }) as any;
+    expect(out.userkey).toBe(REDACTED);
+    expect(out.snellSettings.userkey).toBe(REDACTED);
+    expect(out.snellSettings.version).toBe(4); // 非敏感结构字段保留
+    expect(out.server).toBe('1.2.3.4');
+  });
+
   it('数组与 null/undefined 正确处理', () => {
     const out = redactDeep({
       servers: [{ password: 'x', server: 'a' }],

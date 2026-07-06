@@ -20391,7 +20391,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
 }
 `;
 
-exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线） 多协议 outbound（hysteria2/tuic/vmess/anytls/socks/http）→ 锁各协议字段块 1`] = `
+exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线） 多协议 outbound（hysteria2/tuic/vmess/anytls/snell v4+v6/socks/http）→ 锁各协议字段块 1`] = `
 {
   "config": {
     "dns": {
@@ -20628,6 +20628,30 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
       {
         "domain_resolver": "dns-bootstrap",
+        "obfs_host": "bing.com",
+        "obfs_mode": "http",
+        "psk": "psk",
+        "reuse": true,
+        "server": "a.example.com",
+        "server_port": 443,
+        "tag": "Snell4",
+        "type": "snell",
+        "version": 4,
+      },
+      {
+        "domain_resolver": "dns-bootstrap",
+        "mode": "unsafe-raw",
+        "network": "tcp",
+        "psk": "psk",
+        "server": "a.example.com",
+        "server_port": 443,
+        "tag": "Snell6",
+        "type": "snell",
+        "userkey": "uk",
+        "version": 6,
+      },
+      {
+        "domain_resolver": "dns-bootstrap",
         "password": "p",
         "server": "a.example.com",
         "server_port": 443,
@@ -20653,6 +20677,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "TUIC",
           "VMess",
           "AnyTLS",
+          "Snell4",
+          "Snell6",
           "SOCKS",
           "HTTP",
           "direct",
@@ -21067,6 +21093,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     "h": "HY2",
     "ht": "HTTP",
     "sk": "SOCKS",
+    "sn4": "Snell4",
+    "sn6": "Snell6",
     "t": "TUIC",
     "v": "VMess",
   },

@@ -91,6 +91,9 @@ function makeServerConfig(protocol: Protocol): UserConfig['servers'][number] {
   if (protocol === 'custom') {
     base.customSettings = { outbound: { type: 'trojan', server: '1.2.3.4', server_port: 443 } };
   }
+  if (protocol === 'snell') {
+    base.snellSettings = { version: 4 }; // psk 已在 base.password；version 是 snell 主开关必填
+  }
   return base;
 }
 

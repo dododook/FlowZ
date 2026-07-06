@@ -11,6 +11,7 @@ const requiredByProtocol: Record<Protocol, Partial<ServerConfig>> = {
   tuic: { uuid: 'u', password: 'p' },
   shadowsocks: { shadowsocksSettings: { method: 'aes-256-gcm', password: 'p' } as any },
   naive: { username: 'u', password: 'p' },
+  snell: { password: 'p', snellSettings: { version: 4 } as any }, // psk 进 password + version 主开关
   socks: {},
   http: {},
   ssh: {},
@@ -64,6 +65,29 @@ describe('server-completeness（主/渲染共用单一真值）', () => {
         })
       )
     ).toMatch(/peerPublicKey/i);
+  });
+
+  it('snell：缺 psk / version 非 4|6 → 报错；v4/v6 完整 → 齐备', () => {
+    // 缺 psk（有 version）
+    expect(
+      protocolRequirementError(node('snell', { snellSettings: { version: 4 } as any }))
+    ).toMatch(/psk/i);
+    // 缺 version（有 psk）
+    expect(protocolRequirementError(node('snell', { password: 'p' }))).toMatch(/version/i);
+    // version 非 4|6（脏数据/手改）
+    expect(
+      protocolRequirementError(node('snell', { password: 'p', snellSettings: { version: 5 } as any }))
+    ).toMatch(/version/i);
+    // v4 / v6 完整
+    expect(
+      protocolRequirementError(node('snell', { password: 'p', snellSettings: { version: 4 } as any }))
+    ).toBeNull();
+    expect(
+      protocolRequirementError(node('snell', { password: 'p', snellSettings: { version: 6 } as any }))
+    ).toBeNull();
+    expect(
+      isServerComplete(node('snell', { password: 'p', snellSettings: { version: 6 } as any }))
+    ).toBe(true);
   });
 
   it('custom：缺 outbound / 缺 type → 报错；有合法 outbound → 齐备且豁免 address/port', () => {

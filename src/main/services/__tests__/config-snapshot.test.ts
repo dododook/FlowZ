@@ -269,7 +269,7 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
     ).toMatchSnapshot();
   });
 
-  it('多协议 outbound（hysteria2/tuic/vmess/anytls/socks/http）→ 锁各协议字段块', () => {
+  it('多协议 outbound（hysteria2/tuic/vmess/anytls/snell v4+v6/socks/http）→ 锁各协议字段块', () => {
     expect(
       snap(
         cfg({
@@ -308,6 +308,22 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
               uuid: undefined,
               password: 'p',
               anyTlsSettings: { idleSessionTimeout: '30s' },
+            } as unknown as Partial<ServerConfig>),
+            server({
+              id: 'sn4',
+              name: 'Snell4',
+              protocol: 'snell',
+              uuid: undefined,
+              password: 'psk',
+              snellSettings: { version: 4, obfsMode: 'http', obfsHost: 'bing.com', reuse: true },
+            } as unknown as Partial<ServerConfig>),
+            server({
+              id: 'sn6',
+              name: 'Snell6',
+              protocol: 'snell',
+              uuid: undefined,
+              password: 'psk',
+              snellSettings: { version: 6, mode: 'unsafe-raw', network: 'tcp', userkey: 'uk' },
             } as unknown as Partial<ServerConfig>),
             server({
               id: 'sk',

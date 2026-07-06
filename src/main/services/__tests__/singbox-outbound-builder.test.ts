@@ -417,6 +417,98 @@ describe('buildProxyOutbound — 可选协议设置下发（B 组编辑项）', 
     expect(ob.kex_algorithm).toBeUndefined();
   });
 
+  // Snell（sing-box 1.14.0-alpha.38+ 官方 outbound）：version 主开关，obfs_*（v4）/mode（v6）互斥条件下发；
+  // psk 复用 password；不走 TLS 块（不在 tlsProtocols）。
+  it('snell v4 + obfs http：下发 obfs_mode/obfs_host（host 空回落 bing.com），不下发 mode/tls', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'snell',
+        password: 'psk-secret',
+        snellSettings: { version: 4, obfsMode: 'http' },
+      }),
+      tags
+    ) as any;
+    expect(ob.type).toBe('snell');
+    expect(ob.version).toBe(4);
+    expect(ob.psk).toBe('psk-secret');
+    expect(ob.obfs_mode).toBe('http');
+    expect(ob.obfs_host).toBe('bing.com');
+    expect(ob.mode).toBeUndefined();
+    expect(ob.tls).toBeUndefined();
+  });
+
+  it('snell v4 + obfs http + 显式 host → obfs_host 原样下发', () => {
+    const ob = buildProxyOutbound(
+      node({
+        protocol: 'snell',
+        password: 'p',
+        snellSettings: { version: 4, obfsMode: 'http', obfsHost: 'cdn.example.com' },
+      }),
+      tags
+    ) as any;
+    expect(ob.obfs_host).toBe('cdn.example.com');
+  });
+
+  it('snell v4 + obfs none/缺省 → 不下发 obfs_*', () => {
+    const ob = buildProxyOutbound(
+      node({ protocol: 'snell', password: 'p', snellSettings: { version: 4, obfsMode: 'none' } }),
+      tags
+    ) as any;
+    expect(ob.obfs_mode).toBeUndefined();
+    expect(ob.obfs_host).toBeUndefined();
+    const ob2 = buildProxyOutbound(
+      node({ protocol: 'snell', password: 'p', snellSettings: { version: 4 } }),
+      tags
+    ) as any;
+    expect(ob2.obfs_mode).toBeUndefined();
+  });
+
+  it('snell v6 default/缺省 → 不下发 mode；unsafe-raw → 下发；v6 忽略 obfs_*（脏字段防线）', () => {
+    const ob = buildProxyOutbound(
+      node({ protocol: 'snell', password: 'p', snellSettings: { version: 6, mode: 'default' } }),
+      tags
+    ) as any;
+    expect(ob.version).toBe(6);
+    expect(ob.mode).toBeUndefined();
+    const raw = buildProxyOutbound(
+      node({ protocol: 'snell', password: 'p', snellSettings: { version: 6, mode: 'unsafe-raw' } }),
+      tags
+    ) as any;
+    expect(raw.mode).toBe('unsafe-raw');
+    // 脏数据（v6 却带 obfs 字段，手改/导入残留）→ 构建侧不下发 obfs_*
+    const dirty = buildProxyOutbound(
+      node({
+        protocol: 'snell',
+        password: 'p',
+        snellSettings: { version: 6, obfsMode: 'http', obfsHost: 'x.com' } as any,
+      }),
+      tags
+    ) as any;
+    expect(dirty.obfs_mode).toBeUndefined();
+    expect(dirty.obfs_host).toBeUndefined();
+  });
+
+  it('snell：reuse/network/userkey 条件下发（false/both/空 = 省略）', () => {
+    const minimal = buildProxyOutbound(
+      node({ protocol: 'snell', password: 'p', snellSettings: { version: 4 } }),
+      tags
+    ) as any;
+    expect(minimal.reuse).toBeUndefined();
+    expect(minimal.network).toBeUndefined();
+    expect(minimal.userkey).toBeUndefined();
+    const full = buildProxyOutbound(
+      node({
+        protocol: 'snell',
+        password: 'p',
+        snellSettings: { version: 4, reuse: true, network: 'tcp', userkey: 'uk' },
+      }),
+      tags
+    ) as any;
+    expect(full.reuse).toBe(true);
+    expect(full.network).toBe('tcp');
+    expect(full.userkey).toBe('uk');
+  });
+
   // P3b：Hysteria2 obfs（salamander/gecko）+ min/max_packet_size（仅 gecko）+ bbr_profile。
   it('hysteria2：salamander obfs → obfs.type=salamander，不下发 min/max_packet_size', () => {
     const ob = buildProxyOutbound(
