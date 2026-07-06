@@ -1127,7 +1127,8 @@
       "userkeyPlaceholder": "Optional",
       "userkeyDesc": "Authentication key on multi-user servers; leave empty otherwise.",
       "reuse": "Connection reuse",
-      "reuseDesc": "Reuse connections (v2 CONNECT). Default off."
+      "reuseDesc": "Reuse connections (v2 CONNECT). Default off.",
+      "coreTooOld": "Current core does not include Snell (requires sing-box 1.14.0-alpha.38+). Update the core before connecting."
     },
     "tsAuthKeyDescFull": "Pre-auth key for non-interactive login. Leave empty to log in via URL on start.",
     "tsExitNodeDescFull": "Pick a tailnet device as the exit; all internet traffic egresses through it (full proxy). Empty = tailnet / accepted subnet routes only.",

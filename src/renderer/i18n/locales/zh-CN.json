@@ -1127,7 +1127,8 @@
       "userkeyPlaceholder": "可选",
       "userkeyDesc": "多用户服务器的鉴权密钥；单用户留空。",
       "reuse": "连接复用",
-      "reuseDesc": "复用连接（v2 CONNECT），默认关闭。"
+      "reuseDesc": "复用连接（v2 CONNECT），默认关闭。",
+      "coreTooOld": "当前内核不含 Snell（需 sing-box 1.14.0-alpha.38+），请先更新内核再连接。"
     },
     "tsAuthKeyDescFull": "预认证密钥（pre-auth key），非交互直接入网。留空则启动时核日志出登录 URL，手动授权一次。",
     "tsExitNodeDescFull": "选 tailnet 中一台设备作出口，本机全部外网流量经它出去（全量代理）。留空 = 仅访问 tailnet / 已接受的子网路由。",

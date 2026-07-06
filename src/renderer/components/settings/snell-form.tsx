@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -24,6 +25,12 @@ import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { SwitchField } from './shared/switch-field';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
+import { api } from '@/ipc';
+import { compareSemver } from '../../../shared/version';
+import { comparableCoreVersion } from '../../../shared/core-build';
+
+/** 官方 snell outbound 的最低内核版本（sing-box 1.14.0-alpha.38 落地，此前仅 fork 核）。 */
+const SNELL_MIN_CORE = '1.14.0-alpha.38';
 
 // Snell（sing-box 1.14.0-alpha.38+ 官方 outbound）：psk 进通用 password（同 trojan/hysteria2 惯例），
 // version 4|6 为主开关——obfs*（仅 v4）与 mode（仅 v6）互斥，按 version 条件渲染，提交时 normalize
@@ -52,6 +59,29 @@ interface SnellFormProps {
 export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
   const { t } = useTranslation();
   const snellFormSchema = createSnellSchema(t);
+
+  // 软提示（非阻塞）：当前核 < alpha.38（无官方 snell）→ 表单顶部提示更新内核，仍允许保存（配置在启动
+  // sing-box check gate 被拒时有既有报错兜底）。版本经 comparableCoreVersion 规范化再比（fork/dev 完整
+  // token 直喂 compareSemver 会误判，见 core-build 注释）；取不到/不可解析（'未知' 等）→ 不提示，不误报。
+  const [coreLacksSnell, setCoreLacksSnell] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api.coreUpdate
+      .getVersionInfo()
+      .then((info) => {
+        if (cancelled) return;
+        const cur = comparableCoreVersion(info.currentVersion);
+        if (/^\d+\.\d+/.test(cur) && compareSemver(cur, SNELL_MIN_CORE) < 0) {
+          setCoreLacksSnell(true);
+        }
+      })
+      .catch(() => {
+        /* 拿不到版本信息 → 不提示 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const getDefaultValues = (): SnellFormValues => {
     if (serverConfig && serverConfig.protocol?.toLowerCase() === 'snell') {
@@ -119,6 +149,14 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+        {coreLacksSnell && (
+          <div className="rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/40 dark:text-amber-400">
+            {t(
+              'servers.snell.coreTooOld',
+              'Current core does not include Snell (requires sing-box 1.14.0-alpha.38+). Update the core before connecting.'
+            )}
+          </div>
+        )}
         <FormSection title={t('servers.basic', 'Basic')}>
           <FieldGrid cols={2}>
             <AddressField control={form.control} t={t} />

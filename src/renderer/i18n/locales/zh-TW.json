@@ -1127,7 +1127,8 @@
       "userkeyPlaceholder": "可選",
       "userkeyDesc": "多使用者伺服器的鑑權金鑰；單使用者留空。",
       "reuse": "連線復用",
-      "reuseDesc": "復用連線（v2 CONNECT），預設關閉。"
+      "reuseDesc": "復用連線（v2 CONNECT），預設關閉。",
+      "coreTooOld": "目前核心不含 Snell（需 sing-box 1.14.0-alpha.38+），請先更新核心再連線。"
     },
     "tsAuthKeyDescFull": "預認證金鑰（pre-auth key），非互動直接入網。留空則啟動時核心記錄出登入 URL，手動授權一次。",
     "tsExitNodeDescFull": "選 tailnet 中一台裝置作出口，本機全部外網流量經它出去（全量代理）。留空 = 僅存取 tailnet / 已接受的子網路由。",
