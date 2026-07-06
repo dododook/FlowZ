@@ -28,6 +28,7 @@ import type {
   InvalidNodeInfo,
   ImportParseResult,
 } from '../../shared/types';
+import type { SubscriptionPreviewResult } from '../../shared/subscription-preview';
 import type { WarpWireGuardDraft } from '../../shared/warp';
 import type { BackupCategory } from '../../shared/backup-categories';
 import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
@@ -888,6 +889,20 @@ export const subscriptionApi = {
     error?: string;
   }> {
     return ipcClient.invoke(IPC_CHANNELS.SUBSCRIPTION_UPDATE_SERVERS, { subscriptionId });
+  },
+
+  /**
+   * 订阅预检（add 前先行，不写 config）：拉取+解析返回节点数或分类错误（errorKind），成功才建记录（无先加后删闪现）。
+   */
+  async preview(
+    url: string,
+    opts: { viaProxy?: boolean; userAgent?: string }
+  ): Promise<SubscriptionPreviewResult> {
+    return ipcClient.invoke(IPC_CHANNELS.SUBSCRIPTION_PREVIEW, {
+      url,
+      viaProxy: opts.viaProxy,
+      userAgent: opts.userAgent,
+    });
   },
 };
 

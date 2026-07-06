@@ -12,16 +12,21 @@ import {
   updateSubscription,
   deleteSubscription as apiDeleteSubscription,
   updateSubscriptionServers as apiUpdateSubscriptionServers,
+  previewSubscription as apiPreviewSubscription,
 } from '@/bridge/api-wrapper';
 import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
+import type { SubscriptionErrorKind } from '@shared/subscription-preview';
 import { buildSavedServers, buildClonedServer, type NewServerData } from './server-mutations';
 import { tailscaleSlotTaken } from '../../shared/endpoint-routes';
 
 // saveSubscription 的可判定返回：ok=false 让对话框保留不关、留住用户输入（原全吞错致失败仍关窗丢输入）。
 // 成功携带 sub，供调用方（server-page）setTabOverride 切到该订阅分组。
+// add 路径预检失败携带 errorKind/httpStatus，供对话框按分类展示错误文案（不建任何记录 → 无闪现）。
 export interface SaveSubscriptionResult {
   ok: boolean;
   sub?: SubscriptionConfig;
+  errorKind?: SubscriptionErrorKind;
+  httpStatus?: number;
 }
 
 export function useServerActions() {
@@ -179,6 +184,15 @@ export function useServerActions() {
       if (!res.success) return { ok: false };
       await loadConfig();
       return { ok: true, sub: updatedSub };
+    }
+    // 预检先行：add 前用 URL 拉取+解析（**不写 config、不建记录**），成功才建记录，失败留窗 + 分类错误（无先加后删闪现）。
+    const pre = await apiPreviewSubscription(subData.url, {
+      viaProxy: subData.updateViaProxy,
+      userAgent: subData.userAgent,
+    });
+    if (!pre.ok) {
+      // 不建任何记录 → 对话框据 errorKind/httpStatus 展示错误、留窗；无闪现节点。
+      return { ok: false, errorKind: pre.errorKind, httpStatus: pre.httpStatus };
     }
     const res = await addSubscription(subData);
     // 新增失败（api-wrapper 已 toast）→ ok:false，对话框不关。

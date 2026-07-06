@@ -19,6 +19,10 @@ import {
 import { parseXrayOutbounds } from './xray-import';
 import { isServerComplete } from '../../shared/server-completeness';
 import { normalizeDuration } from '../../shared/duration';
+import {
+  classifySubscriptionError,
+  type SubscriptionPreviewResult,
+} from '../../shared/subscription-preview';
 
 /** 默认订阅 UA：纯中性 `FlowZ/<版本>`（去除 clash.meta/mihomo 标识，陈先生 2026-06-12 决策）。 */
 export function defaultSubscriptionUserAgent(): string {
@@ -1083,6 +1087,56 @@ export class SubscriptionService {
         'Subscription'
       );
       throw error;
+    }
+  }
+
+  /**
+   * 订阅预检（新增订阅前先行）。动机（先加后删闪现/竞态 + 失败无原因）：add 原为「先建记录 → 再拉节点」，
+   * 拉取失败要么留空订阅要么删记录（闪现），且只有布尔无原因。改为**预检先行**——用 URL **拉取 + 解析但
+   * 不写 config、不建订阅记录、不碰 reconcile**；成功返回节点数，失败返回**分类错误**供 UI 说清原因 + 留窗。
+   *
+   * 复用 fetchSubscriptionText（含 SSRF guard——安全硬要求，绝不自写 fetch）+ parseSubscriptionContent
+   * （throwOnEmpty:true → 0 节点抛错，经 classifySubscriptionError 落 empty 分类）。tempSubId 随机、仅供解析
+   * 用不入库（预检产物整体丢弃，只取 servers.length）。
+   */
+  async previewSubscription(
+    url: string,
+    opts: { viaProxy?: boolean; userAgent?: string }
+  ): Promise<SubscriptionPreviewResult> {
+    const viaProxy = opts.viaProxy ?? false;
+    const userAgent = opts.userAgent?.trim() || defaultSubscriptionUserAgent();
+    const tempSubId = randomUUID(); // 不入库
+    try {
+      const { text } = await this.fetchSubscriptionText(
+        url,
+        viaProxy,
+        userAgent,
+        AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS)
+      );
+      const { servers } = await this.parseSubscriptionContent(text.trim(), tempSubId, {
+        allowProviders: true,
+        viaProxy,
+        userAgent,
+        throwOnEmpty: true,
+      });
+      return { ok: true, nodeCount: servers.length };
+    } catch (err: any) {
+      // 摊平错误信号交纯分类器（不自己判分类）：message + code(err.code ?? cause.code) + 从
+      // 'HTTP Error: NNN'（fetchSubscriptionText 的 HTTP 失败文案 `HTTP Error: ${status} ${statusText}`）提 status。
+      const message: string = err?.message ?? '';
+      const httpMatch = /HTTP Error:\s*(\d{3})/.exec(message);
+      const httpStatus = httpMatch ? parseInt(httpMatch[1], 10) : undefined;
+      const cls = classifySubscriptionError({
+        message,
+        code: err?.code ?? err?.cause?.code,
+        httpStatus,
+      });
+      return {
+        ok: false,
+        errorKind: cls.errorKind,
+        httpStatus: cls.httpStatus,
+        message: SubscriptionService.redactUrl(message), // 脱敏，仅诊断
+      };
     }
   }
 

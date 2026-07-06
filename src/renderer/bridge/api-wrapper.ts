@@ -7,6 +7,7 @@ import { api } from '../ipc/api-client';
 import { ErrorHandler } from '../lib/error-handler';
 import i18n from '../i18n';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import type { SubscriptionPreviewResult } from '../../shared/subscription-preview';
 import type { ApiResponse, ServerConfig, SubscriptionConfig } from './types';
 
 /**
@@ -236,6 +237,22 @@ export async function updateSubscriptionServers(subscriptionId: string): Promise
   } catch (error: any) {
     ErrorHandler.handleApiError(error, i18n.t('apiToast.updateSubServers'));
     return { success: false, error: error?.message };
+  }
+}
+
+/**
+ * 订阅预检（add 前先行，不写 config）：直接返回契约结果 SubscriptionPreviewResult（ok/errorKind/httpStatus）——
+ * **不套 {success,data} 信封、不 toast**（错误文案由对话框按 errorKind 分类展示）。IPC 传输异常（预检本身不 throw）
+ * → 兜底 unknown。
+ */
+export async function previewSubscription(
+  url: string,
+  opts: { viaProxy?: boolean; userAgent?: string }
+): Promise<SubscriptionPreviewResult> {
+  try {
+    return await api.subscription.preview(url, opts);
+  } catch (error: any) {
+    return { ok: false, errorKind: 'unknown', message: error?.message };
   }
 }
 
