@@ -582,7 +582,7 @@ describe('T4：replaceManualCore B-2 基线预判 + B-3 来源识别', () => {
     return svc;
   }
 
-  // 官方核，旧于随包基线（bundledCoreVersion 现为 1.14.0-alpha.37）。
+  // 官方核，旧于随包基线（coreManifest.bundledCoreVersion，测试动态读取，注释不写死具体版本防过期）。
   const OLDER_OFFICIAL = '1.13.13';
 
   afterEach(() => jest.restoreAllMocks());
