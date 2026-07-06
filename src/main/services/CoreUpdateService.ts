@@ -395,7 +395,11 @@ export class CoreUpdateService {
   private helperSupportsInstallCore(st: HelperStatus): boolean {
     if (!st.ready) return false;
     const minProto = process.platform === 'darwin' ? 5 : 1;
-    return Number.parseInt(st.version ?? '', 10) >= minProto;
+    const proto = Number.parseInt(st.version ?? '', 10);
+    // version 非数字串（异常 ping 应答/未来格式变体）→ NaN 比较恒 false 会把有能力 helper 误判无能力、
+    // 静默走 bundle 分支复现本 bug；回退旧布尔语义（ready && !upgradeable）而非一票否决。
+    if (Number.isNaN(proto)) return !st.upgradeable;
+    return proto >= minProto;
   }
 
   private async installCoreFromDir(

@@ -33,6 +33,16 @@ function readLanguageChoice(): string {
 }
 
 /**
+ * off 账本：listener proxy → (channel → wrapped 栈)。on 注册时记账，off(channel, listener) 据此取回
+ * preload 侧真实注册的 wrapped 引用完成退订（跨 contextBridge 函数身份不守恒，直调 ipcRenderer.off 多为
+ * no-op）。WeakMap 键随渲染层函数代理回收，不阻止 GC、无泄漏。
+ */
+const offLedger = new WeakMap<
+  (...args: any[]) => void,
+  Map<string, ((event: IpcRendererEvent, ...args: any[]) => void)[]>
+>();
+
+/**
  * 暴露给渲染进程的 Electron API
  */
 const electronAPI = {
@@ -93,8 +103,23 @@ const electronAPI = {
     ): (() => void) => {
       const wrappedListener = (event: IpcRendererEvent, ...args: any[]) => listener(event, ...args);
       ipcRenderer.on(channel, wrappedListener);
+      // 账本：按 (listener proxy, channel) 记 wrapped，供 off(channel, listener) 真退订。
+      // contextBridge 对同一渲染层函数的重复跨界若保持 proxy 身份则账本命中；不保持则 off 回退直调（不劣于原状）。
+      let byChannel = offLedger.get(listener);
+      if (!byChannel) {
+        byChannel = new Map();
+        offLedger.set(listener, byChannel);
+      }
+      const stack = byChannel.get(channel) ?? [];
+      stack.push(wrappedListener);
+      byChannel.set(channel, stack);
       return () => {
         ipcRenderer.removeListener(channel, wrappedListener);
+        const s = offLedger.get(listener)?.get(channel);
+        if (s) {
+          const i = s.indexOf(wrappedListener);
+          if (i >= 0) s.splice(i, 1);
+        }
       };
     },
 
@@ -106,10 +131,17 @@ const electronAPI = {
     },
 
     /**
-     * 取消监听主进程事件（旧路径，身份不守恒——渲染层传回的 listener 是新 proxy，removeListener 多为 no-op）。
-     * 现役退订走 on() 返回的闭包；此方法仅保留兼容，实际退订应优先用 on 的返回值 / removeAllListeners 兜底。
+     * 取消监听主进程事件。先查账本按 (listener, channel) 取 wrapped 真退订（LIFO 取最近注册的一个，
+     * 与 EventEmitter removeListener 语义一致）；账本未命中（proxy 身份未保持/未经 on 注册）回退直调
+     * ipcRenderer.off——原路径，多为 no-op 但不劣化。现役退订仍首选 on() 返回的闭包。
      */
     off: (channel: string, listener: (...args: any[]) => void) => {
+      const stack = offLedger.get(listener as (...args: any[]) => void)?.get(channel);
+      const wrapped = stack?.pop();
+      if (wrapped) {
+        ipcRenderer.removeListener(channel, wrapped as (...args: any[]) => void);
+        return;
+      }
       ipcRenderer.off(channel, listener);
     },
 

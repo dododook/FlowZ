@@ -286,11 +286,22 @@ func terminateChild(c *exec.Cmd, done <-chan struct{}) {
 	}
 }
 
-// procStartTime 取 pid 进程的启动时间字符串（macOS `ps -o lstart=`，如 "Mon Jul  6 09:00:00 2026"）。
-// 用作进程唯一身份：同一 PID 若被复用，新进程的启动时间必不同（lstart 精度 1s，同秒复用几乎不可能）。
+// startTimeViaSysctl 启动时对自身 PID 探测一次，终身锁定取启动时间的机制（sysctl 或 ps lstart）。
+// 机制绝不中途切换：若 sysctl 快照后某次 tick 转用 ps，两种格式必不等 → watchParent 误判「父已死」
+// → 错杀存活父进程的 root sing-box。锁定后 sysctl 偶发失败只会返 ""（跳过本轮比对，保守安全）。
+var startTimeViaSysctl = sync.OnceValue(func() bool {
+	return procStartTimeOS(os.Getpid()) != ""
+})
+
+// procStartTime 取 pid 进程的启动时间字符串，用作进程唯一身份：同一 PID 若被复用，新进程的启动时间必不同。
+// darwin 用 sysctl kern.proc.pid（微秒精度，见 proc_starttime_darwin.go）——消除 `ps lstart` 秒级精度下
+// 「同秒 PID 复用」的假阴性窗口；非 darwin（或 sysctl 不可用的异常环境）用 `ps -o lstart=`（秒级兜底）。
 // watchParent 据此识破「父 kill -9 后 PID 被复用 → kill(ppid,0) 返回 nil」的假阴性，避免把 root sing-box 漏成孤儿。
-// 取不到（进程已退出/ps 失败/超时）返回 ""，调用方按「空则不比对」保守处理，绝不据此误杀真父。exec 已带超时。
+// 取不到（进程已退出/取数失败/超时）返回 ""，调用方按「空则不比对」保守处理，绝不据此误杀真父。exec 已带超时。
 func procStartTime(pid int) string {
+	if startTimeViaSysctl() {
+		return procStartTimeOS(pid)
+	}
 	out, err := execOutput(execTimeout, "/bin/ps", "-o", "lstart=", "-p", strconv.Itoa(pid))
 	if err != nil {
 		return ""
