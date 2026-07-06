@@ -1598,6 +1598,8 @@
     "updateSubServers": "更新订阅节点",
     "generateShareUrl": "生成分享链接",
     "downloadFailed": "下载失败",
-    "installFailed": "安装失败"
+    "installFailed": "安装失败",
+    "openExternalFailed": "打开链接失败：{{error}}",
+    "setConfigFailed": "设置保存失败"
   }
 }

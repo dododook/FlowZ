@@ -58,7 +58,7 @@ export function ServerPage() {
   const setTailscaleLoginState = useAppStore((state) => state.setTailscaleLoginState);
 
   const {
-    updatingSubId,
+    updatingSubIds,
     deleteServer: handleDeleteServer,
     deleteServers: handleDeleteServers,
     selectServer: handleSelectServer,
@@ -227,8 +227,10 @@ export function ServerPage() {
   };
 
   const handleSaveSubscription = async (subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>) => {
-    const sub = await saveSubscription(subData, editingSub);
-    if (!editingSub && sub) setTabOverride(sub.id);
+    const res = await saveSubscription(subData, editingSub);
+    // 新增成功：把激活 tab 切到新订阅分组；ok 透传给对话框（失败不关窗、留住用户输入）。
+    if (!editingSub && res.ok && res.sub) setTabOverride(res.sub.id);
+    return res;
   };
 
   return (
@@ -322,7 +324,7 @@ export function ServerPage() {
                 {/* 每个订阅一个 Tab */}
                 {subscriptions.map((sub) => {
                   const subServers = serversOfGroup(sub.id);
-                  const isUpdating = updatingSubId === sub.id;
+                  const isUpdating = updatingSubIds.has(sub.id);
                   return (
                     <TabsTrigger
                       key={sub.id}
@@ -393,7 +395,7 @@ export function ServerPage() {
         {/* 各订阅节点内容 */}
         {subscriptions.map((sub) => {
           const subServers = serversOfGroup(sub.id);
-          const isUpdating = updatingSubId === sub.id;
+          const isUpdating = updatingSubIds.has(sub.id);
           return (
             <TabsContent key={sub.id} value={sub.id}>
               <div className="space-y-4">

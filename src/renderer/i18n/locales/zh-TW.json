@@ -1598,6 +1598,8 @@
     "updateSubServers": "更新訂閱節點",
     "generateShareUrl": "產生分享連結",
     "downloadFailed": "下載失敗",
-    "installFailed": "安裝失敗"
+    "installFailed": "安裝失敗",
+    "openExternalFailed": "開啟連結失敗：{{error}}",
+    "setConfigFailed": "設定儲存失敗"
   }
 }

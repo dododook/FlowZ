@@ -61,9 +61,16 @@ export async function getVersionInfo(): Promise<
  */
 export async function openExternal(url: string): Promise<ApiResponse<boolean>> {
   try {
-    await window.electron.ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url);
-    return { success: true, data: true };
+    // registerIpcHandler 包装 handler：成功返 {success:true,data}，抛错返 {success:false,error}。
+    // 原代码忽略此 envelope 恒返 success:true，掩盖打开失败（点链接无反应却无任何提示）。检查真实结果。
+    const result = await window.electron.ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url);
+    if (result?.success) {
+      return { success: true, data: true };
+    }
+    ErrorHandler.showError(i18n.t('apiToast.openExternalFailed', { error: result?.error ?? '' }));
+    return { success: false, error: result?.error };
   } catch (error: any) {
+    ErrorHandler.showError(i18n.t('apiToast.openExternalFailed', { error: error?.message ?? '' }));
     return { success: false, error: error?.message };
   }
 }

@@ -23,7 +23,10 @@ interface SubscriptionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subscription?: SubscriptionConfig;
-  onSave: (subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'>) => Promise<void>;
+  // 返回 ok 让对话框区分成功/失败：失败(ok:false)不关窗、留住用户输入。兼容 void（旧契约按成功关窗）。
+  onSave: (
+    subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'>
+  ) => Promise<{ ok: boolean } | void>;
   // 全局订阅代理策略：'follow' 时本 per-sub 开关可设；'proxy'/'direct' 时被全局覆盖、置灰。
   subscriptionProxyPolicy?: 'follow' | 'proxy' | 'direct';
 }
@@ -90,7 +93,7 @@ export function SubscriptionDialog({
     try {
       setIsSaving(true);
       const trimmedUa = userAgent.trim();
-      await onSave({
+      const result = await onSave({
         name: name.trim(),
         url: url.trim(),
         autoUpdate,
@@ -99,9 +102,13 @@ export function SubscriptionDialog({
         // 仅 true 才写入（默认关 = 不带字段，落回直连）。
         ...(updateViaProxy ? { updateViaProxy: true } : {}),
       });
-      onOpenChange(false);
+      // 仅保存成功才关窗；失败(ok:false，api-wrapper 已 toast)保留对话框与已填内容，免用户重填。
+      // onSave 返回 void（旧契约）时按成功关窗。
+      if (!result || result.ok) {
+        onOpenChange(false);
+      }
     } catch {
-      // Error is handled by api wrapper
+      // onSave 内部已 toast；异常同样不关窗，保留用户输入
     } finally {
       setIsSaving(false);
     }

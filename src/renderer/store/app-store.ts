@@ -37,6 +37,16 @@ export interface AvailableCoreUpdate {
 
 // loadConfig 单飞：防 configChanged 风暴 / 启动期重复拉取（替代原 isLoading 重入守卫）
 let loadConfigInflight: Promise<void> | null = null;
+// loadConfig 代际计数：mutation（删/存节点等）成功后自增。单飞会复用「在 mutation 前就已开始拉取」的
+// 在飞 promise，其 api.config.get() 拿的是 mutation 前旧快照，回填会用旧配置覆盖 store
+// （典型症状：删节点后 UI 复活已删节点）。故在飞 load 回填前用代际比对丢弃陈旧快照。
+let loadConfigGeneration = 0;
+// mutation 落库/乐观 set 后调用：自增代际使在飞的旧 load 回填被丢弃，并置空单飞句柄，
+// 令后续 loadConfig 重新拉取删/存后的最新配置，而非复用陈旧的在飞 promise。
+function invalidateLoadConfig(): void {
+  loadConfigGeneration++;
+  loadConfigInflight = null;
+}
 
 interface ConnectionStatus {
   proxyCore: {
@@ -338,6 +348,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadConfig: async () => {
     // 单飞：在飞则复用同一 promise，防 configChanged 风暴 / 启动期重复拉取
     if (loadConfigInflight) return loadConfigInflight;
+    // 代际快照：拉取期间若发生 mutation（invalidateLoadConfig 自增代际），本次快照即陈旧，回填时按此丢弃。
+    const gen = loadConfigGeneration;
     loadConfigInflight = (async () => {
       try {
         const config = await api.config.get();
@@ -359,6 +371,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
 
         const isPrivacyMode = await api.config.getPrivacyMode();
+        // 代际护栏：拉取期间发生了 mutation（loadConfigGeneration 已变）→ 本快照陈旧，丢弃不回填 store，
+        // 交由 mutation 触发的新一轮 loadConfig 回填最新配置（防删节点后旧快照复活已删节点）。
+        if (gen !== loadConfigGeneration) return;
         set({ config, isPrivacyMode });
         // Tailscale 登录态不在此拉取：1.14 由 api STATUS 流（EVENT_TAILSCALE_STATUS，随主核起停持续推送）
         // 实时驱动 tailscaleLoginStates，无需 loadConfig 时整表 IPC 刷新（已剥离 refreshTailscaleLoginStates）。
@@ -373,7 +388,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.error('[Store] Exception loading config:', error);
         toast.error(i18n.t('common.configLoadFail'));
       } finally {
-        loadConfigInflight = null;
+        // 仅当本次 load 仍是最新代际（期间无 mutation 顶替）才清句柄：mutation 经 invalidateLoadConfig
+        // 自增代际并置空句柄、可能已启动新一轮 load，旧 load 的 finally 不得误清新 load 的句柄。
+        // 代际唯一标识当前 load（新 load 仅能在句柄为空后启动，而句柄置空必伴随代际自增），故用代际比对即可。
+        if (gen === loadConfigGeneration) loadConfigInflight = null;
       }
     })();
     return loadConfigInflight;
@@ -383,6 +401,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await api.config.save(config);
       set({ config });
+      // 代际护栏：本地乐观 set 后作废在飞的旧 load，防其陈旧快照覆盖刚保存的配置。
+      invalidateLoadConfig();
     } catch (error) {
       console.error('[Store] Exception saving config:', error);
       throw error; // 调用点负责局部 toast，不再写全局 error
@@ -397,6 +417,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (currentConfig) {
         set({ config: { ...currentConfig, proxyMode: mode } });
       }
+      // 代际护栏：乐观 set 后作废在飞的旧 load，防其陈旧快照覆盖刚切换的代理模式。
+      invalidateLoadConfig();
     } catch (error) {
       console.error('[Store] Exception updating proxy mode:', error);
       throw error; // 调用点（proxy-control-card）catch + toast + 本地 busy
@@ -539,6 +561,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 清该节点 Tailscale 登录态缓存（仅 TS 节点有此缓存，非 TS 为 no-op）：免删-增循环陈旧缓存累积，
       // 也免导入/恢复复用旧 uuid 时陈旧 true 让 state 兜底跳过、误显「已登录」。
       useTailscaleLoginCacheStore.getState().removeCached(serverId);
+      // 代际护栏：删除已落库，作废在飞的旧 load（可能持删前快照）+ 自增代际，确保下面的 loadConfig
+      // 拉到删后最新配置、且旧在飞 load 的回填被丢弃（否则删节点后旧快照复活已删节点）。
+      invalidateLoadConfig();
       // Reload config to get updated server list（Tailscale 登录态由 api STATUS 流实时驱动，无需在此刷新）。
       await get().loadConfig();
     } catch (error) {
@@ -553,6 +578,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 同 deleteServer：批量清各节点 Tailscale 登录态缓存（非 TS 为 no-op）。
       const cache = useTailscaleLoginCacheStore.getState();
       for (const id of serverIds) cache.removeCached(id);
+      // 代际护栏：同 deleteServer，作废在飞旧 load，防批量删后旧快照复活已删节点。
+      invalidateLoadConfig();
       await get().loadConfig();
       return count;
     } catch (error) {
@@ -565,6 +592,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   addCustomRule: async (rule) => {
     try {
       await api.rules.add(rule);
+      // 代际护栏：作废在飞旧 load，防其陈旧快照丢掉刚新增的规则。
+      invalidateLoadConfig();
       // Reload config to get updated rules
       await get().loadConfig();
     } catch (error) {
@@ -576,6 +605,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateCustomRule: async (rule) => {
     try {
       await api.rules.update(rule);
+      // 代际护栏：作废在飞旧 load，防其陈旧快照覆盖刚更新的规则。
+      invalidateLoadConfig();
       // Reload config to get updated rules
       await get().loadConfig();
     } catch (error) {
@@ -587,6 +618,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteCustomRule: async (ruleId) => {
     try {
       await api.rules.delete(ruleId);
+      // 代际护栏：作废在飞旧 load，防其陈旧快照复活已删规则。
+      invalidateLoadConfig();
       // Reload config to get updated rules
       await get().loadConfig();
     } catch (error) {
@@ -609,12 +642,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('invalid rule order');
     }
     set({ config: { ...cfg, customRules: orderedIds.map((id) => byId.get(id)!) } });
+    // 代际护栏：乐观重排 set 后作废在飞旧 load，防其陈旧快照把顺序回滚。
+    invalidateLoadConfig();
     await api.rules.reorder(orderedIds);
   },
 
   setConfigValue: async (key, value) => {
     try {
       await api.config.setValue(key, value);
+      // 代际护栏：已落库，作废在飞旧 load，防其陈旧快照覆盖本次改动（乐观 set / 兜底 loadConfig 均受保护）。
+      invalidateLoadConfig();
       // Update local state immediately for better UX
       const currentConfig = get().config;
       if (currentConfig) {
@@ -624,6 +661,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error(`[Store] Failed to set config value for ${String(key)}:`, error);
+      // 原纯 console 静默：写盘失败用户无感知，UI 可能显新值但未持久化。补 toast 让用户知晓保存失败。
+      toast.error(i18n.t('apiToast.setConfigFailed'));
     }
   },
 
@@ -641,6 +680,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const res = await api.helper.install();
       if (res.status) set({ helperStatus: res.status });
+      // 代际护栏：helperPromptDismissed 等配置可能已变，作废在飞旧 load 防陈旧快照覆盖。
+      invalidateLoadConfig();
       // helperPromptDismissed 等配置可能已变 → 同步（helperToken 已解耦到独立文件，不经 config）
       await get().loadConfig();
       return { success: res.success, error: res.error };
@@ -653,6 +694,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const res = await api.helper.uninstall();
       if (res.status) set({ helperStatus: res.status });
+      // 代际护栏：作废在飞旧 load，防陈旧快照覆盖卸载后的配置。
+      invalidateLoadConfig();
       await get().loadConfig();
       return { success: res.success, error: res.error };
     } catch (error) {

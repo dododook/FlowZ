@@ -1598,6 +1598,8 @@
     "updateSubServers": "به‌روزرسانی سرورهای اشتراک",
     "generateShareUrl": "تولید پیوند اشتراک",
     "downloadFailed": "دانلود ناموفق بود",
-    "installFailed": "نصب ناموفق بود"
+    "installFailed": "نصب ناموفق بود",
+    "openExternalFailed": "باز کردن پیوند ناموفق بود: {{error}}",
+    "setConfigFailed": "ذخیره تنظیمات ناموفق بود"
   }
 }

@@ -1598,6 +1598,8 @@
     "updateSubServers": "Update subscription servers",
     "generateShareUrl": "Generate share link",
     "downloadFailed": "Download failed",
-    "installFailed": "Install failed"
+    "installFailed": "Install failed",
+    "openExternalFailed": "Failed to open link: {{error}}",
+    "setConfigFailed": "Failed to save setting"
   }
 }

@@ -1598,6 +1598,8 @@
     "updateSubServers": "Обновить серверы подписки",
     "generateShareUrl": "Создать ссылку для обмена",
     "downloadFailed": "Скачивание не удалось",
-    "installFailed": "Установка не удалась"
+    "installFailed": "Установка не удалась",
+    "openExternalFailed": "Не удалось открыть ссылку: {{error}}",
+    "setConfigFailed": "Не удалось сохранить настройку"
   }
 }
