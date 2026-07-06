@@ -249,13 +249,33 @@ export class ConfigManager implements IConfigManager {
       const defaultConfig = this.createDefaultConfig();
       this.currentConfig = defaultConfig;
 
-      // 尝试保存默认配置
-      try {
-        await this.saveConfig(defaultConfig);
-        this.log('info', `默认配置已保存到: ${this.configPath}`);
-      } catch (saveError) {
-        this.log('error', `保存默认配置失败: ${saveError}`);
-        // 即使保存失败，也返回默认配置，让应用继续运行
+      // P0 数据丢失防护：仅当磁盘上【本就没有】配置文件（ENOENT，新装/首次运行）时才落盘默认配置。
+      // 若文件存在但读取/解析/校验失败（JSON 损坏、校验 throw 等），绝不用默认配置覆盖真实文件——
+      // 否则用户的 servers/subscriptions/customRules 会被一次静默覆盖、永久丢失且无从恢复。
+      // 此时先把损坏的原文件备份为 config.corrupt-<ts>.json（保留人工/后续恢复的机会），
+      // 内存返回默认配置让应用能启动，但磁盘真实文件原样保留、下次修复后即可恢复。
+      const isMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      if (isMissing) {
+        try {
+          await this.saveConfig(defaultConfig);
+          this.log('info', `默认配置已保存到: ${this.configPath}`);
+        } catch (saveError) {
+          this.log('error', `保存默认配置失败: ${saveError}`);
+        }
+      } else {
+        // 存在但损坏：备份，不覆盖。
+        try {
+          const ts = this.corruptBackupStamp();
+          const backupPath = path.join(path.dirname(this.configPath), `config.corrupt-${ts}.json`);
+          await fs.copyFile(this.configPath, backupPath).catch(() => {});
+          await this.pruneCorruptBackups();
+          this.log(
+            'error',
+            `配置文件损坏或校验失败，已备份到 ${backupPath}，未覆盖原文件；本次以默认配置启动`
+          );
+        } catch (backupError) {
+          this.log('error', `备份损坏配置失败（不阻断启动）: ${backupError}`);
+        }
       }
 
       return defaultConfig;
@@ -311,6 +331,32 @@ export class ConfigManager implements IConfigManager {
 
     // 保存配置
     await this.saveConfig(this.currentConfig);
+  }
+
+  /** 损坏配置备份用的文件系统安全时间戳（ISO 去掉冒号/点，避免 Windows 非法文件名）。 */
+  private corruptBackupStamp(): string {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+
+  /**
+   * 清理 config.corrupt-*.json 备份，仅保留最近 2 份（本次写入新备份后总数 ≤3），
+   * 防反复启动失败时备份文件在 userData 无限堆积。best-effort：任何失败仅忽略，不阻断启动。
+   */
+  private async pruneCorruptBackups(): Promise<void> {
+    try {
+      const dir = path.dirname(this.configPath);
+      const entries = await fs.readdir(dir);
+      const backups = entries
+        .filter((n) => /^config\.corrupt-.*\.json$/.test(n))
+        .sort(); // 时间戳前缀命名 → 字典序即时间序，升序（旧在前）
+      const keep = 2;
+      const toDelete = backups.slice(0, Math.max(0, backups.length - keep));
+      for (const name of toDelete) {
+        await fs.unlink(path.join(dir, name)).catch(() => {});
+      }
+    } catch {
+      /* 清理失败不阻断加载 */
+    }
   }
 
   /**
