@@ -15,6 +15,7 @@ export const PROTOCOL_OPTIONS: { value: ProtocolType; label: string }[] = [
   { value: 'hysteria2', label: 'Hysteria2' },
   { value: 'naive', label: 'NaiveProxy' },
   { value: 'shadowsocks', label: 'Shadowsocks' },
+  { value: 'snell', label: 'Snell' },
   { value: 'socks', label: 'SOCKS5' },
   { value: 'ssh', label: 'SSH' },
   // Tailscale 不再从「添加节点」协议下拉加入——已抽离为组网 tab 顶部的单例「连接」卡（批3，设计文档④）。

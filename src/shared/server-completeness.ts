@@ -19,6 +19,7 @@ export const ALL_PROTOCOLS: readonly Protocol[] = [
   'anytls',
   'tuic',
   'naive',
+  'snell',
   'socks',
   'http',
   'ssh',
@@ -65,6 +66,12 @@ export function protocolRequirementError(server: ServerConfig): string | null {
       return server.username?.trim() && server.password?.trim()
         ? null
         : 'Naive server requires username and password';
+    case 'snell':
+      // psk 进 password（同 trojan/hysteria2 惯例）；version 是主开关，仅 4|6 合法（server/port 由通用分支校验）。
+      return server.password?.trim() &&
+        (server.snellSettings?.version === 4 || server.snellSettings?.version === 6)
+        ? null
+        : 'Snell server requires psk and version (4 or 6)';
     case 'shadowsocks':
       return server.shadowsocksSettings?.method?.trim() &&
         server.shadowsocksSettings?.password?.trim()

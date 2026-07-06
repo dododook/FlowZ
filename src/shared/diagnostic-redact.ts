@@ -37,6 +37,7 @@ export const SECRET_KEYS: ReadonlySet<string> = new Set([
   'pluginoptions',
   'privacypassword',
   'psk', // snell 等第三方协议主密钥（无 customSettings.secretKeys 时的兜底）
+  'userkey', // snell 多用户服务器鉴权 key（一等公民 snellSettings.userkey / 自定义 JSON 兜底）
 ]);
 
 /** url 类键名（值按 url 处理：仅保留 origin，path/query 都打码——订阅 token 可能在 path 或 query）。 */

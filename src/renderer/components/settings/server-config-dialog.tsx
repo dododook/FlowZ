@@ -22,6 +22,7 @@ import { Hysteria2Form } from './hysteria2-form';
 import { SsForm } from './ss-form';
 import { AnyTlsForm } from './anytls-form';
 import { TuicForm } from './tuic-form';
+import { SnellForm } from './snell-form';
 import { NaiveForm } from './naive-form';
 import { VmessForm } from './vmess-form';
 import { SocksForm } from './socks-form';
@@ -296,6 +297,17 @@ export function ServerConfigDialog({
                 key={currentServerConfig?.id || 'new'}
                 serverConfig={
                   currentServerConfig?.protocol?.toLowerCase() === 'tuic'
+                    ? currentServerConfig
+                    : undefined
+                }
+                onSubmit={handleSave}
+              />
+            )}
+            {selectedProtocol === 'snell' && (
+              <SnellForm
+                key={currentServerConfig?.id || 'new'}
+                serverConfig={
+                  currentServerConfig?.protocol?.toLowerCase() === 'snell'
                     ? currentServerConfig
                     : undefined
                 }

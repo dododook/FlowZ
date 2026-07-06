@@ -6,6 +6,7 @@
 import type {
   NaiveSettings,
   Hysteria2Settings,
+  SnellSettings,
   TuicSettings,
   WireGuardSettings,
   TailscaleSettings,
@@ -38,6 +39,8 @@ export type {
   HttpSettings,
   Hysteria2ObfsSettings,
   Hysteria2Settings,
+  SnellVersion,
+  SnellSettings,
   MultiplexSettings,
   TuicSettings,
   NaiveSettings,
@@ -119,6 +122,7 @@ export type Protocol =
   | 'tuic'
   | 'vmess'
   | 'naive'
+  | 'snell'
   | 'socks'
   | 'http'
   | 'ssh'
@@ -222,6 +226,9 @@ export interface ServerConfig {
 
   // Shadowsocks 特定
   shadowsocksSettings?: ShadowsocksSettings;
+
+  // Snell 特定（psk 复用通用 password 字段，同 trojan/hysteria2 惯例）
+  snellSettings?: SnellSettings;
 
   // SSH 特定
   sshSettings?: SshSettings;

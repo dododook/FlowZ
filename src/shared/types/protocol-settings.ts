@@ -80,6 +80,21 @@ export interface Hysteria2Settings {
   bbrProfile?: Hysteria2BbrProfile; // BBR 拥塞控制 profile；sing-box bbr_profile
 }
 
+// Snell 协议版本（sing-box 1.14.0-alpha.38+ 官方 outbound）：4=v4（obfs 系）/ 6=v6（mode 系），主开关。
+export type SnellVersion = 4 | 6;
+
+// Snell 协议设置（psk 复用 ServerConfig.password，同 trojan/hysteria2 惯例；snell 不走 TLS 块）。
+// obfs*（仅 v4）与 mode（仅 v6）互斥——表单按 version 条件渲染，提交时 normalize 清对侧字段防脏下发。
+export interface SnellSettings {
+  version: SnellVersion; // 必填；决定 obfs（v4）/ mode（v6）分支
+  obfsMode?: 'none' | 'http'; // 仅 v4；默认 none（不下发 obfs_*）
+  obfsHost?: string; // 仅 v4 + obfsMode=http；默认 bing.com
+  mode?: 'default' | 'unshaped' | 'unsafe-raw'; // 仅 v6；默认 default（不下发）
+  reuse?: boolean; // 连接复用（v2 CONNECT）；默认 false
+  network?: 'tcp' | 'udp'; // 省略 = both
+  userkey?: string; // 多用户服务器鉴权 key；敏感，已进 diagnostic-redact 黑名单
+}
+
 // Multiplex 多路复用设置（vless/trojan/vmess/shadowsocks）；注意 reality+vision(xtls-rprx-vision) 不兼容
 export interface MultiplexSettings {
   enabled?: boolean;

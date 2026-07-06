@@ -149,8 +149,15 @@ export interface SingBoxOutbound {
   udp_relay_mode?: string;
   zero_rtt_handshake?: boolean;
   heartbeat?: string;
-  // ShadowTLS specific
+  // ShadowTLS / Snell 共用：协议版本号（snell 4|6）
   version?: number;
+  // Snell specific（sing-box 1.14.0-alpha.38+ 官方 outbound；无 TLS 块）
+  psk?: string;
+  userkey?: string;
+  reuse?: boolean;
+  obfs_mode?: string; // 仅 v4："http"（none 不下发）
+  obfs_host?: string; // 仅 v4 + obfs_mode=http
+  mode?: string; // 仅 v6："unshaped" / "unsafe-raw"（default 不下发）
   // AnyTLS specific
   idle_session_check_interval?: string;
   idle_session_timeout?: string;

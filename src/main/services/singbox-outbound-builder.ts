@@ -262,6 +262,34 @@ export function buildProxyOutbound(
     }
   }
 
+  // Snell 特定配置（sing-box 1.14.0-alpha.38+ 官方 outbound；不走 TLS 块——不在 tlsProtocols，勿加 tls/alpn）。
+  // version 是主开关：obfs_*（仅 v4）与 mode（仅 v6）互斥，按 version 条件下发；默认值（obfs none/mode default）
+  // 不下发，保持配置精简且与核默认一致。
+  if (protocol === 'snell') {
+    const s = server.snellSettings;
+    outbound.version = s?.version; // 4|6（completeness 闸门已保证存在）
+    outbound.psk = server.password; // psk 复用 password 字段（同 trojan/hysteria2 惯例）
+    if (s?.userkey) {
+      outbound.userkey = s.userkey;
+    }
+    if (s?.reuse) {
+      outbound.reuse = true;
+    }
+    if (s?.network) {
+      outbound.network = s.network; // 省略 = both
+    }
+    if (s?.version === 4) {
+      if (s.obfsMode && s.obfsMode !== 'none') {
+        outbound.obfs_mode = s.obfsMode;
+        outbound.obfs_host = s.obfsHost || 'bing.com';
+      }
+    } else if (s?.version === 6) {
+      if (s.mode && s.mode !== 'default') {
+        outbound.mode = s.mode;
+      }
+    }
+  }
+
   // AnyTLS 特定配置
   if (protocol === 'anytls') {
     outbound.password = server.password;
