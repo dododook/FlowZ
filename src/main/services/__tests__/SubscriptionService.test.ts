@@ -587,3 +587,172 @@ describe('parseLocalContent — 本地导入（不联网）', () => {
     await expect(svc.parseLocalContent(huge)).rejects.toThrow(/过大/);
   });
 });
+
+// ── issue #263 补丁组：丢弃可见性聚合 / 指纹传输维度 / sing-box ssh 映射 ──
+describe('issue #263 — 聚合可见性 / 指纹传输维度 / ssh 映射', () => {
+  const CTX = { allowProviders: true, viaProxy: false, userAgent: 'ua' };
+
+  it('URL-list：不支持 scheme 聚合 warn + 结果 info 带跳过计数', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const content = [
+      'vless://uuid-1@a.com:443?encryption=none#ok',
+      'ssr://AAAA',
+      'ssr://BBBB',
+      'juicity://CCCC',
+    ].join('\n');
+    const r = await (svc as any).parseSubscriptionContent(content, 'sub-x', CTX);
+    expect(r.servers).toHaveLength(1);
+    const warns = log.entries
+      .filter((e) => e.level === 'warn')
+      .map((e) => e.message)
+      .join('\n');
+    expect(warns).toMatch(/跳过不支持的协议链接/);
+    expect(warns).toMatch(/ssr\(2\)/);
+    expect(warns).toMatch(/juicity\(1\)/);
+    const infos = log.entries
+      .filter((e) => e.level === 'info')
+      .map((e) => e.message)
+      .join('\n');
+    expect(infos).toMatch(/另有 3 条被跳过\/失败/);
+  });
+
+  it('URL-list：xhttp 节点 fail 计入结果 info（issue #263 主症状可见化）', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const content = [
+      'anytls://pw@a.com:443#any',
+      'vless://uuid-1@a.com:443?type=xhttp#dead',
+    ].join('\n');
+    const r = await (svc as any).parseSubscriptionContent(content, 'sub-x', CTX);
+    expect(r.servers).toHaveLength(1);
+    expect(r.servers[0].protocol).toBe('anytls');
+    const warns = log.entries
+      .filter((e) => e.level === 'warn')
+      .map((e) => e.message)
+      .join('\n');
+    expect(warns).toMatch(/不支持的传输层类型: xhttp/);
+    const infos = log.entries
+      .filter((e) => e.level === 'info')
+      .map((e) => e.message)
+      .join('\n');
+    expect(infos).toMatch(/另有 1 条被跳过\/失败/);
+  });
+
+  it('sing-box outbounds：type/transport/缺字段三类跳过聚合 warn；internal 类型不计噪声', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const obs = [
+      { type: 'vless', tag: 'ok', server: 'a.com', server_port: 443, uuid: 'u' },
+      { type: 'wireguard', tag: 'wg', server: 'a.com', server_port: 51820 },
+      { type: 'vless', tag: 'noport', server: 'a.com', uuid: 'u' },
+      { type: 'vless', tag: 'quic', server: 'a.com', server_port: 443, uuid: 'u', transport: { type: 'quic' } },
+      { type: 'direct', tag: 'direct' },
+      { type: 'selector', tag: 'sel', outbounds: [] },
+    ];
+    const servers = (svc as any).parseSingboxOutbounds(obs, 'sub-x');
+    expect(servers).toHaveLength(1);
+    expect(servers[0].name).toBe('ok');
+    const warns = log.entries
+      .filter((e) => e.level === 'warn')
+      .map((e) => e.message)
+      .join('\n');
+    expect(warns).toMatch(/跳过不支持的 outbound 类型: wireguard\(1\)/);
+    expect(warns).toMatch(/跳过不支持的传输层类型: quic\(1\)/);
+    expect(warns).toMatch(/跳过 1 个缺 server\/port 的 outbound/);
+    expect(warns).not.toMatch(/direct|selector/);
+  });
+
+  it('sing-box ssh outbound → 一等映射（与 Clash 路径同落点；private_key_path 刻意不收）', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const servers = (svc as any).parseSingboxOutbounds(
+      [
+        {
+          type: 'ssh',
+          tag: 's1',
+          server: 'a.com',
+          server_port: 22,
+          user: 'root',
+          password: 'pw',
+          private_key: 'PEM',
+          private_key_passphrase: 'pp',
+          host_key: ['ssh-ed25519 AAAA'],
+          host_key_algorithms: ['ssh-ed25519'],
+          client_version: 'SSH-2.0-x',
+        },
+      ],
+      'sub-x'
+    );
+    expect(servers).toHaveLength(1);
+    expect(servers[0].protocol).toBe('ssh');
+    expect(servers[0].sshSettings).toEqual({
+      user: 'root',
+      password: 'pw',
+      privateKey: 'PEM',
+      privateKeyPassphrase: 'pp',
+      hostKey: ['ssh-ed25519 AAAA'],
+      hostKeyAlgorithms: ['ssh-ed25519'],
+      clientVersion: 'SSH-2.0-x',
+    });
+  });
+
+  it('serverFingerprint 含传输维度：同 host:port:cred 不同 network 不再误并；缺省归一 tcp', () => {
+    const base = {
+      id: 'i',
+      name: 'n',
+      protocol: 'vless',
+      address: 'a.com',
+      port: 443,
+      uuid: 'u',
+    } as unknown as ServerConfig;
+    const ws = { ...base, network: 'ws' } as ServerConfig;
+    const grpc = { ...base, network: 'grpc' } as ServerConfig;
+    expect(SubscriptionService.serverFingerprint(ws)).not.toBe(
+      SubscriptionService.serverFingerprint(grpc)
+    );
+    expect(SubscriptionService.serverFingerprint(base)).toMatch(/\|tcp$/);
+  });
+});
+
+describe('issue #263 review 补测 — ssh 算法字段 / 行首空白', () => {
+  it('ssh outbound cipher/mac/kex_algorithm → sshSettings 对应落点（不静默丢协商配置）', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const servers = (svc as any).parseSingboxOutbounds(
+      [
+        {
+          type: 'ssh',
+          tag: 's',
+          server: 'a.com',
+          server_port: 22,
+          user: 'root',
+          password: 'pw',
+          cipher: ['aes128-gcm@openssh.com'],
+          mac: ['hmac-sha2-256'],
+          kex_algorithm: ['curve25519-sha256'],
+        },
+      ],
+      'sub-x'
+    );
+    expect(servers[0].sshSettings).toMatchObject({
+      cipher: ['aes128-gcm@openssh.com'],
+      mac: ['hmac-sha2-256'],
+      kexAlgorithm: ['curve25519-sha256'],
+    });
+  });
+
+  it('URL-list 行首空白的合法链接正常解析，不误计「不支持 scheme」', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const content = '  vless://uuid-1@a.com:443?encryption=none#ok  \n\t trojan://pw@b.com:443#t';
+    const r = await (svc as any).parseSubscriptionContent(content, 'sub-x', {
+      allowProviders: true,
+      viaProxy: false,
+      userAgent: 'ua',
+    });
+    expect(r.servers).toHaveLength(2);
+    const warns = log.entries.filter((e) => e.level === 'warn');
+    expect(warns.find((w) => w.message.includes('跳过不支持的协议链接'))).toBeUndefined();
+  });
+});

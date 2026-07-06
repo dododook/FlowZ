@@ -4,10 +4,10 @@
  */
 
 import { randomUUID } from 'crypto';
+import { isIPv6 } from 'net';
 import type {
   ServerConfig,
   Protocol,
-  Network,
   Security,
   TlsSettings,
   RealitySettings,
@@ -74,18 +74,19 @@ export class ProtocolParser implements IProtocolParser {
    * 解析协议 URL 为服务器配置
    */
   /**
-   * 预处理 SS URL，将裸 IPv6 地址（无方括号）转换为标准格式
+   * 预处理分享 URL，将裸 IPv6 地址（无方括号）转换为标准格式（全协议通用；无 '@' 时原样返回）。
    * 例: ss://user@2001:db8::1:8388?... → ss://user@[2001:db8::1]:8388?...
    */
-  private preprocessSsUrl(raw: string): string {
+  private preprocessBareIpv6(raw: string): string {
     const atIdx = raw.indexOf('@');
     if (atIdx === -1) return raw;
 
     const beforeAt = raw.substring(0, atIdx + 1);
     const afterAt = raw.substring(atIdx + 1);
 
-    // Split off query string / fragment so we only work on the host:port part
-    const qIdx = afterAt.search(/[?#]/);
+    // Split off path / query / fragment so we only work on the host:port part
+    // （SIP002 plugin 形态 `…:port/?plugin=…` 的 `/` 在 `?` 前是标准写法，不截断会使 hostPort 携 `/` 双判定皆失败）
+    const qIdx = afterAt.search(/[/?#]/);
     const hostPort = qIdx >= 0 ? afterAt.substring(0, qIdx) : afterAt;
     const suffix = qIdx >= 0 ? afterAt.substring(qIdx) : '';
 
@@ -97,9 +98,21 @@ export class ProtocolParser implements IProtocolParser {
     if (parts.length >= 4) {
       const lastColon = hostPort.lastIndexOf(':');
       const potentialPort = hostPort.substring(lastColon + 1);
-      if (/^\d+$/.test(potentialPort)) {
-        const ipv6Addr = hostPort.substring(0, lastColon);
-        return `${beforeAt}[${ipv6Addr}]:${potentialPort}${suffix}`;
+      const remainder = hostPort.substring(0, lastColon);
+      // 「地址 vs 地址:端口」文法固有歧义（2001:db8::1:8388 两种读法都合法），消解启发式：
+      //  1) 末段为 2-5 位十进制且 ≤65535 且余段是合法 IPv6 → 按 地址+端口 拆（分享链几乎恒带端口）。
+      //     单数字末段（如 ::1）按地址整段——真实代理端口不用 1-9，而地址末段 '1' 极常见。
+      //  2) 否则整段本身合法 IPv6（无端口形态）→ 只加括号，端口缺省交 parseBase（与域名无端口同语义）。
+      //  3) 两者皆非 → 原样返回，交 new URL 抛错（丢弃可见，不静默入库截断地址的假节点）。
+      if (
+        /^\d{2,5}$/.test(potentialPort) &&
+        parseInt(potentialPort, 10) <= 65535 &&
+        isIPv6(remainder)
+      ) {
+        return `${beforeAt}[${remainder}]:${potentialPort}${suffix}`;
+      }
+      if (isIPv6(hostPort)) {
+        return `${beforeAt}[${hostPort}]${suffix}`;
       }
     }
     return raw;
@@ -111,10 +124,9 @@ export class ProtocolParser implements IProtocolParser {
     }
 
     try {
-      // Preprocess SS URLs to handle bare IPv6 addresses
-      if (url.startsWith('ss://')) {
-        url = this.preprocessSsUrl(url);
-      }
+      // 裸 IPv6（无方括号）预处理泛化到全协议：原仅 ss:// 处理，vless/trojan/hy2 等裸 IPv6 链接
+      // 会在 new URL() 直接 throw 整节点丢（issue #263 调查项）。无 '@' 的形态（vmess base64）原样返回。
+      url = this.preprocessBareIpv6(url);
 
       const urlObj = new URL(url);
       let protocolStr = urlObj.protocol.replace(':', '');
@@ -222,10 +234,10 @@ export class ProtocolParser implements IProtocolParser {
       flow: params.get('flow') || undefined,
     };
 
-    // 解析传输层配置
-    const network = params.get('type') as Network | null;
+    // 解析传输层配置：归一化/白名单校验收口在 parseTransportSettings（内含 config.network 写入；
+    // 未知传输层（xhttp/splithttp/kcp 等 sing-box 不支持）throw 整节点拒绝，订阅逐行 catch 聚合告警）。
+    const network = params.get('type');
     if (network) {
-      config.network = network;
       this.parseTransportSettings(config, params, network);
     }
 
@@ -238,6 +250,10 @@ export class ProtocolParser implements IProtocolParser {
       }
       if (security === 'reality') {
         config.realitySettings = this.parseRealitySettings(params);
+        if (!config.realitySettings) {
+          // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
+          throw new Error('Reality 节点缺少 pbk（public key）参数');
+        }
       }
     }
 
@@ -261,10 +277,10 @@ export class ProtocolParser implements IProtocolParser {
       password,
     };
 
-    // 解析传输层配置
-    const network = params.get('type') as Network | null;
+    // 解析传输层配置：归一化/白名单校验收口在 parseTransportSettings（内含 config.network 写入；
+    // 未知传输层（xhttp/splithttp/kcp 等 sing-box 不支持）throw 整节点拒绝，订阅逐行 catch 聚合告警）。
+    const network = params.get('type');
     if (network) {
-      config.network = network;
       this.parseTransportSettings(config, params, network);
     }
 
@@ -277,6 +293,10 @@ export class ProtocolParser implements IProtocolParser {
     }
     if (security === 'reality') {
       config.realitySettings = this.parseRealitySettings(params);
+      if (!config.realitySettings) {
+        // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
+        throw new Error('Reality 节点缺少 pbk（public key）参数');
+      }
     }
 
     return config;
@@ -327,6 +347,16 @@ export class ProtocolParser implements IProtocolParser {
         type: 'salamander',
         password: obfsPassword,
       };
+    } else if (obfs === 'salamander') {
+      // 声明 salamander 即服务端强制混淆，缺 obfs-password 剥离后裸连必死（假节点）——
+      // 与 reality 缺 pbk 同判据（凭据残缺=整节点拒绝）。
+      throw new Error('Hysteria2 obfs=salamander 缺少 obfs-password');
+    } else if (obfs) {
+      // 非 salamander 值（sing-box hy2 无对应混淆类型/参数噪声）：剥离 + warn 留痕。
+      this.log(
+        'warn',
+        `Hysteria2 节点 "${name}" 的 obfs 参数（${obfs}）不受支持，已忽略混淆配置`
+      );
     }
 
     // 解析网络类型（tcp 或 udp）
@@ -472,6 +502,10 @@ export class ProtocolParser implements IProtocolParser {
       }
       if (security === 'reality') {
         config.realitySettings = this.parseRealitySettings(params);
+        if (!config.realitySettings) {
+          // 缺 pbk 的 reality 节点无法握手（builder 不生成 reality tls 块 → 退化裸 TCP 假节点），整节点拒绝。
+          throw new Error('Reality 节点缺少 pbk（public key）参数');
+        }
       }
     } else {
       // AnyTLS 默认就是 TLS
@@ -665,10 +699,10 @@ export class ProtocolParser implements IProtocolParser {
       password,
     };
 
-    // 解析传输层配置
-    const network = params.get('type') as Network | null;
+    // 解析传输层配置：归一化/白名单校验收口在 parseTransportSettings（内含 config.network 写入；
+    // 未知传输层（xhttp/splithttp/kcp 等 sing-box 不支持）throw 整节点拒绝，订阅逐行 catch 聚合告警）。
+    const network = params.get('type');
     if (network) {
-      config.network = network;
       this.parseTransportSettings(config, params, network);
     }
 
@@ -719,6 +753,13 @@ export class ProtocolParser implements IProtocolParser {
           path: vmessData.path || '/',
           headers: vmessData.host ? { Host: vmessData.host } : undefined,
         };
+      } else if (net === 'httpupgrade') {
+        // v2rayN 生态 net:"httpupgrade" 在野常见；sing-box 支持 vmess+httpupgrade，与 ws 同款 path/host 承载。
+        config.network = 'httpupgrade';
+        config.wsSettings = {
+          path: vmessData.path || '/',
+          headers: vmessData.host ? { Host: vmessData.host } : undefined,
+        };
       } else if (net === 'h2' || net === 'http') {
         config.network = 'http';
         config.httpSettings = {
@@ -730,8 +771,12 @@ export class ProtocolParser implements IProtocolParser {
         config.grpcSettings = {
           serviceName: vmessData.path || '',
         };
-      } else {
+      } else if (net === 'tcp' || net === 'raw' || net === 'none') {
         config.network = 'tcp';
+      } else {
+        // kcp/quic（V2Ray mKCP·QUIC 传输）/xhttp 等 sing-box 不支持——入库也连不上，
+        // 整节点拒绝（与 vless/trojan 统一口径，订阅逐行 catch 聚合告警）。
+        throw new Error(`不支持的传输层类型: ${net}`);
       }
 
       // 解析安全层
@@ -831,25 +876,41 @@ export class ProtocolParser implements IProtocolParser {
   }
 
   /**
-   * 解析传输层配置
+   * 解析传输层配置（vless/trojan/naive 共用）。接收原始 type 参数：小写归一 → 别名映射 → 写 config.network。
+   * 已知别名：h2→http（builder 兼容口径，见 generateTransportConfig）、raw/none→tcp（Xray 1.8.24+ 把 tcp
+   * 更名 raw，二者在野共存）。httpupgrade 复用 ws 形态的 path/host 承载（与 sing-box JSON 导入、outbound
+   * builder 同款，见 SubscriptionService.parseSingboxOutbounds / generateTransportConfig）。
+   * 未知值（xhttp/splithttp/kcp/quic 等 Xray 专属传输）sing-box 内核不支持——入库也连不上，整节点 throw
+   * 拒绝（订阅逐行 catch 聚合告警；消息保持「不支持的传输层类型」可检索，issue #263）。
    */
   private parseTransportSettings(
     config: ServerConfig,
     params: URLSearchParams,
-    network: Network
+    rawNetwork: string
   ): void {
+    const network = rawNetwork.toLowerCase();
     switch (network) {
       case 'ws':
+        config.network = 'ws';
+        config.wsSettings = this.parseWebSocketSettings(params);
+        break;
+      case 'httpupgrade':
+        config.network = 'httpupgrade';
         config.wsSettings = this.parseWebSocketSettings(params);
         break;
       case 'grpc':
+        config.network = 'grpc';
         config.grpcSettings = this.parseGrpcSettings(params);
         break;
+      case 'h2':
       case 'http':
+        config.network = 'http';
         config.httpSettings = this.parseHttpSettings(params);
         break;
       case 'tcp':
-        // TCP 不需要额外配置
+      case 'raw':
+      case 'none':
+        config.network = 'tcp'; // TCP 不需要额外配置
         break;
       default:
         throw new Error(`不支持的传输层类型: ${network}`);
@@ -1246,7 +1307,8 @@ export class ProtocolParser implements IProtocolParser {
       tls: config.security === 'tls' ? 'tls' : '',
     };
 
-    if (config.network === 'ws' && config.wsSettings) {
+    // httpupgrade 与 ws 同款 wsSettings 承载（parse 侧对称，见 parseVmess）——漏此臂会导出丢 path/Host。
+    if ((config.network === 'ws' || config.network === 'httpupgrade') && config.wsSettings) {
       vmessData.path = config.wsSettings.path || '/';
       vmessData.host = config.wsSettings.headers?.Host || '';
     } else if (config.network === 'http' && config.httpSettings) {
@@ -1320,8 +1382,8 @@ export class ProtocolParser implements IProtocolParser {
       params.set('type', config.network);
     }
 
-    // WebSocket 配置
-    if (config.network === 'ws' && config.wsSettings) {
+    // WebSocket / HTTPUpgrade 配置（httpupgrade 复用 ws 形态的 path/host 承载，见 parseTransportSettings）
+    if ((config.network === 'ws' || config.network === 'httpupgrade') && config.wsSettings) {
       if (config.wsSettings.path) {
         params.set('path', config.wsSettings.path);
       }

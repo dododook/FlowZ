@@ -1290,3 +1290,97 @@ describe('LOW-4 override skip-cert-verify:false 也覆盖（赋值语义）', ()
     expect(servers[0].tlsSettings?.allowInsecure).toBe(true);
   });
 });
+
+// ── issue #263：Clash 路径与分享链/sing-box JSON 统一「不支持传输拒节点」口径 + reality 完整性 ──
+describe('传输层白名单 + reality 完整性（issue #263 统一口径）', () => {
+  const NOW = '2026-07-07T00:00:00.000Z';
+
+  it('vless network=xhttp → fail 计数 + 聚合告警，不入库', () => {
+    const r = parseClashProxies(
+      [{ name: 'x', type: 'vless', server: 'a.com', port: 443, uuid: 'u', network: 'xhttp' }],
+      'sub',
+      NOW
+    );
+    expect(r.servers).toHaveLength(0);
+    expect(r.failed).toBe(1);
+    expect(r.warnings.join('\n')).toMatch(/不支持的传输层类型: xhttp/);
+  });
+
+  it('network 缺省/tcp 正常入库（不受白名单影响）', () => {
+    const r = parseClashProxies(
+      [
+        { name: 'a', type: 'vless', server: 'a.com', port: 443, uuid: 'u' },
+        { name: 'b', type: 'vless', server: 'a.com', port: 444, uuid: 'u', network: 'tcp' },
+      ],
+      'sub',
+      NOW
+    );
+    expect(r.servers).toHaveLength(2);
+    expect(r.failed).toBe(0);
+  });
+
+  it('reality-opts 缺 public-key → fail（防按普通 TLS 入库成假节点）', () => {
+    const r = parseClashProxies(
+      [
+        {
+          name: 'r',
+          type: 'vless',
+          server: 'a.com',
+          port: 443,
+          uuid: 'u',
+          tls: true,
+          'reality-opts': { 'short-id': '01ab' },
+        },
+      ],
+      'sub',
+      NOW
+    );
+    expect(r.servers).toHaveLength(0);
+    expect(r.failed).toBe(1);
+    expect(r.warnings.join('\n')).toMatch(/public-key/);
+  });
+});
+
+describe('mihomo HTTPUpgrade 表达（network:ws + v2ray-http-upgrade）', () => {
+  const NOW = '2026-07-07T00:00:00.000Z';
+
+  it('ws-opts.v2ray-http-upgrade:true → network=httpupgrade（settings 落点不变）', () => {
+    const { servers } = parseClashProxies(
+      [
+        {
+          name: 'hu',
+          type: 'vless',
+          server: 'a.com',
+          port: 443,
+          uuid: 'u',
+          network: 'ws',
+          'ws-opts': { path: '/up', headers: { Host: 'h.com' }, 'v2ray-http-upgrade': true },
+        },
+      ],
+      'sub',
+      NOW
+    );
+    expect(servers).toHaveLength(1);
+    expect(servers[0].network).toBe('httpupgrade');
+    expect(servers[0].wsSettings).toEqual({ path: '/up', headers: { Host: 'h.com' } });
+  });
+
+  it('普通 ws（无 flag）→ 仍 ws', () => {
+    const { servers } = parseClashProxies(
+      [
+        {
+          name: 'ws',
+          type: 'vless',
+          server: 'a.com',
+          port: 443,
+          uuid: 'u',
+          network: 'ws',
+          'ws-opts': { path: '/ws' },
+        },
+      ],
+      'sub',
+      NOW
+    );
+    expect(servers[0].network).toBe('ws');
+  });
+});

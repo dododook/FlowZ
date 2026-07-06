@@ -719,3 +719,146 @@ describe('VMess insecure 单向丢弃（parse 侧特征：generate 不回写，�
     expect(parser.parseUrl(url).tlsSettings?.allowInsecure).toBe(true);
   });
 });
+
+// ── issue #263：传输层归一化/白名单 + 裸 IPv6 泛化 + reality 完整性 + hy2 obfs 剥离告警 ──
+describe('传输层归一化与白名单（issue #263）', () => {
+  it('vless type=httpupgrade → network=httpupgrade + wsSettings 承载 path/host', () => {
+    const c = parser.parseUrl(
+      'vless://uuid-1@a.com:443?encryption=none&type=httpupgrade&path=%2Fup&host=cdn.example.com&security=tls&sni=a.com#n'
+    );
+    expect(c.network).toBe('httpupgrade');
+    expect(c.wsSettings?.path).toBe('/up');
+    expect(c.wsSettings?.headers?.Host).toBe('cdn.example.com');
+  });
+
+  it('往返不动点 httpupgrade（generate 回写 path/host）', () => {
+    expectRoundTripStable(
+      'vless://uuid-1@a.com:443?encryption=none&type=httpupgrade&path=%2Fup&host=cdn.example.com&security=tls&sni=a.com&fp=chrome#n'
+    );
+  });
+
+  it('vless type=h2 → network=http（builder 兼容口径）', () => {
+    const c = parser.parseUrl(
+      'vless://uuid-1@a.com:443?encryption=none&type=h2&path=%2Fh2&host=h.example.com#n'
+    );
+    expect(c.network).toBe('http');
+    expect(c.httpSettings?.path).toBe('/h2');
+  });
+
+  it('type 大小写不敏感 + raw/none 归一 tcp（Xray 1.8.24+ 别名）', () => {
+    expect(parser.parseUrl('vless://u@a.com:443?type=RAW#n').network).toBe('tcp');
+    expect(parser.parseUrl('vless://u@a.com:443?type=none#n').network).toBe('tcp');
+    expect(parser.parseUrl('vless://u@a.com:443?type=WS&path=%2Fp#n').network).toBe('ws');
+  });
+
+  it('vless/trojan type=xhttp|splithttp|kcp（sing-box 不支持）→ 整节点拒绝且消息可检索', () => {
+    expect(() => parser.parseUrl('vless://u@a.com:443?type=xhttp#n')).toThrow(
+      /不支持的传输层类型: xhttp/
+    );
+    expect(() => parser.parseUrl('trojan://pw@a.com:443?type=splithttp#n')).toThrow(
+      /不支持的传输层类型: splithttp/
+    );
+    expect(() => parser.parseUrl('vless://u@a.com:443?type=kcp#n')).toThrow(
+      /不支持的传输层类型: kcp/
+    );
+  });
+
+  it('vmess net 未知（kcp/quic）→ 拒绝；net=raw → tcp（与 vless/trojan 统一口径）', () => {
+    const vmessUrl = (net: string) =>
+      'vmess://' +
+      Buffer.from(
+        JSON.stringify({ v: '2', ps: 'V', add: 'x.com', port: '443', id: 'uid', net })
+      ).toString('base64');
+    expect(() => parser.parseUrl(vmessUrl('kcp'))).toThrow(/不支持的传输层类型: kcp/);
+    expect(() => parser.parseUrl(vmessUrl('quic'))).toThrow(/不支持的传输层类型: quic/);
+    expect(parser.parseUrl(vmessUrl('raw')).network).toBe('tcp');
+  });
+
+  it('裸 IPv6（无方括号）泛化到 vless/trojan（原仅 ss://）', () => {
+    const v = parser.parseUrl('vless://uuid-1@2001:db8::1:443?encryption=none#v6');
+    expect(v.address).toBe('2001:db8::1');
+    expect(v.port).toBe(443);
+    const t = parser.parseUrl('trojan://pw@2001:db8::2:8443#t6');
+    expect(t.address).toBe('2001:db8::2');
+    expect(t.port).toBe(8443);
+  });
+
+  it('reality 缺 pbk → 整节点拒绝（vless/trojan；防裸 TCP 假节点入库）', () => {
+    expect(() => parser.parseUrl('vless://u@a.com:443?security=reality&sid=ab#n')).toThrow(/pbk/);
+    expect(() => parser.parseUrl('trojan://pw@a.com:443?security=reality#n')).toThrow(/pbk/);
+  });
+
+  it('hy2 obfs 非 salamander → 剥离混淆不拒节点；salamander 缺 obfs-password → 拒（强制混淆裸连必死）', () => {
+    const c = parser.parseUrl('hysteria2://pw@a.com:443?obfs=faketype&obfs-password=x#n');
+    expect(c.hysteria2Settings?.obfs).toBeUndefined();
+    expect(() => parser.parseUrl('hysteria2://pw@a.com:443?obfs=salamander#n')).toThrow(
+      /缺少 obfs-password/
+    );
+  });
+
+  it('vmess net=httpupgrade → 一等承载（v2rayN 在野形态，sing-box 支持）', () => {
+    const url =
+      'vmess://' +
+      Buffer.from(
+        JSON.stringify({
+          v: '2',
+          ps: 'V',
+          add: 'x.com',
+          port: '443',
+          id: 'uid',
+          net: 'httpupgrade',
+          path: '/up',
+          host: 'h.com',
+        })
+      ).toString('base64');
+    const c = parser.parseUrl(url);
+    expect(c.network).toBe('httpupgrade');
+    expect(c.wsSettings).toEqual({ path: '/up', headers: { Host: 'h.com' } });
+  });
+
+  it('裸 IPv6 无端口 → 整段加括号不截地址（端口缺省 443，与域名无端口同语义）', () => {
+    const c = parser.parseUrl('vless://uuid-1@2001:db8::1?encryption=none#v6np');
+    expect(c.address).toBe('2001:db8::1');
+    expect(c.port).toBe(443);
+  });
+});
+
+// ── 复审轮2 补测：vmess httpupgrade 往返对称 / SIP002 裸 IPv6 + plugin ──
+describe('复审轮2 边界', () => {
+  it('vmess httpupgrade 往返不动点（generate 回写 path/host，不退化空值）', () => {
+    const url =
+      'vmess://' +
+      Buffer.from(
+        JSON.stringify({
+          v: '2',
+          ps: 'VHU',
+          add: 'x.com',
+          port: '443',
+          id: 'uid',
+          aid: '0',
+          scy: 'auto',
+          net: 'httpupgrade',
+          path: '/up',
+          host: 'cdn.example.com',
+          tls: 'tls',
+          sni: 's.com',
+          fp: 'chrome',
+        })
+      ).toString('base64');
+    const first = parser.parseUrl(url);
+    expect(first.wsSettings).toEqual({ path: '/up', headers: { Host: 'cdn.example.com' } });
+    const second = parser.parseUrl(parser.generateUrl(first));
+    expect(second.network).toBe('httpupgrade');
+    expect(second.wsSettings).toEqual({ path: '/up', headers: { Host: 'cdn.example.com' } });
+  });
+
+  it('SIP002 裸 IPv6 + /?plugin= 形态：/ 前截断 hostPort，端口拆分不受破坏', () => {
+    const b64 = Buffer.from('aes-128-gcm:pw').toString('base64');
+    const c = parser.parseUrl(
+      `ss://${b64}@2001:db8::1:8388/?plugin=obfs-local%3Bobfs%3Dhttp#ss-v6-plugin`
+    );
+    expect(c.address).toBe('2001:db8::1');
+    expect(c.port).toBe(8388);
+    expect(c.shadowsocksSettings?.plugin).toBe('obfs-local');
+  });
+});

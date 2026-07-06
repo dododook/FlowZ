@@ -97,6 +97,16 @@ type SingboxOutbound = {
   idle_session_check_interval?: string;
   idle_session_timeout?: string;
   min_idle_session?: number;
+  // ssh（private_key_path 属本机文件路径，跨设备订阅无意义，不收；其余 sing-box ssh outbound 字段全收）
+  user?: string;
+  private_key?: string;
+  private_key_passphrase?: string;
+  host_key?: string[];
+  host_key_algorithms?: string[];
+  client_version?: string;
+  cipher?: string[];
+  mac?: string[];
+  kex_algorithm?: string[];
   tls?: SingboxTls;
   transport?: SingboxTransport;
   multiplex?: SingboxMultiplex;
@@ -114,7 +124,11 @@ const SINGBOX_SUPPORTED_TYPES = new Set([
   'anytls',
   'socks',
   'http',
+  'ssh',
 ]);
+
+/** sing-box transport.type → ServerConfig.network 可承载的传输（其余 sing-box 不支持/FlowZ 无落点，整节点跳过）。 */
+const SINGBOX_SUPPORTED_TRANSPORTS = new Set(['ws', 'grpc', 'http', 'httpupgrade']);
 /** sing-box 非代理内部 outbound type（本地导入忽略，不作节点、不透传 custom）。 */
 const SINGBOX_INTERNAL_TYPES = new Set(['direct', 'block', 'dns', 'selector', 'urltest']);
 
@@ -182,7 +196,10 @@ export class SubscriptionService {
       s.sshSettings?.password ||
       s.wireguardSettings?.peerPublicKey ||
       '';
-    return `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}`;
+    // network 维度：同 host:port:cred 但传输不同（tcp vs ws vs grpc）是不同节点，缺此维度会被误并静默吞节点。
+    // 指纹不持久化——reconcile 对新旧两侧用同一函数现算，归一化（h2→http/raw→tcp）对两侧等价，
+    // 存量节点 id / selectedServerId 不受本次加维度影响。
+    return `${(s.protocol || '').toLowerCase()}|${s.address}|${s.port}|${cred}|${(s.network || 'tcp').toLowerCase()}`;
   }
 
   /**
@@ -299,13 +316,33 @@ export class SubscriptionService {
     const servers: ServerConfig[] = [];
     const now = new Date().toISOString();
 
+    // 丢弃可见性（issue #263 调查项）：原三类 silent continue（不支持 type / 缺 server·port / 不支持 transport）
+    // 完全无日志——「8 进 4 出」用户无从察觉。聚合计数，函数尾统一 warn。
+    const skipByType = new Map<string, number>();
+    let missingFields = 0;
+    const skipByTransport = new Map<string, number>();
+
     for (const ob of outbounds) {
-      if (!SUPPORTED.has(ob.type)) continue;
+      if (!SUPPORTED.has(ob.type)) {
+        // direct/block/selector 等内部 outbound 是配置结构而非节点，不计入「丢弃」噪声。
+        if (!SINGBOX_INTERNAL_TYPES.has(ob.type)) {
+          skipByType.set(ob.type, (skipByType.get(ob.type) ?? 0) + 1);
+        }
+        continue;
+      }
       // 支持仅含 server_ports（端口跳跃、无 server_port）的 Hy2 节点：从首个范围的低位端口推导 port
       const effectivePort =
         ob.server_port ??
         (ob.server_ports?.[0] ? parseInt(ob.server_ports[0].split(':')[0], 10) : undefined);
-      if (!ob.server || !effectivePort) continue;
+      if (!ob.server || !effectivePort) {
+        missingFields++;
+        continue;
+      }
+      // 不支持的 transport（quic 等）：入库会静默降级裸 TCP 产假节点，整节点跳过（与分享链/Clash 路径统一口径）。
+      if (ob.transport?.type && !SINGBOX_SUPPORTED_TRANSPORTS.has(ob.transport.type)) {
+        skipByTransport.set(ob.transport.type, (skipByTransport.get(ob.transport.type) ?? 0) + 1);
+        continue;
+      }
 
       try {
         const base: Partial<ServerConfig> = {
@@ -346,7 +383,7 @@ export class SubscriptionService {
         // Transport
         if (ob.transport?.type) {
           const t = ob.transport;
-          const netType = t.type as 'ws' | 'grpc' | 'http' | 'httpupgrade' | 'tcp';
+          const netType = t.type as 'ws' | 'grpc' | 'http' | 'httpupgrade';
           base.network = netType;
           if (netType === 'ws') {
             // 与 httpupgrade 对齐：transport.host 折叠进 Host header（部分配置把 ws Host 放在 t.host），
@@ -484,6 +521,29 @@ export class SubscriptionService {
             username: ob.username,
             password: ob.password,
           });
+        } else if (ob.type === 'ssh') {
+          // ssh：与 Clash 路径（ClashSubscriptionParser mapNode ssh 分支）对齐的落点；
+          // private_key_path 是本机文件路径、跨设备订阅无意义，刻意不映射。
+          const ssh: NonNullable<ServerConfig['sshSettings']> = {};
+          if (ob.user) ssh.user = ob.user;
+          if (ob.password) ssh.password = ob.password;
+          if (ob.private_key) ssh.privateKey = ob.private_key;
+          if (ob.private_key_passphrase) ssh.privateKeyPassphrase = ob.private_key_passphrase;
+          if (ob.host_key && ob.host_key.length > 0) ssh.hostKey = ob.host_key;
+          if (ob.host_key_algorithms && ob.host_key_algorithms.length > 0)
+            ssh.hostKeyAlgorithms = ob.host_key_algorithms;
+          if (ob.client_version) ssh.clientVersion = ob.client_version;
+          // 算法协商覆盖（对接老/特定 SSH 服务端）：丢弃会静默退回默认算法集、连不上且无从排查。
+          if (ob.cipher && ob.cipher.length > 0) ssh.cipher = ob.cipher;
+          if (ob.mac && ob.mac.length > 0) ssh.mac = ob.mac;
+          if (ob.kex_algorithm && ob.kex_algorithm.length > 0) ssh.kexAlgorithm = ob.kex_algorithm;
+          servers.push({
+            ...(base as ServerConfig),
+            protocol: 'ssh',
+            network: 'tcp',
+            security: 'none',
+            sshSettings: Object.keys(ssh).length > 0 ? ssh : undefined,
+          });
         }
       } catch (e: any) {
         this.logManager.addLog(
@@ -492,6 +552,21 @@ export class SubscriptionService {
           'Subscription'
         );
       }
+    }
+    if (skipByType.size > 0) {
+      const detail = [...skipByType.entries()].map(([t, c]) => `${t}(${c})`).join(', ');
+      this.logManager.addLog('warn', `跳过不支持的 outbound 类型: ${detail}`, 'Subscription');
+    }
+    if (skipByTransport.size > 0) {
+      const detail = [...skipByTransport.entries()].map(([t, c]) => `${t}(${c})`).join(', ');
+      this.logManager.addLog('warn', `跳过不支持的传输层类型: ${detail}`, 'Subscription');
+    }
+    if (missingFields > 0) {
+      this.logManager.addLog(
+        'warn',
+        `跳过 ${missingFields} 个缺 server/port 的 outbound`,
+        'Subscription'
+      );
     }
     return servers;
   }
@@ -743,10 +818,18 @@ export class SubscriptionService {
       }
     }
 
-    const lines = decodedContent.split(/\r?\n/).filter((line) => line.trim().length > 0);
+    // trim 每行（与 parseLocalContent 口径一致）：前导空白的合法链接否则被 startsWith 误判「不支持 scheme」。
+    const lines = decodedContent
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
     const servers: ServerConfig[] = [];
     const now = new Date().toISOString();
 
+    // 丢弃可见性（issue #263）：逐行 warn 之外聚合两类丢弃计数——①scheme 不受支持的行（原完全静默）
+    // ②解析失败的行（原只有散落 warn）——最终 info 一并给出，用户不翻告警也能看出「导入不全」。
+    let failedLines = 0;
+    const unsupportedSchemes = new Map<string, number>();
     for (const line of lines) {
       if (this.protocolParser.isSupported(line)) {
         try {
@@ -756,9 +839,21 @@ export class SubscriptionService {
           server.updatedAt = now;
           servers.push(server);
         } catch (e: any) {
+          failedLines++;
           this.logManager.addLog('warn', `解析订阅中的节点失败: ${e.message}`, 'Subscription');
         }
+      } else if (line.includes('://')) {
+        const scheme = line.split('://')[0].trim().toLowerCase();
+        unsupportedSchemes.set(scheme, (unsupportedSchemes.get(scheme) ?? 0) + 1);
       }
+    }
+    if (unsupportedSchemes.size > 0) {
+      const detail = [...unsupportedSchemes.entries()].map(([s, c]) => `${s}(${c})`).join(', ');
+      this.logManager.addLog(
+        'warn',
+        `跳过不支持的协议链接: ${detail}`,
+        'Subscription'
+      );
     }
 
     if (servers.length === 0) {
@@ -774,7 +869,12 @@ export class SubscriptionService {
       }
       return { servers: [] };
     }
-    this.logManager.addLog('info', `成功从订阅解析了 ${servers.length} 个节点`, 'Subscription');
+    const skippedTotal = failedLines + [...unsupportedSchemes.values()].reduce((a, b) => a + b, 0);
+    this.logManager.addLog(
+      'info',
+      `成功从订阅解析了 ${servers.length} 个节点${skippedTotal > 0 ? `（另有 ${skippedTotal} 条被跳过/失败，详见上方告警）` : ''}`,
+      'Subscription'
+    );
     return { servers };
   }
 

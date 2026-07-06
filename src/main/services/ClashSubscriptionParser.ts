@@ -188,6 +188,11 @@ function applyTransportAndTls(
     const edhn = str(wsOpts['early-data-header-name']);
     if (edhn) ws.earlyDataHeaderName = edhn;
     if (Object.keys(ws).length > 0) config.wsSettings = ws;
+    // mihomo 的 HTTPUpgrade 表达 = network:ws + ws-opts.v2ray-http-upgrade:true（无独立 network 值）。
+    // 不识别会导入成纯 ws——服务端等 HTTP Upgrade、客户端发 WS 帧的必死假节点（issue #263 同类）。
+    if (bool(wsOpts['v2ray-http-upgrade']) === true) {
+      config.network = 'httpupgrade';
+    }
   } else if (rawNet === 'grpc') {
     config.network = 'grpc';
     const grpcOpts = (p['grpc-opts'] as Record<string, unknown>) || {};
@@ -215,13 +220,21 @@ function applyTransportAndTls(
       if (single) httpSettings.host = [single];
     }
     if (Object.keys(httpSettings).length > 0) config.httpSettings = httpSettings;
+  } else if (rawNet && rawNet !== 'tcp') {
+    // xhttp/splithttp/kcp 等 sing-box 不支持的传输：静默落 tcp 会产出连不上的假节点，
+    // 整节点拒绝（mapNode catch 计 fail、聚合告警；与分享链/sing-box JSON 路径统一口径，issue #263）。
+    throw new Error(`不支持的传输层类型: ${rawNet}`);
   }
-  // 其余 network（缺省/tcp）不写，等价 tcp。
+  // 缺省/tcp 不写，等价 tcp。
 
   // —— TLS / Reality —— //
   const tlsEnabled = bool(p['tls']) === true || forceTls;
   const realityOpts = p['reality-opts'] as Record<string, unknown> | undefined;
   const hasReality = !!realityOpts && !!str(realityOpts['public-key']);
+  if (realityOpts && !hasReality) {
+    // 带 reality-opts 却缺 public-key：按普通 TLS 入库无法完成 Reality 握手（假节点），整节点拒绝。
+    throw new Error('reality-opts 缺少 public-key');
+  }
 
   if (tlsEnabled || hasReality) {
     config.security = hasReality ? 'reality' : 'tls';
