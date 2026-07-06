@@ -37,6 +37,7 @@ describe('isSupported', () => {
     'hy2://x',
     'ss://x',
     'anytls://x',
+    'snell://x',
     'tuic://x',
     'naive://x',
     'http2://x',
@@ -860,5 +861,84 @@ describe('复审轮2 边界', () => {
     expect(c.address).toBe('2001:db8::1');
     expect(c.port).toBe(8388);
     expect(c.shadowsocksSettings?.plugin).toBe('obfs-local');
+  });
+});
+
+// ── Snell（一等公民，issue #146）：事实形态分享链 parse/generate ──
+describe('Snell', () => {
+  it('v4 + obfs http 特征', () => {
+    const c = parser.parseUrl(
+      'snell://psk-secret@s.example.com:443?version=4&obfs=http&obfs-host=bing.com&reuse=1#snell-4'
+    );
+    expect(c.protocol).toBe('snell');
+    expect(c.password).toBe('psk-secret');
+    expect(c.snellSettings).toEqual({
+      version: 4,
+      obfsMode: 'http',
+      obfsHost: 'bing.com',
+      reuse: true,
+    });
+    expect(c.name).toBe('snell-4');
+  });
+
+  it('version 缺省 = 4', () => {
+    const c = parser.parseUrl('snell://pw@s.example.com:443#n');
+    expect(c.snellSettings?.version).toBe(4);
+  });
+
+  it('v6 特征（mode/network/userkey）', () => {
+    const c = parser.parseUrl(
+      'snell://pw@s.example.com:443?version=6&mode=unsafe-raw&network=tcp&userkey=uk#snell-6'
+    );
+    expect(c.snellSettings).toEqual({
+      version: 6,
+      mode: 'unsafe-raw',
+      network: 'tcp',
+      userkey: 'uk',
+    });
+  });
+
+  it('缺 psk / 版本非 4|6 / obfs=tls（sing-box 无能力）→ 整节点拒绝', () => {
+    expect(() => parser.parseUrl('snell://@s.example.com:443?version=4')).toThrow(/缺少 psk/);
+    expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=3')).toThrow(/仅支持 4\/6/);
+    expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=4&obfs=tls')).toThrow(
+      /obfs 不受支持/
+    );
+  });
+
+  it('往返不动点 v4 obfs http', () =>
+    void expectRoundTripStable(
+      'snell://psk-secret@s.example.com:443?version=4&obfs=http&obfs-host=bing.com&reuse=1#snell-4'
+    ));
+
+  it('往返不动点 v6 mode/userkey', () =>
+    void expectRoundTripStable(
+      'snell://pw@s.example.com:443?version=6&mode=unsafe-raw&network=tcp&userkey=uk#snell-6'
+    ));
+});
+
+// ── Snell review 补测：psk 特殊字符往返 / v6+obfs 拒绝 ──
+describe('Snell — review 边界补测', () => {
+  it('psk 含 : @ # ?（URL 编码）→ 解析还原 + 往返不动点', () => {
+    const psk = 'p:a@b#c?d';
+    const url = `snell://${encodeURIComponent(psk)}@s.example.com:443?version=4#sp`;
+    const c = parser.parseUrl(url);
+    expect(c.password).toBe(psk);
+    void expectRoundTripStable(url);
+  });
+
+  it('psk 含未编码 :（URL 引擎拆 username:password）→ 两段拼回不截断', () => {
+    const c = parser.parseUrl('snell://part1:part2@s.example.com:443?version=4#n');
+    expect(c.password).toBe('part1:part2');
+  });
+
+  it('v6 + obfs → 拒绝（sing-box v6 无混淆能力）', () => {
+    expect(() =>
+      parser.parseUrl('snell://pw@s.example.com:443?version=6&obfs=http#n')
+    ).toThrow(/obfs 不受支持/);
+  });
+
+  it('空白 psk → 拒绝（trim 语义与 completeness 闸门对齐）', () => {
+    expect(() => parser.parseUrl('snell://%20@s.example.com:443?version=4#n')).toThrow(/缺少 psk/);
   });
 });

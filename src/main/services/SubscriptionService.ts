@@ -107,6 +107,15 @@ type SingboxOutbound = {
   cipher?: string[];
   mac?: string[];
   kex_algorithm?: string[];
+  // snell（sing-box 1.14.0-alpha.38+；version 与 ShadowTLS 共用字段名）
+  version?: number;
+  psk?: string;
+  userkey?: string;
+  reuse?: boolean;
+  obfs_mode?: string;
+  obfs_host?: string;
+  mode?: string;
+  network?: string;
   tls?: SingboxTls;
   transport?: SingboxTransport;
   multiplex?: SingboxMultiplex;
@@ -122,6 +131,7 @@ const SINGBOX_SUPPORTED_TYPES = new Set([
   'vmess',
   'tuic',
   'anytls',
+  'snell',
   'socks',
   'http',
   'ssh',
@@ -543,6 +553,40 @@ export class SubscriptionService {
             network: 'tcp',
             security: 'none',
             sshSettings: Object.keys(ssh).length > 0 ? ssh : undefined,
+          });
+        } else if (ob.type === 'snell') {
+          // sing-box 官方 snell（1.14.0-alpha.38+）：version 仅 4/6；psk 复用 password 落点。
+          // 超出能力（旧版本号/缺 psk）warn 跳过——validateConfig 对 snell 必填强校验，坏节点入库会连累整份订阅保存失败。
+          if (ob.version !== 4 && ob.version !== 6) {
+            this.logManager.addLog(
+              'warn',
+              `跳过 snell outbound "${ob.tag}"：版本 ${ob.version ?? '(缺失)'} 不受支持（sing-box 仅支持 4/6）`,
+              'Subscription'
+            );
+            continue;
+          }
+          if (!ob.psk?.trim()) {
+            // trim 语义与 protocolRequirementError 的 password?.trim() 对齐：空白 psk 穿闸入库会连累整份订阅保存。
+            this.logManager.addLog('warn', `跳过 snell outbound "${ob.tag}"：缺 psk`, 'Subscription');
+            continue;
+          }
+          const snell: NonNullable<ServerConfig['snellSettings']> = { version: ob.version };
+          // obfs 仅 v4（SnellSettings 不变量）：v6 携带 obfs_mode 的脏 JSON 不落库，与 URL/Clash 路口径一致。
+          if (ob.version === 4 && ob.obfs_mode === 'http') {
+            snell.obfsMode = 'http';
+            if (ob.obfs_host) snell.obfsHost = ob.obfs_host;
+          }
+          if (ob.version === 6 && (ob.mode === 'unshaped' || ob.mode === 'unsafe-raw')) {
+            snell.mode = ob.mode;
+          }
+          if (ob.reuse) snell.reuse = true;
+          if (ob.network === 'tcp' || ob.network === 'udp') snell.network = ob.network;
+          if (ob.userkey) snell.userkey = ob.userkey;
+          servers.push({
+            ...(base as ServerConfig),
+            protocol: 'snell',
+            password: ob.psk,
+            snellSettings: snell,
           });
         }
       } catch (e: any) {

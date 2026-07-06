@@ -101,6 +101,7 @@ const SUPPORTED_CLASH_TYPES = new Set<Protocol>([
   'hysteria2',
   'tuic',
   'anytls',
+  'snell',
   'socks',
   'http',
   'ssh',
@@ -133,10 +134,12 @@ function normalizeClashType(rawType: unknown): Protocol | null {
       return 'tuic';
     case 'anytls':
       return 'anytls';
+    case 'snell':
+      return 'snell';
     case 'ssh':
       return 'ssh';
     default:
-      return null; // ssr/snell/wireguard/hysteria(v1)/mieru/direct/dns 等 → 不支持
+      return null; // ssr/wireguard/hysteria(v1)/mieru/direct/dns 等 → 不支持
   }
 }
 
@@ -504,6 +507,33 @@ function mapNode(rawProxy: unknown, subscriptionId: string, now: string): NodeOu
       if (minIdle !== undefined) at.minIdleSession = minIdle;
       if (Object.keys(at).length > 0) config.anyTlsSettings = at;
       applyTransportAndTls(config, p, true); // anytls 默认 TLS
+    } else if (protocol === 'snell') {
+      // mihomo snell：psk + version(缺省 1) + obfs-opts{mode:http|tls,host}。
+      // sing-box 官方 snell 仅支持 v4/v6、混淆仅 http——超出能力的（v1-3 / obfs tls）入库也连不上，
+      // 按不支持跳过（skip 聚合告警），不产假节点。
+      const psk = str(p['psk']);
+      // trim 语义与 completeness 闸门对齐：空白 psk 穿闸入库会连累整份订阅保存（validateConfig throw）。
+      if (!psk?.trim()) return { kind: 'fail', reason: `snell 节点 "${name}" 缺 psk` };
+      const rawVersion = p['version'];
+      // 缺省 v1（mihomo 语义）；非数字 version 保留原始值进告警，不误标 snell-v1。
+      const version = num(rawVersion) ?? (rawVersion === undefined ? 1 : undefined);
+      if (version !== 4 && version !== 6) {
+        return { kind: 'skip', reason: `snell-v${version ?? str(rawVersion) ?? '?'}` };
+      }
+      config.password = psk; // psk 复用 password（同 trojan/hysteria2 惯例）
+      const snell: NonNullable<ServerConfig['snellSettings']> = { version: version as 4 | 6 };
+      const obfsOpts = (p['obfs-opts'] as Record<string, unknown>) || {};
+      const obfsMode = str(obfsOpts['mode'])?.toLowerCase();
+      if (obfsMode && obfsMode !== 'none') {
+        if (version === 4 && obfsMode === 'http') {
+          snell.obfsMode = 'http';
+          const host = str(obfsOpts['host']);
+          if (host) snell.obfsHost = host;
+        } else {
+          return { kind: 'skip', reason: `snell-obfs:${obfsMode}` };
+        }
+      }
+      config.snellSettings = snell;
     } else if (protocol === 'socks') {
       // socks5：可选用户名/密码；指纹凭据取 username。
       config.username = str(p['username']);

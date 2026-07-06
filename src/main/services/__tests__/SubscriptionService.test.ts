@@ -756,3 +756,105 @@ describe('issue #263 review 补测 — ssh 算法字段 / 行首空白', () => {
     expect(warns.find((w) => w.message.includes('跳过不支持的协议链接'))).toBeUndefined();
   });
 });
+
+// ── Snell（一等公民，issue #146）：sing-box JSON 订阅路径映射 + 能力门控 ──
+describe('parseSingboxOutbounds — snell', () => {
+  it('v4 obfs http + v6 mode/userkey/reuse/network → 一等映射', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const servers = (svc as any).parseSingboxOutbounds(
+      [
+        {
+          type: 'snell',
+          tag: 'sn4',
+          server: 's.com',
+          server_port: 443,
+          version: 4,
+          psk: 'psk-secret',
+          obfs_mode: 'http',
+          obfs_host: 'bing.com',
+        },
+        {
+          type: 'snell',
+          tag: 'sn6',
+          server: 's.com',
+          server_port: 444,
+          version: 6,
+          psk: 'p6',
+          mode: 'unsafe-raw',
+          reuse: true,
+          network: 'tcp',
+          userkey: 'uk',
+        },
+      ],
+      'sub-x'
+    );
+    expect(servers).toHaveLength(2);
+    expect(servers[0].protocol).toBe('snell');
+    expect(servers[0].password).toBe('psk-secret');
+    expect(servers[0].snellSettings).toEqual({ version: 4, obfsMode: 'http', obfsHost: 'bing.com' });
+    expect(servers[1].snellSettings).toEqual({
+      version: 6,
+      mode: 'unsafe-raw',
+      reuse: true,
+      network: 'tcp',
+      userkey: 'uk',
+    });
+  });
+
+  it('版本非 4|6 / 缺 psk → warn 跳过（防坏节点连累整份订阅保存）', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const servers = (svc as any).parseSingboxOutbounds(
+      [
+        { type: 'snell', tag: 'v3', server: 's.com', server_port: 443, version: 3, psk: 'p' },
+        { type: 'snell', tag: 'nopsk', server: 's.com', server_port: 443, version: 4 },
+      ],
+      'sub-x'
+    );
+    expect(servers).toHaveLength(0);
+    const warns = log.entries
+      .filter((e) => e.level === 'warn')
+      .map((e) => e.message)
+      .join('\n');
+    expect(warns).toMatch(/版本 3 不受支持/);
+    expect(warns).toMatch(/缺 psk/);
+  });
+});
+
+describe('parseSingboxOutbounds — snell review 边界补测', () => {
+  it('v6 + obfs_mode http（脏 JSON）→ obfsMode 不落库（不变量：obfs 仅 v4）', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const servers = (svc as any).parseSingboxOutbounds(
+      [
+        {
+          type: 'snell',
+          tag: 'dirty',
+          server: 's.com',
+          server_port: 443,
+          version: 6,
+          psk: 'p',
+          obfs_mode: 'http',
+          obfs_host: 'x.com',
+        },
+      ],
+      'sub-x'
+    );
+    expect(servers).toHaveLength(1);
+    expect(servers[0].snellSettings).toEqual({ version: 6 });
+  });
+
+  it('空白 psk → warn 跳过（trim 语义对齐 completeness）', () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const servers = (svc as any).parseSingboxOutbounds(
+      [{ type: 'snell', tag: 'blank', server: 's.com', server_port: 443, version: 4, psk: '  ' }],
+      'sub-x'
+    );
+    expect(servers).toHaveLength(0);
+    expect(
+      log.entries.filter((e) => e.level === 'warn').map((e) => e.message).join('\n')
+    ).toMatch(/缺 psk/);
+  });
+});

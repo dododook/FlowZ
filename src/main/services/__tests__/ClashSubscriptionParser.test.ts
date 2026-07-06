@@ -1384,3 +1384,105 @@ describe('mihomo HTTPUpgrade 表达（network:ws + v2ray-http-upgrade）', () =>
     expect(servers[0].network).toBe('ws');
   });
 });
+
+// ── Snell（一等公民，issue #146）：mihomo yaml → snellSettings，按 sing-box 能力门控 ──
+describe('parseClashProxies — snell', () => {
+  const NOW = '2026-07-07T00:00:00.000Z';
+
+  it('v4 + obfs-opts http → 一等映射', () => {
+    const { servers, skipped, failed } = parseClashProxies(
+      [
+        {
+          name: 'sn',
+          type: 'snell',
+          server: 's.com',
+          port: 443,
+          psk: 'psk-secret',
+          version: 4,
+          'obfs-opts': { mode: 'http', host: 'bing.com' },
+        },
+      ],
+      'sub',
+      NOW
+    );
+    expect(failed).toBe(0);
+    expect(skipped).toBe(0);
+    expect(servers).toHaveLength(1);
+    expect(servers[0].protocol).toBe('snell');
+    expect(servers[0].password).toBe('psk-secret');
+    expect(servers[0].snellSettings).toEqual({ version: 4, obfsMode: 'http', obfsHost: 'bing.com' });
+  });
+
+  it('v6 无混淆 → 映射', () => {
+    const { servers } = parseClashProxies(
+      [{ name: 'sn6', type: 'snell', server: 's.com', port: 443, psk: 'p', version: 6 }],
+      'sub',
+      NOW
+    );
+    expect(servers[0].snellSettings).toEqual({ version: 6 });
+  });
+
+  it('v1（缺省）/v3（mihomo 旧协议）→ skip 聚合（sing-box 仅 4/6）；obfs tls → skip；缺 psk → fail', () => {
+    const r = parseClashProxies(
+      [
+        { name: 'v1', type: 'snell', server: 's.com', port: 443, psk: 'p' }, // 缺省 version=1
+        { name: 'v3', type: 'snell', server: 's.com', port: 443, psk: 'p', version: 3 },
+        {
+          name: 'tls',
+          type: 'snell',
+          server: 's.com',
+          port: 443,
+          psk: 'p',
+          version: 4,
+          'obfs-opts': { mode: 'tls', host: 'x.com' },
+        },
+        { name: 'nopsk', type: 'snell', server: 's.com', port: 443, version: 4 },
+      ],
+      'sub',
+      NOW
+    );
+    expect(r.servers).toHaveLength(0);
+    expect(r.skipped).toBe(3);
+    expect(r.failed).toBe(1);
+    const w = r.warnings.join('\n');
+    expect(w).toMatch(/snell-v1\(1\)/);
+    expect(w).toMatch(/snell-v3\(1\)/);
+    expect(w).toMatch(/snell-obfs:tls\(1\)/);
+    expect(w).toMatch(/缺 psk/);
+  });
+});
+
+describe('parseClashProxies — snell review 边界补测', () => {
+  const NOW = '2026-07-07T00:00:00.000Z';
+
+  it('v6 + obfs-opts http → skip（obfs 仅 v4）', () => {
+    const r = parseClashProxies(
+      [
+        {
+          name: 'v6obfs',
+          type: 'snell',
+          server: 's.com',
+          port: 443,
+          psk: 'p',
+          version: 6,
+          'obfs-opts': { mode: 'http', host: 'x.com' },
+        },
+      ],
+      'sub',
+      NOW
+    );
+    expect(r.servers).toHaveLength(0);
+    expect(r.skipped).toBe(1);
+    expect(r.warnings.join('\n')).toMatch(/snell-obfs:http/);
+  });
+
+  it('version 非数字（abc）→ skip 告警保留原始值，不误标 v1', () => {
+    const r = parseClashProxies(
+      [{ name: 'bad', type: 'snell', server: 's.com', port: 443, psk: 'p', version: 'abc' }],
+      'sub',
+      NOW
+    );
+    expect(r.skipped).toBe(1);
+    expect(r.warnings.join('\n')).toMatch(/snell-vabc/);
+  });
+});

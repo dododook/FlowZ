@@ -11,6 +11,9 @@ export const SUPPORTED_URL_SCHEMES = [
   'hy2',
   'ss',
   'anytls',
+  // snell 无标准 scheme，此为 Surge 生态工具（sub-store 等）的事实形态：
+  // snell://psk@host:port?version=4&obfs=http&obfs-host=bing.com#name
+  'snell',
   'tuic',
   'naive',
   'http2',

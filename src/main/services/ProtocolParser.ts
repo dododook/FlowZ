@@ -17,6 +17,7 @@ import type {
   Hysteria2Settings,
   Hysteria2Network,
   AnyTlsSettings,
+  SnellSettings,
   LogLevel,
 } from '../../shared/types';
 import { normalizeDuration } from '../../shared/duration';
@@ -164,6 +165,8 @@ export class ProtocolParser implements IProtocolParser {
         return this.parseShadowsocks(urlObj);
       } else if (protocol === 'anytls') {
         return this.parseAnyTls(urlObj);
+      } else if (protocol === 'snell') {
+        return this.parseSnell(urlObj);
       } else if (protocol === 'tuic') {
         return this.parseTuic(urlObj);
       } else if (protocol === 'naive') {
@@ -197,7 +200,7 @@ export class ProtocolParser implements IProtocolParser {
 
   /**
    * 解析标准 `scheme://cred@host:port?params#name` URL 的公共头部：去括号地址 / 端口缺省 /
-   * 查询参数 / 名称缺省回落 address:port。服务 vless/trojan/hysteria2/anytls/naive/socks/http；
+   * 查询参数 / 名称缺省回落 address:port。服务 vless/trojan/hysteria2/anytls/snell/naive/socks/http；
    * VMess(base64 JSON)、Shadowsocks(名称缺省 'Shadowsocks')、TUIC(名称缺省 'TUIC Node') 名称/凭据形态各异，不走此助手。
    */
   private parseBase(
@@ -514,6 +517,63 @@ export class ProtocolParser implements IProtocolParser {
     }
 
     return config;
+  }
+
+  /**
+   * 解析 Snell URL（无标准 scheme；对齐 Surge 生态工具 sub-store 等的事实形态）
+   * 格式: snell://psk@address:port?version=4&obfs=http&obfs-host=bing.com&reuse=1&userkey=uk#name
+   * version 缺省 4；sing-box 官方 snell 仅支持 4/6（v1-3 为 Surge/mihomo 旧协议版本），
+   * 版本/混淆超出能力（如 obfs=tls）→ 整节点拒绝（入库也连不上，防假节点；订阅逐行 catch 聚合告警）。
+   */
+  private parseSnell(url: URL): ServerConfig {
+    // psk 含未编码 ':' 时 URL 引擎会拆成 username:password——两段拼回，避免 psk 静默截断成假节点。
+    const psk = decodeURIComponent(
+      url.password ? `${url.username}:${url.password}` : url.username
+    );
+    const { address, port, params, name } = this.parseBase(url);
+
+    if (!psk.trim()) {
+      // trim 语义与 completeness 闸门（password?.trim()）对齐。
+      throw new Error('Snell URL 缺少 psk');
+    }
+    const rawVersion = params.get('version') ?? params.get('v') ?? '4';
+    const version = parseInt(rawVersion, 10);
+    if (version !== 4 && version !== 6) {
+      throw new Error(`Snell 版本不受支持（sing-box 仅支持 4/6）: ${rawVersion}`);
+    }
+
+    const snell: SnellSettings = { version };
+    const obfs = (params.get('obfs') ?? params.get('obfs-mode'))?.toLowerCase();
+    if (obfs && obfs !== 'none') {
+      if (version === 4 && obfs === 'http') {
+        snell.obfsMode = 'http';
+        const host = params.get('obfs-host');
+        if (host) snell.obfsHost = host;
+      } else {
+        // v4 tls 混淆（Surge 旧形态）/ v6 带 obfs：sing-box snell 无对应能力。
+        throw new Error(`Snell obfs 不受支持: ${obfs}`);
+      }
+    }
+    if (version === 6) {
+      const mode = params.get('mode');
+      if (mode === 'unshaped' || mode === 'unsafe-raw') snell.mode = mode;
+    }
+    const reuse = params.get('reuse');
+    if (reuse === '1' || reuse === 'true') snell.reuse = true;
+    const network = params.get('network');
+    if (network === 'tcp' || network === 'udp') snell.network = network;
+    const userkey = params.get('userkey');
+    if (userkey) snell.userkey = userkey;
+
+    return {
+      id: randomUUID(),
+      name,
+      protocol: 'snell',
+      address,
+      port,
+      password: psk, // psk 复用 password 字段（同 trojan/hysteria2 惯例）
+      snellSettings: snell,
+    };
   }
 
   /**
@@ -1057,6 +1117,8 @@ export class ProtocolParser implements IProtocolParser {
       return this.generateShadowsocksUrl(config);
     } else if (protocol === 'anytls') {
       return this.generateAnyTlsUrl(config);
+    } else if (protocol === 'snell') {
+      return this.generateSnellUrl(config);
     } else if (protocol === 'tuic') {
       return this.generateTuicUrl(config);
     } else if (protocol === 'naive') {
@@ -1077,8 +1139,29 @@ export class ProtocolParser implements IProtocolParser {
   }
 
   /**
+   * 生成 Snell URL（与 parseSnell 对称的事实形态）：version 恒写；obfs 仅 v4+http；mode 仅 v6 非 default。
+   */
+  private generateSnellUrl(config: ServerConfig): string {
+    const params = new URLSearchParams();
+    const s = config.snellSettings;
+    params.set('version', String(s?.version ?? 4));
+    if (s?.version === 4 && s.obfsMode === 'http') {
+      params.set('obfs', 'http');
+      if (s.obfsHost) params.set('obfs-host', s.obfsHost);
+    }
+    if (s?.version === 6 && s.mode && s.mode !== 'default') {
+      params.set('mode', s.mode);
+    }
+    if (s?.reuse) params.set('reuse', '1');
+    if (s?.network) params.set('network', s.network);
+    if (s?.userkey) params.set('userkey', s.userkey);
+    const psk = encodeURIComponent(config.password || '');
+    return this.buildShareUrl('snell', psk, config, params);
+  }
+
+  /**
    * 组装标准分享 URL：`scheme://credentials@address:port[?query]#name`（凭据由各 generate 自行算好后传入）。
-   * 服务 vless/trojan/hysteria2/anytls/naive/shadowsocks；socks/http 凭据可选（无 @ 前缀）、
+   * 服务 vless/trojan/hysteria2/anytls/snell/naive/shadowsocks；socks/http 凭据可选（无 @ 前缀）、
    * tuic/vmess 名称或整体形态特殊，不走此助手。
    */
   private buildShareUrl(

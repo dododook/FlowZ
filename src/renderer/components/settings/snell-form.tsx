@@ -34,7 +34,8 @@ const SNELL_MIN_CORE = '1.14.0-alpha.38';
 
 // Snell（sing-box 1.14.0-alpha.38+ 官方 outbound）：psk 进通用 password（同 trojan/hysteria2 惯例），
 // version 4|6 为主开关——obfs*（仅 v4）与 mode（仅 v6）互斥，按 version 条件渲染，提交时 normalize
-// 只保留当前 version 对应字段，防脏字段下发。无标准分享链接（表单录入 only）。
+// 只保留当前 version 对应字段，防脏字段下发。分享链/订阅解析（snell:// 事实形态 + Clash + sing-box JSON）
+// 见 ProtocolParser.parseSnell / ClashSubscriptionParser / SubscriptionService.parseSingboxOutbounds。
 const createSnellSchema = (t: any) =>
   z.object({
     address: z.string().min(1, t('servers.addressRequired')),
