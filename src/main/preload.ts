@@ -78,10 +78,24 @@ const electronAPI = {
     },
 
     /**
-     * 监听主进程事件
+     * 监听主进程事件，返回「身份守恒」的退订闭包。
+     *
+     * 为什么退订不能靠渲染层把 listener 再传回来：跨 contextBridge 每传一次函数都会生成一个新 proxy，
+     * 退订时传回的 proxy ≠ 注册时的 proxy → ipcRenderer.removeListener 按引用比对失败、静默 no-op，
+     * 监听器泄漏（#242：窗口最小化/恢复循环每轮 detach/attach 净增一个 EVENT_<topic> 监听器，旧监听器
+     * 仍持续触发，CPU 攀升）。
+     * 解法：在 preload/Node 侧自建 wrappedListener 并注册，退订闭包在同侧直接 removeListener 同一引用——
+     * 退订全程不跨界、不依赖函数身份守恒，proxy 每次新建也无妨。
      */
-    on: (channel: string, listener: (event: IpcRendererEvent, ...args: any[]) => void) => {
-      ipcRenderer.on(channel, listener);
+    on: (
+      channel: string,
+      listener: (event: IpcRendererEvent, ...args: any[]) => void
+    ): (() => void) => {
+      const wrappedListener = (event: IpcRendererEvent, ...args: any[]) => listener(event, ...args);
+      ipcRenderer.on(channel, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(channel, wrappedListener);
+      };
     },
 
     /**
@@ -92,7 +106,8 @@ const electronAPI = {
     },
 
     /**
-     * 取消监听主进程事件
+     * 取消监听主进程事件（旧路径，身份不守恒——渲染层传回的 listener 是新 proxy，removeListener 多为 no-op）。
+     * 现役退订走 on() 返回的闭包；此方法仅保留兼容，实际退订应优先用 on 的返回值 / removeAllListeners 兜底。
      */
     off: (channel: string, listener: (...args: any[]) => void) => {
       ipcRenderer.off(channel, listener);
