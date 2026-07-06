@@ -56,7 +56,10 @@ export function isTlsSpoofSupportedProtocol(protocol: string | undefined): boole
  *   3. 诱饵 SNI 非空；
  *   4. 诱饵 SNI 非 IP 字面量（内核拒 `spoof requires TLS ClientHello with SNI`）；
  *   5.（仅 outbound：传入 protocol 时）协议为标准 TCP-TLS 栈（排除 hy2/tuic/naive）；
- *   6.（仅 outbound：传入 serverSni 时）诱饵 SNI 不同于真 server_name（内核 FATAL `spoof must differ from server_name`）。
+ *   6.（仅 outbound：传入 serverSni 时）诱饵 SNI 不同于真 server_name（内核 FATAL `spoof must differ from server_name`）；
+ *   7.（仅 outbound：传入 serverSni 时）**真 server_name 本身非 IP 字面量**——节点 address 为 IP 且未填 serverName 时
+ *      server_name 回退为 IP，真握手无 SNI → 内核 init 同样报 `spoof requires TLS ClientHello with SNI` 致整配置 FATAL
+ *      （与第 4 条对诱饵的判定对称，落实本文件 §硬限界 3 的不变量）。route action 无固定 server_name 上下文（不传 serverSni）→ 天然跳过。
  * 提权是运行期生效条件，不影响配置合法性 → 不在此门控（UI 已提示）。
  *
  * @param isIpLiteral 注入的 IP 字面量判定（shared/dns.isIpLiteral）；保持 shared/tls-spoof 零跨模块依赖。
@@ -75,5 +78,7 @@ export function validateTlsSpoof(
   if (isIpLiteral(sni)) return false;
   if (opts?.protocol !== undefined && !isTlsSpoofSupportedProtocol(opts.protocol)) return false;
   if (opts?.serverSni !== undefined && sni === opts.serverSni) return false;
+  // 真 server_name 为 IP 字面量（address 是 IP 且未填 serverName 时的回退）→ 真握手无 SNI，内核 init FATAL。绝不下发。
+  if (opts?.serverSni !== undefined && isIpLiteral(opts.serverSni)) return false;
   return true;
 }

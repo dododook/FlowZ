@@ -19,6 +19,7 @@ import type { SingBoxInbound } from '../singbox-config-types';
 import type { UserConfig } from '../../../shared/types';
 import { withPlatform } from './platform-test-utils';
 import { cidrOverlapsAny } from '../../../shared/ip';
+import { BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP } from '../../../shared/dns';
 import * as os from 'os';
 
 const deps = (over: Partial<InboundsDeps> = {}): InboundsDeps => ({
@@ -134,6 +135,19 @@ describe('buildInbounds — TUN', () => {
     expect(tun.stack).toBe('system'); // Windows system 栈
     expect(tun.route_exclude_address).toContain('10.0.0.0/8'); // bypassLAN 默认 true
     expect(tun.route_exclude_address).toContain('223.5.5.5/32'); // 核心 DNS 防回流
+  });
+
+  it('Windows TUN：核心 DNS 排除表 ⊇ 派生集（BOOTSTRAP_DIRECT_DNS_IPS + 受控 TUN DNS IP，各 /32），不含 SoT 外杂项 1.1.1.1', () => {
+    const excl = byTag(
+      withPlatform('win32', () => buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())),
+      'tun-in'
+    ).route_exclude_address as string[];
+    // 派生集：单一真值 BOOTSTRAP_DIRECT_DNS_IPS（route-builder 引导直连同源）+ CONTROLLED_TUN_DNS_IP（受控接管 IP）。
+    const derived = [...BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP].map((ip) => `${ip}/32`);
+    for (const cidr of derived) expect(excl).toContain(cidr);
+    // 8.8.8.8（受控 TUN DNS IP）随派生集在内；SoT 外杂项 1.1.1.1 已移除（核心从不据此直连）。
+    expect(excl).toContain(`${CONTROLLED_TUN_DNS_IP}/32`);
+    expect(excl).not.toContain('1.1.1.1/32');
   });
 
   it('Windows TUN：下发固定接口名 interface_name=flowz-tun0（缺省，issue #159 适配器释放门控锚点）', () => {

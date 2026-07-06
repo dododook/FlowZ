@@ -871,6 +871,45 @@ describe('buildProxyOutbound — TLS spoof（P3a 抗审查）', () => {
     expect(ob.tls.spoof_method).toBeUndefined();
   });
 
+  it('真 server_name 为 IP 字面量（address=IP 且未填 serverName）→ 不下发（内核 init FATAL `spoof requires TLS ClientHello with SNI`）', () => {
+    const ob = buildProxyOutbound(
+      node({
+        address: '198.51.100.7', // IP 节点 + 未填 serverName → server_name 回退为 IP
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: {
+          spoofSni: 'decoy.microsoft.com', // 诱饵合法（域名、非空、异于真 SNI）
+          spoofMethod: 'wrong-ack',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.server_name).toBe('198.51.100.7'); // 回退为 IP 字面量
+    expect(ob.tls.spoof).toBeUndefined();
+    expect(ob.tls.spoof_method).toBeUndefined();
+  });
+
+  it('IP 节点但显式填了域名 serverName → 真 server_name 是域名 → 正常下发 spoof', () => {
+    const ob = buildProxyOutbound(
+      node({
+        address: '198.51.100.7',
+        protocol: 'trojan',
+        password: 'pw',
+        security: 'tls',
+        tlsSettings: {
+          serverName: 'real.example.com', // 显式域名 → 真握手有 SNI
+          spoofSni: 'decoy.microsoft.com',
+          spoofMethod: 'wrong-ack',
+        },
+      }),
+      tags
+    ) as any;
+    expect(ob.tls.server_name).toBe('real.example.com');
+    expect(ob.tls.spoof).toBe('decoy.microsoft.com');
+    expect(ob.tls.spoof_method).toBe('wrong-ack');
+  });
+
   it('有方法但诱饵 SNI 留空 → 不下发（成对才生效）', () => {
     const ob = buildProxyOutbound(
       node({

@@ -7,7 +7,9 @@ import {
   isValidTlsSpoofMethod,
   isTlsSpoofSupportedArch,
   isTlsSpoofSupportedProtocol,
+  validateTlsSpoof,
 } from '../tls-spoof';
+import { isIpLiteral } from '../dns';
 
 describe('TLS spoof 方法枚举', () => {
   it('恰为 sing-box 1.14 实证的三个合法方法（wrong- 前缀）', () => {
@@ -59,5 +61,39 @@ describe('isTlsSpoofSupportedProtocol（仅标准 TCP-TLS 栈）', () => {
     expect(isTlsSpoofSupportedProtocol('tuic')).toBe(false);
     expect(isTlsSpoofSupportedProtocol('naive')).toBe(false);
     expect(isTlsSpoofSupportedProtocol('Hysteria2')).toBe(false); // 大小写不敏感
+  });
+});
+
+describe('validateTlsSpoof — 真 server_name 为 IP 字面量拦截（第 7 门控）', () => {
+  const ARCH = 'x64'; // 支持 arch，隔离本项判定
+  it('传入的真 server_name 是 IPv4 字面量 → false（不下发，防内核 init FATAL）', () => {
+    expect(
+      validateTlsSpoof('decoy.microsoft.com', 'wrong-ack', ARCH, isIpLiteral, {
+        protocol: 'trojan',
+        serverSni: '198.51.100.7',
+      })
+    ).toBe(false);
+  });
+
+  it('传入的真 server_name 是 IPv6 字面量 → false', () => {
+    expect(
+      validateTlsSpoof('decoy.microsoft.com', 'wrong-ack', ARCH, isIpLiteral, {
+        protocol: 'trojan',
+        serverSni: '2001:db8::1',
+      })
+    ).toBe(false);
+  });
+
+  it('真 server_name 是域名 → true（其余门控满足）', () => {
+    expect(
+      validateTlsSpoof('decoy.microsoft.com', 'wrong-ack', ARCH, isIpLiteral, {
+        protocol: 'trojan',
+        serverSni: 'real.example.com',
+      })
+    ).toBe(true);
+  });
+
+  it('route action 场景：不传 serverSni → 天然跳过第 7 门控（IP 上下文不适用）', () => {
+    expect(validateTlsSpoof('decoy.microsoft.com', 'wrong-ack', ARCH, isIpLiteral)).toBe(true);
   });
 });
