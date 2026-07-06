@@ -441,16 +441,23 @@ export class ConfigManager implements IConfigManager {
       if (!Array.isArray(config.subscriptions)) {
         throw new Error('subscriptions must be an array');
       }
-      for (const sub of config.subscriptions) {
-        if (!sub.id || typeof sub.id !== 'string') {
-          throw new Error('Subscription id is required and must be a string');
-        }
-        if (!sub.name || typeof sub.name !== 'string') {
-          throw new Error('Subscription name is required and must be a string');
-        }
-        if (!sub.url || typeof sub.url !== 'string') {
-          throw new Error('Subscription url is required and must be a string');
-        }
+      // 坏订阅（缺 id/name/url）一律丢弃而非 throw：throw 经 loadConfig catch 会连累整份配置回落默认。
+      // 丢单条坏订阅、保留其余，与全文件 sanitize 惯例一致（catch 已备份原文件，此处再降级为软丢弃）。
+      const beforeSubs = config.subscriptions.length;
+      config.subscriptions = config.subscriptions.filter(
+        (sub) =>
+          sub.id &&
+          typeof sub.id === 'string' &&
+          sub.name &&
+          typeof sub.name === 'string' &&
+          sub.url &&
+          typeof sub.url === 'string'
+      );
+      if (config.subscriptions.length < beforeSubs) {
+        this.log(
+          'warn',
+          `[ConfigManager] 丢弃 ${beforeSubs - config.subscriptions.length} 个缺 id/name/url 的非法订阅`
+        );
       }
     } else {
       config.subscriptions = [];
@@ -562,14 +569,19 @@ export class ConfigManager implements IConfigManager {
     }
 
     // 验证 selectedServerId（'__direct__' 哨兵=全局直连，非真实节点，豁免存在性校验，见 shared/direct-selection）
+    // 悬空/非法一律 sanitize 归 null（不 throw）：上方 Tailscale 单节点去重会丢弃多余 TS 节点，若 selectedServerId
+    // 恰指向被丢弃者，throw 会经 loadConfig catch 触发数据丢失路径（本身自相矛盾——去重是 sanitize 却制造 throw）。
+    // 归 null = 落回「未选中」，用户重选即可，不连累整份配置。与全文件 sanitize-not-throw 惯例一致。
     if (config.selectedServerId !== null && !isDirectSelection(config.selectedServerId)) {
-      if (typeof config.selectedServerId !== 'string') {
-        throw new Error('selectedServerId must be a string or null');
-      }
-      // 检查服务器是否存在
-      const serverExists = config.servers.some((s) => s.id === config.selectedServerId);
-      if (!serverExists) {
-        throw new Error('selectedServerId references a non-existent server');
+      const dangling =
+        typeof config.selectedServerId !== 'string' ||
+        !config.servers.some((s) => s.id === config.selectedServerId);
+      if (dangling) {
+        this.log(
+          'warn',
+          `[ConfigManager] selectedServerId 悬空或非法（指向不存在/已丢弃的节点），归零为未选中`
+        );
+        config.selectedServerId = null;
       }
     }
 
