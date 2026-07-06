@@ -226,8 +226,10 @@ export function ServerPage() {
     setIsSubDialogOpen(true);
   };
 
-  const handleSaveSubscription = (subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>) =>
-    saveSubscription(subData, editingSub);
+  const handleSaveSubscription = async (subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>) => {
+    const sub = await saveSubscription(subData, editingSub);
+    if (!editingSub && sub) setTabOverride(sub.id);
+  };
 
   return (
     <div className="space-y-6">

@@ -147,7 +147,7 @@ export function useServerActions() {
   const saveSubscription = async (
     subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>,
     editingSub: SubscriptionConfig | undefined
-  ) => {
+  ): Promise<SubscriptionConfig | undefined> => {
     if (editingSub) {
       const updatedSub: SubscriptionConfig = {
         ...subData,
@@ -157,11 +157,15 @@ export function useServerActions() {
       };
       const res = await updateSubscription(updatedSub);
       if (res.success) await loadConfig();
+      return undefined;
     } else {
       const res = await addSubscription(subData);
       if (res.success && res.data) {
         await updateSubscriptionServers(res.data.id);
+        // 返回新订阅：调用方（节点页）据此把激活 tab 切到新订阅分组
+        return res.data;
       }
+      return undefined;
     }
   };
 
