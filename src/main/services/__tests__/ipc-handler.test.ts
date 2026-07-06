@@ -49,6 +49,17 @@ describe('IpcHandlerRegistry.register', () => {
     expect(reg.getRegisteredChannels()).toContain(IPC_CHANNELS.CONFIG_GET);
   });
 
+  it('register 在 handle 前先 removeHandler（防 Electron 二次 handle 抛 "second handler"，使生产覆盖注册真生效）', () => {
+    const reg = new IpcHandlerRegistry();
+    const order: string[] = [];
+    removeHandlerSpy.mockImplementationOnce(() => order.push('remove'));
+    handleSpy.mockImplementationOnce(() => order.push('handle'));
+    reg.register(IPC_CHANNELS.CONFIG_GET, async () => 'ok');
+    // removeHandler 必须先于 handle：Electron 对同名 channel 二次 handle 会 throw，先摘除才不崩。
+    expect(order).toEqual(['remove', 'handle']);
+    expect(removeHandlerSpy).toHaveBeenCalledWith(IPC_CHANNELS.CONFIG_GET);
+  });
+
   it('同名 channel 二次注册（开发期 app.isPackaged=false）→ 抛错', () => {
     const reg = new IpcHandlerRegistry();
     reg.register(IPC_CHANNELS.VERSION_GET_INFO, async () => 1);
@@ -135,6 +146,8 @@ describe('IpcHandlerRegistry unregister / unregisterAll', () => {
     const reg = new IpcHandlerRegistry();
     reg.register(IPC_CHANNELS.CONFIG_GET, async () => 1);
     reg.register(IPC_CHANNELS.CONFIG_SAVE, async () => 2);
+    // register 覆盖注册前会先 removeHandler（Fix：防 Electron 二次 handle 抛错），此处只验证 unregisterAll 自身的移除。
+    removeHandlerSpy.mockClear();
     reg.unregisterAll();
     expect(removeHandlerSpy).toHaveBeenCalledTimes(2);
     expect(reg.getRegisteredChannels()).toEqual([]);
