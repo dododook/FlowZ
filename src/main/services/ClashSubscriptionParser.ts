@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { load as yamlLoad } from 'js-yaml';
 import type { ServerConfig, Protocol } from '../../shared/types';
 import { normalizeDuration } from '../../shared/duration';
+import { dedupeTrim } from '../../shared/collections';
 
 // ── 探测正则 / 校验 ──────────────────────────────────────────────────────────
 /** 内联 proxies: 或 proxy-providers: 任一命中即「确为 Clash 意图」。 */
@@ -83,14 +84,17 @@ function pickHostHeader(headers: unknown): string | undefined {
   return undefined;
 }
 
-/** alpn 接受字符串或数组，统一成 string[]。 */
+/**
+ * alpn 接受字符串或数组，统一成 string[]：拆逗号 + dedupeTrim（修剪空白 + 保序去重 + 丢弃空串）。
+ * 与 ProtocolParser 的 ALPN 归一化口径一致——机场可能把 alpn 写成 'h2, http/1.1' 逗号串或
+ * ['h2', ' http/1.1'] 带空格数组，若原样进 sing-box tls.alpn 会按字面匹配致协商失败。
+ * 空 / 纯空白输入返回 undefined 而非 ['']。
+ */
 function toAlpn(v: unknown): string[] | undefined {
-  if (Array.isArray(v)) {
-    const arr = v.map((x) => str(x)).filter((x): x is string => !!x);
-    return arr.length > 0 ? arr : undefined;
-  }
-  const s = str(v);
-  return s ? [s] : undefined;
+  const parts = Array.isArray(v) ? v.map((x) => str(x) ?? '') : [str(v) ?? ''];
+  // 数组元素本身也可能是逗号串（机场混写），先统一拆逗号再归一。
+  const alpn = dedupeTrim(parts.flatMap((s) => s.split(',')));
+  return alpn.length > 0 ? alpn : undefined;
 }
 
 const SUPPORTED_CLASH_TYPES = new Set<Protocol>([

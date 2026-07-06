@@ -942,3 +942,68 @@ describe('Snell — review 边界补测', () => {
     expect(() => parser.parseUrl('snell://%20@s.example.com:443?version=4#n')).toThrow(/缺少 psk/);
   });
 });
+
+describe('ALPN 归一化（逗号串 → 数组统一 dedupeTrim：修剪空白 + 保序去重 + 丢弃空串）', () => {
+  const mkVmess = (data: Record<string, unknown>) =>
+    'vmess://' + Buffer.from(JSON.stringify(data)).toString('base64');
+
+  // parseTlsSettings 口径（VLESS / Trojan / Hysteria2 共用）——用 VLESS 覆盖。
+  describe('VLESS / Trojan / Hy2（parseTlsSettings）', () => {
+    it('带前导空格逗号串 → 逐项 trim（h2, http/1.1 不再产出 " http/1.1"）', () => {
+      const c = parser.parseUrl(
+        'vless://11111111-1111-1111-1111-111111111111@a.example.com:443?security=tls&sni=s.com&' +
+          `alpn=${encodeURIComponent('h2, http/1.1')}#n`
+      );
+      expect(c.tlsSettings?.alpn).toEqual(['h2', 'http/1.1']);
+    });
+
+    it('多值保序 + 去重（重复项按首次出现位置保留）', () => {
+      const c = parser.parseUrl(
+        'trojan://pw@c.example.com:443?security=tls&sni=t.com&' +
+          `alpn=${encodeURIComponent('h2,h3,h2, http/1.1')}#n`
+      );
+      expect(c.tlsSettings?.alpn).toEqual(['h2', 'h3', 'http/1.1']);
+    });
+
+    it('纯空白输入 → 空数组而非 [\'\']', () => {
+      const c = parser.parseUrl(
+        'hysteria2://pw@d.example.com:8443?sni=h.com&' + `alpn=${encodeURIComponent('  ,  ')}#n`
+      );
+      expect(c.tlsSettings?.alpn).toEqual([]);
+    });
+  });
+
+  // TUIC 独立解析路径（parseTuic）。
+  describe('TUIC（parseTuic）', () => {
+    it('带空格逗号串 → 保序 trim', () => {
+      const c = parser.parseUrl(
+        `tuic://uuid-t:pw@g.example.com:443?alpn=${encodeURIComponent('h3, h2')}&sni=tu.com#n`
+      );
+      expect(c.tlsSettings?.alpn).toEqual(['h3', 'h2']);
+    });
+  });
+
+  // VMess 独立解析路径（parseVmess）：alpn 可为逗号串或数组。
+  describe('VMess（parseVmess）', () => {
+    const base = {
+      v: '2',
+      ps: 'V',
+      add: 'i.example.com',
+      port: '443',
+      id: 'uid',
+      net: 'tcp',
+      tls: 'tls',
+      sni: 's.com',
+    };
+
+    it('逗号串带空格 → trim + 保序去重', () => {
+      const c = parser.parseUrl(mkVmess({ ...base, alpn: 'h2, http/1.1, h2' }));
+      expect(c.tlsSettings?.alpn).toEqual(['h2', 'http/1.1']);
+    });
+
+    it('数组带空格元素 → 逐项 trim', () => {
+      const c = parser.parseUrl(mkVmess({ ...base, alpn: ['h2', ' http/1.1'] }));
+      expect(c.tlsSettings?.alpn).toEqual(['h2', 'http/1.1']);
+    });
+  });
+});
