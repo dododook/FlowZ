@@ -851,7 +851,17 @@ echo uninstalled-ok
 `;
   }
 
-  /** 写脚本到 userData 后用 osascript 以 root 执行（弹一次密码框）。用户取消(-128)与脚本失败分开判定。 */
+  /** 把路径安全嵌入 osascript `do shell script "..."`：先 shq 做 shell 单引号(防 shell 注入)，再对结果做
+   *  AppleScript 字符串转义(反斜杠翻倍、双引号转义)。两层引号缺一层，含撇号/引号的家目录路径即击穿引号 →
+   *  静默失败或以 root 注入命令。 */
+  private osaShellArg(p: string): string {
+    return shq(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  /** 写脚本到 userData 私有子目录后用 osascript 以 root 执行（弹一次密码框）。用户取消(-128)与脚本失败分开判定。
+   *  TOCTOU 加固：脚本落到 0700 私有子目录 + 随机不可预测文件名 + O_EXCL 独占创建(flag 'wx' 拒绝已存在文件防抢占) +
+   *  权限 0700 —— 收窄「fs 写入 → osascript root 执行」之间同用户进程改写脚本内容致任意代码以 root 运行的窗口
+   *  （原落用户可写、名字可预测的 getUserDataPath()/<name>，任意本地进程可预置/改写）。 */
   private runRootScript(
     name: string,
     script: string
@@ -859,16 +869,25 @@ echo uninstalled-ok
     return new Promise((resolve) => {
       let scriptPath: string;
       try {
-        scriptPath = path.join(getUserDataPath(), name);
-        fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+        // 仅当前用户可访问的私有子目录（0700）；父目录若已存在则强制收紧权限。
+        const privDir = path.join(getUserDataPath(), 'priv');
+        fs.mkdirSync(privDir, { recursive: true, mode: 0o700 });
+        try {
+          fs.chmodSync(privDir, 0o700);
+        } catch {
+          /* 已 0700 或无权改 → 忽略 */
+        }
+        // 随机文件名(不可预测) + O_EXCL 独占创建 + 0700：防攻击者预置同名文件/符号链接抢占落点。
+        scriptPath = path.join(privDir, `${randomBytes(12).toString('hex')}-${name}`);
+        fs.writeFileSync(scriptPath, script, { mode: 0o700, flag: 'wx' });
       } catch (e) {
         resolve({ success: false, error: e instanceof Error ? e.message : String(e) });
         return;
       }
-      // 路径单引号包裹以容忍空格；FlowZ 路径不含单/双引号。
+      // 路径经 shq(shell 单引号) + AppleScript 转义嵌入，容忍空格/撇号/引号（含撇号家目录不再引号破裂）。
       const proc = spawn('/usr/bin/osascript', [
         '-e',
-        `do shell script "/bin/bash '${scriptPath}'" with administrator privileges`,
+        `do shell script "/bin/bash ${this.osaShellArg(scriptPath)}" with administrator privileges`,
       ]);
       let stderr = '';
       proc.stderr?.on('data', (d) => {

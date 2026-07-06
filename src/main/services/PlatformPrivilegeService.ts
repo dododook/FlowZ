@@ -27,7 +27,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { randomBytes } from 'crypto';
 
 import type { HelperManager } from './HelperManager';
 import type { LogLevel } from '../../shared/types';
@@ -451,12 +451,30 @@ exit 0
       );
 
       // Fall back: use PowerShell with -Verb RunAs to elevate.
-      const scriptPath = path.join(app.getPath('temp'), `flowz-copy-${Date.now()}.ps1`);
-      // 使用 $ErrorActionPreference = 'Stop' 确保出错时非 0 退出
-      // 增加 Stop-Process 防御，防止因为 TUN 模式的高权限占用导致无法覆盖
+      // TOCTOU 加固：脚本落到当前用户私有子目录(userData/priv，非共享的 os.tmpdir()) + 随机不可预测文件名
+      // (crypto.randomBytes 而非可预测的 Date.now()) + O_EXCL 独占创建(flag 'wx' 拒绝已存在文件防抢占) + 权限收紧
+      // —— 收窄「fs 写入 → UAC 提权执行」之间脚本被改写致管理员权限任意代码执行的窗口（原共享临时目录 + 可预测名，
+      // 任意本地用户可预置/抢占落点）。Windows 文件权限位有限，私有目录(用户 profile ACL)是主要防线。
+      const privDir = path.join(getUserDataPath(), 'priv');
+      try {
+        fs.mkdirSync(privDir, { recursive: true, mode: 0o700 });
+      } catch {
+        /* 已存在 → 忽略 */
+      }
+      const scriptPath = path.join(privDir, `flowz-copy-${randomBytes(12).toString('hex')}.ps1`);
+      // 使用 $ErrorActionPreference = 'Stop' 确保出错时非 0 退出。
+      // Fix：原 `Stop-Process -Name "sing-box"` 盲杀所有 sing-box.exe，与换核 async 窗口叠加会误杀用户重连启动的核。
+      // 改为仅按 ExecutablePath 定向终止「正在运行本次待覆盖二进制(dest)」的进程（与 writeWindowsWatchdogScript 的
+      // 精确匹配同口径）：只有它锁着 dest → 覆盖前必须先放行，其它路径的核一律不动。try/catch 保证枚举失败不阻断复制。
       fs.writeFileSync(
         scriptPath,
-        `$ErrorActionPreference = 'Stop'\nStop-Process -Name "sing-box" -Force -ErrorAction SilentlyContinue\nStart-Sleep -Seconds 1\nCopy-Item -Path '${escapedSrc}' -Destination '${escapedDest}' -Force\n`
+        `$ErrorActionPreference = 'Stop'\n` +
+          `try { Get-CimInstance Win32_Process -Filter "Name='sing-box.exe'" | ` +
+          `Where-Object { $_.ExecutablePath -eq '${escapedDest}' } | ` +
+          `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } } catch {}\n` +
+          `Start-Sleep -Seconds 1\n` +
+          `Copy-Item -Path '${escapedSrc}' -Destination '${escapedDest}' -Force\n`,
+        { mode: 0o600, flag: 'wx' }
       );
 
       try {
@@ -912,11 +930,18 @@ exit 0
     return { command: paths.singboxPath, args: ['run', '-c', paths.configPath] };
   }
 
+  /** 把路径安全嵌入 osascript `do shell script "..."`：先 shq 做 shell 单引号(防 shell 注入)，再对结果做
+   *  AppleScript 字符串转义(反斜杠翻倍、双引号转义)。两层引号缺一层，含撇号/引号的家目录路径即击穿引号 →
+   *  静默失败或以 root 注入命令。 */
+  private osaShellArg(p: string): string {
+    return shq(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
   /**
    * macOS osascript 提权启动命令构造。
    * 迁自 ProxyManager.startSingBoxProcess needsOsascript 分支（command/args 构造段）：
    * osascript 一次授权 → 以 root 跑「看护脚本」托管 sing-box（停止/退出/崩溃回收无需再提权）。
-   * 路径单引号包裹以容忍空格（与原实现一样不处理路径内引号——FlowZ 路径不含单/双引号）。
+   * 各路径经 osaShellArg（shell 单引号 + AppleScript 转义）嵌入，容忍空格/撇号/引号（含撇号家目录不再引号破裂）。
    */
   private buildOsascriptLaunchCommand(paths: ElevatedLaunchPaths): {
     command: string;
@@ -924,11 +949,14 @@ exit 0
   } {
     const { wrapper, singboxPath, configPath, startupLogFile, pidFile, stopFlag, parentPid, fwd } =
       paths;
+    // 各路径经 shq(shell 单引号) + AppleScript 转义嵌入 osascript：含撇号/引号/空格的家目录路径不再击穿引号
+    // （原始单引号包裹遇撇号即破裂 → 静默失败或 root 注入）。parentPid 为数值、安全直嵌。
+    const a = (p: string) => this.osaShellArg(p);
     return {
       command: '/usr/bin/osascript',
       args: [
         '-e',
-        `do shell script "/bin/bash '${wrapper}' '${singboxPath}' '${configPath}' '${startupLogFile}' '${pidFile}' '${stopFlag}' ${parentPid} '${fwd}' >/dev/null 2>&1 &" with administrator privileges`,
+        `do shell script "/bin/bash ${a(wrapper)} ${a(singboxPath)} ${a(configPath)} ${a(startupLogFile)} ${a(pidFile)} ${a(stopFlag)} ${parentPid} ${a(fwd)} >/dev/null 2>&1 &" with administrator privileges`,
       ],
     };
   }
