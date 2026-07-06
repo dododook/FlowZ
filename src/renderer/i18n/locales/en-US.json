@@ -1524,7 +1524,29 @@
     "userAgentDescFull": "Some providers return different formats based on the UA — set one as needed.",
     "cancel": "Cancel",
     "saveChange": "Save Changes",
-    "addAndUpdate": "Add & Update"
+    "addAndUpdate": "Add & Update",
+    "preview": {
+      "dnsTitle": "DNS resolution failed",
+      "dnsDetail": "The subscription URL's domain could not be resolved. Check for typos.",
+      "timeoutTitle": "Connection timed out",
+      "timeoutDetail": "The server did not respond. Check your network or try again later.",
+      "refusedTitle": "Connection refused",
+      "refusedDetail": "The address or port is unreachable. Check the subscription URL.",
+      "httpTitle": "Server returned an error",
+      "httpDetail": "Server returned {{status}}. The subscription may be unauthorized or expired.",
+      "ssrfTitle": "Access denied",
+      "ssrfDetail": "The subscription URL points to a private or local address and was blocked.",
+      "schemeTitle": "Invalid address format",
+      "schemeDetail": "Only http/https subscription URLs are supported.",
+      "toolargeTitle": "Subscription too large",
+      "toolargeDetail": "The response exceeds the size limit and was rejected.",
+      "parseTitle": "Unrecognized format",
+      "parseDetail": "The content is not a valid subscription (failed to parse as Clash, sing-box, or Base64).",
+      "emptyTitle": "Subscription is empty",
+      "emptyDetail": "Fetched successfully but no usable nodes were found.",
+      "unknownTitle": "Failed to add",
+      "unknownDetail": "Could not verify the subscription. Try again later or contact your provider."
+    }
   },
   "localImport": {
     "title": "Manual Import",

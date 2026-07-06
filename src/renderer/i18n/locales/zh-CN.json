@@ -1524,7 +1524,29 @@
     "userAgentDescFull": "部分机场会按 UA 返回不同格式，按需指定。",
     "cancel": "取消",
     "saveChange": "保存修改",
-    "addAndUpdate": "添加并更新"
+    "addAndUpdate": "添加并更新",
+    "preview": {
+      "dnsTitle": "域名解析失败",
+      "dnsDetail": "订阅地址的域名无法解析，请检查是否输错",
+      "timeoutTitle": "连接超时",
+      "timeoutDetail": "服务器无响应，检查网络或稍后重试",
+      "refusedTitle": "连接被拒绝",
+      "refusedDetail": "地址或端口不可达，请核对订阅链接",
+      "httpTitle": "服务器返回错误",
+      "httpDetail": "服务器返回 {{status}}，订阅可能无权限或已过期",
+      "ssrfTitle": "拒绝访问",
+      "ssrfDetail": "订阅地址指向内网或本机，已拒绝",
+      "schemeTitle": "地址格式错误",
+      "schemeDetail": "仅支持 http/https 订阅地址",
+      "toolargeTitle": "订阅过大",
+      "toolargeDetail": "响应体积超过上限，已拒绝",
+      "parseTitle": "无法识别格式",
+      "parseDetail": "内容不是有效订阅（Clash/sing-box/Base64 均无法解析）",
+      "emptyTitle": "订阅为空",
+      "emptyDetail": "拉取成功但没有可用节点",
+      "unknownTitle": "添加失败",
+      "unknownDetail": "无法验证订阅，请稍后重试或联系机场"
+    }
   },
   "localImport": {
     "title": "手动导入",
