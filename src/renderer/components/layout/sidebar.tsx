@@ -50,7 +50,7 @@ interface SidebarProps {
   onSettingsSectionChange: (section: string) => void;
 }
 
-// 主导航分区（section label，非二级/折叠）：总览+节点无标签置顶；分流域、诊断域各带分区标题。
+// 主导航分区（section label，非二级/折叠）：主页+节点无标签置顶；分流域、诊断域各带分区标题。
 // 顺序按心智流：配置（节点）→ 策略（分流）→ 观测（诊断）。
 const mainNavGroups: { label?: string; items: { id: string; icon: React.ElementType }[] }[] = [
   {

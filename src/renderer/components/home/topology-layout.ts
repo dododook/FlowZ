@@ -60,9 +60,12 @@ export function getSankeyPath(
 export function computeTopologyLayout(
   aggregate: ConnectionsAggregate,
   width: number,
-  t: (key: string) => string
+  t: (key: string) => string,
+  // 画布高度（首页 hero 随窗口自适应传入实测高度）；缺省 FIXED_HEIGHT，旧调用/单测行为不变。
+  canvasHeight: number = FIXED_HEIGHT
 ): { nodes: Node[]; links: Link[] } {
-  if (aggregate.hosts.length === 0 || width === 0) return { nodes: [], links: [] };
+  if (aggregate.hosts.length === 0 || width === 0 || canvasHeight <= 0)
+    return { nodes: [], links: [] };
 
   // host 显示名：main 用 TOPOLOGY_OTHERS_KEY sentinel 标记「其它」合并组（main 不知 i18n）→ 此处替换为本地化文案。
   const displayName = (name: string): string =>
@@ -87,7 +90,7 @@ export function computeTopologyLayout(
 
   // --- Layout Calculation (Responsive) ---
   const nodeList: Node[] = [];
-  const availableHeight = FIXED_HEIGHT - 2 * PADDING_Y;
+  const availableHeight = canvasHeight - 2 * PADDING_Y;
 
   // Determine total connections (for source node)：有名 host 连接数之和（与原 layout 同口径，不含无名连接）。
   const totalConnections = sortedMiddle.reduce((acc, [_, d]) => acc + d.value, 0);
@@ -117,14 +120,14 @@ export function computeTopologyLayout(
     height: Math.max(2, totalConnections * scale),
     color: 'fill-primary', // Conduit token(双主题自适配,见 connection-topology rect className)
   };
-  sourceNode.y = (FIXED_HEIGHT - sourceNode.height) / 2;
+  sourceNode.y = (canvasHeight - sourceNode.height) / 2;
   nodeList.push(sourceNode);
 
   // Middle Nodes
   // Center the group vertically
   const middleGroupHeight =
     sortedMiddle.reduce((acc, [_, d]) => acc + Math.max(2, d.value * scale), 0) + totalMiddleGap;
-  let currentY = (FIXED_HEIGHT - middleGroupHeight) / 2;
+  let currentY = (canvasHeight - middleGroupHeight) / 2;
 
   const midNodeParams = new Map<string, Node>();
   // Responsive X positions
@@ -150,7 +153,7 @@ export function computeTopologyLayout(
   // Outbound Nodes
   const outGroupHeight =
     sortedOutbounds.reduce((acc, [_, v]) => acc + Math.max(2, v * scale), 0) + totalOutboundGap;
-  currentY = (FIXED_HEIGHT - outGroupHeight) / 2;
+  currentY = (canvasHeight - outGroupHeight) / 2;
 
   const outNodeParams = new Map<string, Node>();
   const outYCursorMap = new Map<string, number>();

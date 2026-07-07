@@ -25,9 +25,10 @@ export function ConnectionTopology() {
   // F17：仅订阅 running 布尔（primitive），避免每 2s 轮询整体替换 connectionStatus 触发本组件空转重渲染
   const proxyRunning = useAppStore((s) => s.connectionStatus?.proxyCore?.running ?? false);
 
-  // Responsive Container Logic
+  // Responsive Container Logic：hero 随窗口宽/高自适应——实测容器尺寸喂布局（高度回退 FIXED_HEIGHT 防首帧塌陷）。
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800); // Default start width
+  const [height, setHeight] = useState(FIXED_HEIGHT);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -35,9 +36,8 @@ export function ConnectionTopology() {
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentBoxSize) {
-          // Provide a slight debounce or just set it? React 18 handles batching well.
-          // We need the width of the container content
           setWidth(entry.contentRect.width);
+          if (entry.contentRect.height > 0) setHeight(entry.contentRect.height);
         }
       }
     });
@@ -58,8 +58,8 @@ export function ConnectionTopology() {
   );
 
   const { nodes, links } = useMemo(
-    () => computeTopologyLayout(aggregate, width, t),
-    [aggregate, width, t]
+    () => computeTopologyLayout(aggregate, width, t, height),
+    [aggregate, width, height, t]
   );
 
   // --- Interaction Logic ---
@@ -296,8 +296,8 @@ export function ConnectionTopology() {
       <CardContent className="overflow-hidden">
         <div
           ref={containerRef}
-          style={{ width: '100%', height: `${FIXED_HEIGHT}px` }}
-          className="relative cursor-default"
+          // hero 高度随窗口自适应：52vh 为主、下限 360px（防挤扁）、上限 640px（防超宽窗口过高）。
+          className="relative h-[52vh] max-h-[640px] min-h-[360px] w-full cursor-default"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
@@ -385,7 +385,7 @@ export function ConnectionTopology() {
           <svg
             width="100%"
             height="100%"
-            viewBox={`0 0 ${width} ${FIXED_HEIGHT}`}
+            viewBox={`0 0 ${width} ${height}`}
             className="overflow-visible font-sans"
           >
             <defs>
