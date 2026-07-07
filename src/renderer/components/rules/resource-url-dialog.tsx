@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
 import { deriveResourceMeta } from '../../../shared/rule-resource-catalog';
 import type { RuleResourceDownloadItem } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -24,11 +23,14 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
   const { t } = useTranslation();
   const [url, setUrl] = useState('');
   const [name, setName] = useState('');
+  // 字段级校验错误内联展示（§6：URL 非法就地红框+红字，不走 toast 通知流）。
+  const [urlError, setUrlError] = useState('');
 
   useEffect(() => {
     if (open) {
       setUrl('');
       setName('');
+      setUrlError('');
     }
   }, [open]);
 
@@ -37,7 +39,7 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
   const handleAdd = () => {
     const u = url.trim();
     if (!/^https:\/\/.+\.srs$/i.test(u)) {
-      toast.error(t('ruleResources.urlInvalid', '请输入以 .srs 结尾的 https 链接'));
+      setUrlError(t('ruleResources.urlInvalid', '请输入以 .srs 结尾的 https 链接'));
       return;
     }
     onDownload([{ url: u, name: name.trim() || undefined }]);
@@ -62,10 +64,15 @@ export function ResourceUrlDialog({ open, onOpenChange, onDownload }: ResourceUr
             <label className="text-sm font-medium">{t('ruleResources.urlLabel', '链接')}</label>
             <Input
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (urlError) setUrlError('');
+              }}
               placeholder="https://example.com/rule.srs"
-              className="font-mono text-sm"
+              aria-invalid={!!urlError}
+              className={`font-mono text-sm ${urlError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
             />
+            {urlError && <p className="text-xs text-destructive">{urlError}</p>}
           </div>
           <div className="space-y-1.5">
             <label className="text-sm font-medium">

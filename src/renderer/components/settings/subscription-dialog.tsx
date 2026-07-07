@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -43,6 +42,9 @@ export function SubscriptionDialog({
   const [updateViaProxy, setUpdateViaProxy] = useState(false); // per-sub 经代理更新（默认关）
   const [appVersion, setAppVersion] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  // 字段级校验错误内联展示（§6：可归位到字段的错误不走 toast 通知流，就地红框+红字）。
+  const [nameError, setNameError] = useState('');
+  const [urlError, setUrlError] = useState('');
 
   // 取 app 版本以拼出默认 UA placeholder（FlowZ/<版本>），与主进程 defaultSubscriptionUserAgent() 保持一致。
   useEffect(() => {
@@ -61,6 +63,8 @@ export function SubscriptionDialog({
 
   useEffect(() => {
     if (open) {
+      setNameError('');
+      setUrlError('');
       if (subscription) {
         setName(subscription.name);
         setUrl(subscription.url);
@@ -78,14 +82,16 @@ export function SubscriptionDialog({
   }, [open, subscription]);
 
   const handleSave = async () => {
+    let hasError = false;
     if (!name.trim()) {
-      toast.error(t('sub.requireName'));
-      return;
+      setNameError(t('sub.requireName'));
+      hasError = true;
     }
     if (!url.trim()) {
-      toast.error(t('sub.requireUrl'));
-      return;
+      setUrlError(t('sub.requireUrl'));
+      hasError = true;
     }
+    if (hasError) return;
 
     try {
       setIsSaving(true);
@@ -137,8 +143,14 @@ export function SubscriptionDialog({
               id="sub-name"
               placeholder={t('sub.namePlaceholder')}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError) setNameError('');
+              }}
+              aria-invalid={!!nameError}
+              className={nameError ? 'border-destructive focus-visible:ring-destructive' : ''}
             />
+            {nameError && <p className="text-sm text-destructive">{nameError}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="sub-url">{t('sub.urlLabel')}</Label>
@@ -146,8 +158,14 @@ export function SubscriptionDialog({
               id="sub-url"
               placeholder="https://example.com/api/v1/client/subscribe?token=xxx"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (urlError) setUrlError('');
+              }}
+              aria-invalid={!!urlError}
+              className={urlError ? 'border-destructive focus-visible:ring-destructive' : ''}
             />
+            {urlError && <p className="text-sm text-destructive">{urlError}</p>}
           </div>
 
           <div className="space-y-2">

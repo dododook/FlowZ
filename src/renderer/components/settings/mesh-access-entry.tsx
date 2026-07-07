@@ -73,6 +73,7 @@ export function MeshAccessEntry({
   const [wgOpen, setWgOpen] = useState(false);
   const [warpOpen, setWarpOpen] = useState(false);
   const [warpReRegisterOpen, setWarpReRegisterOpen] = useState(false);
+  const [warpDeregisterOpen, setWarpDeregisterOpen] = useState(false);
   const [wgName, setWgName] = useState('');
   const [warpName, setWarpName] = useState('Cloudflare WARP');
 
@@ -197,7 +198,7 @@ export function MeshAccessEntry({
                   {t('servers.meshWarpReRegister', '重新注册')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => void handleWarpDeregister()}
+                  onClick={() => setWarpDeregisterOpen(true)}
                   className="text-destructive focus:text-destructive"
                 >
                   {t('servers.meshWarpDeregister', '注销')}
@@ -293,6 +294,35 @@ export function MeshAccessEntry({
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleWarpReRegister()}>
               {t('servers.meshWarpReRegister', '重新注册')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* WARP 注销确认：删节点即触发主进程后台注销远端匿名设备（防孤儿计费），高危故二次确认。 */}
+      <AlertDialog open={warpDeregisterOpen} onOpenChange={setWarpDeregisterOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('servers.meshWarpDeregisterTitle', '注销 WARP？')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'servers.meshWarpDeregisterDesc',
+                '将移除此 WARP 节点并在后台注销远端匿名设备，可随时重新接入。'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setWarpDeregisterOpen(false);
+                void handleWarpDeregister();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('servers.meshWarpDeregister', '注销')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
