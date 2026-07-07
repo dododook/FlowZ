@@ -4,6 +4,11 @@
  */
 import type { ServerConfig } from '@/bridge/types';
 import {
+  latencyTone,
+  LATENCY_TONE_TEXT_CLASS,
+  type LatencyTone,
+} from '../ui/node-picker-logic';
+import {
   isAccountBasedProtocol,
   isEndpointProtocol,
   meshNodeCarriesFullTunnel,
@@ -168,21 +173,20 @@ export const endpointLabel = (server: ServerConfigWithId): string => {
   return `${server.address}:${server.port}`;
 };
 
-export const getLatencyColor = (latency: number | undefined) => {
-  if (latency === undefined) return 'text-muted-foreground';
-  if (latency === -1) return 'text-destructive';
-  if (latency < 100) return 'text-success';
-  if (latency < 300) return 'text-warning';
-  return 'text-destructive';
+// 延迟色档与 .npick 共用单一真值：阈值判定委托 latencyTone，文字色映射复用 LATENCY_TONE_TEXT_CLASS，
+// 背景色映射为本地色档表（仅此处消费）——杜绝阈值/映射双写漂移。
+const LATENCY_TONE_BG_CLASS: Record<LatencyTone, string> = {
+  good: 'bg-success/10',
+  medium: 'bg-warning/10',
+  bad: 'bg-destructive/10',
+  idle: '',
 };
 
-export const getLatencyBg = (latency: number | undefined) => {
-  if (latency === undefined) return '';
-  if (latency === -1) return 'bg-destructive/10';
-  if (latency < 100) return 'bg-success/10';
-  if (latency < 300) return 'bg-warning/10';
-  return 'bg-destructive/10';
-};
+export const getLatencyColor = (latency: number | undefined) =>
+  LATENCY_TONE_TEXT_CLASS[latencyTone(latency)];
+
+export const getLatencyBg = (latency: number | undefined) =>
+  LATENCY_TONE_BG_CLASS[latencyTone(latency)];
 
 export const getProtocolBadgeVariant = (protocol: string) => {
   const colors: Record<string, string> = {

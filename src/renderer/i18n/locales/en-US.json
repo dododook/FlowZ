@@ -55,7 +55,9 @@
     "saveFailed": "Save failed",
     "configLoadFail": "Failed to load config",
     "restoreDefault": "Restore defaults",
-    "moreInfo": "More info"
+    "moreInfo": "More info",
+    "search": "Search",
+    "noResults": "No results"
   },
   "sidebar": {
     "home": "Home",
@@ -82,7 +84,6 @@
   "connections": {
     "pageTitle": "Connections",
     "pageDesc": "Live view of active connections with per-connection rates",
-    "count": "{{count}} connections",
     "active": "Active",
     "live": "Live",
     "paused": "Paused",
@@ -231,12 +232,9 @@
   },
   "home": {
     "connectionStatus": "Connection Status",
-    "currentServer": "Current Server",
     "directGlobalHint": "Global Direct: unmatched traffic goes direct; only rule-matched traffic uses proxy",
     "selectServer": "Select Server",
     "sortByLatency": "Sort by latency",
-    "connecting": "Connecting...",
-    "proxyControl": "Proxy Control",
     "takeoverMethod": "Takeover",
     "routingStrategy": "Routing",
     "takeoverSystemProxy": "System",
@@ -254,7 +252,6 @@
     "scrollToBottom": "Scroll to bottom",
     "pageTitle": "Home",
     "pageDesc": "Connection status and quick actions",
-    "status": "Status",
     "statusError": "Error",
     "statusUnknown": "Unknown",
     "statusConnected": "Connected",
@@ -344,7 +341,8 @@
     "speedTestNoResult": "Tested {{count}} nodes · all timed out",
     "tsExitNoDeviceWarn": "Set as exit, but no exit node selected — internet traffic still goes direct.",
     "tsExitDeviceOfflineWarn": "The exit node is offline; internet may not route through Tailscale.",
-    "tsExitPickDevice": "Pick exit node"
+    "tsExitPickDevice": "Pick exit node",
+    "exitNode": "Exit Node"
   },
   "settings": {
     "nav": {
@@ -1182,7 +1180,6 @@
     "tsConnCardDeleteDesc": "Logs out and removes this Tailscale node config. You can reconnect anytime.",
     "meshAccessTitle": "Join Mesh",
     "meshAccessDesc": "Add this device to a mesh: account-based Tailscale, or node-based WireGuard / WARP",
-    "meshAccessTsExists": "Tailscale already connected — see the card above",
     "meshAccessAddWg": "Add WireGuard Node",
     "meshAccessAddWgDesc": "Fill in manually or paste a wg-quick .conf to import.",
     "meshAccessAddWarp": "Add Cloudflare WARP",
@@ -1230,7 +1227,6 @@
     "meshInfoRoutes": "Routes",
     "meshInfoNotAssigned": "Not assigned yet",
     "meshInfoNoRoutes": "None",
-    "tsConnCardSetExit": "Set as exit",
     "tsConnCardCurrentExit": "Current exit",
     "meshInfoExitNode": "Exit node",
     "meshInfoAcceptRoutesOn": "Accept subnet routes: on",
@@ -1282,13 +1278,11 @@
       "sourceHostname": "One device hostname per line (from DHCP leases)"
     },
     "pickProcess": "Pick process",
-    "invalidValue": "Invalid match value format",
     "matchConditions": "Match conditions",
     "combineOr": "Match any",
     "combineAnd": "Match all",
     "addCondition": "Add condition",
     "removeCondition": "Remove condition",
-    "errorEmptyCondition": "Condition \"{{type}}\" has no match value",
     "errorEmptyConditionInline": "Please enter a match value for this condition",
     "errorInvalidConditionInline": "This condition contains invalid values, please check",
     "category": {
@@ -1421,8 +1415,6 @@
     "searchPlaceholder": "Search rules (remarks / values / type / policy)",
     "searchNoMatch": "No matching rules",
     "editOrderHintSearch": "Clear search to edit order",
-    "appRulesManualSelection": "Proxy Policy",
-    "searchApps": "Search apps...",
     "searchAppsFull": "Search apps / geosite / process…",
     "appCountUnit": "apps",
     "appGeoMissingShort": "Rule-set missing",
@@ -1480,8 +1472,6 @@
     "policyProxy": "Proxy",
     "policyDirect": "Direct",
     "policyBlock": "Block",
-    "systemPolicy": "System Policy",
-    "standaloneNodes": "Standalone Nodes",
     "createCustom": "Create Custom",
     "viewComfortable": "Comfortable",
     "viewCompact": "Compact",
@@ -1498,7 +1488,6 @@
     "ruleUpdated": "Rule updated",
     "saveFailed": "Save failed",
     "saveErrorDesc": "An error occurred while saving the rule",
-    "errorEmpty": "Please enter at least one domain or IP CIDR",
     "policy": "Policy",
     "proxy": "Proxy",
     "direct": "Direct",
@@ -1509,7 +1498,6 @@
     "instruction5": "· \"Rule Set\" accepts a remote URL (.srs/.json), or reference a local resource downloaded on the Rule Resources page; for Geosite/GeoIP enter a tag (e.g. youtube / cn)",
     "instruction6": "· <strong>Bypass FakeIP</strong>: Uses real DNS resolution, domain rules only, suitable for QUIC/UDP protocols (like Cloudflare Tunnel)",
     "customApp": {
-      "fillNameAndGeosite": "Please enter the app name and Geosite tags",
       "addSuccess": "Custom app added",
       "deleted": "Custom app deleted",
       "selectIconGallery": "Select icon library",

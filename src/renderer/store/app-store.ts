@@ -399,7 +399,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error('[Store] Exception updating proxy mode:', error);
-      throw error; // 调用点（proxy-control-card）catch + toast + 本地 busy
+      throw error; // 调用点（原 proxy-control-card，已并入 connection-control-card）catch + toast + 本地 busy
     }
   },
 

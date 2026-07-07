@@ -1,5 +1,5 @@
 /**
- * 首页「Tailscale 出口名不副实」行内警示（§H）。挂在 ConnectionStatusCard「当前服务器」下拉正下方：选中 TS 当出口
+ * 首页「Tailscale 出口名不副实」行内警示（§H）。挂在 ConnectionControlCard（原 ConnectionStatusCard）「出口节点」下拉正下方：选中 TS 当出口
  * 但出不了公网（未选出口设备 / 出口设备离线）时给一行 warning 注脚 +「选择出口设备」链接直达 TS 设置。
  * 判定单一真值 = deriveTsExitWarning。none → 渲染 null。纯 renderer 视图态、零 IPC/config-gen/重启。取代旧 §G nudge。
  */

@@ -45,9 +45,16 @@ export function findWarpNode<T extends Parameters<typeof isWarpServer>[0]>(
   return servers.find((s) => isWarpServer(s));
 }
 
-/** WARP 单例守卫：已存在 WARP 节点则「槽位」被占——接入区不再提供「再加一个」（行为变更，用户签核）。 */
-export function warpSlotTaken(servers: Parameters<typeof isWarpServer>[0][]): boolean {
-  return servers.some((s) => isWarpServer(s));
+/**
+ * WARP 单例守卫：已存在 WARP 节点则「槽位」被占——接入区不再提供「再加一个」（行为变更，用户签核）。
+ * editingId 排除自身——编辑现有 WARP 节点不算「再加一个」，必须放行（对照 tailscaleSlotTaken）。
+ * 纯函数：UI 接入区分流 + saveServer/cloneServer 硬闸门（防手输/导入/克隆旁路造第二个）共用，可离线单测。
+ */
+export function warpSlotTaken(
+  servers: (Parameters<typeof isWarpServer>[0] & { id?: string })[],
+  editingId?: string
+): boolean {
+  return servers.some((s) => isWarpServer(s) && s.id !== editingId);
 }
 
 /** 注册请求体（POST /reg）。tos = RFC3339Nano UTC 时间戳（ToS 接受时间）；install_id/fcm_token 传空可注册。 */

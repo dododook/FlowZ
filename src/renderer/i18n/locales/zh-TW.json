@@ -55,7 +55,9 @@
     "saveFailed": "儲存失敗",
     "configLoadFail": "設定載入失敗",
     "restoreDefault": "恢復預設",
-    "moreInfo": "更多資訊"
+    "moreInfo": "更多資訊",
+    "search": "搜尋",
+    "noResults": "無相符項目"
   },
   "sidebar": {
     "home": "首頁",
@@ -82,7 +84,6 @@
   "connections": {
     "pageTitle": "連線資訊",
     "pageDesc": "即時檢視活動連線及逐連線速率",
-    "count": "{{count}} 條連線",
     "active": "活躍連線",
     "live": "即時",
     "paused": "已暫停",
@@ -231,12 +232,9 @@
   },
   "home": {
     "connectionStatus": "連線狀態",
-    "currentServer": "目前伺服器",
     "directGlobalHint": "全域直連：未命中規則的流量直連，僅按規則走代理",
     "selectServer": "選擇伺服器",
     "sortByLatency": "按延遲排序",
-    "connecting": "連線中...",
-    "proxyControl": "代理控制",
     "takeoverMethod": "接管方式",
     "routingStrategy": "分流策略",
     "takeoverSystemProxy": "系統代理",
@@ -254,7 +252,6 @@
     "scrollToBottom": "捲動到底部",
     "pageTitle": "首頁",
     "pageDesc": "連線狀態和快速操作",
-    "status": "狀態",
     "statusError": "錯誤",
     "statusUnknown": "未知",
     "statusConnected": "已連線",
@@ -344,7 +341,8 @@
     "speedTestNoResult": "已測 {{count}} 個節點 · 均逾時",
     "tsExitNoDeviceWarn": "已設為出口，但未選擇出口裝置，外網流量仍走直連。",
     "tsExitDeviceOfflineWarn": "出口裝置目前離線，外網可能無法經 Tailscale 出網。",
-    "tsExitPickDevice": "選擇出口裝置"
+    "tsExitPickDevice": "選擇出口裝置",
+    "exitNode": "出口節點"
   },
   "settings": {
     "nav": {
@@ -1182,7 +1180,6 @@
     "tsConnCardDeleteDesc": "將登出並移除此 Tailscale 節點配置，可隨時重新連接。",
     "meshAccessTitle": "接入組網",
     "meshAccessDesc": "把本機加入組網：帳號制 Tailscale 或節點制 WireGuard / WARP",
-    "meshAccessTsExists": "已接入 Tailscale，見上方卡片",
     "meshAccessAddWg": "新增 WireGuard 節點",
     "meshAccessAddWgDesc": "手動填寫或貼上 wg-quick .conf 匯入。",
     "meshAccessAddWarp": "新增 Cloudflare WARP",
@@ -1230,7 +1227,6 @@
     "meshInfoRoutes": "路由",
     "meshInfoNotAssigned": "尚未分配",
     "meshInfoNoRoutes": "無",
-    "tsConnCardSetExit": "設為出口",
     "tsConnCardCurrentExit": "當前出口",
     "meshInfoExitNode": "出口節點",
     "meshInfoAcceptRoutesOn": "接受子網路由：已開啟",
@@ -1282,13 +1278,11 @@
       "sourceHostname": "每行一個裝置主機名（來自 DHCP 租約）"
     },
     "pickProcess": "從處理程序選擇",
-    "invalidValue": "符合值格式不正確",
     "matchConditions": "符合條件",
     "combineOr": "符合任一",
     "combineAnd": "全部符合",
     "addCondition": "新增條件",
     "removeCondition": "刪除條件",
-    "errorEmptyCondition": "「{{type}}」條件未填寫符合值",
     "errorEmptyConditionInline": "請填寫該條件的符合值",
     "errorInvalidConditionInline": "該條件含無效值，請檢查",
     "category": {
@@ -1421,8 +1415,6 @@
     "searchPlaceholder": "搜尋規則（備註 / 值 / 類型 / 策略）",
     "searchNoMatch": "無符合規則",
     "editOrderHintSearch": "清除搜尋後可編輯順序",
-    "appRulesManualSelection": "代理策略",
-    "searchApps": "搜尋應用程式...",
     "searchAppsFull": "搜尋應用程式 / geosite / 進程名…",
     "appCountUnit": "應用程式",
     "appGeoMissingShort": "規則集缺失",
@@ -1480,8 +1472,6 @@
     "policyProxy": "代理",
     "policyDirect": "直連",
     "policyBlock": "阻斷",
-    "systemPolicy": "系統策略",
-    "standaloneNodes": "獨立路由節點",
     "createCustom": "建立自訂",
     "viewComfortable": "舒適模式",
     "viewCompact": "緊湊模式",
@@ -1498,7 +1488,6 @@
     "ruleUpdated": "規則已更新",
     "saveFailed": "儲存失敗",
     "saveErrorDesc": "儲存規則時發生錯誤",
-    "errorEmpty": "請輸入至少一個網域或 IP CIDR",
     "policy": "策略",
     "proxy": "代理",
     "direct": "直連",
@@ -1509,7 +1498,6 @@
     "instruction5": "· 「規則集」可填遠端 URL（.srs/.json），或在「規則資源」頁下載後用資源選擇器引用本地資源；Geosite/GeoIP 直接填標籤（如 youtube / cn）",
     "instruction6": "· <strong>略過 FakeIP</strong>：使用真實 DNS 解析，僅網域類規則可用，適用於 QUIC/UDP 協定（如 Cloudflare Tunnel）",
     "customApp": {
-      "fillNameAndGeosite": "請填寫應用程式名稱和 Geosite 標籤",
       "addSuccess": "自訂應用程式新增成功",
       "deleted": "自訂應用程式已刪除",
       "selectIconGallery": "選擇圖示庫",

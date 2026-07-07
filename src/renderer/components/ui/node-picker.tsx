@@ -14,8 +14,8 @@ import {
   groupItems,
   latencyTone,
   shouldShowSearch,
+  LATENCY_TONE_TEXT_CLASS,
   type DotTone,
-  type LatencyTone,
   type NodePickerGroup,
   type NodePickerItem,
 } from './node-picker-logic';
@@ -28,13 +28,6 @@ const DOT_CLASS: Record<DotTone, string> = {
   err: 'bg-destructive',
   mesh: 'bg-primary',
   idle: 'bg-muted-foreground/50',
-};
-
-const LAT_CLASS: Record<LatencyTone, string> = {
-  good: 'text-success',
-  medium: 'text-warning',
-  bad: 'text-destructive',
-  idle: 'text-muted-foreground',
 };
 
 /** 缺省状态点色：direct/none → idle；不可测（组网）→ mesh 青；否则由延迟色档映射。 */
@@ -62,7 +55,7 @@ function LatencyLabel({ item, className }: { item: NodePickerItem; className?: s
     <span
       className={cn(
         'shrink-0 font-mono text-xs font-medium tabular-nums',
-        LAT_CLASS[latencyTone(item.latency)],
+        LATENCY_TONE_TEXT_CLASS[latencyTone(item.latency)],
         className
       )}
     >

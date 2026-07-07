@@ -1,16 +1,15 @@
 /**
- * 规则集选择器（下拉复选）纯逻辑单测：分区 / 搜索 / 引用勾选切换 / fail-closed 可选性 / 是否显搜索。
+ * 规则集选择器（下拉复选）纯逻辑单测：分区 / 搜索 / 引用勾选切换 / fail-closed 可选性。
+ * （是否显搜索的 shouldShowSearch 谓词已复用 .npick，覆盖在 node-picker-logic.test.ts。）
  * 组件基于 radix dropdown-menu + checkbox，本测试只锁数据变换（离线安全网）。
  */
 import {
-  RESOURCE_SEARCH_THRESHOLD,
   resourceRef,
   isResourceSelected,
   toggleResourceRef,
   isResourceSelectable,
   partitionResources,
   filterResources,
-  shouldShowResourceSearch,
 } from '../resource-picker-logic';
 import type { RuleResourceListItem } from '../../../../shared/types';
 
@@ -89,12 +88,5 @@ describe('filterResources', () => {
   });
   it('无匹配 → 空', () => {
     expect(filterResources(list, 'zzz')).toEqual([]);
-  });
-});
-
-describe('shouldShowResourceSearch', () => {
-  it('超阈值才显搜索', () => {
-    expect(shouldShowResourceSearch(RESOURCE_SEARCH_THRESHOLD)).toBe(false);
-    expect(shouldShowResourceSearch(RESOURCE_SEARCH_THRESHOLD + 1)).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * 连接状态卡的状态推导 —— 纯函数，从 connection-status-card.tsx 抽出（审计 §4）。
+ * 连接状态卡的状态推导 —— 纯函数，从原 connection-status-card.tsx 抽出（该卡已退役，逻辑并入 connection-control-card / home-status-bar；审计 §4）。
  * 输入 store 快照 + i18n 取值器，输出卡片展示信息（label/variant/description）。
  * 无 react/store 依赖、t 由参数注入 → 可被 .test.ts 直接覆盖各状态档位矩阵。
  *

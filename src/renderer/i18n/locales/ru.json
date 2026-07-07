@@ -55,7 +55,9 @@
     "saveFailed": "Не удалось сохранить",
     "configLoadFail": "Не удалось загрузить конфигурацию",
     "restoreDefault": "Восстановить по умолчанию",
-    "moreInfo": "Подробнее"
+    "moreInfo": "Подробнее",
+    "search": "Поиск",
+    "noResults": "Нет совпадений"
   },
   "sidebar": {
     "home": "Главная",
@@ -82,7 +84,6 @@
   "connections": {
     "pageTitle": "Подключения",
     "pageDesc": "Просмотр активных подключений со скоростью по каждому соединению",
-    "count": "{{count}} подключений",
     "active": "Активные",
     "live": "Онлайн",
     "paused": "Приостановлено",
@@ -231,12 +232,9 @@
   },
   "home": {
     "connectionStatus": "Статус подключения",
-    "currentServer": "Текущий сервер",
     "directGlobalHint": "Глобальное прямое: несовпавший трафик идёт напрямую; только трафик по правилам использует прокси",
     "selectServer": "Выбрать сервер",
     "sortByLatency": "Сортировать по задержке",
-    "connecting": "Подключение...",
-    "proxyControl": "Управление прокси",
     "takeoverMethod": "Перехват",
     "routingStrategy": "Маршрутизация",
     "takeoverSystemProxy": "Системный",
@@ -254,7 +252,6 @@
     "scrollToBottom": "Прокрутить вниз",
     "pageTitle": "Главная",
     "pageDesc": "Статус подключения и быстрые действия",
-    "status": "Статус",
     "statusError": "Ошибка",
     "statusUnknown": "Неизвестно",
     "statusConnected": "Подключено",
@@ -344,7 +341,8 @@
     "speedTestNoResult": "Проверено: {{count}} · все недоступны",
     "tsExitNoDeviceWarn": "Назначен выходом, но выходной узел не выбран — интернет-трафик идёт напрямую.",
     "tsExitDeviceOfflineWarn": "Выходной узел офлайн; интернет может не проходить через Tailscale.",
-    "tsExitPickDevice": "Выбрать выходной узел"
+    "tsExitPickDevice": "Выбрать выходной узел",
+    "exitNode": "Выходной узел"
   },
   "settings": {
     "nav": {
@@ -1182,7 +1180,6 @@
     "tsConnCardDeleteDesc": "Выполняет выход и удаляет конфигурацию этого узла Tailscale. Вы можете подключиться снова в любое время.",
     "meshAccessTitle": "Подключиться к сети",
     "meshAccessDesc": "Добавьте это устройство в сеть: аккаунтный Tailscale или узловой WireGuard / WARP",
-    "meshAccessTsExists": "Tailscale уже подключён — см. карточку выше",
     "meshAccessAddWg": "Добавить узел WireGuard",
     "meshAccessAddWgDesc": "Заполните вручную или вставьте wg-quick .conf для импорта.",
     "meshAccessAddWarp": "Добавить Cloudflare WARP",
@@ -1230,7 +1227,6 @@
     "meshInfoRoutes": "Маршруты",
     "meshInfoNotAssigned": "Ещё не назначен",
     "meshInfoNoRoutes": "Нет",
-    "tsConnCardSetExit": "Сделать выходом",
     "tsConnCardCurrentExit": "Текущий выход",
     "meshInfoExitNode": "Выходной узел",
     "meshInfoAcceptRoutesOn": "Принимать маршруты подсети: вкл",
@@ -1282,13 +1278,11 @@
       "sourceHostname": "По одному имени хоста в строке (из аренд DHCP)"
     },
     "pickProcess": "Выбрать процесс",
-    "invalidValue": "Недопустимый формат значения совпадения",
     "matchConditions": "Условия совпадения",
     "combineOr": "Совпадает любое",
     "combineAnd": "Совпадают все",
     "addCondition": "Добавить условие",
     "removeCondition": "Удалить условие",
-    "errorEmptyCondition": "У условия «{{type}}» нет значения совпадения",
     "errorEmptyConditionInline": "Укажите значение совпадения для этого условия",
     "errorInvalidConditionInline": "Условие содержит недопустимые значения, проверьте",
     "category": {
@@ -1421,8 +1415,6 @@
     "searchPlaceholder": "Поиск правил (примечания / значения / тип / политика)",
     "searchNoMatch": "Нет подходящих правил",
     "editOrderHintSearch": "Очистите поиск, чтобы изменить порядок",
-    "appRulesManualSelection": "Политика прокси",
-    "searchApps": "Поиск приложений...",
     "searchAppsFull": "Поиск приложений / geosite / имя процесса…",
     "appCountUnit": "прил.",
     "appGeoMissingShort": "Набор правил отсутствует",
@@ -1480,8 +1472,6 @@
     "policyProxy": "Прокси",
     "policyDirect": "Прямой",
     "policyBlock": "Блокировать",
-    "systemPolicy": "Системная политика",
-    "standaloneNodes": "Автономные узлы",
     "createCustom": "Создать свой",
     "viewComfortable": "Комфортный",
     "viewCompact": "Компактный",
@@ -1498,7 +1488,6 @@
     "ruleUpdated": "Правило обновлено",
     "saveFailed": "Сохранение не удалось",
     "saveErrorDesc": "Произошла ошибка при сохранении правила",
-    "errorEmpty": "Введите хотя бы один домен или IP CIDR",
     "policy": "Политика",
     "proxy": "Прокси",
     "direct": "Прямой",
@@ -1509,7 +1498,6 @@
     "instruction5": "· «Набор правил» принимает удалённый URL (.srs/.json) или ссылку на локальный ресурс, скачанный на странице «Ресурсы правил»; для Geosite/GeoIP введите тег (например, youtube / cn)",
     "instruction6": "· <strong>Обход FakeIP</strong>: использует реальное разрешение DNS, только правила доменов, подходит для протоколов QUIC/UDP (как Cloudflare Tunnel)",
     "customApp": {
-      "fillNameAndGeosite": "Введите имя приложения и теги Geosite",
       "addSuccess": "Своё приложение добавлено",
       "deleted": "Своё приложение удалено",
       "selectIconGallery": "Выбрать библиотеку иконок",

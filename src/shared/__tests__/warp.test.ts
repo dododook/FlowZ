@@ -265,4 +265,13 @@ describe('WARP 单例守卫（批3b：warpSlotTaken / findWarpNode）', () => {
   it('非 wireguard 协议不误判为 WARP', () => {
     expect(warpSlotTaken([vless])).toBe(false);
   });
+
+  it('editingId 排除自身：编辑现有 WARP 放行，存在另一 WARP 仍占用（saveServer 硬闸门语义）', () => {
+    // 仅一个 WARP 且正编辑它自己 → 槽位不算被占（放行编辑）。
+    expect(warpSlotTaken([warpByDevice], 'wa1')).toBe(false);
+    // 编辑 wa1，但列表里另有 wa2 WARP → 槽位仍被占（新增第二个应拦下）。
+    expect(warpSlotTaken([warpByDevice, warpByDomain], 'wa1')).toBe(true);
+    // 无 editingId（新增路径）→ 已有 WARP 即占用。
+    expect(warpSlotTaken([warpByDevice])).toBe(true);
+  });
 });

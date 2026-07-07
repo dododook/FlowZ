@@ -55,7 +55,9 @@
     "saveFailed": "ذخیره ناموفق بود",
     "configLoadFail": "بارگذاری پیکربندی ناموفق بود",
     "restoreDefault": "بازگردانی به پیش‌فرض",
-    "moreInfo": "اطلاعات بیشتر"
+    "moreInfo": "اطلاعات بیشتر",
+    "search": "جستجو",
+    "noResults": "نتیجه‌ای یافت نشد"
   },
   "sidebar": {
     "home": "خانه",
@@ -82,7 +84,6 @@
   "connections": {
     "pageTitle": "اتصالات",
     "pageDesc": "نمای زندهٔ اتصالات فعال همراه با نرخ هر اتصال",
-    "count": "{{count}} اتصال",
     "active": "فعال",
     "live": "زنده",
     "paused": "متوقف",
@@ -231,12 +232,9 @@
   },
   "home": {
     "connectionStatus": "وضعیت اتصال",
-    "currentServer": "سرور فعلی",
     "directGlobalHint": "اتصال مستقیم سراسری: ترافیک نامطابق مستقیم می‌رود؛ فقط ترافیک مطابق با قانون از پروکسی استفاده می‌کند",
     "selectServer": "انتخاب سرور",
     "sortByLatency": "مرتب‌سازی بر اساس تأخیر",
-    "connecting": "در حال اتصال...",
-    "proxyControl": "کنترل پروکسی",
     "takeoverMethod": "روش تسلط",
     "routingStrategy": "مسیریابی",
     "takeoverSystemProxy": "سیستم",
@@ -254,7 +252,6 @@
     "scrollToBottom": "اسکرول به پایین",
     "pageTitle": "خانه",
     "pageDesc": "وضعیت اتصال و اقدامات سریع",
-    "status": "وضعیت",
     "statusError": "خطا",
     "statusUnknown": "نامشخص",
     "statusConnected": "متصل",
@@ -344,7 +341,8 @@
     "speedTestNoResult": "{{count}} گره · همه ناموفق",
     "tsExitNoDeviceWarn": "به‌عنوان خروجی تنظیم شده، اما نود خروجی انتخاب نشده — ترافیک اینترنت همچنان مستقیم است.",
     "tsExitDeviceOfflineWarn": "نود خروجی آفلاین است؛ ممکن است اینترنت از طریق Tailscale مسیردهی نشود.",
-    "tsExitPickDevice": "انتخاب نود خروجی"
+    "tsExitPickDevice": "انتخاب نود خروجی",
+    "exitNode": "نود خروجی"
   },
   "settings": {
     "nav": {
@@ -1182,7 +1180,6 @@
     "tsConnCardDeleteDesc": "از حساب خارج می‌شود و پیکربندی این گره Tailscale را حذف می‌کند. هر زمان می‌توانید دوباره متصل شوید.",
     "meshAccessTitle": "پیوستن به شبکه",
     "meshAccessDesc": "این دستگاه را به شبکه اضافه کنید: Tailscale مبتنی بر حساب یا WireGuard / WARP مبتنی بر گره",
-    "meshAccessTsExists": "Tailscale از قبل متصل است — کارت بالا را ببینید",
     "meshAccessAddWg": "افزودن گره WireGuard",
     "meshAccessAddWgDesc": "به‌صورت دستی پر کنید یا یک wg-quick .conf را برای وارد کردن جای‌گذاری کنید.",
     "meshAccessAddWarp": "افزودن Cloudflare WARP",
@@ -1230,7 +1227,6 @@
     "meshInfoRoutes": "مسیرها",
     "meshInfoNotAssigned": "هنوز اختصاص نیافته",
     "meshInfoNoRoutes": "هیچ‌کدام",
-    "tsConnCardSetExit": "تنظیم به‌عنوان خروجی",
     "tsConnCardCurrentExit": "خروجی فعلی",
     "meshInfoExitNode": "گره خروجی",
     "meshInfoAcceptRoutesOn": "پذیرش مسیرهای زیرشبکه: روشن",
@@ -1282,13 +1278,11 @@
       "sourceHostname": "هر خط یک نام میزبان دستگاه (از اجاره‌های DHCP)"
     },
     "pickProcess": "انتخاب پردازه",
-    "invalidValue": "قالب مقدار تطبیق نامعتبر",
     "matchConditions": "شرایط تطبیق",
     "combineOr": "تطبیق با هر کدام",
     "combineAnd": "تطبیق با همه",
     "addCondition": "افزودن شرط",
     "removeCondition": "حذف شرط",
-    "errorEmptyCondition": "شرط «{{type}}» مقدار تطبیق ندارد",
     "errorEmptyConditionInline": "لطفاً مقدار تطبیق این شرط را وارد کنید",
     "errorInvalidConditionInline": "این شرط دارای مقادیر نامعتبر است، بررسی کنید",
     "category": {
@@ -1421,8 +1415,6 @@
     "searchPlaceholder": "جستجوی قوانین (یادداشت‌ها / مقادیر / نوع / سیاست)",
     "searchNoMatch": "قانون مطابقی وجود ندارد",
     "editOrderHintSearch": "برای ویرایش ترتیب، جستجو را پاک کنید",
-    "appRulesManualSelection": "سیاست پروکسی",
-    "searchApps": "جستجوی برنامه‌ها...",
     "searchAppsFull": "جستجوی برنامه‌ها / geosite / نام فرآیند…",
     "appCountUnit": "برنامه",
     "appGeoMissingShort": "مجموعه‌قوانین ناموجود",
@@ -1480,8 +1472,6 @@
     "policyProxy": "پروکسی",
     "policyDirect": "مستقیم",
     "policyBlock": "مسدود",
-    "systemPolicy": "سیاست سیستم",
-    "standaloneNodes": "نودهای مستقل",
     "createCustom": "ایجاد سفارشی",
     "viewComfortable": "راحت",
     "viewCompact": "فشرده",
@@ -1498,7 +1488,6 @@
     "ruleUpdated": "قانون به‌روزرسانی شد",
     "saveFailed": "ذخیره ناموفق بود",
     "saveErrorDesc": "هنگام ذخیرهٔ قانون خطایی رخ داد",
-    "errorEmpty": "لطفاً حداقل یک دامنه یا IP CIDR وارد کنید",
     "policy": "سیاست",
     "proxy": "پروکسی",
     "direct": "مستقیم",
@@ -1509,7 +1498,6 @@
     "instruction5": "· «مجموعه‌قانون» یک URL ریموت (.srs/.json) می‌پذیرد، یا به یک منبع محلی دانلودشده در صفحهٔ منابع قوانین ارجاع دهید؛ برای Geosite/GeoIP یک برچسب وارد کنید (مثلاً youtube / cn)",
     "instruction6": "· <strong>دور زدن FakeIP</strong>: از resolution واقعی DNS استفاده می‌کند، فقط قوانین دامنه، مناسب برای پروتکل‌های QUIC/UDP (مانند Cloudflare Tunnel)",
     "customApp": {
-      "fillNameAndGeosite": "لطفاً نام برنامه و برچسب‌های Geosite را وارد کنید",
       "addSuccess": "برنامهٔ سفارشی افزوده شد",
       "deleted": "برنامهٔ سفارشی حذف شد",
       "selectIconGallery": "انتخاب کتابخانهٔ آیکون",

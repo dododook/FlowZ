@@ -17,7 +17,7 @@ import {
   isResourceSelectable,
   isResourceSelected,
   partitionResources,
-  shouldShowResourceSearch,
+  shouldShowSearch,
   toggleResourceRef,
 } from './resource-picker-logic';
 
@@ -52,7 +52,7 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
       .catch(() => {});
   }, []);
 
-  const showSearch = shouldShowResourceSearch(resources.length);
+  const showSearch = shouldShowSearch(resources.length);
 
   // 关闭时清空查询；打开且有搜索框时把焦点交给输入框（rAF 让 radix 默认聚焦先跑，再夺回）。
   useEffect(() => {

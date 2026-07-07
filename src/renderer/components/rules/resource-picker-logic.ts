@@ -4,8 +4,8 @@
  */
 import type { RuleResourceListItem } from '../../../shared/types';
 
-/** 超过此数量才显搜索框（与 .npick 口径一致）。 */
-export const RESOURCE_SEARCH_THRESHOLD = 6;
+/** 资源数超阈值才显搜索框：直接复用 .npick 的 shouldShowSearch（同阈值 6、同谓词），单一真值。 */
+export { shouldShowSearch } from '../ui/node-picker-logic';
 
 /** 规则集引用值：res:<资源 id>（本地资源，内置随包 + 已下载）。 */
 export function resourceRef(id: string): string {
@@ -50,12 +50,4 @@ export function filterResources(
   const q = query.trim().toLowerCase();
   if (!q) return list;
   return list.filter((r) => r.name.toLowerCase().includes(q));
-}
-
-/** 资源数超阈值才显搜索框。 */
-export function shouldShowResourceSearch(
-  count: number,
-  threshold = RESOURCE_SEARCH_THRESHOLD
-): boolean {
-  return count > threshold;
 }

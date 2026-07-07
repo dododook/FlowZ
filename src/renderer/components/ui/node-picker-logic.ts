@@ -47,7 +47,7 @@ export interface NodePickerSection {
   items: NodePickerItem[];
 }
 
-/** 延迟数值 → 色档（与 server-list-helpers.getLatencyColor 阈值一致，单一口径）。 */
+/** 延迟数值 → 色档（阈值单一真值：server-list-helpers 的 getLatencyColor / getLatencyBg 均由此派生）。 */
 export function latencyTone(latency: number | undefined, na?: boolean): LatencyTone {
   if (na) return 'idle';
   if (latency === undefined) return 'idle';
@@ -56,6 +56,17 @@ export function latencyTone(latency: number | undefined, na?: boolean): LatencyT
   if (latency < 300) return 'medium';
   return 'bad';
 }
+
+/**
+ * 色档 → 文字色 class（Tailwind design token，纯字符串、零 react 依赖）：单一映射真值，
+ * 供 .npick 延迟徽标（LatencyLabel）与 settings 的 getLatencyColor 共用，杜绝映射双写漂移。
+ */
+export const LATENCY_TONE_TEXT_CLASS: Record<LatencyTone, string> = {
+  good: 'text-success',
+  medium: 'text-warning',
+  bad: 'text-destructive',
+  idle: 'text-muted-foreground',
+};
 
 /** 单项是否命中查询（名/协议/地址/关键词，大小写不敏感；空查询恒命中）。 */
 export function matchesQuery(item: NodePickerItem, query: string): boolean {
