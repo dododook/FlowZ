@@ -211,4 +211,14 @@ export interface CustomAppPreset {
   iconUrl?: string;
   geositeTags: string[];
   geoipTags?: string[];
+  /**
+   * 进程名（真·应用分流，与内置预设 processNames 同源消费点 ProxyManager.effectiveAppRules）。
+   * 由 getAppPreset 透传给配置生成：命中即按进程名路由，比 geo 域名匹配更精准（macOS/Windows/Linux TUN 模式）。
+   */
+  processNames?: string[];
+  /**
+   * 分类归属（纯 UI：应用卡按分类分组展示，可为内置 5 类之一或用户自建分类名）。
+   * 配置生成不消费 category（后端只读 geositeTags/geoipTags/processNames），故仅影响卡片分组呈现。
+   */
+  category?: string;
 }

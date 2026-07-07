@@ -1,13 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
-import { ServerSelectGroups } from '@/components/settings/server-select-groups';
-import { APP_PRESETS, type AppPreset } from '../../../shared/app-rules-preset';
-import { iconProxySrc } from '../../../shared/icon-proxy';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import type { NodePickerGroup, NodePickerItem } from '@/components/ui/node-picker';
+import { APP_PRESETS } from '../../../shared/app-rules-preset';
+import { groupServersBySubscription } from '../../../shared/server-grouping';
+import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import type {
   AppRule,
   RuleAction,
@@ -16,22 +17,30 @@ import type {
 } from '../../../shared/types';
 import { api } from '@/ipc/api-client';
 import { AddCustomAppDialog } from './add-custom-app-dialog';
-import { Plus, Trash2, Search, LayoutGrid, List, ChevronDown, AlertTriangle } from 'lucide-react';
+import { AppCard } from './app-card';
+import {
+  countAppPolicies,
+  deriveAppPolicy,
+  groupPresetsByCategory,
+  matchesAppSearch,
+  type DisplayAppPreset,
+} from './app-rules-logic';
+import { Plus, Search, LayoutGrid, List } from 'lucide-react';
 import { availableResourceTagSet, missingResourceAppIds } from '../../../shared/rule-resource-refs';
 import { toast } from 'sonner';
-import { useEffect } from 'react';
 
-// 模块级缓存：记录图标加载失败的 preset ID
-// 使用模块级而非组件 state，确保组件重新挂载（主题切换/config 更新）时不会重置，
-// 避免图标在「显示 img」→「加载失败」→「显示 emoji」之间反复闪变。
+// 模块级缓存：记录图标加载失败的 preset ID。用模块级而非组件 state，确保组件重新挂载（主题切换/config 更新）时
+// 不会重置，避免图标在「显示 img」→「加载失败」→「显示 emoji」之间反复闪变。
 const _failedIconsCache = new Set<string>();
 
 export function AppRulesCard() {
   const { t } = useTranslation();
   const config = useAppStore((state) => state.config);
   const saveConfig = useAppStore((state) => state.saveConfig);
+  const setCurrentView = useAppStore((state) => state.setCurrentView);
+  const subscriptions = useAppStore((state) => state.config?.subscriptions || []);
+  const latencyMap = useAppStore((state) => state.latencyMap);
 
-  // -- 新增自定义应用状态 --
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   // 规则资源已下载/内置列表：标注「本地/未下载」+ 添加时判断哪些 geo 需下载进规则资源（联动）
   const [geoLocalList, setGeoLocalList] = useState<RuleResourceListItem[]>([]);
@@ -41,12 +50,10 @@ export function AppRulesCard() {
     () => (localStorage.getItem('flowz_app_view_mode') as 'comfortable' | 'compact') || 'compact'
   );
 
-  // 使用模块级缓存（_failedIconsCache）+ React state 联动：
-  // state 用于触发重渲染，cache 用于跨挂载持久化，两者保持同步。
+  // 模块级缓存（_failedIconsCache）+ state 联动：state 触发重渲染，cache 跨挂载持久，两者同步。
   const [failedIcons, setFailedIcons] = useState<Set<string>>(() => new Set(_failedIconsCache));
-
   const handleIconError = (presetId: string) => {
-    if (_failedIconsCache.has(presetId)) return; // 已记录过，无需重复 setState
+    if (_failedIconsCache.has(presetId)) return;
     _failedIconsCache.add(presetId);
     setFailedIcons(new Set(_failedIconsCache));
   };
@@ -55,8 +62,7 @@ export function AppRulesCard() {
     localStorage.setItem('flowz_app_view_mode', viewMode);
   }, [viewMode]);
 
-  // 「已下载/内置」列表：挂载即拉（卡片「规则集缺失」角标需要），打开对话框时刷新（反映新下载），随 config 变化重拉
-  // （别处删除/恢复资源会改 config）。用于本地标注、添加时按需下载、以及应用卡片缺失角标。
+  // 「已下载/内置」列表：挂载即拉（卡片「规则集缺失」角标需要），打开对话框时刷新（反映新下载），随 config 变化重拉。
   useEffect(() => {
     let active = true;
     api.ruleResources
@@ -72,58 +78,93 @@ export function AppRulesCard() {
     };
   }, [isAddDialogOpen, config]);
 
-  // 本地可用规则资源 tag 集合（fileExists 为真者）：用于卡片「规则集缺失」角标判定。
   const availableResTags = useMemo(() => availableResourceTagSet(geoLocalList), [geoLocalList]);
+
+  // 指定节点 `.npick` 数据（按订阅/自建分组 + 延迟徽标）。应用分流「指定节点」= 具体节点，故不含「跟随全局」哨兵
+  // （跟随全局由「代理」瓦片承担）。父级算一次，各卡共用（value 由各卡自身 targetServerId 决定）。
+  const servers = config?.servers || [];
+  const targetGroups: NodePickerGroup[] = useMemo(() => {
+    const grps = groupServersBySubscription(servers, subscriptions);
+    return grps.length > 1
+      ? grps.map((g) => ({
+          id: g.id,
+          label: g.isMesh
+            ? t('servers.meshNodes', '组网')
+            : g.isManual
+              ? t('servers.manualNodes', '自建节点')
+              : g.name,
+        }))
+      : [];
+  }, [servers, subscriptions, t]);
+  const targetItems: NodePickerItem[] = useMemo(() => {
+    const grps = groupServersBySubscription(servers, subscriptions);
+    const multi = grps.length > 1;
+    return grps.flatMap((g) =>
+      g.servers.map<NodePickerItem>((s) => ({
+        id: s.id,
+        name: s.name,
+        protocol: s.protocol,
+        latency: latencyMap[s.id],
+        latencyNA: !isSpeedTestable(s),
+        groupId: multi ? g.id : undefined,
+        dotTone: 'ok',
+      }))
+    );
+  }, [servers, subscriptions, latencyMap]);
 
   if (!config) return null;
 
   const appRules: AppRule[] = config.appRules || [];
   const customPresets: CustomAppPreset[] = config.customAppPresets || [];
-  // 引用了缺失 geo（已删除/文件丢失）的应用 id 集合：geo 半暂不生效（进程名仍生效），卡片角标提示去「规则资源」页恢复。
-  // 仅「智能分流」模式标注——非 smart 下应用分流本就被模式忽略（由 app-policy 页顶部提示说明），再标缺失会误导。
   const isSmartMode = (config.proxyMode || 'smart').toLowerCase() === 'smart';
+  // 引用了缺失 geo 的应用 id：geo 半暂不生效（进程名仍生效）；仅 smart 模式标注（非 smart 应用分流本被忽略）。
   const affectedAppIds = isSmartMode
     ? missingResourceAppIds(appRules, availableResTags, customPresets)
     : new Set<string>();
 
-  // 合并预设列表进行渲染
-  const allPresets: AppPreset[] = [
-    ...APP_PRESETS,
-    ...customPresets.map((p) => ({
+  // 归一展示预设（内置 + 自定义）：category 放宽为 string 以容纳自定义分类；自定义带 processNames/isCustom。
+  const allPresets: DisplayAppPreset[] = [
+    ...APP_PRESETS.map((p) => ({ ...p, category: p.category as string })),
+    ...customPresets.map<DisplayAppPreset>((p) => ({
       id: p.id,
       labelKey: p.name,
       emoji: p.emoji,
       iconUrl: p.iconUrl,
       geositeTags: p.geositeTags,
       geoipTags: p.geoipTags,
-      category: 'tools' as const,
+      processNames: p.processNames,
+      category: p.category || 'tools',
       isCustom: true,
     })),
   ];
 
-  // -- 过滤后的预设列表 --
-  const filteredPresets = allPresets.filter((p) => {
-    if (!appSearchQuery.trim()) return true;
-    const label = (p as any).isCustom ? p.labelKey : t(`rules.apps.${p.labelKey}` as any);
-    return label.toLowerCase().includes(appSearchQuery.toLowerCase());
-  });
-
   const getAppRule = (appId: string): AppRule | undefined =>
     appRules.find((r) => r.appId === appId);
+  const labelOf = (p: DisplayAppPreset): string =>
+    p.isCustom ? p.labelKey : t(`rules.apps.${p.labelKey}` as any);
 
-  const handlePolicyChange = async (preset: AppPreset, value: string) => {
-    const existing = getAppRule(preset.id);
+  // 策略计数（over 全部预设，独立于搜索）：顶部摘要。O(预设数) 廉价，直接算（早退后不可用 hook）。
+  const counts = countAppPolicies(
+    allPresets.map((p) => p.id),
+    getAppRule
+  );
 
-    // 「代理(默认)」= 跟全局：保留 appRule、清 targetServerId（action='proxy' 无 target）→ rule-sel-app
-    //   default=proxy-selector（嵌套跟全局）→ 「节点↔默认」= rule-sel-app default 变（PUT 热切换 0 断流），
-    //   与 customRules 节点↔默认语义一致（非删 appRule 致结构变重启）。无记录则 no-op。
+  // 搜索过滤（应用名 / geosite / geoip / 进程名）→ 按分类分组（空组隐）。
+  const filteredPresets = allPresets.filter((p) => matchesAppSearch(p, labelOf(p), appSearchQuery));
+  const groups = groupPresetsByCategory(filteredPresets);
+
+  const handlePolicyChange = async (presetId: string, value: string) => {
+    const existing = getAppRule(presetId);
+
+    // 「代理(跟全局)」= 保留 appRule、清 targetServerId（action='proxy' 无 target）→ rule-sel-app default 变
+    // （PUT 热切换 0 断流）。无记录则 no-op。
     if (value === 'proxy-default') {
       if (!existing) return;
       try {
         await saveConfig({
           ...config,
           appRules: appRules.map((r) =>
-            r.appId === preset.id
+            r.appId === presetId
               ? { ...r, action: 'proxy', targetServerId: undefined, enabled: true }
               : r
           ),
@@ -138,15 +179,13 @@ export function AppRulesCard() {
     let targetServerId: string | undefined = undefined;
     if (value === 'direct') action = 'direct';
     else if (value === 'block') action = 'block';
-    else if (value.startsWith('node-')) {
-      targetServerId = value.replace('node-', '');
-    }
+    else if (value.startsWith('node-')) targetServerId = value.replace('node-', '');
 
     const newRules: AppRule[] = existing
       ? appRules.map((r) =>
-          r.appId === preset.id ? { ...r, action, targetServerId, enabled: true } : r
+          r.appId === presetId ? { ...r, action, targetServerId, enabled: true } : r
         )
-      : [...appRules, { appId: preset.id, action, targetServerId, enabled: true }];
+      : [...appRules, { appId: presetId, action, targetServerId, enabled: true }];
 
     try {
       await saveConfig({ ...config, appRules: newRules });
@@ -156,13 +195,11 @@ export function AppRulesCard() {
   };
 
   const handleDeleteCustomApp = async (appId: string) => {
-    const newPresets = customPresets.filter((p) => p.id !== appId);
-    const newRules = appRules.filter((r) => r.appId !== appId);
     try {
       await saveConfig({
         ...config,
-        customAppPresets: newPresets,
-        appRules: newRules,
+        customAppPresets: customPresets.filter((p) => p.id !== appId),
+        appRules: appRules.filter((r) => r.appId !== appId),
       });
     } catch {
       toast.error(t('common.saveFailed'));
@@ -171,248 +208,134 @@ export function AppRulesCard() {
     toast.success(t('rules.customApp.deleted'));
   };
 
+  const goToResources = () => setCurrentView('ruleResources');
+
   return (
     <Card>
-      <CardContent className="pt-6 space-y-6">
-        {/* 顶部搜索框：补齐视觉突兀感 */}
-        <div className="flex items-center gap-2 mb-4">
-          <div className="relative flex-1 group">
-            <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/50 transition-colors group-focus-within:text-primary" />
+      <CardContent className="space-y-5 pt-6">
+        {/* 顶部工具栏：搜索 + 策略计数 + 视图切换 */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="group relative min-w-[12rem] flex-1">
+            <Search className="absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50 transition-colors group-focus-within:text-primary" />
             <Input
-              placeholder={t('rules.searchApps')}
+              placeholder={t('rules.searchAppsFull', '搜索应用 / geosite / 进程名…')}
               value={appSearchQuery}
               onChange={(e) => setAppSearchQuery(e.target.value)}
-              className="ps-10 h-11 bg-muted/40 border-muted-foreground/10 focus:border-primary/30 transition-all rounded-xl text-sm"
+              className="h-11 rounded-xl border-muted-foreground/10 bg-muted/40 ps-10 text-sm transition-all focus:border-primary/30"
             />
           </div>
 
-          <div className="flex items-center bg-muted/30 p-1 rounded-xl border border-muted-foreground/5">
-            <Button
-              variant={viewMode === 'comfortable' ? 'secondary' : 'ghost'}
-              size="icon"
-              className={`h-9 w-9 rounded-lg ${viewMode === 'comfortable' ? 'shadow-sm' : ''}`}
-              onClick={() => setViewMode('comfortable')}
-              title={t('rules.viewComfortable')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'compact' ? 'secondary' : 'ghost'}
-              size="icon"
-              className={`h-9 w-9 rounded-lg ${viewMode === 'compact' ? 'shadow-sm' : ''}`}
-              onClick={() => setViewMode('compact')}
-              title={t('rules.viewCompact')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
+            <span className="font-bold text-foreground">{counts.total}</span>
+            <span>{t('rules.appCountUnit', '应用')}</span>
+            <span className="opacity-40">·</span>
+            <span className="text-primary">
+              {t('rules.proxy')} {counts.proxy}
+            </span>
+            <span className="text-primary">
+              {t('rules.appTile.nodeTitle', '指定')} {counts.node}
+            </span>
+            <span className="text-success">
+              {t('rules.direct')} {counts.direct}
+            </span>
+            <span className="text-destructive">
+              {t('rules.block')} {counts.block}
+            </span>
           </div>
+
+          <SegmentedControl<'comfortable' | 'compact'>
+            className="w-auto shrink-0"
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              {
+                value: 'comfortable',
+                label: <LayoutGrid className="h-4 w-4" />,
+                title: t('rules.viewComfortable'),
+              },
+              {
+                value: 'compact',
+                label: <List className="h-4 w-4" />,
+                title: t('rules.viewCompact'),
+              },
+            ]}
+          />
         </div>
 
-        <div
-          className={
-            viewMode === 'comfortable'
-              ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4'
-              : 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3'
-          }
-        >
-          {filteredPresets.map((preset) => {
-            const rule = getAppRule(preset.id);
-            const isEnabled = rule?.enabled ?? false;
-            const isCustom = preset.id.startsWith('custom-');
-
-            return (
-              <div key={preset.id} className="group relative">
-                <Select
-                  value={(() => {
-                    if (!rule || !isEnabled) return 'proxy-default';
-                    if (rule.action === 'direct') return 'direct';
-                    if (rule.action === 'block') return 'block';
-                    return rule.targetServerId ? `node-${rule.targetServerId}` : 'proxy-default';
-                  })()}
-                  onValueChange={(v) => handlePolicyChange(preset, v)}
-                >
-                  <SelectTrigger
-                    className={`${viewMode === 'comfortable' ? 'h-[110px] p-3.5' : 'h-[88px] p-2.5'} w-full flex flex-col items-start rounded-xl border border-muted-foreground/10 transition-all duration-300 shadow-none focus:ring-0 [&>svg]:hidden bg-muted/40 hover:bg-muted/60 relative overflow-hidden`}
-                  >
-                    {/* 可点击 affordance：span 包裹避开 [&>svg]:hidden；pointer-events-none 不挡点击；hover 提亮 */}
-                    <span className="pointer-events-none absolute end-2 top-2 text-muted-foreground/40 transition-colors group-hover:text-primary">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </span>
-                    {/* 左上脚标：策略选择器入口提示。提升可见度（10px/80% 半粗）+ hover 提亮，与右上 chevron 联动暗示可点击 */}
-                    <div
-                      className={`text-[10px] text-muted-foreground/80 font-semibold tracking-tight leading-none mt-0.5 mb-1 transition-colors group-hover:text-primary ${viewMode === 'comfortable' ? 'ms-1.5' : 'ms-2.5'}`}
-                    >
-                      {t('rules.appRulesManualSelection')}
-                    </div>
-
-                    <div
-                      className={
-                        viewMode === 'comfortable'
-                          ? 'flex items-center gap-2.5 w-full flex-1 ms-1.5'
-                          : 'flex items-center gap-2 w-full mt-0.5 ms-2.5'
-                      }
-                    >
-                      <div
-                        className={`${viewMode === 'comfortable' ? 'h-9 w-9 border-white/10 p-1' : 'h-6 w-6 border-white/5 p-0.5'} flex items-center justify-center bg-background/80 rounded-lg shadow-sm border shrink-0 transition-transform group-hover:scale-105`}
-                      >
-                        {/* Bug 3 修复：基于 React state 条件渲染，避免 onError DOM 操作被重渲染覆盖 */}
-                        {preset.iconUrl && !failedIcons.has(preset.id) ? (
-                          <img
-                            src={iconProxySrc(preset.iconUrl)}
-                            alt=""
-                            className="h-full w-full object-contain"
-                            loading="lazy"
-                            onError={() => handleIconError(preset.id)}
-                          />
-                        ) : (
-                          <span className={viewMode === 'comfortable' ? 'text-xl' : 'text-xs'}>
-                            {preset.emoji}
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={`${viewMode === 'comfortable' ? 'text-[13px]' : 'text-[12px]'} font-bold truncate tracking-tight transition-colors ${
-                          isEnabled ? 'text-foreground' : 'text-foreground/70'
-                        }`}
-                      >
-                        {isCustom ? preset.labelKey : t(`rules.apps.${preset.labelKey}` as any)}
-                      </span>
-                    </div>
-
-                    {viewMode === 'comfortable' && (
-                      <div className="h-4 w-full flex-none opacity-0 pointer-events-none" />
-                    )}
-
-                    <div
-                      className={
-                        viewMode === 'comfortable'
-                          ? `absolute bottom-1.5 start-2.5 end-3.5 text-[9.5px] w-full text-start font-bold tracking-normal truncate ${
-                              !rule || !isEnabled
-                                ? 'text-primary'
-                                : rule.action === 'direct'
-                                  ? 'text-success'
-                                  : rule.action === 'block'
-                                    ? 'text-destructive'
-                                    : 'text-primary'
-                            }`
-                          : `text-[9px] w-full text-start font-bold tracking-normal truncate ms-2 ${
-                              !rule || !isEnabled
-                                ? 'text-primary'
-                                : rule.action === 'direct'
-                                  ? 'text-success'
-                                  : rule.action === 'block'
-                                    ? 'text-destructive'
-                                    : 'text-primary'
-                            }`
-                      }
-                    >
-                      <div className="flex items-center gap-1">
-                        <div
-                          className={`${viewMode === 'comfortable' ? 'h-1.5 w-1.5' : 'h-1 w-1'} rounded-full ${
-                            !rule || !isEnabled
-                              ? 'bg-primary'
-                              : rule.action === 'direct'
-                                ? 'bg-success'
-                                : rule.action === 'block'
-                                  ? 'bg-destructive'
-                                  : 'bg-primary'
-                          }`}
-                        />
-                        <span className="truncate">
-                          {(() => {
-                            if (!rule || !isEnabled) return t('rules.proxy');
-                            if (rule.action === 'direct') return t('rules.direct');
-                            if (rule.action === 'block') return t('rules.block');
-                            if (rule.targetServerId) {
-                              const s = config.servers?.find(
-                                (server) => server.id === rule.targetServerId
-                              );
-                              return s ? s.name : t('rules.proxy');
-                            }
-                            return t('rules.proxy');
-                          })()}
-                        </span>
-                      </div>
-                    </div>
-                  </SelectTrigger>
-
-                  <SelectContent className="max-h-[300px]">
-                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
-                      {t('rules.systemPolicy')}
-                    </div>
-                    <SelectItem value="proxy-default" className="text-xs font-medium text-primary">
-                      {t('rules.proxy')}
-                    </SelectItem>
-                    <SelectItem value="direct" className="text-xs text-success">
-                      {t('rules.direct')}
-                    </SelectItem>
-                    <SelectItem value="block" className="text-xs text-destructive">
-                      {t('rules.block')}
-                    </SelectItem>
-
-                    {config.servers && config.servers.length > 0 && (
-                      <>
-                        <div className="px-2 py-1.5 mt-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wide border-t">
-                          {t('rules.standaloneNodes')}
-                        </div>
-                        <ServerSelectGroups
-                          servers={config.servers}
-                          valuePrefix="node-"
-                          itemClassName="text-xs"
-                          selectedId={rule?.targetServerId}
-                          showLatency
-                        />
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-
-                {/* 规则集缺失角标：该应用引用的 geo 已删除/文件丢失 → geo 半暂不生效（进程名仍生效），需到「规则资源」页恢复。 */}
-                {affectedAppIds.has(preset.id) && (
-                  <span
-                    className="absolute -top-1 -start-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm"
-                    title={t(
-                      'rules.appGeoMissingTip',
-                      '该应用引用的分流规则集缺失（已删除或文件丢失），仅按进程名生效；请到「规则资源」页下载恢复'
-                    )}
-                  >
-                    <AlertTriangle className="h-3 w-3" />
+        {/* 分类分组（空组隐）：组内无卡则整组不渲染。 */}
+        {groups.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            {t('rules.searchNoMatch', '无匹配规则')}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {groups.map((grp) => (
+              <section key={grp.category} className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {t(`rules.categories.${grp.category}` as any, grp.category)}
                   </span>
-                )}
-
-                {isCustom && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteCustomApp(preset.id);
-                    }}
-                    className="absolute -top-1 -end-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm z-10"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          {/* 新增按钮：始终在最后 */}
-          {!appSearchQuery && (
-            <div className="group relative">
-              <Button
-                variant="outline"
-                onClick={() => setIsAddDialogOpen(true)}
-                className={`${viewMode === 'comfortable' ? 'h-[110px]' : 'h-[88px]'} w-full flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-muted-foreground/10 bg-transparent hover:bg-muted/30 hover:border-primary/30 transition-all duration-300 shadow-none`}
-              >
-                <div className="h-9 w-9 flex items-center justify-center bg-muted/40 rounded-full group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                  <Plus className="h-6 w-6 text-muted-foreground/60 group-hover:text-primary" />
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
+                    {grp.presets.length}
+                  </span>
+                  <span className="h-px flex-1 bg-muted-foreground/10" />
                 </div>
-                <span className="text-xs font-medium text-muted-foreground/70 group-hover:text-primary transition-colors">
-                  {t('rules.createCustom')}
-                </span>
-              </Button>
-            </div>
-          )}
-        </div>
+                <div
+                  className={
+                    viewMode === 'comfortable'
+                      ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3'
+                      : 'grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3'
+                  }
+                >
+                  {grp.presets.map((preset) => {
+                    const rule = getAppRule(preset.id);
+                    const kind = deriveAppPolicy(rule);
+                    const nodeLabel =
+                      kind === 'node'
+                        ? servers.find((s) => s.id === rule?.targetServerId)?.name
+                        : undefined;
+                    return (
+                      <AppCard
+                        key={preset.id}
+                        preset={preset}
+                        rule={rule}
+                        policyKind={kind}
+                        missing={affectedAppIds.has(preset.id)}
+                        label={labelOf(preset)}
+                        subText={t(`rules.categories.${grp.category}` as any, grp.category)}
+                        nodeLabel={nodeLabel}
+                        targetItems={targetItems}
+                        targetGroups={targetGroups}
+                        viewMode={viewMode}
+                        iconFailed={failedIcons.has(preset.id)}
+                        onIconError={() => handleIconError(preset.id)}
+                        onPolicyChange={(v) => handlePolicyChange(preset.id, v)}
+                        onDelete={
+                          preset.isCustom ? () => handleDeleteCustomApp(preset.id) : undefined
+                        }
+                        onGoToResources={goToResources}
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+
+        {/* 新增自定义应用 */}
+        {!appSearchQuery && (
+          <Button
+            variant="outline"
+            onClick={() => setIsAddDialogOpen(true)}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-muted-foreground/10 bg-transparent transition-all hover:border-primary/30 hover:bg-muted/30"
+          >
+            <Plus className="h-5 w-5 text-muted-foreground/60" />
+            <span className="text-sm font-medium text-muted-foreground/80">
+              {t('rules.createCustom')}
+            </span>
+          </Button>
+        )}
       </CardContent>
 
       <AddCustomAppDialog
@@ -421,6 +344,7 @@ export function AppRulesCard() {
         config={config}
         saveConfig={saveConfig}
         geoLocalList={geoLocalList}
+        onGoToResources={goToResources}
       />
     </Card>
   );

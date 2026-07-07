@@ -259,7 +259,9 @@ export function getAppPreset(
         iconUrl: custom.iconUrl,
         geositeTags: custom.geositeTags,
         geoipTags: custom.geoipTags,
-        category: 'tools', // 自定义应用默认归类到工具
+        // 进程名透传给配置生成（与内置预设同一消费点）；自定义应用亦可按进程名精准分流。
+        processNames: custom.processNames,
+        category: 'tools', // 后端不消费 category；分组呈现由渲染层直接读 custom.category（此处仅占位满足类型）
       };
     }
   }
