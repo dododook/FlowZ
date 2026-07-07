@@ -45,6 +45,7 @@ import { api } from '@/ipc';
 import { useStatsTopic } from '@/hooks/use-stats-topic';
 import { toast } from 'sonner';
 import { formatBytes } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import type { ConnectionEntry, ConnectionsSnapshot } from '../../../shared/types';
 import {
   computeConnSpeeds,
@@ -55,6 +56,7 @@ import {
   durationSec,
   fmtDuration,
   parseRule,
+  isBlockedAction,
   type ConnSpeed,
   type RateState,
 } from './connection-utils';
@@ -64,9 +66,8 @@ type SortDir = 'asc' | 'desc';
 
 /** 规则去向 action → Badge 配色：direct 中性灰 / block 系危险红 / 其它(proxy·具体节点) 主色。 */
 function ruleActionVariant(action: string): 'secondary' | 'destructive' | 'default' {
-  const a = action.toLowerCase();
-  if (a === 'direct') return 'secondary';
-  if (a === 'block' || a === 'reject' || a === 'reject-drop' || a === 'drop') return 'destructive';
+  if (action.toLowerCase() === 'direct') return 'secondary';
+  if (isBlockedAction(action)) return 'destructive';
   return 'default';
 }
 
@@ -131,8 +132,12 @@ const ConnectionRow = memo(
     const proc = m.processPath || '-';
     const procName = proc === '-' ? '-' : proc.split(/[/\\]/).pop() || proc;
     const rv = parseRule(c.rule, c.rulePayload);
+    // 状态即形（Conduit）：被阻断的连接整行弱化（无流量、语义上「已丢弃」→ 视觉退后）；
+    // 零速率的速率读数转中性灰（idle 连接不与活跃传输争夺注意力，突出真正在跑的行）。
+    const blocked = isBlockedAction(rv.action);
+    const zeroRate = s.up === 0 && s.down === 0;
     return (
-      <TableRow>
+      <TableRow className={blocked ? 'text-muted-foreground' : undefined}>
         <TableCell className="py-2">
           <button
             className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
@@ -166,8 +171,12 @@ const ConnectionRow = memo(
           {chainOf(c)}
         </TableCell>
         <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs">
-          <span className="text-success">↓ {formatBytes(s.down)}/s</span>
-          <span className="ms-2 text-info">↑ {formatBytes(s.up)}/s</span>
+          <span className={zeroRate ? 'text-muted-foreground' : 'text-success'}>
+            ↓ {formatBytes(s.down)}/s
+          </span>
+          <span className={cn('ms-2', zeroRate ? 'text-muted-foreground' : 'text-info')}>
+            ↑ {formatBytes(s.up)}/s
+          </span>
         </TableCell>
         <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs text-muted-foreground">
           ↓ {formatBytes(c.download ?? 0)} / ↑ {formatBytes(c.upload ?? 0)}
@@ -360,11 +369,30 @@ export function ConnectionsTable() {
 
   return (
     <div className="space-y-3">
-      {/* 顶栏：连接数 + 搜索 + 暂停/恢复 + 全部关闭 */}
+      {/* 顶栏：摘要先行（连接总数 KPI + 实时/暂停指示）+ 搜索 + 暂停/恢复 + 全部关闭 */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm text-muted-foreground">
-          {t('connections.count', { count: connections.length })}
-        </span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold leading-none tracking-tight tabular-nums">
+              {connections.length}
+            </span>
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('connections.active')}
+            </span>
+          </div>
+          {/* 数据流态：暂停 → 中性静态点「已暂停」；运行且未暂停 → teal 呼吸点「实时」；未运行不显（空态已说明）。 */}
+          {paused ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+              {t('connections.paused')}
+            </span>
+          ) : proxyRunning ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+              <span className="h-1.5 w-1.5 rounded-full bg-success motion-safe:animate-pulse" />
+              {t('connections.live')}
+            </span>
+          ) : null}
+        </div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute start-2 top-2 h-3.5 w-3.5 text-muted-foreground" />

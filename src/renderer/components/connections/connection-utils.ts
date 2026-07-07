@@ -79,6 +79,15 @@ export function chainOf(c: ConnectionEntry): string {
   return c.chains && c.chains.length ? c.chains.join(' / ') : '-';
 }
 
+/**
+ * 规则去向是否为「阻断」类 action（block / reject / reject-drop / drop）。
+ * 供 badge 配色（destructive）与行内弱化（blocked 行 recede）共用，避免两处各写一份判定漂移。
+ */
+export function isBlockedAction(action: string): boolean {
+  const a = (action || '').toLowerCase();
+  return a === 'block' || a === 'reject' || a === 'reject-drop' || a === 'drop';
+}
+
 /** 时长（now - start，秒）。start 缺/非法 → -1（排序垫底、展示 '-'）。 */
 export function durationSec(c: ConnectionEntry, now: number): number {
   if (!c.start) return -1;

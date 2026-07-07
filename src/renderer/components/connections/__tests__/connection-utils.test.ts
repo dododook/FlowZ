@@ -11,6 +11,7 @@ import {
   durationSec,
   fmtDuration,
   parseRule,
+  isBlockedAction,
   type RateState,
 } from '../connection-utils';
 import type { ConnectionEntry } from '../../../../shared/types';
@@ -149,6 +150,28 @@ describe('chainOf (节点链展示)', () => {
   });
   it('空链 → "-"', () => {
     expect(chainOf(entry({ chains: [] }))).toBe('-');
+  });
+});
+
+describe('isBlockedAction (阻断类去向判定)', () => {
+  it('block / reject / reject-drop / drop → true', () => {
+    expect(isBlockedAction('block')).toBe(true);
+    expect(isBlockedAction('reject')).toBe(true);
+    expect(isBlockedAction('reject-drop')).toBe(true);
+    expect(isBlockedAction('drop')).toBe(true);
+  });
+  it('大小写不敏感', () => {
+    expect(isBlockedAction('BLOCK')).toBe(true);
+    expect(isBlockedAction('Reject-Drop')).toBe(true);
+  });
+  it('proxy / direct / 具体节点名 → false', () => {
+    expect(isBlockedAction('proxy')).toBe(false);
+    expect(isBlockedAction('direct')).toBe(false);
+    expect(isBlockedAction('香港 IEPL · 01')).toBe(false);
+  });
+  it('空 / undefined 输入 → false（永不崩）', () => {
+    expect(isBlockedAction('')).toBe(false);
+    expect(isBlockedAction(undefined as unknown as string)).toBe(false);
   });
 });
 
