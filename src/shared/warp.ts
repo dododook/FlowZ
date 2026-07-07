@@ -38,6 +38,18 @@ export function isWarpServer(server: {
   return (server.address || '').toLowerCase().includes(WARP_ENDPOINT_DOMAIN);
 }
 
+/** 组网接入区里已注册的 WARP 节点（单例：至多一个）。纯函数，供接入区从「接入」切「已接入·管理」+ 单测。 */
+export function findWarpNode<T extends Parameters<typeof isWarpServer>[0]>(
+  servers: T[]
+): T | undefined {
+  return servers.find((s) => isWarpServer(s));
+}
+
+/** WARP 单例守卫：已存在 WARP 节点则「槽位」被占——接入区不再提供「再加一个」（行为变更，用户签核）。 */
+export function warpSlotTaken(servers: Parameters<typeof isWarpServer>[0][]): boolean {
+  return servers.some((s) => isWarpServer(s));
+}
+
 /** 注册请求体（POST /reg）。tos = RFC3339Nano UTC 时间戳（ToS 接受时间）；install_id/fcm_token 传空可注册。 */
 export function buildRegisterBody(
   publicKeyB64: string,

@@ -7,6 +7,8 @@ import {
   classifyDeregisterResult,
   enqueuePendingDeregister,
   planDeregisterDrain,
+  findWarpNode,
+  warpSlotTaken,
   WARP_API_BASE,
   WARP_USER_AGENT,
   WARP_CLIENT_VERSION,
@@ -226,5 +228,41 @@ describe('planDeregisterDrain（年龄 + MAX_PER_DRAIN 截断）', () => {
     expect(plan.filter((p) => p.action === 'expire').length).toBe(5);
     expect(plan.filter((p) => p.action === 'eligible').length).toBe(WARP_DEREGISTER_MAX_PER_DRAIN);
     expect(deferred.length).toBe(0);
+  });
+});
+
+describe('WARP 单例守卫（批3b：warpSlotTaken / findWarpNode）', () => {
+  const wg = (over: Record<string, unknown> = {}) =>
+    ({ id: 'w1', name: 'wg', protocol: 'wireguard', ...over }) as any;
+  const warpByDevice = wg({
+    id: 'wa1',
+    wireguardSettings: { warpDevice: { deviceId: 'd', token: 't' } },
+  });
+  const warpByDomain = wg({ id: 'wa2', address: 'engage.cloudflareclient.com' });
+  const plainWg = wg({ id: 'p1', address: '1.2.3.4' });
+  const vless = { id: 'v1', name: 'v', protocol: 'vless', address: '1.2.3.4' } as any;
+
+  it('无 WARP 节点 → slot 未占，findWarpNode=undefined', () => {
+    expect(warpSlotTaken([plainWg, vless])).toBe(false);
+    expect(findWarpNode([plainWg, vless])).toBeUndefined();
+    expect(warpSlotTaken([])).toBe(false);
+  });
+
+  it('凭 warpDevice 标记识别 WARP（新节点）→ slot 占用', () => {
+    expect(warpSlotTaken([plainWg, warpByDevice])).toBe(true);
+    expect(findWarpNode([plainWg, warpByDevice])?.id).toBe('wa1');
+  });
+
+  it('凭端点域名兜底识别旧 WARP（无 warpDevice 标记）→ slot 占用', () => {
+    expect(warpSlotTaken([warpByDomain])).toBe(true);
+    expect(findWarpNode([vless, warpByDomain])?.id).toBe('wa2');
+  });
+
+  it('findWarpNode 取首个 WARP（单例语义：至多一个，取第一个）', () => {
+    expect(findWarpNode([plainWg, warpByDevice, warpByDomain])?.id).toBe('wa1');
+  });
+
+  it('非 wireguard 协议不误判为 WARP', () => {
+    expect(warpSlotTaken([vless])).toBe(false);
   });
 });

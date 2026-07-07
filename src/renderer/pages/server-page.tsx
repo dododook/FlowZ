@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { ServerList } from '@/components/settings/server-list';
-import { TailscaleConnectionCard } from '@/components/settings/tailscale-connection-card';
 import { MeshAccessEntry } from '@/components/settings/mesh-access-entry';
 import { ServerConfigDialog } from '@/components/settings/server-config-dialog';
 import { SubscriptionDialog } from '@/components/settings/subscription-dialog';
@@ -20,6 +19,7 @@ import {
   HardDriveDownload,
 } from 'lucide-react';
 import { isAccountBasedProtocol, isEndpointProtocol } from '../../shared/endpoint-routes';
+import { findWarpNode } from '../../shared/warp';
 import { groupServersBySubscription } from '../../shared/server-grouping';
 import {
   AlertDialog,
@@ -90,12 +90,13 @@ export function ServerPage() {
   // 按组 id 统一取数（manual/mesh/订阅 id）；空组在 grouped 中被省略，回落 []（仍渲染该订阅 tab 供更新）。
   const serversOfGroup = (id: string) => grouped.find((g) => g.id === id)?.servers ?? [];
   const manualProxyServers = serversOfGroup('manual');
-  // 组网组全量（含 Tailscale）：供 tab 是否显示、state 兜底 effect 取 TS id、单例卡取 tsNode。
+  // 组网组全量（含 Tailscale）：供 tab 是否显示、state 兜底 effect 取 TS id、接入区取 tsNode/warpNode。
   const meshServersAll = serversOfGroup('mesh');
-  // 组网列表只渲染节点制协议（WireGuard/WARP）——Tailscale 抽离为顶部单例卡（批3），不再进列表（设计文档④）。
-  const meshServers = meshServersAll.filter((s) => s.protocol?.toLowerCase() !== 'tailscale');
-  // 单例卡承载的唯一 Tailscale 节点（单例硬限保证至多一个）；无则卡片渲染「连接」入口态。
+  // 批3b：TS 融入统一节点模型 → 组网列表纳入全部组网节点（含 Tailscale），点卡=选为出口（复用全局 selectedServerId）。
+  // 单例硬限保证至多一个 Tailscale；无则接入区渲染「连接」入口态。
   const tailscaleNode = meshServersAll.find((s) => isAccountBasedProtocol(s.protocol));
+  // 已注册的 WARP 节点（单例，行为变更用户签核）；有则接入区「已接入·管理」，无则「接入」。
+  const warpNode = findWarpNode(meshServersAll);
 
   // 默认激活 Tab = 当前选中节点所在组（自建 / 组网 / 某订阅）；用户手动切 Tab 后由 override 接管。
   // 用「派生 + override」而非 useState 惰性初值：config 异步到位前挂载不会把激活组锁死在 'manual'。
@@ -116,8 +117,7 @@ export function ServerPage() {
       ? tabOverride
       : selectedGroupKey;
 
-  // 组网 Tab 的 Tailscale 节点 id 指纹（稳定 string；避免数组引用每渲染变导致 effect 反复跑）。
-  // 取自 meshServersAll（含 TS）——批3 把 TS 抽离列表后仍需对 TS 节点跑 state 兜底，故不能用已剔除 TS 的 meshServers。
+  // 组网 Tab 的 Tailscale 节点 id 指纹（稳定 string；避免数组引用每渲染变导致 effect 反复跑），供代理关时 state 兜底。
   const tsNodeIdsKey = meshServersAll
     .filter((s) => isAccountBasedProtocol(s.protocol))
     .map((s) => s.id)
@@ -155,8 +155,6 @@ export function ServerPage() {
   }, [proxyRunning, tsNodeIdsKey, setTailscaleLoginState]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // 「接入组网」入口的 Tailscale 按钮（无 TS 节点时）滚动定位到上方单例连接卡。
-  const tailscaleCardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -357,25 +355,18 @@ export function ServerPage() {
           />
         </TabsContent>
 
-        {/* 组网节点内容：顶部 Tailscale 单例连接卡 + 接入组网入口区（批3），下面 WireGuard/WARP 列表 */}
+        {/* 组网节点内容：接入组网入口区（批3b：含 TS 完整登录状态机 + WARP 单例）+ 统一节点列表（含 Tailscale） */}
         <TabsContent value="mesh">
           <div className="space-y-4">
-            <div ref={tailscaleCardRef}>
-              <TailscaleConnectionCard
-                tsNode={tailscaleNode}
-                proxyRunning={proxyRunning}
-                autoOpenSettings={tsAutoOpenSettings}
-                onAutoOpenConsumed={() => setTsAutoOpenSettings(false)}
-              />
-            </div>
             <MeshAccessEntry
-              hasTailscale={!!tailscaleNode}
-              onTailscaleClick={() =>
-                tailscaleCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              }
+              tsNode={tailscaleNode}
+              warpNode={warpNode}
+              proxyRunning={proxyRunning}
+              autoOpenSettings={tsAutoOpenSettings}
+              onAutoOpenConsumed={() => setTsAutoOpenSettings(false)}
             />
             <ServerList
-              servers={meshServers}
+              servers={meshServersAll}
               selectedServerId={selectedServerId ?? undefined}
               onAddServer={handleAddServer}
               onEditServer={handleEditServer}

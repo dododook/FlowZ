@@ -4,6 +4,7 @@
  */
 import {
   tailscaleNeedsLogin,
+  tailscaleLoggingIn,
   tailscaleLoginUiState,
   sortServers,
   meshIsExitCapable,
@@ -41,6 +42,39 @@ describe('tailscaleNeedsLogin', () => {
   it('非 Tailscale 节点 → 恒 false（即使 loggedIn 缺省）', () => {
     expect(tailscaleNeedsLogin(ts({ protocol: 'vless' }))).toBe(false);
     expect(tailscaleNeedsLogin(ts({ protocol: 'wireguard' }), false)).toBe(false);
+  });
+});
+
+describe('统一节点卡 · TS 登录三态→角标映射（批3b：退役单例卡后 ServerCard 承载状态显示）', () => {
+  // 复刻 ServerCard 的角标优先级：loggingIn 优先，needs-login 仅在 !loggingIn 时显示。
+  // 三态 = 交互登录型（无 authKey）的 needs-login / logging-in / connected → 卡片有效角标。
+  const badge = (hasAuthUrl: boolean, loggedIn: boolean): 'logging-in' | 'needs-login' | 'none' => {
+    const s = ts();
+    if (tailscaleLoggingIn(s, hasAuthUrl, loggedIn)) return 'logging-in';
+    if (tailscaleNeedsLogin(s, loggedIn)) return 'needs-login';
+    return 'none';
+  };
+
+  it('needs-login（未登录 · 无 authUrl）→ 卡片显「Log in」角标', () => {
+    expect(badge(false, false)).toBe('needs-login');
+  });
+
+  it('logging-in（未登录 · 有 authUrl）→ 卡片显「登录中」角标（优先于 needs-login）', () => {
+    expect(badge(true, false)).toBe('logging-in');
+    // 优先级证据：此态下 needsLogin 谓词本身仍为真，但 loggingIn 抢先。
+    expect(tailscaleNeedsLogin(ts(), false)).toBe(true);
+    expect(tailscaleLoggingIn(ts(), true, false)).toBe(true);
+  });
+
+  it('connected（loggedIn=true）→ 常规卡，无登录角标（不论 authUrl 残留）', () => {
+    expect(badge(false, true)).toBe('none');
+    expect(badge(true, true)).toBe('none');
+  });
+
+  it('authKey 静态形态（key-ready）→ 无登录角标（既不 needs-login 也不 logging-in）', () => {
+    const keyed = ts({ tailscaleSettings: { authKey: 'tskey-x' } });
+    expect(tailscaleNeedsLogin(keyed, false)).toBe(false);
+    expect(tailscaleLoggingIn(keyed, true, false)).toBe(false);
   });
 });
 
