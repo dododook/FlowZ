@@ -82,16 +82,18 @@ export function AddCustomAppDialog({
   const [geoCatalogLoading, setGeoCatalogLoading] = useState(false);
   const [geoCatalogRefreshing, setGeoCatalogRefreshing] = useState(false);
 
-  // 字段级错误派生（提交 gate 与内联展示共用单一真值）：名称必填 + 至少一个 Geosite + 选「自定义分类」须填名。
-  // 未尝试提交前全 false（打开即报错反直觉）；submitAttempted 后随字段实时刷新 → 用户改好即消。
-  const errors = useMemo(() => {
-    if (!submitAttempted) return { name: false, geosite: false, category: false };
-    return {
+  // 字段级错误单一真值（纯字段值派生，不受 submitAttempted gate）：名称必填 + 至少一个 Geosite + 选「自定义分类」须填名。
+  // 提交 gate 与内联展示共用此 memo（对齐 rule-dialog 的 collectRuleFormErrors 模式），消除谓词字面重复。
+  const fieldErrors = useMemo(
+    () => ({
       name: !newAppName.trim(),
       geosite: newAppGeositeTags.length === 0,
       category: newAppCategory === CUSTOM_CATEGORY && !customCategory.trim(),
-    };
-  }, [submitAttempted, newAppName, newAppGeositeTags, newAppCategory, customCategory]);
+    }),
+    [newAppName, newAppGeositeTags, newAppCategory, customCategory]
+  );
+  // 展示层：未尝试提交前全 false（打开即报错反直觉）；submitAttempted 后随字段实时刷新 → 用户改好即消。
+  const errors = submitAttempted ? fieldErrors : { name: false, geosite: false, category: false };
 
   // 打开时重置为表单视图（取代原 +按钮的 setShowIconGallery(false)）+ 清尝试提交态（避免重开即报错）
   useEffect(() => {
@@ -158,13 +160,10 @@ export function AddCustomAppDialog({
   };
 
   const handleAddCustomApp = async () => {
-    // 字段级校验（内联，不 toast）：名称必填 + 至少一个 Geosite + 选「自定义分类」时须填名。
-    // 置 submitAttempted → errors 派生生效并内联展示；gate 用同一判据。
+    // 字段级校验（内联，不 toast）：置 submitAttempted → errors 派生生效并内联展示；
+    // gate 直接消费 fieldErrors（与展示同一真值，无字面重复谓词）。
     setSubmitAttempted(true);
-    const nameBad = !newAppName.trim();
-    const geositeBad = newAppGeositeTags.length === 0;
-    const categoryBad = newAppCategory === CUSTOM_CATEGORY && !customCategory.trim();
-    if (nameBad || geositeBad || categoryBad) return;
+    if (fieldErrors.name || fieldErrors.geosite || fieldErrors.category) return;
 
     const category = newAppCategory === CUSTOM_CATEGORY ? customCategory.trim() : newAppCategory;
     const processNames = newAppProcessNames
