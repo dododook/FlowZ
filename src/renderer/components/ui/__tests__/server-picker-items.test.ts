@@ -3,7 +3,7 @@
  * 延迟徽标 / 地址 / 排除 / 排序 等价矩阵。四处消费方（首页出口 / 规则目标 / 应用分流 / detour）共用此映射，
  * 本测试锁各差异开关的输出，防抽取后回归。
  */
-import { buildServerPickerModel, nodeAddress } from '../server-picker-items';
+import { buildServerPickerModel, isPickerCandidate, nodeAddress } from '../server-picker-items';
 import type { ServerConfig, SubscriptionConfig } from '../../../../shared/types';
 
 const srv = (over: Partial<ServerConfig> & { id: string }): ServerConfig => ({
@@ -23,6 +23,30 @@ const sub = (id: string, name: string): SubscriptionConfig => ({
 });
 
 const LABELS = { meshLabel: 'MESH', manualLabel: 'MANUAL' };
+
+describe('isPickerCandidate（候选谓词：buildServerPickerModel 入列 + 悬挂检测共用）', () => {
+  it('普通节点 → 候选', () => {
+    expect(isPickerCandidate(srv({ id: 'a' }))).toBe(true);
+  });
+  it('excludeId 命中自身 → 非候选', () => {
+    expect(isPickerCandidate(srv({ id: 'a' }), 'a')).toBe(false);
+    expect(isPickerCandidate(srv({ id: 'a' }), 'b')).toBe(true);
+  });
+  it('excludeEndpoint 时组网协议 → 非候选（detour 不作前置代理目标）', () => {
+    expect(isPickerCandidate(srv({ id: 'w', protocol: 'wireguard' }), undefined, true)).toBe(false);
+    expect(isPickerCandidate(srv({ id: 't', protocol: 'tailscale' }), undefined, true)).toBe(false);
+    expect(isPickerCandidate(srv({ id: 'v', protocol: 'vless' }), undefined, true)).toBe(true);
+  });
+  it('detour 悬挂检测：目标已删 / 被组网过滤 → 不在候选（回落直连）', () => {
+    const servers = [srv({ id: 'a' }), srv({ id: 'wg', protocol: 'wireguard' })];
+    const valid = (id: string) =>
+      servers.some((s) => s.id === id && isPickerCandidate(s, 'self', true));
+    expect(valid('a')).toBe(true); // 有效前置代理
+    expect(valid('wg')).toBe(false); // 组网协议被排除 → 悬挂
+    expect(valid('deleted')).toBe(false); // 已删除 → 悬挂
+    expect(valid('self')).toBe(false); // 自身被排除
+  });
+});
 
 describe('nodeAddress', () => {
   it('有地址 + 端口 → addr:port', () =>

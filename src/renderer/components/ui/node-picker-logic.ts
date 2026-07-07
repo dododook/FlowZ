@@ -133,3 +133,17 @@ export function firstSelectable(sections: NodePickerSection[]): NodePickerItem |
   }
   return undefined;
 }
+
+/**
+ * 搜索框 Enter 选中决策（单一真值，供 NodePicker 的 onSearchEnter 复用）：
+ * **仅当有真实查询词（trim 非空）时**才选中视觉首个可选项；空 query 的裸 Enter → undefined（no-op）。
+ * 修复：空 query 时首个可选往往是顶部哨兵（None / 直连 / 跟随全局），用户开下拉未输入直接 Enter 会误选哨兵、
+ * 把已配置出口/exit_node 静默清空。加此 gate 后，裸 Enter 不选任何项，只有搜到词回车才确认首个匹配。
+ */
+export function enterSelection(
+  query: string,
+  sections: NodePickerSection[]
+): NodePickerItem | undefined {
+  if (!query.trim()) return undefined;
+  return firstSelectable(sections);
+}

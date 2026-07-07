@@ -74,19 +74,31 @@ export function AddCustomAppDialog({
   const [newAppGeoipTags, setNewAppGeoipTags] = useState<string[]>([]);
   const [newAppProcessNames, setNewAppProcessNames] = useState('');
   const [processPickerOpen, setProcessPickerOpen] = useState(false);
-  // 字段级错误（内联，不 toast）
-  const [nameError, setNameError] = useState(false);
-  const [geositeError, setGeositeError] = useState(false);
-  const [categoryError, setCategoryError] = useState(false);
+  // 字段级错误（内联，不 toast）：仅在尝试提交后派生（改字段即时消错），对齐 rule-dialog 的 submitAttempted + 派生 errors 模式。
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   // geo 分类 catalog（geosite/geoip 多选数据源）：内置/缓存即时，全量需刷新
   const [geoCatalog, setGeoCatalog] = useState<RuleResourceCatalogItem[]>([]);
   const [geoCatalogLoading, setGeoCatalogLoading] = useState(false);
   const [geoCatalogRefreshing, setGeoCatalogRefreshing] = useState(false);
 
-  // 打开时重置为表单视图（取代原 +按钮的 setShowIconGallery(false)）
+  // 字段级错误派生（提交 gate 与内联展示共用单一真值）：名称必填 + 至少一个 Geosite + 选「自定义分类」须填名。
+  // 未尝试提交前全 false（打开即报错反直觉）；submitAttempted 后随字段实时刷新 → 用户改好即消。
+  const errors = useMemo(() => {
+    if (!submitAttempted) return { name: false, geosite: false, category: false };
+    return {
+      name: !newAppName.trim(),
+      geosite: newAppGeositeTags.length === 0,
+      category: newAppCategory === CUSTOM_CATEGORY && !customCategory.trim(),
+    };
+  }, [submitAttempted, newAppName, newAppGeositeTags, newAppCategory, customCategory]);
+
+  // 打开时重置为表单视图（取代原 +按钮的 setShowIconGallery(false)）+ 清尝试提交态（避免重开即报错）
   useEffect(() => {
-    if (open) setShowIconGallery(false);
+    if (open) {
+      setShowIconGallery(false);
+      setSubmitAttempted(false);
+    }
   }, [open]);
 
   // 打开时拉 geo 分类 catalog（走内置/磁盘缓存，无网络）；只拉一次，全量由刷新按钮拉
@@ -118,9 +130,7 @@ export function AddCustomAppDialog({
     setNewAppGeositeTags([]);
     setNewAppGeoipTags([]);
     setNewAppProcessNames('');
-    setNameError(false);
-    setGeositeError(false);
-    setCategoryError(false);
+    setSubmitAttempted(false);
   };
 
   // 拉取远程全量 geo 分类清单（内置/缓存只含精选；与「资源库」对话框同源 MetaCubeX）
@@ -149,12 +159,11 @@ export function AddCustomAppDialog({
 
   const handleAddCustomApp = async () => {
     // 字段级校验（内联，不 toast）：名称必填 + 至少一个 Geosite + 选「自定义分类」时须填名。
+    // 置 submitAttempted → errors 派生生效并内联展示；gate 用同一判据。
+    setSubmitAttempted(true);
     const nameBad = !newAppName.trim();
     const geositeBad = newAppGeositeTags.length === 0;
     const categoryBad = newAppCategory === CUSTOM_CATEGORY && !customCategory.trim();
-    setNameError(nameBad);
-    setGeositeError(geositeBad);
-    setCategoryError(categoryBad);
     if (nameBad || geositeBad || categoryBad) return;
 
     const category = newAppCategory === CUSTOM_CATEGORY ? customCategory.trim() : newAppCategory;
@@ -303,18 +312,15 @@ export function AddCustomAppDialog({
                   <Input
                     id="name"
                     value={newAppName}
-                    onChange={(e) => {
-                      setNewAppName(e.target.value);
-                      if (nameError) setNameError(false);
-                    }}
+                    onChange={(e) => setNewAppName(e.target.value)}
                     placeholder={t('rules.customApp.namePlaceholder')}
-                    aria-invalid={nameError}
+                    aria-invalid={errors.name}
                     className={cn(
                       'h-10 rounded-lg border-none bg-muted/20 focus-visible:ring-1',
-                      nameError && 'ring-1 ring-destructive'
+                      errors.name && 'ring-1 ring-destructive'
                     )}
                   />
-                  {nameError && (
+                  {errors.name && (
                     <p className="text-xs text-destructive">
                       {t('rules.customApp.nameRequired', '请填写应用名称')}
                     </p>
@@ -328,13 +334,7 @@ export function AddCustomAppDialog({
                   {t('rules.customApp.categoryLabel', '分类归属')}
                 </Label>
                 <div className="col-span-3 space-y-1.5">
-                  <Select
-                    value={newAppCategory}
-                    onValueChange={(v) => {
-                      setNewAppCategory(v);
-                      if (v !== CUSTOM_CATEGORY && categoryError) setCategoryError(false);
-                    }}
-                  >
+                  <Select value={newAppCategory} onValueChange={setNewAppCategory}>
                     <SelectTrigger className="h-10 rounded-lg border-none bg-muted/20">
                       <SelectValue />
                     </SelectTrigger>
@@ -353,21 +353,18 @@ export function AddCustomAppDialog({
                     <>
                       <Input
                         value={customCategory}
-                        onChange={(e) => {
-                          setCustomCategory(e.target.value);
-                          if (categoryError) setCategoryError(false);
-                        }}
+                        onChange={(e) => setCustomCategory(e.target.value)}
                         placeholder={t(
                           'rules.customApp.categoryPlaceholder',
                           '输入新分类名，如 办公'
                         )}
-                        aria-invalid={categoryError}
+                        aria-invalid={errors.category}
                         className={cn(
                           'h-9 rounded-lg border-none bg-muted/20 text-sm focus-visible:ring-1',
-                          categoryError && 'ring-1 ring-destructive'
+                          errors.category && 'ring-1 ring-destructive'
                         )}
                       />
-                      {categoryError && (
+                      {errors.category && (
                         <p className="text-xs text-destructive">
                           {t('rules.customApp.categoryRequired', '请输入分类名')}
                         </p>
@@ -384,17 +381,14 @@ export function AddCustomAppDialog({
                   <GeoTagPicker
                     options={geositeOptions}
                     value={newAppGeositeTags}
-                    onChange={(tags) => {
-                      setNewAppGeositeTags(tags);
-                      if (geositeError && tags.length > 0) setGeositeError(false);
-                    }}
+                    onChange={setNewAppGeositeTags}
                     localTags={localGeositeTags}
                     loading={geoCatalogLoading}
                     refreshing={geoCatalogRefreshing}
                     onRefresh={refreshGeoCatalog}
                     placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
                   />
-                  {geositeError && (
+                  {errors.geosite && (
                     <p className="text-xs text-destructive">
                       {t('rules.customApp.geositeRequired', '请至少选择一个 Geosite 分类')}
                     </p>

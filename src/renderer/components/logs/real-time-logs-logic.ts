@@ -18,8 +18,10 @@ export function logMatchesSearch(log: Pick<LogEntry, 'message' | 'level'>, term:
 /**
  * 环形缓冲截断：仅保留最新 max 条（超出则从尾部取）。
  * 未超限时原样返回同一引用，保持 setState 幂等、避免无谓重渲。
+ * max<=0 → 空数组（否则 slice(-0) 退化为 slice(0) 返全量；当前调用恒传正数、不可达，但导出函数须自洽）。
  */
 export function truncateToBuffer<T>(rows: T[], max: number): T[] {
+  if (max <= 0) return [];
   return rows.length > max ? rows.slice(-max) : rows;
 }
 

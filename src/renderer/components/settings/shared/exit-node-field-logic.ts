@@ -37,6 +37,14 @@ export function sortPeers(peers: TailscaleStatusPeer[]): TailscaleStatusPeer[] {
 }
 
 /**
+ * 单个 peer 是否命中配置值（ip 或 hostName 双匹配）——单一真值，供 matchPeer 与 peerDisabled 复用，
+ * 杜绝两处各写一套双匹配条件而漂移。sing-box exit_node 合法接受 IP 或 hostname。
+ */
+export function peerMatches(peer: TailscaleStatusPeer, trimmed: string): boolean {
+  return peer.ip === trimmed || peer.hostName === trimmed;
+}
+
+/**
  * 按 ip 或主机名匹配：sing-box exit_node 合法接受 IP 或 hostname，故 hostname 配置也命中其设备行
  * （不被误判为自定义）。空 trimmed → undefined。
  */
@@ -45,7 +53,7 @@ export function matchPeer(
   trimmed: string
 ): TailscaleStatusPeer | undefined {
   if (!trimmed) return undefined;
-  return peers.find((p) => p.ip === trimmed || p.hostName === trimmed);
+  return peers.find((p) => peerMatches(p, trimmed));
 }
 
 /**
@@ -53,7 +61,7 @@ export function matchPeer(
  * 不因对端一时未广告出口而无法显示/重选。
  */
 export function peerDisabled(peer: TailscaleStatusPeer, trimmed: string): boolean {
-  return !peer.exitNodeOption && peer.ip !== trimmed && peer.hostName !== trimmed;
+  return !peer.exitNodeOption && !peerMatches(peer, trimmed);
 }
 
 /** 名称后补充说明：ip · [使用中 / 离线 / 未广告出口]（各条件独立叠加，以 ' · ' 连接）。 */

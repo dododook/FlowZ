@@ -8,6 +8,7 @@ import {
   NONE,
   matchPeer,
   peerDisabled,
+  peerMatches,
   peerNote,
   peersToItems,
   sortPeers,
@@ -30,6 +31,13 @@ const labels: ExitNodeLabels = {
   offline: '离线',
   notAdvertised: '未广告出口',
 };
+
+describe('peerMatches（ip / hostName 双匹配单一真值，matchPeer 与 peerDisabled 共用）', () => {
+  const p = peer({ ip: '100.0.0.5', hostName: 'nas' });
+  it('命中 ip', () => expect(peerMatches(p, '100.0.0.5')).toBe(true));
+  it('命中 hostName', () => expect(peerMatches(p, 'nas')).toBe(true));
+  it('都不命中 → false', () => expect(peerMatches(p, '100.0.0.6')).toBe(false));
+});
 
 describe('sortPeers（可作出口优先 → 在线优先 → 名称；过滤空 ip）', () => {
   it('剔除空 ip', () => {

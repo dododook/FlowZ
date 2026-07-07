@@ -48,6 +48,11 @@ describe('truncateToBuffer', () => {
   it('空数组安全', () => {
     expect(truncateToBuffer([], 500)).toEqual([]);
   });
+
+  it('max<=0 → 空数组（防 slice(-0) 退化为 slice(0) 返全量）', () => {
+    expect(truncateToBuffer([1, 2, 3], 0)).toEqual([]);
+    expect(truncateToBuffer([1, 2, 3], -5)).toEqual([]);
+  });
 });
 
 describe('getLevelColorClass', () => {

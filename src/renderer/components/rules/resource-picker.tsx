@@ -1,13 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ChevronDown, Search, X } from 'lucide-react';
+import { DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
+import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
+import { ChevronDown, X } from 'lucide-react';
 import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import type { RuleResourceListItem } from '@/bridge/types';
@@ -41,7 +37,6 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
   const [resources, setResources] = useState<RuleResourceListItem[]>([]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // 内置（随包）+ 外置（已下载）都列出：两者都是本地 .srs，均可经 res:<id> 引用（内置 id=builtin:<tag>，
@@ -53,19 +48,6 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
   }, []);
 
   const showSearch = shouldShowSearch(resources.length);
-
-  // 关闭时清空查询；打开且有搜索框时把焦点交给输入框（rAF 让 radix 默认聚焦先跑，再夺回）。
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      return;
-    }
-    if (showSearch) {
-      const id = requestAnimationFrame(() => inputRef.current?.focus());
-      return () => cancelAnimationFrame(id);
-    }
-    return undefined;
-  }, [open, showSearch]);
 
   const toggleRes = (id: string) => onChange(toggleResourceRef(value, id));
   const remove = (v: string) => onChange(value.filter((x) => x !== v));
@@ -128,68 +110,29 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
           </Button>
         </div>
       ) : (
-        <DropdownMenu open={open} onOpenChange={setOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex h-10 w-full items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-start text-sm ring-offset-background transition-colors hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=open]:border-primary/55"
-            >
+        <SearchableDropdown
+          open={open}
+          onOpenChange={setOpen}
+          triggerClassName="h-10"
+          contentClassName="max-h-[300px] w-[var(--radix-dropdown-menu-trigger-width)]"
+          showSearch={showSearch}
+          query={query}
+          onQueryChange={setQuery}
+          searchIcon
+          searchPlaceholder={t('ruleResources.picker.search', '搜索规则集')}
+          isEmpty={builtin.length === 0 && external.length === 0}
+          emptyText={t('ruleResources.picker.noMatch', '无匹配规则集')}
+          trigger={
+            <>
               <span
                 className={`min-w-0 flex-1 truncate ${value.length === 0 ? 'text-muted-foreground' : 'font-medium'}`}
               >
                 {summary}
               </span>
               <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="max-h-[300px] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto p-1.5"
-          >
-            {showSearch && (
-              <div className="mb-1 px-1 pt-0.5">
-                <div className="relative">
-                  <Search className="absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    ref={inputRef}
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    // 阻止 printable 键冒泡触发 radix typeahead（会抢焦点）；放行 Esc(关)/方向键(进列表)。
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Escape' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') {
-                        e.stopPropagation();
-                      }
-                    }}
-                    placeholder={t('ruleResources.picker.search', '搜索规则集')}
-                    className="w-full rounded-md border border-input bg-muted/40 py-1.5 ps-8 pe-2.5 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                </div>
-              </div>
-            )}
-            {builtin.length === 0 && external.length === 0 ? (
-              <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-                {t('ruleResources.picker.noMatch', '无匹配规则集')}
-              </div>
-            ) : (
-              <>
-                {builtin.length > 0 && (
-                  <>
-                    <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('ruleResources.picker.groupBuiltin', '内置 · 随包')}
-                    </div>
-                    {builtin.map(renderRow)}
-                  </>
-                )}
-                {external.length > 0 && (
-                  <>
-                    <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('ruleResources.picker.groupExternal', '已下载')}
-                    </div>
-                    {external.map(renderRow)}
-                  </>
-                )}
-              </>
-            )}
+            </>
+          }
+          footer={
             <button
               type="button"
               onClick={goToResources}
@@ -197,8 +140,25 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
             >
               {t('ruleResources.picker.manageMore', '前往「规则资源」下载更多 →')}
             </button>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+        >
+          {builtin.length > 0 && (
+            <>
+              <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('ruleResources.picker.groupBuiltin', '内置 · 随包')}
+              </div>
+              {builtin.map(renderRow)}
+            </>
+          )}
+          {external.length > 0 && (
+            <>
+              <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('ruleResources.picker.groupExternal', '已下载')}
+              </div>
+              {external.map(renderRow)}
+            </>
+          )}
+        </SearchableDropdown>
       )}
 
       {/* 已选 chips（仅 res:<id> 本地引用；旧配置遗留的裸 URL 值仍可在此移除） */}

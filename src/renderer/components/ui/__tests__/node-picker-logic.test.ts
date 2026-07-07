@@ -3,6 +3,7 @@
  * 组件基于 radix dropdown-menu 组合，本测试只锁与 UI 无关的数据变换（离线安全网，供批 3+ 复用前防回归）。
  */
 import {
+  enterSelection,
   filterItems,
   findItem,
   firstSelectable,
@@ -148,5 +149,38 @@ describe('firstSelectable（Enter 选中首个可选，跳过 disabled）', () =
       groups
     );
     expect(firstSelectable(secs)?.id).toBe('y');
+  });
+});
+
+describe('enterSelection（Enter 选中 gate：空 query 不选，杜绝误清空）', () => {
+  // 首项是顶部哨兵（直连/None/跟随全局），其后是真实节点——复刻 exit-node picker 结构。
+  const sections = groupItems([
+    item({ id: '__none__', name: '直连', role: 'none' }),
+    item({ id: 'n1', name: 'Tokyo' }),
+    item({ id: 'n2', name: 'Osaka' }),
+  ]);
+
+  it('空 query 的裸 Enter → undefined（不选顶部哨兵，onSelect 不被调用）', () => {
+    expect(enterSelection('', sections)).toBeUndefined();
+  });
+
+  it('纯空白 query（仅空格）→ undefined（trim 后为空视同裸 Enter）', () => {
+    expect(enterSelection('   ', sections)).toBeUndefined();
+  });
+
+  it('有真实查询词 → 选视觉首个可选项（首个匹配）', () => {
+    const filtered = groupItems(
+      filterItems(
+        sections.flatMap((s) => s.items),
+        'osaka'
+      )
+    );
+    expect(enterSelection('osaka', filtered)?.id).toBe('n2');
+  });
+
+  it('有查询词但结果全 disabled / 空 → undefined', () => {
+    const allDisabled = groupItems([item({ id: 'd', name: 'D', disabled: true })]);
+    expect(enterSelection('d', allDisabled)).toBeUndefined();
+    expect(enterSelection('zzz', groupItems([]))).toBeUndefined();
   });
 });

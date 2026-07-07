@@ -1,17 +1,13 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
+  enterSelection,
   filterItems,
   findItem,
-  firstSelectable,
   groupItems,
   latencyTone,
   shouldShowSearch,
@@ -114,159 +110,114 @@ export function NodePicker({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const current = findItem(items, value);
   const showSearch = shouldShowSearch(items.length, searchThreshold);
   const filtered = query ? filterItems(items, query) : items;
   const sections = groupItems(filtered, groups);
-  const multiSection = sections.filter((s) => s.group).length > 1 || sections.length > 1;
-
-  // 关闭时清空查询（下次打开回到全量）；打开且有搜索框时把焦点交给输入框（rAF 让 radix 默认聚焦首项先跑，再夺回）。
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      return;
-    }
-    if (showSearch) {
-      const id = requestAnimationFrame(() => inputRef.current?.focus());
-      return () => cancelAnimationFrame(id);
-    }
-    return undefined;
-  }, [open, showSearch]);
+  // 多段（>1）才显分组头：置顶「无分组」桶 + 各有序分组段。
+  const multiSection = sections.length > 1;
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <button
-          type="button"
-          aria-label={ariaLabel}
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-start text-sm ring-offset-background transition-colors hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=open]:border-primary/55',
-            size === 'lg' ? 'h-11' : 'h-10',
-            className
-          )}
-        >
-          {current ? (
-            <>
-              <span
-                className={cn('h-2 w-2 shrink-0 rounded-full', DOT_CLASS[dotToneOf(current)])}
-              />
-              <span
-                className={cn('min-w-0 truncate font-medium', size === 'lg' && 'text-[0.95rem]')}
-                title={current.name}
-              >
-                {current.name}
+    <SearchableDropdown
+      open={open}
+      onOpenChange={setOpen}
+      disabled={disabled}
+      triggerAriaLabel={ariaLabel}
+      // 宽度按内容：至少触发器宽、内容撑到 max-content、封顶 420px（长名在选项内截断）。
+      contentClassName="max-h-[280px] w-max min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-[min(420px,calc(100vw-3rem))]"
+      triggerClassName={cn(size === 'lg' ? 'h-11' : 'h-10', className)}
+      showSearch={showSearch}
+      query={query}
+      onQueryChange={setQuery}
+      searchPlaceholder={searchPlaceholder ?? t('common.search', '搜索')}
+      // Enter 选中当前首个结果（分组后视觉第一项）→ 搜到即回车确认；enterSelection 挡下空 query 的裸 Enter，
+      // 杜绝误选顶部哨兵（None / 直连 / 跟随全局）静默清空已配置出口。
+      onSearchEnter={() => {
+        const first = enterSelection(query, sections);
+        if (first) {
+          onSelect(first.id);
+          setOpen(false);
+        }
+      }}
+      isEmpty={sections.length === 0}
+      emptyText={emptyText ?? t('common.noResults', '无匹配')}
+      trigger={
+        current ? (
+          <>
+            <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT_CLASS[dotToneOf(current)])} />
+            <span
+              className={cn('min-w-0 truncate font-medium', size === 'lg' && 'text-[0.95rem]')}
+              title={current.name}
+            >
+              {current.name}
+            </span>
+            {current.protocol && (
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                {current.protocol}
               </span>
-              {current.protocol && (
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                  {current.protocol}
-                </span>
-              )}
-              {showAddress && current.address && (
-                <span className="hidden min-w-0 shrink truncate font-mono text-[11px] text-muted-foreground/70 sm:inline">
-                  {current.address}
-                </span>
-              )}
-              <LatencyLabel item={current} className="ms-auto" />
-              <ChevronDown className="ms-1 h-4 w-4 shrink-0 opacity-50" />
-            </>
-          ) : (
-            <>
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                {placeholder ?? t('home.selectServer')}
+            )}
+            {showAddress && current.address && (
+              <span className="hidden min-w-0 shrink truncate font-mono text-[11px] text-muted-foreground/70 sm:inline">
+                {current.address}
               </span>
-              <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-            </>
-          )}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        // 宽度按内容：至少触发器宽、内容撑到 max-content、封顶 420px（长名在选项内截断）。
-        className="max-h-[280px] w-max min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-[min(420px,calc(100vw-3rem))] overflow-y-auto p-1.5"
-      >
-        {showSearch && (
-          <div className="mb-1 px-1 pt-0.5">
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              aria-label={searchPlaceholder ?? t('common.search', '搜索')}
-              // Enter 选中当前首个结果（分组后视觉第一项）→ 搜到即回车确认，无需再移动方向键。
-              // 阻止其余 printable 键冒泡触发 radix typeahead（会抢焦点）；放行 Esc(关) / 方向键(进列表)。
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const first = firstSelectable(sections);
-                  if (first) {
-                    e.preventDefault();
-                    onSelect(first.id);
-                    setOpen(false);
-                  }
-                  return;
-                }
-                if (e.key !== 'Escape' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') {
-                  e.stopPropagation();
-                }
-              }}
-              placeholder={searchPlaceholder ?? t('common.search', '搜索')}
-              className="w-full rounded-md border border-input bg-muted/40 px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-        )}
-        {sections.length === 0 ? (
-          <div className="px-2 py-3 text-center text-xs text-muted-foreground">
-            {emptyText ?? t('common.noResults', '无匹配')}
-          </div>
+            )}
+            <LatencyLabel item={current} className="ms-auto" />
+            <ChevronDown className="ms-1 h-4 w-4 shrink-0 opacity-50" />
+          </>
         ) : (
-          sections.map((sec) => (
-            <Fragment key={sec.group?.id ?? '__ungrouped'}>
-              {sec.group && multiSection && (
-                <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {sec.group.label}
-                </div>
-              )}
-              {sec.items.map((item) => {
-                const selected = item.id === value;
-                return (
-                  <DropdownMenuItem
-                    key={item.id}
-                    disabled={item.disabled}
-                    onSelect={() => onSelect(item.id)}
-                    className={cn(
-                      'gap-2',
-                      selected &&
-                        'bg-primary/10 text-primary focus:bg-primary/15 focus:text-primary'
-                    )}
-                  >
-                    <span
-                      className={cn('h-2 w-2 shrink-0 rounded-full', DOT_CLASS[dotToneOf(item)])}
-                    />
-                    <span className="min-w-0 flex-1 truncate" title={item.name}>
-                      {item.name}
-                    </span>
-                    {item.note && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{item.note}</span>
-                    )}
-                    {item.protocol && (
-                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
-                        {item.protocol}
-                      </span>
-                    )}
-                    <LatencyLabel item={item} />
-                    <Check
-                      className={cn(
-                        'ms-0.5 h-4 w-4 shrink-0 text-primary',
-                        selected ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                  </DropdownMenuItem>
-                );
-              })}
-            </Fragment>
-          ))
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              {placeholder ?? t('home.selectServer')}
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+          </>
+        )
+      }
+    >
+      {sections.map((sec) => (
+        <Fragment key={sec.group?.id ?? '__ungrouped'}>
+          {sec.group && multiSection && (
+            <div className="px-2 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {sec.group.label}
+            </div>
+          )}
+          {sec.items.map((item) => {
+            const selected = item.id === value;
+            return (
+              <DropdownMenuItem
+                key={item.id}
+                disabled={item.disabled}
+                onSelect={() => onSelect(item.id)}
+                className={cn(
+                  'gap-2',
+                  selected && 'bg-primary/10 text-primary focus:bg-primary/15 focus:text-primary'
+                )}
+              >
+                <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT_CLASS[dotToneOf(item)])} />
+                <span className="min-w-0 flex-1 truncate" title={item.name}>
+                  {item.name}
+                </span>
+                {item.note && (
+                  <span className="shrink-0 text-xs text-muted-foreground">{item.note}</span>
+                )}
+                {item.protocol && (
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
+                    {item.protocol}
+                  </span>
+                )}
+                <LatencyLabel item={item} />
+                <Check
+                  className={cn(
+                    'ms-0.5 h-4 w-4 shrink-0 text-primary',
+                    selected ? 'opacity-100' : 'opacity-0'
+                  )}
+                />
+              </DropdownMenuItem>
+            );
+          })}
+        </Fragment>
+      ))}
+    </SearchableDropdown>
   );
 }

@@ -18,6 +18,18 @@ export function nodeAddress(s: ServerConfig): string | undefined {
 }
 
 /**
+ * 节点是否为有效候选项（排除自身 excludeId + 可选排除组网协议）——**单一真值**：buildServerPickerModel 的入列过滤
+ * 与调用方的「悬挂选择检测」（如 detour 目标已删/被过滤 → 回落直连）共用，杜绝两处各写一套过滤条件而漂移。
+ */
+export function isPickerCandidate(
+  s: ServerConfig,
+  excludeId?: string,
+  excludeEndpoint?: boolean
+): boolean {
+  return s.id !== excludeId && !(excludeEndpoint && isEndpointProtocol(s.protocol));
+}
+
+/**
  * 置顶哨兵项（直连 / 跟随全局）。id 与各页语义一致（首页 DIRECT_SERVER_ID / detour DETOUR_DIRECT /
  * 规则 FOLLOW_GLOBAL_NODE_ID）；无 groupId → 落无分组桶恒置顶。缺省表示该页无哨兵（如应用分流「指定节点」）。
  */
@@ -69,9 +81,7 @@ export function buildServerPickerModel(opts: BuildServerPickerModelOptions): {
     sortServers,
   } = opts;
 
-  const filtered = servers.filter(
-    (s) => s.id !== excludeId && !(excludeEndpoint && isEndpointProtocol(s.protocol))
-  );
+  const filtered = servers.filter((s) => isPickerCandidate(s, excludeId, excludeEndpoint));
   const serverGroups = groupServersBySubscription(filtered, subscriptions);
   // 多来源才显分组头（单一来源平铺，不显冗余分组头）。
   const multi = serverGroups.length > 1;

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -65,16 +65,22 @@ function ExitNodePicker({
   const sortByLatency = useNodeSortStore((s) => s.sortByLatency);
 
   // 直连哨兵（#73）恒置顶；组内按延迟排序开关；共享映射与规则/应用分流/detour 口径统一。
-  const { items, groups } = buildServerPickerModel({
-    servers,
-    subscriptions,
-    latencyMap,
-    meshLabel: t('servers.meshNodes', '组网'),
-    manualLabel: t('servers.manualNodes', '自建节点'),
-    sentinel: { id: DIRECT_SERVER_ID, name: t('servers.directGlobal', '直连'), role: 'direct' },
-    withAddress: true,
-    sortServers: (arr) => (sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr),
-  });
+  // memo 对齐 rule-dialog / app-rules-card：仅在输入（节点/订阅/延迟/排序开关/i18n）变化时重算，测速广播不空跑。
+  const { items, groups } = useMemo(
+    () =>
+      buildServerPickerModel({
+        servers,
+        subscriptions,
+        latencyMap,
+        meshLabel: t('servers.meshNodes', '组网'),
+        manualLabel: t('servers.manualNodes', '自建节点'),
+        sentinel: { id: DIRECT_SERVER_ID, name: t('servers.directGlobal', '直连'), role: 'direct' },
+        withAddress: true,
+        sortServers: (arr) =>
+          sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr,
+      }),
+    [servers, subscriptions, latencyMap, sortByLatency, t]
+  );
 
   return (
     <NodePicker
@@ -114,7 +120,7 @@ export function ConnectionControlCard() {
   const sortByLatency = useNodeSortStore((s) => s.sortByLatency);
   const toggleSortByLatency = useNodeSortStore((s) => s.toggleSortByLatency);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  // 弹窗开合由 pendingModeType 单一真值驱动（非空即开），省去冗余 confirmOpen。
   const [pendingModeType, setPendingModeType] = useState<ProxyModeType | null>(null);
   // updateProxyMode 不写全局 busy → 本地 routingBusy 提供分流切换反馈（沿用原卡）。
   const [routingBusy, setRoutingBusy] = useState(false);
@@ -217,7 +223,6 @@ export function ConnectionControlCard() {
     if (next === config?.proxyModeType) return;
     if (isConnected) {
       setPendingModeType(next);
-      setConfirmOpen(true);
     } else {
       applyTakeover(next);
     }
@@ -226,7 +231,6 @@ export function ConnectionControlCard() {
   const confirmTakeover = () => {
     if (pendingModeType) applyTakeover(pendingModeType);
     setPendingModeType(null);
-    setConfirmOpen(false);
   };
 
   // ── 分流策略（proxyMode）─────────────────────────────────────────────────────────────────────
@@ -483,8 +487,13 @@ export function ConnectionControlCard() {
         )}
       </CardContent>
 
-      {/* 已连接时切换接管方式 → 确认重连 */}
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      {/* 已连接时切换接管方式 → 确认重连（pendingModeType 非空即开；关闭即清 pending） */}
+      <AlertDialog
+        open={pendingModeType !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingModeType(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('settings.proxyMode.confirmTitle')}</AlertDialogTitle>

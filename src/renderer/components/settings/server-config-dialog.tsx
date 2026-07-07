@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -37,7 +37,7 @@ import { getSortedProtocolOptions } from './shared/protocol-options';
 import { isEndpointProtocol } from '../../../shared/endpoint-routes';
 import { isWarpServer } from '../../../shared/warp';
 import { NodePicker } from '@/components/ui/node-picker';
-import { buildServerPickerModel } from '@/components/ui/server-picker-items';
+import { buildServerPickerModel, isPickerCandidate } from '@/components/ui/server-picker-items';
 import { useAppStore } from '@/store/app-store';
 import type { ServerConfig, ProtocolType } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -68,21 +68,26 @@ function DetourPicker({
   const latencyMap = useAppStore((s) => s.latencyMap);
 
   // 排除自身 + 组网协议（endpoint 不作前置代理目标）；直连哨兵置顶。共享映射与首页/规则/应用分流口径统一。
-  const { items, groups: pickerGroups } = buildServerPickerModel({
-    servers,
-    subscriptions,
-    latencyMap,
-    meshLabel: t('servers.meshNodes', '组网'),
-    manualLabel: t('servers.manualNodes', '自建节点'),
-    sentinel: {
-      id: DETOUR_DIRECT,
-      name: t('servers.directConnection', 'Direct (No Chain)'),
-      role: 'direct',
-    },
-    excludeId,
-    excludeEndpoint: true,
-    withAddress: true,
-  });
+  // memo 对齐 rule-dialog / app-rules-card：测速广播只重渲本下拉、输入不变不空跑。
+  const { items, groups: pickerGroups } = useMemo(
+    () =>
+      buildServerPickerModel({
+        servers,
+        subscriptions,
+        latencyMap,
+        meshLabel: t('servers.meshNodes', '组网'),
+        manualLabel: t('servers.manualNodes', '自建节点'),
+        sentinel: {
+          id: DETOUR_DIRECT,
+          name: t('servers.directConnection', 'Direct (No Chain)'),
+          role: 'direct',
+        },
+        excludeId,
+        excludeEndpoint: true,
+        withAddress: true,
+      }),
+    [servers, subscriptions, latencyMap, excludeId, t]
+  );
 
   return (
     <NodePicker
@@ -169,9 +174,16 @@ export function ServerConfigDialog({
     }
     setNameError('');
 
+    // 悬挂 detour 防回写：detour state 在 open 时由 server.detour 灌入，但目标节点可能已被删除（或因组网协议被
+    // excludeEndpoint 过滤出候选）。此时 DetourPicker 触发器显「直连」占位（findItem 落空），但 state 仍持旧 id——
+    // 若原样保存会把用户以为已直连的悬挂 id 再写回 config。故用与 DetourPicker 同一候选谓词（isPickerCandidate，
+    // excludeId=自身 + excludeEndpoint）校验：不在有效候选则视为直连（undefined），杜绝 UI 显示与持久化不一致。
+    const detourValid =
+      !!detour && servers.some((s) => s.id === detour && isPickerCandidate(s, server?.id, true));
+
     const serverConfig = {
       name: serverName.trim(),
-      detour: detour || undefined,
+      detour: detourValid ? detour : undefined,
       ...protocolConfig,
     };
 
