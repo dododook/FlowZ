@@ -33,6 +33,7 @@ import type {
 import { useTranslation } from 'react-i18next';
 import { RULE_RESOURCE_CATALOG, deriveResourceMeta } from '../../../shared/rule-resource-catalog';
 import { resolveCatalogItemState } from './resource-catalog-utils';
+import { CATALOG_FILTERS, matchesCategoryFilter, type CatalogFilter } from './rule-resources-logic';
 
 const BUILTIN_CATALOG_IDS = RULE_RESOURCE_CATALOG.map((i) => i.id);
 
@@ -49,10 +50,6 @@ interface DisplayItem {
   selectable: boolean; // 可勾选下载（仅外置本地无的项）
   missing: boolean; // 标「文件缺失」（仅内置文件该在却没在）
 }
-
-// 分类筛选：全部 / geosite / geoip / 精简（lite）。catalog 永不含 custom（仅手动 URL 下载），故不设该选项
-type CatalogFilter = 'all' | 'geosite' | 'geoip' | 'lite';
-const CATALOG_FILTERS: CatalogFilter[] = ['all', 'geosite', 'geoip', 'lite'];
 
 export const RESOURCE_CATEGORY_BADGE: Record<RuleResourceCategory, string> = {
   geosite: 'border-transparent bg-badge-blue/15 text-badge-blue',
@@ -156,11 +153,10 @@ export function ResourceCatalogDialog({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const byCat = (i: DisplayItem) =>
-      filter === 'all' ||
-      (filter === 'lite' ? i.category.endsWith('-lite') : i.category === filter);
     const matched = tabItems.filter(
-      (i) => byCat(i) && (!q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
+      (i) =>
+        matchesCategoryFilter(i.category, filter) &&
+        (!q || i.name.toLowerCase().includes(q) || i.id.toLowerCase().includes(q))
     );
     return { items: matched.slice(0, 200), total: matched.length };
   }, [tabItems, search, filter]);

@@ -34,6 +34,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { SegmentedControl } from '@/components/ui/segmented-control';
+import { Progress } from '@/components/ui/progress';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { Library, Link as LinkIcon, RotateCw, RotateCcw, RefreshCw, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -51,6 +52,11 @@ import {
   RESOURCE_CATEGORY_BADGE,
 } from '@/components/rules/resource-catalog-dialog';
 import { ResourceUrlDialog } from '@/components/rules/resource-url-dialog';
+import {
+  isUpdateAllDisabled,
+  partitionProgress,
+  resourceRowAction,
+} from '@/components/rules/rule-resources-logic';
 
 const DIRECT = '__direct__';
 const CUSTOM = '__custom__';
@@ -81,6 +87,8 @@ export function RuleResourcesPage() {
     name: string;
     rules: RuleResourceRef[];
   } | null>(null);
+  // 重置为出厂=高危（丢弃已下载更新），点击先二次确认，确认后才真正写运行时目录。
+  const [resetConfirm, setResetConfirm] = useState<RuleResourceListItem | null>(null);
 
   const refresh = useCallback(() => {
     api.ruleResources
@@ -138,8 +146,10 @@ export function RuleResourcesPage() {
     }
   };
 
-  const handleReset = async (item: RuleResourceListItem) => {
-    if (!item.builtin) return;
+  const confirmReset = async () => {
+    const item = resetConfirm;
+    setResetConfirm(null);
+    if (!item || !item.builtin) return;
     const tag = item.id.replace(/^builtin:/, '');
     try {
       const r = await api.ruleResources.resetBuiltin(tag);
@@ -252,10 +262,7 @@ export function RuleResourcesPage() {
     setCustomMode(false);
   };
 
-  const errorRows = Array.from(progress.values()).filter((p) => p.status === 'error');
-  const activeRows = Array.from(progress.values()).filter(
-    (p) => p.status === 'downloading' || p.status === 'queued'
-  );
+  const { active: activeRows, error: errorRows } = partitionProgress(Array.from(progress.values()));
 
   return (
     <div className="space-y-6">
@@ -359,7 +366,7 @@ export function RuleResourcesPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleUpdateAll}
-                disabled={items.length === 0 || activeRows.length > 0}
+                disabled={isUpdateAllDisabled(items.length, activeRows.length)}
               >
                 <RefreshCw className="me-2 h-4 w-4" />
                 {t('ruleResources.updateAll', '全部更新')}
@@ -406,12 +413,7 @@ export function RuleResourcesPage() {
                   <TableRow key={`act-${p.id}`}>
                     <TableCell className="font-medium">{p.name}</TableCell>
                     <TableCell colSpan={4}>
-                      <div className="h-1.5 w-full overflow-hidden rounded bg-secondary">
-                        <div
-                          className={`h-full bg-primary ${p.percent == null ? 'animate-pulse w-1/3' : ''}`}
-                          style={p.percent != null ? { width: `${p.percent}%` } : undefined}
-                        />
-                      </div>
+                      <Progress value={p.percent} className="h-1.5" />
                       <span className="text-xs text-muted-foreground">
                         {p.status === 'queued'
                           ? t('ruleResources.queued', '等待中…')
@@ -496,11 +498,11 @@ export function RuleResourcesPage() {
                         >
                           <RotateCw className="h-4 w-4" />
                         </Button>
-                        {item.builtin ? (
+                        {resourceRowAction(item) === 'reset' ? (
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleReset(item)}
+                            onClick={() => setResetConfirm(item)}
                             title={t('ruleResources.reset', '重置为出厂')}
                           >
                             <RotateCcw className="h-4 w-4" />
@@ -511,6 +513,7 @@ export function RuleResourcesPage() {
                             size="sm"
                             onClick={() => handleDelete(item)}
                             title={t('ruleResources.delete', '删除')}
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -584,6 +587,31 @@ export function RuleResourcesPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {t('ruleResources.deleteAnyway', '仍要删除')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 重置为出厂二次确认（高危：丢弃已下载更新，恢复随包版本） */}
+      <AlertDialog open={!!resetConfirm} onOpenChange={(o) => !o && setResetConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('ruleResources.resetTitle', '重置为出厂版')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'ruleResources.resetConfirmDesc',
+                '将「{{name}}」恢复为随 App 出厂的版本，已下载更新的内容会丢失（之后可重新更新）。',
+                { name: resetConfirm?.name }
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel', '取消')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmReset}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('ruleResources.resetConfirmBtn', '重置为出厂')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
