@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { Loader2, ListPlus, Plus, X } from 'lucide-react';
-import { ServerSelectGroups } from '@/components/settings/server-select-groups';
+import { NodePicker, type NodePickerGroup, type NodePickerItem } from '@/components/ui/node-picker';
 import { useAppStore } from '@/store/app-store';
 import type { Rule, RuleType, RuleAction, RuleCondition } from '../../../shared/types';
 import {
@@ -36,7 +36,9 @@ import {
   meshForcedRouteCidrs,
   meshForceRoutedServers,
   collectRuleTargetedServerIds,
+  isSpeedTestable,
 } from '../../../shared/endpoint-routes';
+import { groupServersBySubscription } from '../../../shared/server-grouping';
 import { cidrOverlapsAny } from '../../../shared/ip';
 import { parseLines } from '../../../shared/parse-lines';
 import { useTranslation } from 'react-i18next';
@@ -51,10 +53,17 @@ import {
   SHORT_VALUE_TYPES,
   GEO_SUGGEST,
   PROCESS_TYPES,
-  BYPASS_FAKEIP_TYPES,
 } from './rule-type-meta';
 import { ProcessPickerDialog } from './process-picker-dialog';
 import { ResourcePicker } from './resource-picker';
+import {
+  collectRuleFormErrors,
+  hasRuleFormErrors,
+  deriveTargetServerId,
+  isBypassApplicable,
+  deriveBypassFakeIp,
+  type RuleFormErrors,
+} from './rule-dialog-logic';
 
 interface RuleDialogProps {
   open: boolean;
@@ -71,6 +80,8 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   const updateCustomRule = useAppStore((state) => state.updateCustomRule);
   const servers = useAppStore((state) => state.config?.servers || []);
   const selectedServerId = useAppStore((state) => state.config?.selectedServerId ?? null);
+  const subscriptions = useAppStore((state) => state.config?.subscriptions || []);
+  const latencyMap = useAppStore((state) => state.latencyMap);
   const customRules = useAppStore((state) => state.config?.customRules);
   const appRules = useAppStore((state) => state.config?.appRules);
   // 组网(WG/Tailscale)force-route 段：供 ipCidr 值「与组网重叠」内联提醒（优先级重排后自定义规则会覆盖组网路由）。
@@ -101,6 +112,8 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   const [targetServerId, setTargetServerId] = useState('default');
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // 已尝试提交：为 true 后才计算并内联展示字段级错误（避免打开即报错，与 spec §6「提交时校验」一致）。
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   // 进程选择器/聚焦态按「类型」定位（多块共存）：pickerType 标记哪个块的选择器打开，focusedType 标记哪个块输入中。
   const [pickerType, setPickerType] = useState<RuleType | null>(null);
   const [focusedType, setFocusedType] = useState<RuleType | null>(null);
@@ -109,6 +122,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
     if (!open) return;
     setFocusedType(null);
     setPickerType(null);
+    setSubmitAttempted(false);
     if (mode === 'edit' && rule) {
       // 多条件优先；无 conditions 退化为单条件 [{type,values}]。去重类型（桶按类型键）、合并同类型值，保序。
       const conds: RuleCondition[] =
@@ -159,7 +173,49 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   const nextAddableType = findAddableRuleType(usedTypes, platform);
   const canAddCondition = nextAddableType !== undefined;
   // bypassFakeIP 是规则级设置：只要任一条件是域名类即可用（生成期对域名类条件取真实 DNS）。
-  const bypassApplicable = conditionTypes.some((ct) => BYPASS_FAKEIP_TYPES.includes(ct));
+  const bypassApplicable = isBypassApplicable(conditionTypes);
+
+  // 字段级错误：仅在尝试提交后计算（随修改实时刷新，用户改好即消），内联展示、不 toast（spec §6）。
+  const formErrors: RuleFormErrors = useMemo(
+    () =>
+      submitAttempted
+        ? collectRuleFormErrors(conditionTypes, valuesByType, remarks)
+        : { conditions: {} },
+    [submitAttempted, conditionTypes, valuesByType, remarks]
+  );
+
+  // 目标节点选择器（`.npick`）数据：跟随全局哨兵置顶 + 按订阅/自建分组，显延迟徽标（不随全局排序开关重排）。
+  const targetGroups: NodePickerGroup[] = useMemo(() => {
+    const grps = groupServersBySubscription(servers, subscriptions);
+    return grps.length > 1
+      ? grps.map((g) => ({
+          id: g.id,
+          label: g.isMesh
+            ? t('servers.meshNodes', '组网')
+            : g.isManual
+              ? t('servers.manualNodes', '自建节点')
+              : g.name,
+        }))
+      : [];
+  }, [servers, subscriptions, t]);
+  const targetItems: NodePickerItem[] = useMemo(() => {
+    const grps = groupServersBySubscription(servers, subscriptions);
+    const multi = grps.length > 1;
+    return [
+      { id: 'default', name: t('rules.defaultNodeTip'), role: 'follow' as const },
+      ...grps.flatMap((g) =>
+        g.servers.map<NodePickerItem>((s) => ({
+          id: s.id,
+          name: s.name,
+          protocol: s.protocol,
+          latency: latencyMap[s.id],
+          latencyNA: !isSpeedTestable(s),
+          groupId: multi ? g.id : undefined,
+          dotTone: 'ok',
+        }))
+      ),
+    ];
+  }, [servers, subscriptions, latencyMap, t]);
 
   const valuesOf = (ct: RuleType) => valuesByType[ct] ?? '';
   const setValuesOf = (ct: RuleType, text: string) =>
@@ -223,39 +279,19 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   };
 
   const onSubmit = async () => {
-    // 收集每个条件块（按 conditionTypes 顺序）的非空值
-    const conds: RuleCondition[] = [];
-    for (const ct of conditionTypes) {
-      const values = parseLines(valuesOf(ct));
-      if (values.length === 0) {
-        toast.error(
-          t('rules.errorEmptyCondition', { type: t(`rules.types.${ct}.name`, RULE_TYPE_NAME[ct]) })
-        );
-        return;
-      }
-      const invalid = values.filter((v) => !validateRuleValue(ct, v));
-      if (invalid.length > 0) {
-        toast.error(t('rules.invalidValue'), {
-          description: `${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? ' …' : ''}`,
-        });
-        return;
-      }
-      conds.push({ type: ct, values });
-    }
-    if (conds.length === 0) {
-      toast.error(t('rules.errorEmpty'));
-      return;
-    }
-    // 备注名强制必填（列表只显示备注名，空备注会让规则不可辨识）
-    if (!remarks.trim()) {
-      toast.error(t('rules.errorRemarksRequired', '请填写备注名'));
-      return;
-    }
+    // 提交 gate 与内联展示共用 collectRuleFormErrors：字段级错误就地红字提示，不 toast（spec §6）。
+    setSubmitAttempted(true);
+    const errors = collectRuleFormErrors(conditionTypes, valuesByType, remarks);
+    if (hasRuleFormErrors(errors)) return;
+    // 全部条件已校验通过：按 conditionTypes 顺序收集非空值。
+    const conds: RuleCondition[] = conditionTypes.map((ct) => ({
+      type: ct,
+      values: parseLines(valuesOf(ct)),
+    }));
 
-    const tid = targetServerId === 'default' ? undefined : targetServerId;
-    // L2：持久化对齐 UI 的 checked（globalFakeIpEnabled && bypassFakeIP）——全局 FakeIP 关时该字段天然 no-op，
-    // 避免 UI 显 unchecked 却写入无效的 bypassFakeIP:true（数据卫生）。
-    const bypass = bypassApplicable ? globalFakeIpEnabled && bypassFakeIP : undefined;
+    const tid = deriveTargetServerId(targetServerId);
+    // L2：持久化对齐 UI 的 checked——全局 FakeIP 关时该字段天然 no-op，避免写入无效 bypassFakeIP:true（数据卫生）。
+    const bypass = deriveBypassFakeIp(bypassApplicable, globalFakeIpEnabled, bypassFakeIP);
     // 单条件 → 退化为 type/values（不写 conditions/combineMode，与历史规则逐字节等价）；
     // 多条件 → 首条件镜像到 type/values（回滚兼容），并写 conditions + combineMode。
     const first = conds[0];
@@ -461,6 +497,17 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
                   {t(`rules.types.${ct}.desc`, RULE_TYPE_DESC[ct])}
                 </p>
                 {renderValueEditor(ct)}
+                {/* 提交后内联错误：空条件（非法值由 renderValueEditor 内实时红字，此处只兜底 ruleSet 等无实时校验的空/非法） */}
+                {formErrors.conditions[ct] === 'empty' && (
+                  <p className="text-xs text-destructive">
+                    {t('rules.errorEmptyConditionInline', '请填写该条件的匹配值')}
+                  </p>
+                )}
+                {formErrors.conditions[ct] === 'invalid' && ct === 'ruleSet' && (
+                  <p className="text-xs text-destructive">
+                    {t('rules.errorInvalidConditionInline', '该条件含无效值，请检查')}
+                  </p>
+                )}
               </div>
             ))}
 
@@ -489,7 +536,17 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
               onChange={(e) => setRemarks(e.target.value)}
               placeholder={t('rules.remarksPlaceholder')}
               maxLength={100}
+              className={
+                formErrors.remarksRequired
+                  ? 'border-destructive/60 focus-visible:ring-destructive/40'
+                  : ''
+              }
             />
+            {formErrors.remarksRequired && (
+              <p className="text-xs text-destructive">
+                {t('rules.errorRemarksRequired', '请填写备注名')}
+              </p>
+            )}
           </div>
 
           {/* 策略 */}
@@ -506,19 +563,19 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             />
           </div>
 
-          {/* 目标节点（仅代理） */}
+          {/* 目标节点（仅代理）：一步选下拉（`.npick`），跟随全局哨兵置顶 + 分组 + 延迟徽标 */}
           {action === 'proxy' && (
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('rules.targetNode')}</label>
-              <Select value={targetServerId} onValueChange={setTargetServerId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t('rules.defaultNodeTip')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="default">{t('rules.defaultNodeTip')}</SelectItem>
-                  <ServerSelectGroups servers={servers} selectedId={targetServerId} showLatency />
-                </SelectContent>
-              </Select>
+              <NodePicker
+                items={targetItems}
+                groups={targetGroups}
+                value={targetServerId}
+                onSelect={setTargetServerId}
+                placeholder={t('rules.defaultNodeTip')}
+                searchPlaceholder={t('common.search', '搜索')}
+                ariaLabel={t('rules.targetNode')}
+              />
             </div>
           )}
 
