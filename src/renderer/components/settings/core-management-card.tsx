@@ -84,6 +84,7 @@ export function CoreManagementCard() {
   // B6 两个确认框
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
+  const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
 
   // 常驻入口高亮（toast 点击「跳到入口」时滚动 + 闪一下）
   const updateEntryRef = useRef<HTMLDivElement | null>(null);
@@ -534,7 +535,7 @@ export function CoreManagementCard() {
           {hasBackup && (
             <Button
               variant="outline"
-              onClick={handleRollback}
+              onClick={() => setShowRollbackConfirm(true)}
               disabled={busy}
               className="w-full sm:w-auto"
             >
@@ -659,6 +660,35 @@ export function CoreManagementCard() {
           </Button>
         </div>
       </CardContent>
+
+      {/* 回滚内核单层轻确认（回滚是可逆逃生通道，不加「不可撤销」红字，仅危险色确认动词） */}
+      <AlertDialog open={showRollbackConfirm} onOpenChange={setShowRollbackConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings.coreVersion.rollbackConfirmTitle', '回滚内核版本？')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.coreVersion.rollbackConfirmDesc', {
+                defaultValue: '将回滚到 {{version}}，内核会重启。',
+                version: backupVersion || '—',
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowRollbackConfirm(false);
+                void handleRollback();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('settings.coreManagement.rollback')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* 同版本换核确认框 */}
       <AlertDialog

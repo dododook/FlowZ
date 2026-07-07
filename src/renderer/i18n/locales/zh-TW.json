@@ -222,7 +222,11 @@
       "localBadge": "本地",
       "deletedBadge": "已刪除",
       "groupBuiltin": "內建 · 隨包",
-      "groupExternal": "已下載"
+      "groupExternal": "已下載",
+      "summary": "已選 {{count}} 個規則集",
+      "placeholder": "選擇規則集",
+      "search": "搜尋規則集",
+      "noMatch": "沒有符合的規則集"
     }
   },
   "home": {
@@ -305,6 +309,8 @@
     "clearLogsTitle": "清空全部記錄？",
     "clearLogsWarn": "將清除此處顯示的記憶體記錄緩衝，此操作無法復原。",
     "logLines": "{{count}} 行",
+    "logLinesFiltered": "{{shown}} / {{total}}",
+    "logLinesFilteredTitle": "符合 / 緩衝總行數",
     "networkInfo": "網路資訊",
     "localExit": "本地出口",
     "proxyExit": "代理出口",
@@ -384,6 +390,8 @@
       "rollingBack": "回復中...",
       "rollbackSuccess": "回復成功，重新啟動應用程式後生效",
       "rollbackFail": "回復失敗",
+      "rollbackConfirmTitle": "回復核心版本？",
+      "rollbackConfirmDesc": "將回復到 {{version}}，核心會重新啟動。",
       "sameVersionGoManage": "請到「核心管理」卡片確認替換同版本核心。",
       "baselineOverrideGoManage": "所選核心舊於隨附基準，請到「核心管理」卡片確認暫時替換。"
     },
@@ -869,6 +877,7 @@
     "saveFail": "儲存失敗",
     "saveFailDesc": "儲存伺服器時發生錯誤",
     "tailscaleSingleOnly": "Tailscale 一台裝置只能加一個——所有帳號共用同一段網路位址，多個會互相頂掉。要換帳號，先刪掉現有的那個。",
+    "warpSingleOnly": "只能接入一個 Cloudflare WARP——重複註冊只會產生多餘的匿名裝置。要換一個，先登出現有的那個。",
     "remarks": "備註名稱",
     "remarksDesc": "為伺服器設定一個易於識別的名稱",
     "remarksPlaceholder": "例如：香港節點",
@@ -1185,7 +1194,7 @@
     "meshWarpReRegister": "重新註冊",
     "meshWarpDeregister": "註銷",
     "meshWarpReRegisterTitle": "重新註冊 WARP？",
-    "meshWarpReRegisterDesc": "將先註銷目前的 WARP 裝置，再註冊一台全新的匿名裝置替換它。",
+    "meshWarpReRegisterDesc": "確認後將立即註銷目前的 WARP 裝置，再註冊一台全新的匿名裝置替換它。若隨後取消註冊，已註銷的裝置不會恢復。",
     "meshWarpDeregisterTitle": "註銷 WARP？",
     "meshWarpDeregisterDesc": "將移除此 WARP 節點並在背景註銷遠端匿名裝置，可隨時重新接入。",
     "tsReauth": "重新登錄 / 切換帳號",
@@ -1280,6 +1289,8 @@
     "addCondition": "新增條件",
     "removeCondition": "刪除條件",
     "errorEmptyCondition": "「{{type}}」條件未填寫符合值",
+    "errorEmptyConditionInline": "請填寫該條件的符合值",
+    "errorInvalidConditionInline": "該條件含無效值，請檢查",
     "category": {
       "domain": "網域",
       "network": "IP / 連接埠",

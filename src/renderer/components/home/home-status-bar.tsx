@@ -107,7 +107,8 @@ export function HomeStatusBar() {
             {formatBytes(stats?.uploadSpeed ?? 0)}/s
           </span>
           <span className="text-muted-foreground/50">·</span>
-          <span className="inline-flex items-center gap-1 font-mono tabular-nums text-warning">
+          {/* 连接数是中性读数（非告警态）→ 用中性 foreground 色，不用 text-warning（避免误读为告警）。 */}
+          <span className="inline-flex items-center gap-1 font-mono tabular-nums text-foreground">
             <Activity className="h-3.5 w-3.5" />
             {stats?.activeConnections ?? 0}
           </span>

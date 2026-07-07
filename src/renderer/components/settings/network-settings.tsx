@@ -23,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
 import { parseDnsServerSpec } from '@shared/dns';
 import {
@@ -84,6 +85,9 @@ export function NetworkSettings() {
     config?.dnsConfig?.foreignDns || DNS_DEFAULTS.foreignDns
   );
   const [speedTestUrl, setSpeedTestUrl] = useState(config?.speedTestUrl || DEFAULT_SPEED_TEST_URL);
+  // 字段级校验错误内联（红框 + 红字，取代 toast；系统级/保存失败仍走 toast，与 §6 内联口径一致）。
+  const [dnsError, setDnsError] = useState<{ domesticDns?: boolean; foreignDns?: boolean }>({});
+  const [speedTestUrlError, setSpeedTestUrlError] = useState(false);
   // P2c DNS 查询超时（毫秒；空 = 用核默认，不下发）。文本态便于「清空即重置默认」与 onBlur 提交。
   const [dnsTimeout, setDnsTimeout] = useState(
     config?.dnsConfig?.dnsTimeoutMs != null ? String(config.dnsConfig.dnsTimeoutMs) : ''
@@ -174,9 +178,10 @@ export function NetworkSettings() {
   const commitDns = (key: 'domesticDns' | 'foreignDns', raw: string) => {
     const v = raw.trim();
     if (v && !parseDnsServerSpec(v)) {
-      toast.error(t('settings.advanced.dnsInvalid'));
-      return; // 非法值不落盘，保留输入文本待修正
+      setDnsError((prev) => ({ ...prev, [key]: true })); // 非法值内联标红，不落盘，保留输入待修正
+      return;
     }
+    setDnsError((prev) => ({ ...prev, [key]: false }));
     const next = v || DNS_DEFAULTS[key]; // 清空即重置为默认
     if (key === 'domesticDns') setDomesticDns(next);
     else setForeignDns(next);
@@ -189,10 +194,10 @@ export function NetworkSettings() {
   const commitSpeedTestUrl = (raw: string) => {
     const v = raw.trim();
     if (v && !parseSpeedTestUrl(v)) {
-      toast.error(t('settings.network.speedTestUrlInvalid'));
-      setSpeedTestUrl(config.speedTestUrl || DEFAULT_SPEED_TEST_URL); // 回滚到已存值
+      setSpeedTestUrlError(true); // 非法内联标红，保留输入待修正（不回滚，与 DNS/§6 一致）
       return;
     }
+    setSpeedTestUrlError(false);
     const next = v || DEFAULT_SPEED_TEST_URL; // 清空即重置默认
     setSpeedTestUrl(next);
     const stored = config.speedTestUrl || DEFAULT_SPEED_TEST_URL;
@@ -268,14 +273,21 @@ export function NetworkSettings() {
           >
             <Input
               value={domesticDns}
-              onChange={(e) => setDomesticDns(e.target.value)}
+              onChange={(e) => {
+                setDomesticDns(e.target.value);
+                if (dnsError.domesticDns) setDnsError((p) => ({ ...p, domesticDns: false }));
+              }}
               onBlur={() => commitDns('domesticDns', domesticDns)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
               }}
-              className="max-w-md"
+              aria-invalid={dnsError.domesticDns}
+              className={cn('max-w-md', dnsError.domesticDns && 'border-destructive')}
               placeholder={t('settings.advanced.domesticDnsPlaceholder')}
             />
+            {dnsError.domesticDns && (
+              <p className="text-xs text-destructive">{t('settings.advanced.dnsInvalid')}</p>
+            )}
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.foreignDns')}
@@ -284,14 +296,21 @@ export function NetworkSettings() {
           >
             <Input
               value={foreignDns}
-              onChange={(e) => setForeignDns(e.target.value)}
+              onChange={(e) => {
+                setForeignDns(e.target.value);
+                if (dnsError.foreignDns) setDnsError((p) => ({ ...p, foreignDns: false }));
+              }}
               onBlur={() => commitDns('foreignDns', foreignDns)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
               }}
-              className="max-w-md"
+              aria-invalid={dnsError.foreignDns}
+              className={cn('max-w-md', dnsError.foreignDns && 'border-destructive')}
               placeholder={t('settings.advanced.foreignDnsPlaceholder')}
             />
+            {dnsError.foreignDns && (
+              <p className="text-xs text-destructive">{t('settings.advanced.dnsInvalid')}</p>
+            )}
           </SettingsRow>
           <SettingsRow
             label={t('settings.advanced.enableFakeIp')}
@@ -853,14 +872,26 @@ export function NetworkSettings() {
           >
             <Input
               value={speedTestUrl}
-              onChange={(e) => setSpeedTestUrl(e.target.value)}
+              onChange={(e) => {
+                setSpeedTestUrl(e.target.value);
+                if (speedTestUrlError) setSpeedTestUrlError(false);
+              }}
               onBlur={() => commitSpeedTestUrl(speedTestUrl)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur();
               }}
-              className="max-w-md font-mono text-sm"
+              aria-invalid={speedTestUrlError}
+              className={cn(
+                'max-w-md font-mono text-sm',
+                speedTestUrlError && 'border-destructive'
+              )}
               placeholder={DEFAULT_SPEED_TEST_URL}
             />
+            {speedTestUrlError && (
+              <p className="text-xs text-destructive">
+                {t('settings.network.speedTestUrlInvalid')}
+              </p>
+            )}
           </SettingsRow>
         </CardContent>
       </Card>

@@ -6,6 +6,16 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, RotateCcw, X, FolderUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { api } from '@/ipc';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +32,7 @@ export function CoreVersionBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [isRollingBack, setIsRollingBack] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
+  const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
 
   useEffect(() => {
     // 1. 初始化时主动获取当前状态（防止遗漏主进程启动时触发的事件）
@@ -136,7 +147,7 @@ export function CoreVersionBanner() {
                 size="sm"
                 variant="outline"
                 className="h-7 text-xs border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 hover:text-amber-700 dark:hover:text-amber-300"
-                onClick={handleRollback}
+                onClick={() => setShowRollbackConfirm(true)}
                 disabled={isRollingBack || isReplacing}
               >
                 {isRollingBack ? (
@@ -183,6 +194,35 @@ export function CoreVersionBanner() {
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
+
+      {/* 回滚内核单层轻确认（回滚是可逆逃生通道，不加「不可撤销」红字，仅危险色确认动词） */}
+      <AlertDialog open={showRollbackConfirm} onOpenChange={setShowRollbackConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('settings.coreVersion.rollbackConfirmTitle', '回滚内核版本？')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('settings.coreVersion.rollbackConfirmDesc', {
+                defaultValue: '将回滚到 {{version}}，内核会重启。',
+                version: changeInfo.previousVersion,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowRollbackConfirm(false);
+                void handleRollback();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('settings.coreVersion.rollback')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

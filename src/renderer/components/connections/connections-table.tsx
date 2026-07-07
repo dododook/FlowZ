@@ -380,17 +380,24 @@ export function ConnectionsTable() {
               {t('connections.active')}
             </span>
           </div>
-          {/* 数据流态：暂停 → 中性静态点「已暂停」；运行且未暂停 → teal 呼吸点「实时」；未运行不显（空态已说明）。 */}
+          {/* 数据流态：暂停 → 中性静态点「已暂停」；运行且未暂停 → teal 呼吸点「实时」；未运行不显（空态已说明）。
+              复用 ui/badge（secondary 中性 / success 语义 variant），取代自绘 span。 */}
           {paused ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <Badge
+              variant="secondary"
+              className="gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+            >
               <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
               {t('connections.paused')}
-            </span>
+            </Badge>
           ) : proxyRunning ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+            <Badge
+              variant="success"
+              className="gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+            >
               <span className="h-1.5 w-1.5 rounded-full bg-success motion-safe:animate-pulse" />
               {t('connections.live')}
-            </span>
+            </Badge>
           ) : null}
         </div>
         <div className="flex items-center gap-2">

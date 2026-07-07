@@ -222,7 +222,11 @@
       "localBadge": "本地",
       "deletedBadge": "已删除",
       "groupBuiltin": "内置 · 随包",
-      "groupExternal": "已下载"
+      "groupExternal": "已下载",
+      "summary": "已选 {{count}} 个规则集",
+      "placeholder": "选择规则集",
+      "search": "搜索规则集",
+      "noMatch": "无匹配规则集"
     }
   },
   "home": {
@@ -305,6 +309,8 @@
     "clearLogsTitle": "清空全部日志？",
     "clearLogsWarn": "将清除此处显示的内存日志缓冲，此操作不可撤销。",
     "logLines": "{{count}} 行",
+    "logLinesFiltered": "{{shown}} / {{total}}",
+    "logLinesFilteredTitle": "命中 / 缓冲总行数",
     "networkInfo": "网络信息",
     "localExit": "本地出口",
     "proxyExit": "代理出口",
@@ -384,6 +390,8 @@
       "rollingBack": "回滚中...",
       "rollbackSuccess": "回滚成功，重新启动应用后生效",
       "rollbackFail": "回滚失败",
+      "rollbackConfirmTitle": "回滚内核版本？",
+      "rollbackConfirmDesc": "将回滚到 {{version}}，内核会重启。",
       "sameVersionGoManage": "请到「内核管理」卡片确认替换同版本内核。",
       "baselineOverrideGoManage": "所选内核旧于随包基线，请到「内核管理」卡片确认临时替换。"
     },
@@ -869,6 +877,7 @@
     "saveFail": "保存失败",
     "saveFailDesc": "保存服务器时发生错误",
     "tailscaleSingleOnly": "Tailscale 一台设备只能加一个——所有账号共用同一段网络地址，多个会互相顶掉。要换账号，先删掉现有的那个。",
+    "warpSingleOnly": "只能接入一个 Cloudflare WARP——重复注册只会产生多余的匿名设备。要换一个，先注销现有的那个。",
     "remarks": "备注名称",
     "remarksDesc": "为服务器设置一个易于识别的名称",
     "remarksPlaceholder": "例如：香港节点",
@@ -1185,7 +1194,7 @@
     "meshWarpReRegister": "重新注册",
     "meshWarpDeregister": "注销",
     "meshWarpReRegisterTitle": "重新注册 WARP？",
-    "meshWarpReRegisterDesc": "将先注销当前 WARP 设备，再注册一台全新的匿名设备替换它。",
+    "meshWarpReRegisterDesc": "确认后将立即注销当前 WARP 设备，再注册一台全新的匿名设备替换它。若随后取消注册，已注销的设备不会恢复。",
     "meshWarpDeregisterTitle": "注销 WARP？",
     "meshWarpDeregisterDesc": "将移除此 WARP 节点并在后台注销远端匿名设备，可随时重新接入。",
     "tsReauth": "重新登录 / 切换账号",
@@ -1280,6 +1289,8 @@
     "addCondition": "添加条件",
     "removeCondition": "删除条件",
     "errorEmptyCondition": "「{{type}}」条件未填写匹配值",
+    "errorEmptyConditionInline": "请填写该条件的匹配值",
+    "errorInvalidConditionInline": "该条件含无效值，请检查",
     "category": {
       "domain": "域名",
       "network": "IP / 端口",

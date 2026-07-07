@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ChevronDown, Search, X } from 'lucide-react';
@@ -91,17 +90,16 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
     const selected = isResourceSelected(value, r.id);
     const selectable = isResourceSelectable(r, selected);
     return (
-      <DropdownMenuItem
+      <DropdownMenuCheckboxItem
         key={r.id}
+        checked={selected}
         disabled={!selectable}
-        // 勾选保持菜单打开（多选）：阻止 radix 默认「选中即关」。
-        onSelect={(e) => {
-          e.preventDefault();
-          toggleRes(r.id);
-        }}
-        className="gap-3"
+        // 勾选保持菜单打开（多选）：阻止 radix 默认「选中即关」；toggle 走 onCheckedChange。
+        // 用 CheckboxItem（非自绘 Checkbox）拿回 role=menuitemcheckbox + aria-checked（a11y）。
+        onSelect={(e) => e.preventDefault()}
+        onCheckedChange={() => toggleRes(r.id)}
+        className="gap-2"
       >
-        <Checkbox checked={selected} className="pointer-events-none" tabIndex={-1} />
         <span className="min-w-0 flex-1 truncate text-sm">{r.name}</span>
         {!r.fileExists && (
           <Badge
@@ -114,7 +112,7 @@ export function ResourcePicker({ value, onChange, onRequestClose }: ResourcePick
         <Badge variant="outline" className="text-xs">
           {t(`ruleResources.category.${r.category}`, r.category)}
         </Badge>
-      </DropdownMenuItem>
+      </DropdownMenuCheckboxItem>
     );
   };
 

@@ -41,6 +41,23 @@ export function getLevelColorClass(level: LogEntry['level']): string {
 }
 
 /**
+ * 级别 → pill「形+色」类（低饱和 tint 底 + 语义文字色，含 border-transparent 以贴合 ui/badge outline 基座）。
+ * 单一真值：日志页级别标（logs-page）与实时日志级别标共用此函数，杜绝「两处各自内联映射」漂移。
+ * warn=警告 tint / error·fatal=危险 tint / 其余（info/debug/默认）=中性 muted。
+ */
+export function getLevelPillClass(level: LogEntry['level']): string {
+  switch (level) {
+    case 'error':
+    case 'fatal':
+      return 'border-transparent bg-destructive/15 text-destructive';
+    case 'warn':
+      return 'border-transparent bg-warning/15 text-warning';
+    default:
+      return 'border-transparent bg-muted text-muted-foreground';
+  }
+}
+
+/**
  * 级别 → 行容器「形编码」类（左脊 + 底色，独立于文字色，形+色双编码）。
  * info/debug/默认给透明左脊占位，保持等宽对齐不跳动。
  */

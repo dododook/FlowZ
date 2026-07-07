@@ -198,8 +198,19 @@ export function NodePicker({
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              // 阻止 printable 键冒泡触发 radix typeahead（会抢焦点）；放行 Esc(关) / 方向键(进列表)。
+              aria-label={searchPlaceholder ?? t('common.search', '搜索')}
+              // Enter 选中当前首个结果（分组后视觉第一项）→ 搜到即回车确认，无需再移动方向键。
+              // 阻止其余 printable 键冒泡触发 radix typeahead（会抢焦点）；放行 Esc(关) / 方向键(进列表)。
               onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const first = sections[0]?.items[0];
+                  if (first) {
+                    e.preventDefault();
+                    onSelect(first.id);
+                    setOpen(false);
+                  }
+                  return;
+                }
                 if (e.key !== 'Escape' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') {
                   e.stopPropagation();
                 }

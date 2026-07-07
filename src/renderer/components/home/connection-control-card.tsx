@@ -99,7 +99,6 @@ function ExitNodePicker({
         latency: latencyMap[s.id],
         latencyNA: !isSpeedTestable(s),
         groupId: pickerGroups.length ? g.id : undefined,
-        dotTone: 'ok',
       }))
     ),
   ];

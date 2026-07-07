@@ -28,7 +28,9 @@ export function deriveConnectButtonState(input: ConnectButtonInputs): ConnectBut
   const { proxyPhase, isConnected, hasError, isServerConfigured } = input;
   if (proxyPhase === 'starting') return { kind: 'starting', busy: true, disabled: true };
   if (proxyPhase === 'stopping') return { kind: 'stopping', busy: true, disabled: true };
-  if (hasError) return { kind: 'error', busy: false, disabled: !isServerConfigured };
+  // 已连接优先于 error：核已运行时按钮须显「停止」（点击 stopProxy），否则残留 proxyError + 核运行
+  // 会让按钮显橘「!」却在点击时执行停止，自相矛盾。仅「未连接 + 有错误」才是可重试的 error 态。
   if (isConnected) return { kind: 'stop', busy: false, disabled: false };
+  if (hasError) return { kind: 'error', busy: false, disabled: !isServerConfigured };
   return { kind: 'start', busy: false, disabled: !isServerConfigured };
 }

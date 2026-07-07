@@ -222,7 +222,11 @@
       "localBadge": "محلی",
       "deletedBadge": "حذف‌شده",
       "groupBuiltin": "داخلی · همراه برنامه",
-      "groupExternal": "دانلودشده"
+      "groupExternal": "دانلودشده",
+      "summary": "{{count}} مجموعه‌قانون انتخاب شد",
+      "placeholder": "انتخاب مجموعه‌قوانین",
+      "search": "جستجوی مجموعه‌قوانین",
+      "noMatch": "مجموعه‌قانون مطابقی وجود ندارد"
     }
   },
   "home": {
@@ -305,6 +309,8 @@
     "clearLogsTitle": "همه گزارش‌ها پاک شوند؟",
     "clearLogsWarn": "این کار بافر گزارش درون‌حافظه‌ای نمایش‌داده‌شده را پاک می‌کند. این عمل قابل بازگردانی نیست.",
     "logLines": "{{count}} خط",
+    "logLinesFiltered": "{{shown}} / {{total}}",
+    "logLinesFilteredTitle": "مطابق / کل بافر",
     "networkInfo": "اطلاعات شبکه",
     "localExit": "خروجی محلی",
     "proxyExit": "خروجی پروکسی",
@@ -384,6 +390,8 @@
       "rollingBack": "در حال بازگشت...",
       "rollbackSuccess": "بازگشت موفق بود — برای اعمال هستهٔ قبلی برنامه را دوباره باز کنید",
       "rollbackFail": "بازگشت ناموفق بود",
+      "rollbackConfirmTitle": "بازگشت نسخهٔ هسته؟",
+      "rollbackConfirmDesc": "به {{version}} بازگردانده می‌شود و هسته دوباره راه‌اندازی می‌شود.",
       "sameVersionGoManage": "لطفاً جایگزینی هم‌نسخه را در کارت مدیریت هسته تأیید کنید.",
       "baselineOverrideGoManage": "هستهٔ انتخاب‌شده قدیمی‌تر از نسخهٔ پایهٔ همراه است؛ جایگزینی موقت را در کارت مدیریت هسته تأیید کنید."
     },
@@ -869,6 +877,7 @@
     "saveFail": "ذخیره ناموفق بود",
     "saveFailDesc": "هنگام ذخیرهٔ سرور خطایی رخ داد",
     "tailscaleSingleOnly": "روی هر دستگاه فقط یک نود Tailscale مجاز است. همهٔ حساب‌ها از یک محدودهٔ آدرس یکسان استفاده می‌کنند، بنابراین نود دوم نود اول را پنهان می‌کند. برای تعویض حساب، نود موجود را حذف کنید.",
+    "warpSingleOnly": "فقط یک Cloudflare WARP می‌توان افزود. ثبت دوباره تنها دستگاه‌های ناشناس اضافی می‌سازد. برای تعویض، مورد موجود را لغو ثبت کنید.",
     "remarks": "نام",
     "remarksDesc": "یک نام قابل‌تشخیص برای سرور تنظیم کنید",
     "remarksPlaceholder": "مثلاً نود هنگ‌کنگ",
@@ -1185,7 +1194,7 @@
     "meshWarpReRegister": "ثبت‌نام مجدد",
     "meshWarpDeregister": "حذف",
     "meshWarpReRegisterTitle": "ثبت‌نام مجدد WARP؟",
-    "meshWarpReRegisterDesc": "ابتدا ثبت دستگاه فعلی WARP لغو می‌شود، سپس یک دستگاه ناشناس جدید جایگزین آن ثبت می‌شود.",
+    "meshWarpReRegisterDesc": "پس از تأیید، ثبت دستگاه فعلی WARP بلافاصله لغو می‌شود و سپس یک دستگاه ناشناس جدید جایگزین آن ثبت می‌گردد. اگر پس از آن ثبت را لغو کنید، دستگاه لغوشده بازگردانده نمی‌شود.",
     "meshWarpDeregisterTitle": "حذف WARP؟",
     "meshWarpDeregisterDesc": "این گره WARP را حذف کرده و در پس‌زمینه ثبت دستگاه ناشناس راه دور را لغو می‌کند. هر زمان می‌توانید دوباره متصل شوید.",
     "tsReauth": "ورود مجدد · تعویض حساب",
@@ -1280,6 +1289,8 @@
     "addCondition": "افزودن شرط",
     "removeCondition": "حذف شرط",
     "errorEmptyCondition": "شرط «{{type}}» مقدار تطبیق ندارد",
+    "errorEmptyConditionInline": "لطفاً مقدار تطبیق این شرط را وارد کنید",
+    "errorInvalidConditionInline": "این شرط دارای مقادیر نامعتبر است، بررسی کنید",
     "category": {
       "domain": "دامنه",
       "network": "IP / پورت",

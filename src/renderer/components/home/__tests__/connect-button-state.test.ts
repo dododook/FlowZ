@@ -1,5 +1,6 @@
 /**
- * 连接圆钮三态推导单测：相位（starting/stopping）优先 → 错误 → 已连 → 未连；置灰仅约束 start/error，stop 恒可点。
+ * 连接圆钮三态推导单测：相位（starting/stopping）优先 → 已连 → 错误 → 未连；置灰仅约束 start/error，stop 恒可点。
+ * 已连优先于错误：核在跑时残留 proxyError 也须显「停止」，不能显橘「!」却在点击时执行停止（自相矛盾）。
  */
 import { deriveConnectButtonState, type ConnectButtonInputs } from '../connect-button-state';
 
@@ -54,6 +55,14 @@ describe('deriveConnectButtonState', () => {
     expect(
       deriveConnectButtonState({ ...base, isConnected: true, isServerConfigured: false })
     ).toEqual({ kind: 'stop', busy: false, disabled: false });
+  });
+
+  it('已连接 + 有错误 → stop（连接优先于错误，杜绝橘「!」却执行停止的自相矛盾）', () => {
+    expect(deriveConnectButtonState({ ...base, isConnected: true, hasError: true })).toEqual({
+      kind: 'stop',
+      busy: false,
+      disabled: false,
+    });
   });
 
   it('未连 + 已配置 → start 可点', () => {

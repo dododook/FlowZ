@@ -292,7 +292,7 @@ export function NetworkInfoCard() {
           />
           <TelemetryStat
             icon={Activity}
-            color="text-warning"
+            color="text-foreground"
             value={String(stats?.activeConnections ?? 0)}
             sub={t('home.activeConnections')}
             subMono={false}

@@ -27,6 +27,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { api } from '@/ipc/api-client';
+import { cn } from '@/lib/utils';
 import type { ServerConfig, ImportParseResult } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
@@ -49,6 +50,8 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
   const [isImporting, setIsImporting] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
+  // 空输入字段级校验内联（红框 + 红字，取代 toast）；系统级错误（读文件/格式/导入失败）仍走 toast。
+  const [contentError, setContentError] = useState(false);
 
   const resetResult = () => {
     setParsed(null);
@@ -73,6 +76,7 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
       }
       setContent(r.content);
       setFileName(r.fileName ?? '');
+      setContentError(false);
       resetResult();
     } catch {
       toast.error(t('localImport.errRead', 'Failed to read file, please retry'));
@@ -82,7 +86,9 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
   const handleParse = async () => {
     const text = content.trim();
     if (!text) {
-      toast.error(t('localImport.errEmptyInput', 'Please select a file or paste content'));
+      // 空输入内联标红（切到粘贴 tab 使输入框可见），取代 toast。
+      setContentError(true);
+      setTab('text');
       return;
     }
     if (text.length > 10 * 1024 * 1024) {
@@ -267,14 +273,24 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
                 onChange={(e) => {
                   setContent(e.target.value);
                   setFileName('');
+                  if (contentError) setContentError(false);
                   resetResult();
                 }}
-                className="min-h-[120px] resize-none font-mono text-xs"
+                aria-invalid={contentError}
+                className={cn(
+                  'min-h-[120px] resize-none font-mono text-xs',
+                  contentError && 'border-destructive'
+                )}
               />
+              {contentError && (
+                <p className="text-xs text-destructive">
+                  {t('localImport.errEmptyInput', 'Please select a file or paste content')}
+                </p>
+              )}
             </TabsContent>
           </Tabs>
 
-          <Button onClick={handleParse} disabled={!content.trim() || isParsing} className="w-full">
+          <Button onClick={handleParse} disabled={isParsing} className="w-full">
             {isParsing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (

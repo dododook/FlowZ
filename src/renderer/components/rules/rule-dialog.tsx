@@ -62,6 +62,8 @@ import {
   deriveTargetServerId,
   isBypassApplicable,
   deriveBypassFakeIp,
+  showsTargetNode,
+  FOLLOW_GLOBAL_NODE_ID,
   type RuleFormErrors,
 } from './rule-dialog-logic';
 
@@ -109,7 +111,8 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   const [action, setAction] = useState<RuleAction>('proxy');
   const [enabled, setEnabled] = useState(true);
   const [bypassFakeIP, setBypassFakeIP] = useState(false);
-  const [targetServerId, setTargetServerId] = useState('default');
+  // 悬挂 targetServerId（指向已删节点）→ NodePicker findItem 落空显 placeholder（跟随全局文案），属既有边界，保留。
+  const [targetServerId, setTargetServerId] = useState(FOLLOW_GLOBAL_NODE_ID);
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // 已尝试提交：为 true 后才计算并内联展示字段级错误（避免打开即报错，与 spec §6「提交时校验」一致）。
@@ -147,7 +150,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
       setAction(rule.action);
       setEnabled(rule.enabled);
       setBypassFakeIP(rule.bypassFakeIP ?? false);
-      setTargetServerId(rule.targetServerId || 'default');
+      setTargetServerId(rule.targetServerId || FOLLOW_GLOBAL_NODE_ID);
       setRemarks(rule.remarks || '');
     } else {
       setConditionTypes([DEFAULT_TYPE]);
@@ -156,7 +159,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
       setAction('proxy');
       setEnabled(true);
       setBypassFakeIP(false);
-      setTargetServerId('default');
+      setTargetServerId(FOLLOW_GLOBAL_NODE_ID);
       setRemarks('');
     }
   }, [open, mode, rule]);
@@ -202,7 +205,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
     const grps = groupServersBySubscription(servers, subscriptions);
     const multi = grps.length > 1;
     return [
-      { id: 'default', name: t('rules.defaultNodeTip'), role: 'follow' as const },
+      { id: FOLLOW_GLOBAL_NODE_ID, name: t('rules.defaultNodeTip'), role: 'follow' as const },
       ...grps.flatMap((g) =>
         g.servers.map<NodePickerItem>((s) => ({
           id: s.id,
@@ -211,7 +214,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
           latency: latencyMap[s.id],
           latencyNA: !isSpeedTestable(s),
           groupId: multi ? g.id : undefined,
-          dotTone: 'ok',
         }))
       ),
     ];
@@ -563,8 +565,9 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             />
           </div>
 
-          {/* 目标节点（仅代理）：一步选下拉（`.npick`），跟随全局哨兵置顶 + 分组 + 延迟徽标 */}
-          {action === 'proxy' && (
+          {/* 目标节点（仅代理）：一步选下拉（`.npick`），跟随全局哨兵置顶 + 分组 + 延迟徽标。
+              「是否展示目标节点」单一真值取自 showsTargetNode（与写入 gate 同源），不再内联判等。 */}
+          {showsTargetNode(action) && (
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('rules.targetNode')}</label>
               <NodePicker

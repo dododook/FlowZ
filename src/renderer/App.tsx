@@ -145,7 +145,7 @@ function App() {
         {currentView === 'rules' && <RulesPage />}
         {currentView === 'settings' && <SettingsPage activeSection={settingsSection} />}
       </MainLayout>
-      <Toaster position="top-right" closeButton />
+      <Toaster position="top-right" closeButton visibleToasts={4} />
     </ErrorBoundary>
   );
 }

@@ -9,10 +9,10 @@
  * 单例守卫（TS=tailscaleSlotTaken 硬闸门 + 本区不给「再加」；WARP=warpSlotTaken + 本区「已接入·管理」）均纯函数、可离线单测。
  * WARP「注销」=删节点（主进程据 warpDevice 凭据后台注销远端匿名设备，防孤儿计费）；「重新注册」=先注销旧、再注册新替换。
  */
-import { useState } from 'react';
-import { toast } from 'sonner';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Zap, ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -75,6 +75,8 @@ export function MeshAccessEntry({
   const [warpReRegisterOpen, setWarpReRegisterOpen] = useState(false);
   const [warpDeregisterOpen, setWarpDeregisterOpen] = useState(false);
   const [wgName, setWgName] = useState('');
+  const [wgNameError, setWgNameError] = useState(false);
+  const wgNameInputRef = useRef<HTMLInputElement>(null);
   const [warpName, setWarpName] = useState('Cloudflare WARP');
 
   // 新建节点（无 editingServer）：name 由 dialog 名称字段提供，拼入表单产出的协议配置后保存。
@@ -87,13 +89,16 @@ export function MeshAccessEntry({
 
   const handleWgSubmit = async (config: ProtocolConfig) => {
     if (!wgName.trim()) {
-      // 名称必填：空名 saveServer 会以空名落库。除上方常驻琥珀提示外，提交时再 toast 一次，避免点表单保存「无反应」。
-      toast.error(t('servers.meshAccessNameFirst', '请先填写节点名称'));
+      // 名称必填（内联红框 + 聚焦，与 §6 表单校验一致）：空名 saveServer 会以空名落库，故提交 gate 在此拦下。
+      setWgNameError(true);
+      wgNameInputRef.current?.focus();
+      wgNameInputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
     await submitNew(wgName, config);
     setWgOpen(false);
     setWgName('');
+    setWgNameError(false);
   };
 
   const handleWarpSubmit = async (config: ProtocolConfig) => {
@@ -219,7 +224,10 @@ export function MeshAccessEntry({
         open={wgOpen}
         onOpenChange={(open) => {
           setWgOpen(open);
-          if (!open) setWgName('');
+          if (!open) {
+            setWgName('');
+            setWgNameError(false);
+          }
         }}
       >
         <DialogContent className="w-[92vw] max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -233,13 +241,19 @@ export function MeshAccessEntry({
             <div className="space-y-2">
               <Label htmlFor="meshWgName">{t('servers.remarks')}</Label>
               <Input
+                ref={wgNameInputRef}
                 id="meshWgName"
                 placeholder={t('servers.remarksPlaceholder')}
                 value={wgName}
-                onChange={(e) => setWgName(e.target.value)}
+                onChange={(e) => {
+                  setWgName(e.target.value);
+                  if (wgNameError) setWgNameError(false);
+                }}
+                aria-invalid={wgNameError}
+                className={cn(wgNameError && 'border-destructive')}
               />
-              {!wgName.trim() && (
-                <p className="text-xs text-amber-600 dark:text-amber-500">
+              {wgNameError && (
+                <p className="text-xs text-destructive">
                   {t('servers.meshAccessNameFirst', '请先填写节点名称')}
                 </p>
               )}
@@ -286,7 +300,7 @@ export function MeshAccessEntry({
             <AlertDialogDescription>
               {t(
                 'servers.meshWarpReRegisterDesc',
-                '将先注销当前 WARP 设备，再注册一台全新的匿名设备替换它。'
+                '确认后将立即注销当前 WARP 设备，再注册一台全新的匿名设备替换它。若随后取消注册，已注销的设备不会恢复。'
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>

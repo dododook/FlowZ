@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Image as ImageIcon, ArrowRight } from 'lucide-react';
+import { Image as ImageIcon, ArrowRight, ListChecks } from 'lucide-react';
 import { iconProxySrc } from '../../../shared/icon-proxy';
 import type {
   AppRule,
@@ -38,6 +38,7 @@ import { api } from '@/ipc/api-client';
 import { GeoTagPicker } from './geo-tag-picker';
 import { geoCategoryOptions, localGeoTagSet } from './geo-tag-picker-utils';
 import { IconGalleryPicker } from './icon-gallery-picker';
+import { ProcessPickerDialog } from './process-picker-dialog';
 import { KNOWN_CATEGORIES } from './app-rules-logic';
 import { toast } from 'sonner';
 
@@ -72,6 +73,7 @@ export function AddCustomAppDialog({
   const [newAppGeositeTags, setNewAppGeositeTags] = useState<string[]>([]);
   const [newAppGeoipTags, setNewAppGeoipTags] = useState<string[]>([]);
   const [newAppProcessNames, setNewAppProcessNames] = useState('');
+  const [processPickerOpen, setProcessPickerOpen] = useState(false);
   // 字段级错误（内联，不 toast）
   const [nameError, setNameError] = useState(false);
   const [geositeError, setGeositeError] = useState(false);
@@ -132,6 +134,17 @@ export function AddCustomAppDialog({
     } finally {
       setGeoCatalogRefreshing(false);
     }
+  };
+
+  // 「选择进程」复用规则页 ProcessPickerDialog（一键拉运行进程 + 搜索 + 多选 + 系统进程过滤），勾选回填。
+  // 合并进现有逗号串（去重、去空），保留手输作兜底（进程未运行时仍可手加）。
+  const handlePickProcesses = (names: string[]) => {
+    const existing = newAppProcessNames
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const merged = Array.from(new Set([...existing, ...names]));
+    setNewAppProcessNames(merged.join(', '));
   };
 
   const handleAddCustomApp = async () => {
@@ -425,13 +438,24 @@ export function AddCustomAppDialog({
                   {t('rules.customApp.processLabel', '进程名')}
                 </Label>
                 <div className="col-span-3 space-y-1">
-                  <Input
-                    id="procnames"
-                    value={newAppProcessNames}
-                    onChange={(e) => setNewAppProcessNames(e.target.value)}
-                    placeholder={t('rules.customApp.processPlaceholder', 'App.exe, appname')}
-                    className="h-10 rounded-lg border-none bg-muted/20 text-sm focus-visible:ring-1"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="procnames"
+                      value={newAppProcessNames}
+                      onChange={(e) => setNewAppProcessNames(e.target.value)}
+                      placeholder={t('rules.customApp.processPlaceholder', 'App.exe, appname')}
+                      className="h-10 flex-1 rounded-lg border-none bg-muted/20 text-sm focus-visible:ring-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setProcessPickerOpen(true)}
+                      className="h-10 shrink-0"
+                    >
+                      <ListChecks className="me-1.5 h-4 w-4" />
+                      {t('rules.pickProcess', '从进程选择')}
+                    </Button>
+                  </div>
                   <p className="text-[10px] text-muted-foreground">
                     {t('rules.customApp.processHint', '可选 · 逗号分隔，比 geo 域名匹配更精准')}
                   </p>
@@ -453,6 +477,12 @@ export function AddCustomAppDialog({
             </DialogFooter>
           </>
         )}
+        <ProcessPickerDialog
+          open={processPickerOpen}
+          onOpenChange={setProcessPickerOpen}
+          mode="name"
+          onAdd={handlePickProcesses}
+        />
       </DialogContent>
     </Dialog>
   );

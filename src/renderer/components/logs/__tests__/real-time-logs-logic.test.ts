@@ -2,6 +2,7 @@ import {
   logMatchesSearch,
   truncateToBuffer,
   getLevelColorClass,
+  getLevelPillClass,
   getLevelRowClass,
 } from '../real-time-logs-logic';
 
@@ -58,6 +59,24 @@ describe('getLevelColorClass', () => {
     expect(getLevelColorClass('warn')).toBe('text-warning');
     expect(getLevelColorClass('info')).toBe('text-info');
     expect(getLevelColorClass('debug')).toBe('text-muted-foreground');
+  });
+});
+
+describe('getLevelPillClass', () => {
+  it('error/fatal → 危险 tint（底 + 文字 + border-transparent）', () => {
+    expect(getLevelPillClass('error')).toBe(
+      'border-transparent bg-destructive/15 text-destructive'
+    );
+    expect(getLevelPillClass('fatal')).toBe(
+      'border-transparent bg-destructive/15 text-destructive'
+    );
+  });
+  it('warn → 警告 tint', () => {
+    expect(getLevelPillClass('warn')).toBe('border-transparent bg-warning/15 text-warning');
+  });
+  it('info/debug/默认 → 中性 muted', () => {
+    expect(getLevelPillClass('info')).toBe('border-transparent bg-muted text-muted-foreground');
+    expect(getLevelPillClass('debug')).toBe('border-transparent bg-muted text-muted-foreground');
   });
 });
 

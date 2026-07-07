@@ -107,7 +107,6 @@ export function AppRulesCard() {
         latency: latencyMap[s.id],
         latencyNA: !isSpeedTestable(s),
         groupId: multi ? g.id : undefined,
-        dotTone: 'ok',
       }))
     );
   }, [servers, subscriptions, latencyMap]);

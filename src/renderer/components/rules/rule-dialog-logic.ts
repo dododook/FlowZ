@@ -45,9 +45,15 @@ export function hasRuleFormErrors(errors: RuleFormErrors): boolean {
   return errors.remarksRequired === true || Object.keys(errors.conditions).length > 0;
 }
 
-/** 提交值派生：目标节点哨兵 'default'（跟随全局）→ undefined，其余原样。 */
+/**
+ * 目标节点「跟随全局」哨兵 id：选它表示不锁具体节点、跟随全局出口。UI 选项 id、state 初值、
+ * 提交派生共用此常量（取代散落的裸 'default' 字面量，杜绝一处改漏）。
+ */
+export const FOLLOW_GLOBAL_NODE_ID = 'default';
+
+/** 提交值派生：目标节点哨兵（跟随全局）→ undefined，其余原样。 */
 export function deriveTargetServerId(targetServerId: string): string | undefined {
-  return targetServerId === 'default' ? undefined : targetServerId;
+  return targetServerId === FOLLOW_GLOBAL_NODE_ID ? undefined : targetServerId;
 }
 
 /** bypassFakeIP 是否适用：任一条件为域名类（domain/domainSuffix/domainKeyword）。 */

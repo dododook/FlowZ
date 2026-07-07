@@ -1,6 +1,8 @@
 import { RealTimeLogs } from '@/components/logs';
+import { getLevelPillClass } from '@/components/logs/real-time-logs-logic';
 import { LogSettingsSection } from '@/components/logs/log-settings-section';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { SettingsCollapsible } from '@/components/settings/settings-collapsible';
 import { DiagnosticSection } from '@/components/settings/diagnostic-section';
 import { useAppStore } from '@/store/app-store';
@@ -27,19 +29,17 @@ export function LogsPage() {
                 <span className="ms-2 font-normal text-muted-foreground">
                   · {t('logs.currentLevel', '级别')}
                 </span>
-                {/* 级别 pill：形+色双编码（warn/error 语义色，其余中性），一眼可辨当前详细度。 */}
-                <span
+                {/* 级别 pill：形+色双编码（warn/error 语义色，其余中性），色档单一真值取自 getLevelPillClass；
+                    复用 ui/badge 基座（非自绘 span），rounded/字号经 className 收窄为紧凑内联标。 */}
+                <Badge
+                  variant="outline"
                   className={cn(
-                    'ms-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-                    level === 'warn'
-                      ? 'bg-warning/15 text-warning'
-                      : level === 'error' || level === 'fatal'
-                        ? 'bg-destructive/15 text-destructive'
-                        : 'bg-muted text-muted-foreground'
+                    'ms-1.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide',
+                    getLevelPillClass(level)
                   )}
                 >
                   {level}
-                </span>
+                </Badge>
               </span>
             }
           >

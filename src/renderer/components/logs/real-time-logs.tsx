@@ -254,8 +254,17 @@ export function RealTimeLogs({
             {isAutoScroll ? t('home.autoScrollOn') : t('home.autoScrollOff')}
           </span>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground font-mono tabular-nums">
-              {t('home.logLines', { count: filteredLogs.length })}
+            <span
+              className="text-xs text-muted-foreground font-mono tabular-nums"
+              title={searchTerm ? t('home.logLinesFilteredTitle', '命中 / 缓冲总行数') : undefined}
+            >
+              {searchTerm
+                ? t('home.logLinesFiltered', {
+                    defaultValue: '{{shown}} / {{total}}',
+                    shown: filteredLogs.length,
+                    total: logs.length,
+                  })
+                : t('home.logLines', { count: filteredLogs.length })}
             </span>
             {!isAutoScroll && (
               <Button

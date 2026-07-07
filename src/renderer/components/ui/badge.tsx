@@ -13,6 +13,9 @@ const badgeVariants = cva(
           'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
         destructive:
           'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80',
+        // 语义状态标（低饱和 tint，非实心）：连接/日志等「状态即色」小 pill 复用，取代各处自绘 span。
+        success: 'border-transparent bg-success/15 text-success',
+        warning: 'border-transparent bg-warning/15 text-warning',
         outline: 'text-foreground',
       },
     },

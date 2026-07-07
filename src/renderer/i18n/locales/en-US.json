@@ -222,7 +222,11 @@
       "localBadge": "Local",
       "deletedBadge": "Deleted",
       "groupBuiltin": "Builtin · Bundled",
-      "groupExternal": "Downloaded"
+      "groupExternal": "Downloaded",
+      "summary": "{{count}} rule-sets selected",
+      "placeholder": "Select rule-sets",
+      "search": "Search rule-sets",
+      "noMatch": "No matching rule-sets"
     }
   },
   "home": {
@@ -305,6 +309,8 @@
     "clearLogsTitle": "Clear all logs?",
     "clearLogsWarn": "This clears the in-memory log buffer shown here. This cannot be undone.",
     "logLines": "{{count}} lines",
+    "logLinesFiltered": "{{shown}} / {{total}}",
+    "logLinesFilteredTitle": "Matched / buffered lines",
     "networkInfo": "Network Info",
     "localExit": "Local Exit",
     "proxyExit": "Proxy Exit",
@@ -384,6 +390,8 @@
       "rollingBack": "Rolling back...",
       "rollbackSuccess": "Rollback successful — reopen the app to apply the previous core",
       "rollbackFail": "Rollback failed",
+      "rollbackConfirmTitle": "Roll back the core?",
+      "rollbackConfirmDesc": "This rolls back to {{version}}; the core will restart.",
       "sameVersionGoManage": "Please confirm the same-version replacement in the Core Management card.",
       "baselineOverrideGoManage": "The selected core is older than the bundled baseline; confirm the temporary replacement in the Core Management card."
     },
@@ -869,6 +877,7 @@
     "saveFail": "Failed to save",
     "saveFailDesc": "An error occurred while saving the server",
     "tailscaleSingleOnly": "Only one Tailscale node per device. All accounts share the same address range, so a second one just shadows the first. Remove the existing one to switch accounts.",
+    "warpSingleOnly": "Only one Cloudflare WARP can be joined. Registering again just creates extra anonymous devices. Deregister the existing one to switch.",
     "remarks": "Name",
     "remarksDesc": "Set a recognizable name for the server",
     "remarksPlaceholder": "e.g., Hong Kong Node",
@@ -1185,7 +1194,7 @@
     "meshWarpReRegister": "Re-register",
     "meshWarpDeregister": "Remove",
     "meshWarpReRegisterTitle": "Re-register WARP?",
-    "meshWarpReRegisterDesc": "Deregisters the current WARP device, then registers a fresh anonymous device to replace it.",
+    "meshWarpReRegisterDesc": "Confirming immediately deregisters the current WARP device, then registers a fresh anonymous device to replace it. If you cancel the registration afterward, the deregistered device is not restored.",
     "meshWarpDeregisterTitle": "Remove WARP?",
     "meshWarpDeregisterDesc": "Removes this WARP node and deregisters the remote anonymous device in the background. You can rejoin anytime.",
     "tsReauth": "Re-login · switch account",
@@ -1280,6 +1289,8 @@
     "addCondition": "Add condition",
     "removeCondition": "Remove condition",
     "errorEmptyCondition": "Condition \"{{type}}\" has no match value",
+    "errorEmptyConditionInline": "Please enter a match value for this condition",
+    "errorInvalidConditionInline": "This condition contains invalid values, please check",
     "category": {
       "domain": "Domain",
       "network": "IP / Port",
