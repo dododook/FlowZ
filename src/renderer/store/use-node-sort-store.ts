@@ -6,7 +6,7 @@
  *    不冲突——结果是数据、排序是偏好）。
  *  - 存 localStorage 而非 UserConfig：UserConfig 改动触发 CONFIG_CHANGED→重启代理；偏好是纯渲染端视图态。
  *
- * 开关只管理「下拉列表 + 托盘列表」的排序：渲染端 server-select-groups 读本 store（仅首页 showLatency 生效），
+ * 开关只管理「下拉列表 + 托盘列表」的排序：渲染端首页出口选择（connection-control-card 的 ExitNodePicker）读本 store，
  * 主进程托盘经 App.tsx 的 useEffect 把本值经 IPC 推给 TrayManager.setSortByLatency（mount 时一次同步 +
  * 每次切换推送）。无测速结果时两端均退化为按名称（见 [[server-latency-sort]]）。
  */
