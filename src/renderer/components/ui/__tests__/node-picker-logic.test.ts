@@ -5,6 +5,7 @@
 import {
   filterItems,
   findItem,
+  firstSelectable,
   groupItems,
   latencyTone,
   matchesQuery,
@@ -108,5 +109,44 @@ describe('shouldShowSearch', () => {
     expect(shouldShowSearch(6)).toBe(false);
     expect(shouldShowSearch(7)).toBe(true);
     expect(shouldShowSearch(3, 2)).toBe(true);
+  });
+});
+
+describe('firstSelectable（Enter 选中首个可选，跳过 disabled）', () => {
+  it('跳过前导 disabled，返回视觉首个可选', () => {
+    const secs = groupItems([
+      item({ id: 'a', name: 'A', disabled: true }),
+      item({ id: 'b', name: 'B', disabled: true }),
+      item({ id: 'c', name: 'C' }),
+    ]);
+    expect(firstSelectable(secs)?.id).toBe('c');
+  });
+
+  it('全 disabled → undefined', () => {
+    const secs = groupItems([
+      item({ id: 'a', name: 'A', disabled: true }),
+      item({ id: 'b', name: 'B', disabled: true }),
+    ]);
+    expect(firstSelectable(secs)).toBeUndefined();
+  });
+
+  it('空段 → undefined', () => {
+    expect(firstSelectable([])).toBeUndefined();
+    expect(firstSelectable(groupItems([]))).toBeUndefined();
+  });
+
+  it('跨分组按段顺序取首个可选（前段全 disabled 则跨到后段）', () => {
+    const groups: NodePickerGroup[] = [
+      { id: 'g1', label: 'G1' },
+      { id: 'g2', label: 'G2' },
+    ];
+    const secs = groupItems(
+      [
+        item({ id: 'x', name: 'X', groupId: 'g1', disabled: true }),
+        item({ id: 'y', name: 'Y', groupId: 'g2' }),
+      ],
+      groups
+    );
+    expect(firstSelectable(secs)?.id).toBe('y');
   });
 });

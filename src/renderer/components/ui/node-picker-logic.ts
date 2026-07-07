@@ -34,6 +34,10 @@ export interface NodePickerItem {
   dotTone?: DotTone;
   /** 额外搜索关键词（如国家/地区别名）。 */
   keywords?: string;
+  /** 禁用项：radix DropdownMenuItem 原生跳焦点/typeahead + data-[disabled]:opacity-50；不可选中。 */
+  disabled?: boolean;
+  /** 名称后、协议徽标前的补充说明（如 tailnet peer 的「ip · 使用中/离线/未广告」）；缺省不显。 */
+  note?: string;
 }
 
 export interface NodePickerGroup {
@@ -115,4 +119,17 @@ export function findItem(
 /** 节点多时（> 阈值）才显搜索框（默认 6）。 */
 export function shouldShowSearch(count: number, threshold = 6): boolean {
   return count > threshold;
+}
+
+/**
+ * 视觉顺序首个可选（非 disabled）项——搜索框 Enter 选中它，跳过被禁用的项（如未广告出口的 tailnet peer）。
+ * 全禁用 / 空 → undefined（Enter 不选中）。按 section 顺序、段内顺序遍历，与渲染视觉顺序一致。
+ */
+export function firstSelectable(sections: NodePickerSection[]): NodePickerItem | undefined {
+  for (const sec of sections) {
+    for (const it of sec.items) {
+      if (!it.disabled) return it;
+    }
+  }
+  return undefined;
 }

@@ -167,7 +167,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
       try {
         const loaded = await configManager.loadConfig();
         loaded.proxyModeType = modeType;
-        // 切模式前过 FakeIP-TUN 待纠正（同 proxy-control-card）：迁移冻结的 enableFakeIp:false 首次进 TUN 回 true。
+        // 切模式前过 FakeIP-TUN 待纠正（同原 proxy-control-card，已并入 connection-control-card）：迁移冻结的 enableFakeIp:false 首次进 TUN 回 true。
         const { config, corrected } = applyFakeIpTunEntry(loaded);
         await configManager.saveConfig(config);
         logManager.addLog('info', `Takeover mode changed from tray: ${modeType}`, 'Main');

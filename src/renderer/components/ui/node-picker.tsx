@@ -11,6 +11,7 @@ import {
 import {
   filterItems,
   findItem,
+  firstSelectable,
   groupItems,
   latencyTone,
   shouldShowSearch,
@@ -196,7 +197,7 @@ export function NodePicker({
               // 阻止其余 printable 键冒泡触发 radix typeahead（会抢焦点）；放行 Esc(关) / 方向键(进列表)。
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  const first = sections[0]?.items[0];
+                  const first = firstSelectable(sections);
                   if (first) {
                     e.preventDefault();
                     onSelect(first.id);
@@ -230,6 +231,7 @@ export function NodePicker({
                 return (
                   <DropdownMenuItem
                     key={item.id}
+                    disabled={item.disabled}
                     onSelect={() => onSelect(item.id)}
                     className={cn(
                       'gap-2',
@@ -243,6 +245,9 @@ export function NodePicker({
                     <span className="min-w-0 flex-1 truncate" title={item.name}>
                       {item.name}
                     </span>
+                    {item.note && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{item.note}</span>
+                    )}
                     {item.protocol && (
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
                         {item.protocol}
