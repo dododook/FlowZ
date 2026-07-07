@@ -6,6 +6,7 @@ import { DiagnosticSection } from '@/components/settings/diagnostic-section';
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/page-header';
+import { cn } from '@/lib/utils';
 
 export function LogsPage() {
   const { t } = useTranslation();
@@ -21,10 +22,23 @@ export function LogsPage() {
         <CardContent className="pt-2">
           <SettingsCollapsible
             label={
-              <span>
+              <span className="inline-flex items-center">
                 {t('logs.settingsTitle', '日志与诊断')}
                 <span className="ms-2 font-normal text-muted-foreground">
-                  · {t('logs.currentLevel', '级别')}: {level}
+                  · {t('logs.currentLevel', '级别')}
+                </span>
+                {/* 级别 pill：形+色双编码（warn/error 语义色，其余中性），一眼可辨当前详细度。 */}
+                <span
+                  className={cn(
+                    'ms-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                    level === 'warn'
+                      ? 'bg-warning/15 text-warning'
+                      : level === 'error' || level === 'fatal'
+                        ? 'bg-destructive/15 text-destructive'
+                        : 'bg-muted text-muted-foreground'
+                  )}
+                >
+                  {level}
                 </span>
               </span>
             }

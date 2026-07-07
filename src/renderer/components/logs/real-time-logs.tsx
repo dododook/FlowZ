@@ -3,11 +3,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { HighlightText } from '@/components/ui/highlight-text';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store/app-store';
 import { Trash2, ArrowDown, Search } from 'lucide-react';
 import { getLogs, clearLogs, addEventListener } from '@/bridge/api-wrapper';
 import type { LogEntry } from '@/bridge/types';
+import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+import {
+  logMatchesSearch,
+  truncateToBuffer,
+  getLevelColorClass,
+  getLevelRowClass,
+} from './real-time-logs-logic';
 
 /** 渲染端为每条日志附加单调自增 _id 作为稳定 key —— 环形缓冲淘汰首元素后剩余项 key 不变，
  *  避免 key={index} 错位导致滚动期全量重渲染并打断文本选区。 */
@@ -30,6 +48,8 @@ export function RealTimeLogs({
   const { t, i18n } = useTranslation();
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  // 清空为高危不可逆操作（丢失内存中的实时日志缓冲）→ 二次确认后才执行。
+  const [confirmClear, setConfirmClear] = useState(false);
   // 吸附底部（默认开）：进页即定位到底并跟随最新；用户上滚脱离底部即停跟随，滚回底部即恢复。
   const [isAutoScroll, setIsAutoScroll] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -48,7 +68,7 @@ export function RealTimeLogs({
       setLogs((prev) => {
         const next = prev.slice();
         for (const e of entries) next.push({ ...e, _id: nextIdRef.current++ });
-        return next.slice(-maxBufferRef.current);
+        return truncateToBuffer(next, maxBufferRef.current);
       });
     };
     const unsubscribe = addEventListener('logReceivedBatch', handleLogBatch);
@@ -73,7 +93,10 @@ export function RealTimeLogs({
           }));
           // 历史段置于 live 段之前；剔除旧 historical 实现「重载即替换」，对 live 先到 / StrictMode 双触发均幂等。
           setLogs((prev) =>
-            [...initial, ...prev.filter((r) => !r.historical)].slice(-maxBufferRef.current)
+            truncateToBuffer(
+              [...initial, ...prev.filter((r) => !r.historical)],
+              maxBufferRef.current
+            )
           );
         }
       } catch (error) {
@@ -91,7 +114,7 @@ export function RealTimeLogs({
   // Effect ③：maxBuffer 变更 —— 只重切现有 state，不重载历史、不重订阅。
   useEffect(() => {
     maxBufferRef.current = maxBuffer;
-    setLogs((prev) => (prev.length > maxBuffer ? prev.slice(-maxBuffer) : prev));
+    setLogs((prev) => truncateToBuffer(prev, maxBuffer));
   }, [maxBuffer]);
 
   // 获取滚动元素
@@ -157,26 +180,7 @@ export function RealTimeLogs({
     }
   };
 
-  const getLevelColor = (level: LogEntry['level']) => {
-    switch (level) {
-      case 'error':
-        return 'text-destructive';
-      case 'warn':
-        return 'text-warning';
-      case 'info':
-        return 'text-info';
-      case 'debug':
-        return 'text-muted-foreground';
-      default:
-        return 'text-foreground';
-    }
-  };
-
-  const filteredLogs = logs.filter(
-    (log) =>
-      log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.level.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredLogs = logs.filter((log) => logMatchesSearch(log, searchTerm));
 
   return (
     <Card>
@@ -196,7 +200,7 @@ export function RealTimeLogs({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleClearLogs}
+              onClick={() => setConfirmClear(true)}
               disabled={logs.length === 0}
             >
               <Trash2 className="h-4 w-4 me-1" />
@@ -224,12 +228,20 @@ export function RealTimeLogs({
                 const timestamp = new Date(log.timestamp).toLocaleTimeString(i18n.language);
 
                 return (
-                  <div key={log._id} className="text-xs font-mono select-text">
+                  <div
+                    key={log._id}
+                    className={cn(
+                      'text-xs font-mono select-text rounded-sm ps-1.5',
+                      getLevelRowClass(log.level)
+                    )}
+                  >
                     <span className="text-muted-foreground">[{timestamp}]</span>
-                    <span className={`ms-2 font-semibold ${getLevelColor(log.level)}`}>
+                    <span className={cn('ms-2 font-semibold', getLevelColorClass(log.level))}>
                       {log.level.toUpperCase()}:
                     </span>
-                    <span className="ms-2">{log.message}</span>
+                    <span className="ms-2">
+                      <HighlightText text={log.message} query={searchTerm} />
+                    </span>
                   </div>
                 );
               })}
@@ -241,22 +253,46 @@ export function RealTimeLogs({
           <span className="text-xs text-muted-foreground">
             {isAutoScroll ? t('home.autoScrollOn') : t('home.autoScrollOff')}
           </span>
-          {!isAutoScroll && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setIsAutoScroll(true);
-                scrollToBottom();
-              }}
-              className="text-xs h-7"
-            >
-              <ArrowDown className="h-3 w-3 me-1" />
-              {t('home.scrollToBottom')}
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground font-mono tabular-nums">
+              {t('home.logLines', { count: filteredLogs.length })}
+            </span>
+            {!isAutoScroll && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsAutoScroll(true);
+                  scrollToBottom();
+                }}
+                className="text-xs h-7"
+              >
+                <ArrowDown className="h-3 w-3 me-1" />
+                {t('home.scrollToBottom')}
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
+
+      {/* 清空日志高危二次确认（统一 alert-dialog pattern，对齐「连接全部关闭 / 删除节点」等） */}
+      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('home.clearLogsTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('home.clearLogsWarn')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClearLogs}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('home.clear')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
