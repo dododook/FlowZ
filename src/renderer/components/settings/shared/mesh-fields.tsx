@@ -44,7 +44,7 @@ export function AccessModeField<TFieldValues extends FieldValues>({
   // 内部转发即可。故 Windows 一律置灰显示 gVisor（与非 TUN 同样不写回 reverseMesh，存储意图保留）。
   const isWindows = !meshSystemSupportedOnPlatform(window.electron?.platform);
   const systemSelectable = tunMode && !isWindows;
-  // 同 ExitNodeField：受控 value 编程式变更（form.reset 把 reverseMesh 设为 true→value='system'）时，Radix
+  // 同原 ExitNodeField（迁 npick 前）：受控 value 编程式变更（form.reset 把 reverseMesh 设为 true→value='system'）时，Radix
   // 隐藏原生 select 会触发一次伪 onValueChange(回退到首项 'userspace')，把刚 reset 的 System 静默打回 gVisor
   // （真机实证：保存 System 后重开/保存又恢复 gVisor）。用户真正打开过下拉才允许写回。
   const interacted = useRef(false);

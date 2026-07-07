@@ -34,10 +34,10 @@ import { CustomForm } from './custom-form';
 import { WarpPanel } from './warp-panel';
 import { FormSection } from './shared/form-layout';
 import { getSortedProtocolOptions } from './shared/protocol-options';
-import { isEndpointProtocol, isSpeedTestable } from '../../../shared/endpoint-routes';
-import { groupServersBySubscription } from '@shared/server-grouping';
+import { isEndpointProtocol } from '../../../shared/endpoint-routes';
 import { isWarpServer } from '../../../shared/warp';
-import { NodePicker, type NodePickerGroup, type NodePickerItem } from '@/components/ui/node-picker';
+import { NodePicker } from '@/components/ui/node-picker';
+import { buildServerPickerModel } from '@/components/ui/server-picker-items';
 import { useAppStore } from '@/store/app-store';
 import type { ServerConfig, ProtocolType } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -46,12 +46,6 @@ type ServerConfigWithId = ServerConfig;
 
 // detour「直连（无链）」哨兵：不与任何节点 uuid 撞；选中即 detour=undefined。
 const DETOUR_DIRECT = 'direct';
-
-/** 节点显示地址（触发器副文本 + 参与搜索）：无地址回退空。 */
-function nodeAddress(s: ServerConfig): string | undefined {
-  if (!s.address) return undefined;
-  return s.port ? `${s.address}:${s.port}` : s.address;
-}
 
 /**
  * 前置代理(detour)节点选择（`.npick`）—— 直连哨兵置顶 + 按订阅/自建分组 + 延迟徽标；排除自身(excludeId)与
@@ -73,35 +67,22 @@ function DetourPicker({
   const subscriptions = useAppStore((s) => s.config?.subscriptions || []);
   const latencyMap = useAppStore((s) => s.latencyMap);
 
-  // 排除自身 + 组网协议（endpoint 不作前置代理目标）后再喂 items。
-  const list = servers.filter((s) => s.id !== excludeId && !isEndpointProtocol(s.protocol));
-  const groups = groupServersBySubscription(list, subscriptions);
-  // 多来源才显分组头（单一来源平铺，与首页/规则口径一致）。
-  const pickerGroups: NodePickerGroup[] =
-    groups.length > 1
-      ? groups.map((g) => ({
-          id: g.id,
-          label: g.isMesh
-            ? t('servers.meshNodes', '组网')
-            : g.isManual
-              ? t('servers.manualNodes', '自建节点')
-              : g.name,
-        }))
-      : [];
-  const items: NodePickerItem[] = [
-    { id: DETOUR_DIRECT, name: t('servers.directConnection', 'Direct (No Chain)'), role: 'direct' },
-    ...groups.flatMap((g) =>
-      g.servers.map<NodePickerItem>((s) => ({
-        id: s.id,
-        name: s.name,
-        protocol: s.protocol,
-        address: nodeAddress(s),
-        latency: latencyMap[s.id],
-        latencyNA: !isSpeedTestable(s),
-        groupId: pickerGroups.length ? g.id : undefined,
-      }))
-    ),
-  ];
+  // 排除自身 + 组网协议（endpoint 不作前置代理目标）；直连哨兵置顶。共享映射与首页/规则/应用分流口径统一。
+  const { items, groups: pickerGroups } = buildServerPickerModel({
+    servers,
+    subscriptions,
+    latencyMap,
+    meshLabel: t('servers.meshNodes', '组网'),
+    manualLabel: t('servers.manualNodes', '自建节点'),
+    sentinel: {
+      id: DETOUR_DIRECT,
+      name: t('servers.directConnection', 'Direct (No Chain)'),
+      role: 'direct',
+    },
+    excludeId,
+    excludeEndpoint: true,
+    withAddress: true,
+  });
 
   return (
     <NodePicker

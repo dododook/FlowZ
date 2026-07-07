@@ -52,7 +52,8 @@ export function ExitNodeField({ value, onChange, serverId, disabled }: ExitNodeF
     offline: t('servers.tsExitNodeOffline', 'offline'),
     notAdvertised: t('servers.tsExitNodeNotAdvertised', 'not an exit node'),
   });
-  const pickerValue = matched ? matched.ip : isCustom ? CUSTOM : NONE;
+  // isCustom 优先：显式切「自定义」时即便当前值仍匹配某设备，也保持「自定义」（不回填设备）。
+  const pickerValue = isCustom ? CUSTOM : matched ? matched.ip : NONE;
 
   const handleSelect = (id: string) => {
     if (id === CUSTOM) {

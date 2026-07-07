@@ -24,7 +24,8 @@ import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { SettingsRow } from '@/components/settings/settings-row';
 import { Loader2, ListPlus, Plus, X } from 'lucide-react';
-import { NodePicker, type NodePickerGroup, type NodePickerItem } from '@/components/ui/node-picker';
+import { NodePicker } from '@/components/ui/node-picker';
+import { buildServerPickerModel } from '@/components/ui/server-picker-items';
 import { useAppStore } from '@/store/app-store';
 import type { Rule, RuleType, RuleAction, RuleCondition } from '../../../shared/types';
 import {
@@ -36,9 +37,7 @@ import {
   meshForcedRouteCidrs,
   meshForceRoutedServers,
   collectRuleTargetedServerIds,
-  isSpeedTestable,
 } from '../../../shared/endpoint-routes';
-import { groupServersBySubscription } from '../../../shared/server-grouping';
 import { cidrOverlapsAny } from '../../../shared/ip';
 import { parseLines } from '../../../shared/parse-lines';
 import { useTranslation } from 'react-i18next';
@@ -188,36 +187,18 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   );
 
   // 目标节点选择器（`.npick`）数据：跟随全局哨兵置顶 + 按订阅/自建分组，显延迟徽标（不随全局排序开关重排）。
-  const targetGroups: NodePickerGroup[] = useMemo(() => {
-    const grps = groupServersBySubscription(servers, subscriptions);
-    return grps.length > 1
-      ? grps.map((g) => ({
-          id: g.id,
-          label: g.isMesh
-            ? t('servers.meshNodes', '组网')
-            : g.isManual
-              ? t('servers.manualNodes', '自建节点')
-              : g.name,
-        }))
-      : [];
-  }, [servers, subscriptions, t]);
-  const targetItems: NodePickerItem[] = useMemo(() => {
-    const grps = groupServersBySubscription(servers, subscriptions);
-    const multi = grps.length > 1;
-    return [
-      { id: FOLLOW_GLOBAL_NODE_ID, name: t('rules.defaultNodeTip'), role: 'follow' as const },
-      ...grps.flatMap((g) =>
-        g.servers.map<NodePickerItem>((s) => ({
-          id: s.id,
-          name: s.name,
-          protocol: s.protocol,
-          latency: latencyMap[s.id],
-          latencyNA: !isSpeedTestable(s),
-          groupId: multi ? g.id : undefined,
-        }))
-      ),
-    ];
-  }, [servers, subscriptions, latencyMap, t]);
+  const { items: targetItems, groups: targetGroups } = useMemo(
+    () =>
+      buildServerPickerModel({
+        servers,
+        subscriptions,
+        latencyMap,
+        meshLabel: t('servers.meshNodes', '组网'),
+        manualLabel: t('servers.manualNodes', '自建节点'),
+        sentinel: { id: FOLLOW_GLOBAL_NODE_ID, name: t('rules.defaultNodeTip'), role: 'follow' },
+      }),
+    [servers, subscriptions, latencyMap, t]
+  );
 
   const valuesOf = (ct: RuleType) => valuesByType[ct] ?? '';
   const setValuesOf = (ct: RuleType, text: string) =>

@@ -5,10 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import type { NodePickerGroup, NodePickerItem } from '@/components/ui/node-picker';
+import { buildServerPickerModel } from '@/components/ui/server-picker-items';
 import { APP_PRESETS } from '../../../shared/app-rules-preset';
-import { groupServersBySubscription } from '../../../shared/server-grouping';
-import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import type {
   AppRule,
   RuleAction,
@@ -83,33 +81,18 @@ export function AppRulesCard() {
   // 指定节点 `.npick` 数据（按订阅/自建分组 + 延迟徽标）。应用分流「指定节点」= 具体节点，故不含「跟随全局」哨兵
   // （跟随全局由「代理」瓦片承担）。父级算一次，各卡共用（value 由各卡自身 targetServerId 决定）。
   const servers = config?.servers || [];
-  const targetGroups: NodePickerGroup[] = useMemo(() => {
-    const grps = groupServersBySubscription(servers, subscriptions);
-    return grps.length > 1
-      ? grps.map((g) => ({
-          id: g.id,
-          label: g.isMesh
-            ? t('servers.meshNodes', '组网')
-            : g.isManual
-              ? t('servers.manualNodes', '自建节点')
-              : g.name,
-        }))
-      : [];
-  }, [servers, subscriptions, t]);
-  const targetItems: NodePickerItem[] = useMemo(() => {
-    const grps = groupServersBySubscription(servers, subscriptions);
-    const multi = grps.length > 1;
-    return grps.flatMap((g) =>
-      g.servers.map<NodePickerItem>((s) => ({
-        id: s.id,
-        name: s.name,
-        protocol: s.protocol,
-        latency: latencyMap[s.id],
-        latencyNA: !isSpeedTestable(s),
-        groupId: multi ? g.id : undefined,
-      }))
-    );
-  }, [servers, subscriptions, latencyMap]);
+  // 无哨兵：应用分流「指定节点」= 具体节点（跟随全局由「代理」瓦片承担）。共享映射与首页/规则/detour 口径统一。
+  const { items: targetItems, groups: targetGroups } = useMemo(
+    () =>
+      buildServerPickerModel({
+        servers,
+        subscriptions,
+        latencyMap,
+        meshLabel: t('servers.meshNodes', '组网'),
+        manualLabel: t('servers.manualNodes', '自建节点'),
+      }),
+    [servers, subscriptions, latencyMap, t]
+  );
 
   if (!config) return null;
 

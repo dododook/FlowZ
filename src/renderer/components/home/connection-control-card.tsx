@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { NodePicker, type NodePickerGroup, type NodePickerItem } from '@/components/ui/node-picker';
+import { NodePicker } from '@/components/ui/node-picker';
+import { buildServerPickerModel } from '@/components/ui/server-picker-items';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,22 +37,14 @@ import { deriveConnectionStatus } from './connection-status';
 import { deriveConnectButtonState } from './connect-button-state';
 import { TsExitWarning } from './ts-exit-warning';
 import { DIRECT_SERVER_ID, isDirectSelection } from '@shared/direct-selection';
-import { groupServersBySubscription } from '@shared/server-grouping';
 import { sortServersByLatency } from '@shared/server-latency-sort';
 import { isServerComplete } from '@shared/server-completeness';
 import { applyFakeIpTunEntry } from '@shared/fakeip-tun-entry';
 import {
   isEndpointProtocol,
   isMeshNodeUnroutable,
-  isSpeedTestable,
   meshNodeCarriesFullTunnel,
 } from '@shared/endpoint-routes';
-
-/** 节点显示地址（触发器副文本 + 搜索）：自定义/无地址节点回退空。 */
-function nodeAddress(s: ServerConfig): string | undefined {
-  if (!s.address) return undefined;
-  return s.port ? `${s.address}:${s.port}` : s.address;
-}
 
 /**
  * 出口节点选择（`.npick`）—— 独立子组件隔离 latencyMap / sortByLatency 订阅，
@@ -71,42 +64,22 @@ function ExitNodePicker({
   const latencyMap = useAppStore((s) => s.latencyMap);
   const sortByLatency = useNodeSortStore((s) => s.sortByLatency);
 
-  const groups = groupServersBySubscription(servers, subscriptions);
-  // 多来源才显分组头（单一来源平铺，与 ServerSelectGroups 口径一致）。
-  const pickerGroups: NodePickerGroup[] =
-    groups.length > 1
-      ? groups.map((g) => ({
-          id: g.id,
-          label: g.isMesh
-            ? t('servers.meshNodes', '组网')
-            : g.isManual
-              ? t('servers.manualNodes', '自建节点')
-              : g.name,
-        }))
-      : [];
-  const sortNodes = (arr: ServerConfig[]): ServerConfig[] =>
-    sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr;
-
-  const items: NodePickerItem[] = [
-    // 直连哨兵（#73）恒置顶，无 groupId → 归无分组桶。
-    { id: DIRECT_SERVER_ID, name: t('servers.directGlobal', '直连'), role: 'direct' },
-    ...groups.flatMap((g) =>
-      sortNodes(g.servers).map<NodePickerItem>((s) => ({
-        id: s.id,
-        name: s.name,
-        protocol: s.protocol,
-        address: nodeAddress(s),
-        latency: latencyMap[s.id],
-        latencyNA: !isSpeedTestable(s),
-        groupId: pickerGroups.length ? g.id : undefined,
-      }))
-    ),
-  ];
+  // 直连哨兵（#73）恒置顶；组内按延迟排序开关；共享映射与规则/应用分流/detour 口径统一。
+  const { items, groups } = buildServerPickerModel({
+    servers,
+    subscriptions,
+    latencyMap,
+    meshLabel: t('servers.meshNodes', '组网'),
+    manualLabel: t('servers.manualNodes', '自建节点'),
+    sentinel: { id: DIRECT_SERVER_ID, name: t('servers.directGlobal', '直连'), role: 'direct' },
+    withAddress: true,
+    sortServers: (arr) => (sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr),
+  });
 
   return (
     <NodePicker
       items={items}
-      groups={pickerGroups}
+      groups={groups}
       value={selectedServerId}
       onSelect={onSelect}
       size="lg"
