@@ -151,6 +151,12 @@ export const tailscaleLoginUiState = (
 export const meshInternetOff = (s: ServerConfigWithId): boolean =>
   isEndpointProtocol(s.protocol) && !meshNodeCarriesFullTunnel(s);
 
+/** 组网节点承载全隧道默认出口 → 可作全局出口（meshInternetOff 的正向补集），列表用 teal「出口」chip 正向标注。
+ *  「出口能力」与「当前选中(current ring)」是正交两层：能力 chip 说明「能否作出口」，ring 说明「此刻是否选它」。
+ *  仅对 endpoint 协议(WG/WARP/Tailscale)成立；代理节点恒 false（其出口能力由协议本身隐含，不需标注）。 */
+export const meshIsExitCapable = (s: ServerConfigWithId): boolean =>
+  isEndpointProtocol(s.protocol) && meshNodeCarriesFullTunnel(s);
+
 // 账号制协议（Tailscale）无 server address/port；自定义协议 server/port 在 JSON 内（缺则显类型）——
 // 卡片副标题不展示 `undefined:undefined`。
 export const endpointLabel = (server: ServerConfigWithId): string => {

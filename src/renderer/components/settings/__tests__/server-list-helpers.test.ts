@@ -2,7 +2,13 @@
  * tailscaleNeedsLogin 角标判定单测（Phase 1：真实登录态驱动，非静态 !authKey）。
  * 三档：有 authKey / 无 authKey 但已登录(loggedIn) / 都无；外加非 Tailscale 节点恒 false。
  */
-import { tailscaleNeedsLogin, tailscaleLoginUiState, sortServers } from '../server-list-helpers';
+import {
+  tailscaleNeedsLogin,
+  tailscaleLoginUiState,
+  sortServers,
+  meshIsExitCapable,
+  meshInternetOff,
+} from '../server-list-helpers';
 
 // 仅取 tailscaleNeedsLogin 用到的字段，避免引 @/bridge/types（jest 无 @ 别名）。
 const ts = (over: Record<string, unknown> = {}) =>
@@ -56,6 +62,44 @@ describe('tailscaleLoginUiState（表单登录区三态）', () => {
 
   it('有 id、未登录、已填 authKey（pre-auth）→ none（不显交互登录区）', () => {
     expect(tailscaleLoginUiState(true, false, true)).toBe('none');
+  });
+});
+
+describe('meshIsExitCapable（组网节点「出口」能力 chip 判定）', () => {
+  const node = (over: Record<string, unknown> = {}) =>
+    ({ id: 'n1', name: 'm', protocol: 'wireguard', ...over }) as any;
+
+  it('WireGuard 默认（未显式关外网）→ 可作出口（true）', () => {
+    expect(meshIsExitCapable(node())).toBe(true);
+    expect(meshIsExitCapable(node({ wireguardSettings: { allowInternet: true } }))).toBe(true);
+  });
+
+  it('WireGuard 显式关外网（allowInternet=false）→ 仅内网、不可作出口（false）', () => {
+    expect(meshIsExitCapable(node({ wireguardSettings: { allowInternet: false } }))).toBe(false);
+  });
+
+  it('Tailscale 配了出口设备（exitNode）→ 可作出口（true）；未配 → false', () => {
+    expect(
+      meshIsExitCapable(node({ protocol: 'tailscale', tailscaleSettings: { exitNode: 'peer-1' } }))
+    ).toBe(true);
+    expect(meshIsExitCapable(node({ protocol: 'tailscale', tailscaleSettings: {} }))).toBe(false);
+    expect(
+      meshIsExitCapable(node({ protocol: 'tailscale', tailscaleSettings: { exitNode: '  ' } }))
+    ).toBe(false);
+  });
+
+  it('非组网协议（vless/trojan）→ 恒 false（出口能力由协议隐含，不标注）', () => {
+    expect(meshIsExitCapable(node({ protocol: 'vless' }))).toBe(false);
+    expect(meshIsExitCapable(node({ protocol: 'trojan' }))).toBe(false);
+  });
+
+  it('与 meshInternetOff 对 endpoint 节点互斥（恰一为真）', () => {
+    const full = node({ wireguardSettings: { allowInternet: true } });
+    const lanOnly = node({ wireguardSettings: { allowInternet: false } });
+    expect(meshIsExitCapable(full)).toBe(true);
+    expect(meshInternetOff(full)).toBe(false);
+    expect(meshIsExitCapable(lanOnly)).toBe(false);
+    expect(meshInternetOff(lanOnly)).toBe(true);
   });
 });
 

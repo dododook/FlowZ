@@ -21,6 +21,7 @@ import {
   tailscaleNeedsLogin,
   tailscaleLoggingIn,
   meshInternetOff,
+  meshIsExitCapable,
   endpointLabel,
   type ServerConfigWithId,
   type ServerActionsContext,
@@ -171,6 +172,14 @@ export function ServerRow({
               className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
             >
               {t('servers.noInternetBadge', 'LAN only')}
+            </Badge>
+          )}
+          {meshIsExitCapable(server) && (
+            <Badge
+              variant="outline"
+              className="text-[10px] h-4 px-1 flex-shrink-0 bg-badge-teal/15 text-badge-teal border-badge-teal/30"
+            >
+              {t('servers.exitCapableBadge', 'Exit')}
             </Badge>
           )}
           {shadowedCidrs.has(server.id) && (

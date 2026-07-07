@@ -1003,6 +1003,7 @@
     "wgFullTunnel": "Route all internet via this node",
     "wgFullTunnelDesc": "All internet egresses via this WireGuard node (this node is the exit); off = only route the subnets below.",
     "noInternetBadge": "LAN only",
+    "exitCapableBadge": "Exit",
     "meshShadowedBadge": "Overlapped",
     "meshShadowedTip": "These subnets are already claimed by an earlier mesh node and won't route via this one: {{cidrs}}. Dedupe / reorder nodes / override with a custom rule.",
     "wgAllowedIPs": "Routed subnets",

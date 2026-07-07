@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import {
   Plus,
   Trash2,
@@ -282,27 +283,20 @@ export function ServerList({
           <p className="text-sm text-muted-foreground">{t('servers.serverListDesc')}</p>
         </div>
         <div className="flex gap-2 items-center">
-          {/* 视图切换 */}
-          <div className="flex rounded-md border overflow-hidden">
-            <Button
-              variant={viewMode === 'card' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 w-8 p-0 rounded-none border-0"
-              title={t('servers.viewCard')}
-              onClick={() => setViewMode('card')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 w-8 p-0 rounded-none border-0 border-l"
-              title={t('servers.viewList')}
-              onClick={() => setViewMode('list')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
+          {/* 视图切换（复用设计系统 SegmentedControl，与首页接管/分流同款，形+态一致） */}
+          <SegmentedControl<ViewMode>
+            className="w-auto"
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              {
+                value: 'card',
+                label: <LayoutGrid className="h-4 w-4" />,
+                title: t('servers.viewCard'),
+              },
+              { value: 'list', label: <List className="h-4 w-4" />, title: t('servers.viewList') },
+            ]}
+          />
 
           <Button
             variant="outline"

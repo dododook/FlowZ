@@ -1003,6 +1003,7 @@
     "wgFullTunnel": "全部出网经此节点",
     "wgFullTunnelDesc": "本机全部外网流量经此 WireGuard 节点出去（此节点即出口）；关闭则仅路由下方网段。",
     "noInternetBadge": "仅内网",
+    "exitCapableBadge": "出口",
     "meshShadowedBadge": "网段被覆盖",
     "meshShadowedTip": "以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。",
     "wgAllowedIPs": "路由网段",
