@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import { ExternalLink, Loader2, Download, Bug } from 'lucide-react';
 import {
@@ -239,12 +240,7 @@ export function AboutSettings() {
                       {t('settings.about.downloading')} {downloadProgress}%
                     </span>
                   </div>
-                  <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all duration-300 ease-out"
-                      style={{ width: `${downloadProgress}%` }}
-                    />
-                  </div>
+                  <Progress value={downloadProgress} />
                 </div>
               ) : (
                 <Button
