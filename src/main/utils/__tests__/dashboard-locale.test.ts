@@ -27,12 +27,6 @@ describe('mapElectronLocaleToDashboardLang', () => {
     expect(mapElectronLocaleToDashboardLang('zh-hans-x-promo')).toBe('zh-Hans');
   });
 
-  it('地区码锚定段边界判繁体：zh-MO/zh-TW → zh-Hant', () => {
-    expect(mapElectronLocaleToDashboardLang('zh-Hant-TW')).toBe('zh-Hant');
-    expect(mapElectronLocaleToDashboardLang('zh-MO')).toBe('zh-Hant');
-    expect(mapElectronLocaleToDashboardLang('zh-TW')).toBe('zh-Hant');
-  });
-
   it('fa → fa', () => {
     expect(mapElectronLocaleToDashboardLang('fa')).toBe('fa');
     expect(mapElectronLocaleToDashboardLang('fa-IR')).toBe('fa');

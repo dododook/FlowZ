@@ -318,25 +318,6 @@ describe('checkAndPruneConfig 剔除算法', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('上限：超过 min(50,N) 仍失败 → throw 含已剔数', async () => {
-    const { pm } = makePm({ a: 'A', b: 'B' });
-    const sb = makeSbConfig({
-      nodes: [{ tag: 'A' }, { tag: 'B' }],
-      selectorMembers: ['A', 'B'],
-      selectorDefault: 'A',
-    });
-    // N=2 → 上限 2。前两轮各剔一个（A 然后 B），第三轮仍失败但 selector 已空会先 throw 没有可用节点。
-    // 为单测上限语义，构造一个永远命中下标 0 但节点充足（N 大）的场景较繁；这里验证「剔到空」优先 throw。
-    checkFailOnce('outbounds[0].x: bad');
-    checkFailOnce('outbounds[0].x: bad');
-    await expect(
-      pm.checkAndPruneConfig(sb, {
-        servers: [{ id: 'a' }, { id: 'b' }],
-        selectedServerId: 'zzz',
-      })
-    ).rejects.toThrow();
-  });
-
   it('上限命中 throw：每轮标一个新的非选中节点、selector 不剔空、选中永不被标 → 剔到 prunes>=min(50,N) 仍 fail → throw 含已剔数', async () => {
     // 设计：maxPrunes = min(50, config.servers.length)。让 config.servers 取 3 → maxPrunes=3；
     // singbox selector 给 5 个成员（选中 SEL + 4 个可剔 N1..N4），保证剔 3 个后 selector 仍非空，

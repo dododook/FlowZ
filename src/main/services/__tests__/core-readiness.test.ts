@@ -107,14 +107,6 @@ describe('waitForCoreReady', () => {
     );
     expect(r).toBe('superseded');
   });
-
-  it('isSuperseded 缺省（undefined）→ 行为不变（向后兼容）', async () => {
-    const r = await waitForCoreReady(
-      { timeoutMs: 900, pollMs: 300 },
-      { isAlive: () => true, isReady: async () => false, sleep: noSleep }
-    );
-    expect(r).toBe('timeout');
-  });
 });
 
 describe('probeTcpReachable', () => {

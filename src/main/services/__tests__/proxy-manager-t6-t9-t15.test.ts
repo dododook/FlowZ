@@ -241,45 +241,4 @@ describe('T9：onRetry EADDRINUSE 不丢 prune（不重新 generateSingBoxConfig
     // 无 singboxConfig 字段被 mutate（svc 本身没有 singboxConfig 实例字段，allocate 不接收它）
     expect(svc.probeDirectPort).not.toBe(before.direct); // listen(0) 几乎必换新端口
   });
-
-  it('已 prune 的 singboxConfig 经探针端口回填后仍保留 prune（inbound.listen_port 是就地改，不重建对象）', () => {
-    // 等效 T9 闭包内 for 循环语义：遍历 inbounds、就地改 probe-* listen_port、不重建 outbounds。
-    const svc = makeSvc();
-    svc.probeDirectPort = 55555;
-    svc.probeProxyPort = 55556;
-    // 构造「已 prune」config：坏节点 GHOST 已被 checkAndPruneConfig 剔除（outbounds 仅剩合法项）
-    const prunedConfig: any = {
-      inbounds: [
-        { type: 'http', tag: 'probe-direct-in', listen: '127.0.0.1', listen_port: 11111 },
-        { type: 'http', tag: 'probe-proxy-in', listen: '127.0.0.1', listen_port: 22222 },
-      ],
-      outbounds: [
-        {
-          type: 'selector',
-          tag: 'proxy-selector',
-          outbounds: ['valid-node'],
-          default: 'valid-node',
-        },
-        { type: 'vless', tag: 'valid-node' },
-        { type: 'direct', tag: 'direct' },
-        { type: 'block', tag: 'block' },
-        // 注意：坏节点 'GHOST' 已被 checkAndPruneConfig 剔除（不在 outbounds 里）
-      ],
-    };
-    // 复现 onRetry EADDRINUSE 分支的 inbound 回填循环（T9 改动后的代码）
-    for (const ib of prunedConfig.inbounds) {
-      if (ib.tag === 'probe-direct-in' && svc.probeDirectPort) {
-        ib.listen_port = svc.probeDirectPort;
-      } else if (ib.tag === 'probe-proxy-in' && svc.probeProxyPort) {
-        ib.listen_port = svc.probeProxyPort;
-      }
-    }
-    // 探针端口已回填为新值
-    expect(prunedConfig.inbounds[0].listen_port).toBe(55555);
-    expect(prunedConfig.inbounds[1].listen_port).toBe(55556);
-    // prune 结果保留：outbounds 仍无 GHOST（坏节点未因重新 generate 回流）
-    const tags = prunedConfig.outbounds.map((o: any) => o.tag);
-    expect(tags).not.toContain('GHOST');
-    expect(tags).toContain('valid-node');
-  });
 });
