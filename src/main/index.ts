@@ -711,8 +711,9 @@ async function createWindow(forceShow = false) {
   mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
-    minWidth: 800,
-    minHeight: 720,
+    // 允许缩到更小（用户反馈：窗口卡 800 拖不小、拓扑无法跟着回缩）。UI 单列断点在 560px，取 640×600 留余量。
+    minWidth: 640,
+    minHeight: 600,
     title: 'FlowZ',
     icon: resourceManager.getAppIconPath(),
     show: false, // 先不显示，等待加载完成

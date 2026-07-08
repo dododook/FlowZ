@@ -370,20 +370,20 @@ let helperUpgradeWarnedThisSession = false;
 function handleHelperUpgradeable(_data: NativeEventData['helperUpgradeable']) {
   if (helperUpgradeWarnedThisSession) return;
   helperUpgradeWarnedThisSession = true;
-  toast.warning(i18n.t('helper.upgrade.title', '提权助手有新版本'), {
+  toast.warning(i18n.t('helper.upgradeTitle', '提权助手有新版本'), {
     description: i18n.t(
-      'helper.upgrade.desc',
+      'helper.upgradeDesc',
       '新版修复了跨提权态的文件属主冲突（会导致 Tailscale / 启动异常）。建议升级，仅需授权一次。'
     ),
     duration: Infinity,
     action: {
-      label: i18n.t('helper.upgrade.action', '升级'),
+      label: i18n.t('helper.upgradeAction', '升级'),
       onClick: () => {
         void api.helper.install();
       },
     },
     cancel: {
-      label: i18n.t('helper.upgrade.dismiss', '不再提示'),
+      label: i18n.t('helper.upgradeDismiss', '不再提示'),
       onClick: () => {
         void api.config.setValue('helperUpgradePromptDismissed', true);
       },

@@ -33,7 +33,11 @@
     "backgroundDisabledDesc": "\"Allow in the Background\" for this app is turned off in System Settings, so the privileged helper cannot run and TUN start/stop falls back to prompting for the admin password each time. Click \"Open System Settings\" below and re-enable \"Allow in the Background\" for FlowZ under Login Items & Extensions. This page will refresh within a few seconds once it's on.",
     "disabledOpenSettings": "Open System Settings",
     "backgroundRestored": "\"Allow in the Background\" restored — the privileged helper is available",
-    "descFull": "Once installed, starting/stopping the proxy and switching nodes in TUN mode no longer prompt for the admin password each time (only the one-time install needs authorization)."
+    "descFull": "Once installed, starting/stopping the proxy and switching nodes in TUN mode no longer prompt for the admin password each time (only the one-time install needs authorization).",
+    "upgradeTitle": "Helper update available",
+    "upgradeDesc": "The new version fixes a file-ownership conflict across privilege states (can break Tailscale / startup). Upgrade recommended — authorize once.",
+    "upgradeAction": "Upgrade",
+    "upgradeDismiss": "Don't remind"
   },
   "proxy": {
     "systemProxyResidualTitle": "System proxy may interfere with TUN",
@@ -60,7 +64,8 @@
     "noResults": "No results",
     "apply": "Apply",
     "remove": "Remove",
-    "copy": "Copy"
+    "copy": "Copy",
+    "all": "All"
   },
   "sidebar": {
     "home": "Home",
@@ -253,7 +258,9 @@
     "summaryCount": "{{n}} total",
     "summaryMissing": "{{n}} missing",
     "tableUsage": "Usage",
-    "urlRequired": "Required"
+    "urlRequired": "Required",
+    "refKindSystem": "System",
+    "smartBaselineRef": "Smart-routing baseline"
   },
   "home": {
     "topologyHint": "Right-click a domain to add a rule",
@@ -359,7 +366,9 @@
     "tsExitNotAdvertisedWarn": "The selected exit node isn't advertising as an exit; internet can't route through it — pick a device that advertises exit.",
     "tsExitPickDevice": "Pick exit node",
     "exitNode": "Exit Node",
-    "reprobeExit": "Re-check exit"
+    "reprobeExit": "Re-check exit",
+    "exitDetecting": "Detecting…",
+    "exitTimeout": "Detection timeout"
   },
   "settings": {
     "nav": {
@@ -1629,7 +1638,8 @@
     "conditionCount": "{{count}}",
     "disabledBadge": "Disabled",
     "orderDraftUnsaved": "Unsaved order draft",
-    "viewDensity": "View density"
+    "viewDensity": "View density",
+    "categoryFilter": "Category filter"
   },
   "sub": {
     "requireName": "Please enter a subscription name",
@@ -1682,7 +1692,8 @@
       "emptyDetail": "Fetched successfully but no usable nodes were found.",
       "unknownTitle": "Failed to add",
       "unknownDetail": "Could not verify the subscription. Try again later or contact your provider."
-    }
+    },
+    "advancedSection": "Advanced"
   },
   "localImport": {
     "title": "Manual Import",

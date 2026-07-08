@@ -33,7 +33,11 @@
     "backgroundDisabledDesc": "系统设置中本应用的「允许在后台」已被关闭，提权助手无法运行，TUN 启停将退回每次弹管理员授权框。请点击下方「打开系统设置」，在「登录项与扩展」中重新开启 FlowZ 的「允许在后台」。开启后本页状态会在几秒内自动恢复。",
     "disabledOpenSettings": "打开系统设置",
     "backgroundRestored": "「允许在后台」已恢复，提权助手可用",
-    "descFull": "安装后 TUN 模式启停代理、切换节点不再反复弹出管理员授权框（仅安装时需授权一次）。"
+    "descFull": "安装后 TUN 模式启停代理、切换节点不再反复弹出管理员授权框（仅安装时需授权一次）。",
+    "upgradeTitle": "提权助手有新版本",
+    "upgradeDesc": "新版修复了跨提权态的文件属主冲突（会导致 Tailscale / 启动异常）。建议升级，仅需授权一次。",
+    "upgradeAction": "升级",
+    "upgradeDismiss": "不再提示"
   },
   "proxy": {
     "systemProxyResidualTitle": "系统代理可能干扰 TUN",
@@ -60,7 +64,8 @@
     "noResults": "无匹配",
     "apply": "应用",
     "remove": "移除",
-    "copy": "复制"
+    "copy": "复制",
+    "all": "全部"
   },
   "sidebar": {
     "home": "主页",
@@ -253,7 +258,9 @@
     "summaryCount": "共 {{n}} 项",
     "summaryMissing": "{{n}} 项缺失",
     "tableUsage": "占用",
-    "urlRequired": "必填"
+    "urlRequired": "必填",
+    "refKindSystem": "系统",
+    "smartBaselineRef": "智能分流基线"
   },
   "home": {
     "topologyHint": "右键域名可一键加规则",
@@ -359,7 +366,9 @@
     "tsExitNotAdvertisedWarn": "所选出口设备未广告为出口节点，公网无法经其出网，请换一台已广告出口的设备。",
     "tsExitPickDevice": "选择出口设备",
     "exitNode": "出口节点",
-    "reprobeExit": "重新检测出口"
+    "reprobeExit": "重新检测出口",
+    "exitDetecting": "检测中…",
+    "exitTimeout": "检测超时"
   },
   "settings": {
     "nav": {
@@ -1629,7 +1638,8 @@
     "conditionCount": "{{count}} 条",
     "disabledBadge": "已禁用",
     "orderDraftUnsaved": "未保存的排序草稿",
-    "viewDensity": "视图密度"
+    "viewDensity": "视图密度",
+    "categoryFilter": "分类筛选"
   },
   "sub": {
     "requireName": "请输入订阅名称",
@@ -1682,7 +1692,8 @@
       "emptyDetail": "拉取成功但没有可用节点",
       "unknownTitle": "添加失败",
       "unknownDetail": "无法验证订阅，请稍后重试或联系机场"
-    }
+    },
+    "advancedSection": "高级"
   },
   "localImport": {
     "title": "手动导入",

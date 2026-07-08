@@ -33,7 +33,11 @@
     "backgroundDisabledDesc": "系統設定中本應用程式的「允許在背景」已被關閉，提權助手無法執行，TUN 啟停將退回每次彈出管理員授權框。請點擊下方「開啟系統設定」，在「登入項目與擴充功能」中重新開啟 FlowZ 的「允許在背景」。開啟後本頁狀態會在幾秒內自動恢復。",
     "disabledOpenSettings": "開啟系統設定",
     "backgroundRestored": "「允許在背景」已恢復，提權助手可用",
-    "descFull": "安裝後 TUN 模式啟停代理、切換節點不再反覆彈出管理員授權框（僅安裝時需授權一次）。"
+    "descFull": "安裝後 TUN 模式啟停代理、切換節點不再反覆彈出管理員授權框（僅安裝時需授權一次）。",
+    "upgradeTitle": "提權助手有新版本",
+    "upgradeDesc": "新版修復了跨提權態的檔案屬主衝突（會導致 Tailscale / 啟動異常）。建議升級，僅需授權一次。",
+    "upgradeAction": "升級",
+    "upgradeDismiss": "不再提示"
   },
   "proxy": {
     "systemProxyResidualTitle": "系統代理可能干擾 TUN",
@@ -60,7 +64,8 @@
     "noResults": "無相符項目",
     "apply": "套用",
     "remove": "移除",
-    "copy": "複製"
+    "copy": "複製",
+    "all": "全部"
   },
   "sidebar": {
     "home": "主頁",
@@ -253,7 +258,9 @@
     "summaryCount": "共 {{n}} 項",
     "summaryMissing": "{{n}} 項缺失",
     "tableUsage": "佔用",
-    "urlRequired": "必填"
+    "urlRequired": "必填",
+    "refKindSystem": "系統",
+    "smartBaselineRef": "智慧分流基線"
   },
   "home": {
     "topologyHint": "右鍵網域可一鍵新增規則",
@@ -359,7 +366,9 @@
     "tsExitNotAdvertisedWarn": "所選出口裝置未廣告為出口節點，外網無法經其出網，請改用一台已廣告出口的裝置。",
     "tsExitPickDevice": "選擇出口裝置",
     "exitNode": "出口節點",
-    "reprobeExit": "重新檢測出口"
+    "reprobeExit": "重新檢測出口",
+    "exitDetecting": "檢測中…",
+    "exitTimeout": "檢測逾時"
   },
   "settings": {
     "nav": {
@@ -1629,7 +1638,8 @@
     "conditionCount": "{{count}} 條",
     "disabledBadge": "已停用",
     "orderDraftUnsaved": "未儲存的排序草稿",
-    "viewDensity": "檢視密度"
+    "viewDensity": "檢視密度",
+    "categoryFilter": "分類篩選"
   },
   "sub": {
     "requireName": "請輸入訂閱名稱",
@@ -1682,7 +1692,8 @@
       "emptyDetail": "擷取成功但沒有可用節點",
       "unknownTitle": "新增失敗",
       "unknownDetail": "無法驗證訂閱，請稍後重試或聯絡機場"
-    }
+    },
+    "advancedSection": "進階"
   },
   "localImport": {
     "title": "手動匯入",
