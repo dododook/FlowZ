@@ -42,7 +42,15 @@ export function TsExitWarning() {
       <p className="min-w-0 text-xs text-muted-foreground">
         {warning === 'no-exit-device'
           ? t('home.tsExitNoDeviceWarn', '已设为出口，但未选择出口设备，公网流量仍走直连。')
-          : t('home.tsExitDeviceOfflineWarn', '出口设备当前离线，公网可能无法经 Tailscale 出网。')}
+          : warning === 'exit-device-not-advertised'
+            ? t(
+                'home.tsExitNotAdvertisedWarn',
+                '所选出口设备未广告为出口节点，公网无法经其出网，请换一台已广告出口的设备。'
+              )
+            : t(
+                'home.tsExitDeviceOfflineWarn',
+                '出口设备当前离线，公网可能无法经 Tailscale 出网。'
+              )}
         <button
           type="button"
           onClick={goPickExitNode}

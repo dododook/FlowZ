@@ -12,7 +12,6 @@ import type {
   ProxyStatus,
   ProxyErrorCode,
   LogEntry,
-  TrafficStats,
   Rule,
   AutoStartStatus,
   SubscriptionConfig,
@@ -505,19 +504,6 @@ export const autoStartApi = {
 };
 
 /**
- * 统计信息 API
- */
-export const statsApi = {
-  /**
-   * 获取流量统计快照（一次性读，如 app-store.refreshStatistics）。batch3：stats 增量改走 useStatsTopic('stats')
-   * 订阅（EVENT_STATS_UPDATED），故此处 onUpdated 已删；一次性快照读仍保留 STATS_GET。
-   */
-  async get(): Promise<TrafficStats> {
-    return ipcClient.invoke(IPC_CHANNELS.STATS_GET);
-  },
-};
-
-/**
  * 连接数据 API（batch3 §3.7）：明细（detail）与拓扑聚合（aggregate）已改订阅驱动——渲染端经 useStatsTopic
  * ('detail'/'aggregate') 订阅、订阅即回初始帧 + 增量 push，旧 CONNECTIONS_GET / CONNECTIONS_AGGREGATE_GET 双路径
  * 随之删除。此处仅留关连接的命令式动作；渲染端不直连 :9090、不持 secret。
@@ -755,11 +741,17 @@ export const coreUpdateApi = {
     currentVersion: string;
     backupVersion: string | null;
     hasBackup: boolean;
-    lastKnownVersion: string | null;
     /** 内核来源：official=官方 / fork=第三方（禁在线·自动更新）/ unknown=无法确认（仅提示）。 */
     build: 'official' | 'fork' | 'unknown';
+    /** push 型版本变更待展示通知（非空=有一条待弹）；banner 读它决定是否弹（取代旧推断式比对）。 */
+    pendingChangeNotice?: { previousVersion: string; currentVersion: string } | null;
   }> {
     return ipcClient.invoke(IPC_CHANNELS.CORE_GET_VERSION_INFO);
+  },
+
+  /** banner 展示版本变更通知后 ack 清除持久 pendingChangeNotice（show→ack：弹一次非每启）。 */
+  async ackVersionChange(): Promise<void> {
+    await ipcClient.invoke(IPC_CHANNELS.CORE_UPDATE_ACK_VERSION_CHANGE);
   },
 
   /**
@@ -1068,7 +1060,6 @@ export const api = {
   rules: rulesApi,
   logs: logsApi,
   autoStart: autoStartApi,
-  stats: statsApi,
   connections: connectionsApi,
   system: systemApi,
   ruleResources: ruleResourcesApi,

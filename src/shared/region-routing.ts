@@ -35,3 +35,23 @@ export const REGION_FOREIGN_GEO: Record<RegionId, { geosite: string[] }> = {
   ir: { geosite: [] },
   ru: { geosite: [] },
 };
+
+/**
+ * 智能分流「geo 基线层」用到的内置 geo tag 集合（本地 + 海外，随地区）。仅 proxyMode=smart 且地区分流启用时非空；
+ * global/direct 或关地区分流 → 空（基线不生效）。供规则资源 referencedBy 计数纳入「系统/智能分流对内置默认
+ * (geosite-cn / geoip-cn / geosite-geolocation-!cn 等) 的隐式引用」——否则默认资源恒显 0 引用（用户反馈）。
+ */
+export function smartBaselineGeoTags(config: {
+  proxyMode?: string;
+  regionRouting?: RegionRoutingConfig;
+}): Set<string> {
+  if ((config.proxyMode || 'smart').toLowerCase() !== 'smart') return new Set();
+  const rr = effectiveRegionRouting(config);
+  if (!rr.enabled) return new Set();
+  const local = REGION_LOCAL_GEO[rr.region];
+  const foreign = REGION_FOREIGN_GEO[rr.region];
+  // 磁盘 JSON 未受 RegionId 编译期约束——手改/旧配置的越界 region（如 'us'）→ 表查空。本函数现也在 renderer
+  // (refsByItemId) 每次渲染跑，越界解引用会崩规则资源页，故 fail-safe 返回空集（无基线引用）。
+  if (!local || !foreign) return new Set();
+  return new Set([...local.geosite, ...local.geoip, ...foreign.geosite]);
+}

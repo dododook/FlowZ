@@ -20,8 +20,10 @@ import type {
   ProxyStatus,
   HelperStatus,
   InvalidNodeInfo,
+  ProxyExitBlock,
 } from '../../shared/types';
 import { ProxyErrorCode } from '../../shared/types';
+import { deriveTsExitWarning } from '../../shared/tailscale-exit-warning';
 import type { ILogManager } from './LogManager';
 import { HelperManager } from './HelperManager';
 import type { IPrivilegedHelper } from './IPrivilegedHelper';
@@ -80,7 +82,7 @@ import {
 } from '../../shared/core-build';
 import { retry } from '../utils/retry';
 import { writeFileAtomic } from '../utils/atomic-write';
-import { coreVersionAtLeast } from '../../shared/version';
+import { coreVersionAtLeast, compareSemver } from '../../shared/version';
 import { parseTailscaleAuthLine } from '../../shared/tailscale';
 import { safeHttpUrl } from '../../shared/url';
 import { tailscaleStateExists, tailscaleStateDir } from './tailscale-state';
@@ -287,6 +289,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // STATUS 流持续推帧，仅 Running 上升沿（首次见该选中节点 Running）发一次 'tailscale-selected-running'，避免每帧触发。
   // 切到别的节点 / 节点掉出 Running（停止/掉线）即清空，使下次重新 Running 能再发（覆盖重连）。
   private lastTsSelectedRunningId: string | null = null;
+  // TS 出口无效直判短路（翻转对账）：记上次 selectedTsExitBlock() 值。每帧 STATUS 对账——none→blocked 立即令
+  // IpInfoService 落终态（markProxyBlocked，不等下一次探测），blocked→none 触发重探（refreshProxy）。会话起点复位。
+  private lastTsExitBlock: ProxyExitBlock | null = null;
+  // IpInfoService 引用（index 经 setIpInfoService 注入）：翻转对账时立即通知出口探测层落终态/重探。可选——未注入
+  // （如单测未接线）时对账优雅跳过（?.），绝不 crash。
+  private ipInfoService?: {
+    markProxyBlocked: (reason: ProxyExitBlock) => void;
+    refreshProxy: () => Promise<unknown>;
+  };
   // 缺陷1 登录期出口让位：选中出口为账号制 TS 且隧道未就绪时，默认路由临时 hotSwitch→direct（零重启），
   // 隧道 Running 后切回。engaged=当前是否处于让位态；serverId=让位所服务的选中出口 id（用户中途切换出口时据此
   // 判 stale 复位）。仅运行期内存态，随停核/新会话复位。见 shared/mesh-login-fallback + engageLoginFallback。
@@ -556,6 +567,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 'tailscale-selected-running' 不发射 → 事件驱动出口 re-probe 丢失（退避仍兜底但失去「隧道就绪即抢先出口」）。
     // 与 handleTailscaleStatus 的清除逻辑不冲突：那是运行期掉线/切节点时清，此处只补会话起点的重置。
     this.lastTsSelectedRunningId = null;
+    // TS 出口无效直判：新会话清上次对账值，使重连后首帧能重新触发 none→blocked（探测层另有 gate 兜底，此仅令翻转即时）。
+    this.lastTsExitBlock = null;
     // 登录期出口让位内存态随新会话复位（下方核起后按 shouldEngageLoginFallback 重新预置；不在此发 UI 事件，
     // 预置若命中会发 engaged:true，未命中则 UI 无残留态需清）。
     this.bootstrapFallbackEngaged = false;
@@ -626,65 +639,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //  官方 <内置 → 内置替换（取更新随包核）；官方 ≥内置 → 保持（不降级用户装的官方核）；
     //  fork/unknown → 保持（绝不覆盖用户的 fork/自建核），≤内置 → 发基线兼容警告。
     // 配置已硬切 1.14，<1.14 核会 unknown-field FATAL，故覆盖决策后仍 <1.14 → 明确报错（含 fork 专属引导）。
-    {
-      const bundledCore = coreManifest.bundledCoreVersion;
+    // §5 核覆盖 reconcile 抽为公共方法（供启动期 reseedBundledCoreOnStartup 复用，单一真值）：连接期发渲染端基线警告事件。
+    await this.reconcileCoreWithBundledBaseline({ emitRendererEvents: true });
+    // 覆盖决策后仍 <1.14（仅 fork/unknown 旧核会到此；官方旧核已重播种到 ≥内置≥1.14）→ 配置 FATAL 前明确报错。
+    // 此版本闸 throw 只在连接路径（startInternal）——启动期 reconcile 绝不 throw（不阻断启动），故留在此处、不进抽取方法。
+    if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
       const coreKind = classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`);
-      const { reseed, warn } = decideCoreOverride(coreKind, this.coreVersion, bundledCore);
-      if (reseed) {
-        const before = this.coreVersion;
-        this.logToManager(
-          'info',
-          `官方内核 ${before} 旧于随包基线 ${bundledCore}，用随包核替换...`
-        );
-        let reseedError = '';
-        try {
-          // §5 两平台统一经 ensureWritableCore(true)：darwin 经 helper installCore 重播种随包核到受保护目录；
-          // **linux helper 模式同构** —— 经注入的 LinuxServiceHelper.installCore 免密刷新 root 受管核（受管核不在位/
-          // 无 helper 则退化为刷 userData 兜底核，setcap 路径零回归）。临时目录复制 + installCore 编排下沉 ResourceManager。
-          // 修：app 更新后 macOS 受保护目录 / Linux 受管核旧核不自愈。
-          // darwin helperManager 恒为 HelperManager；linux 为注入的 LinuxServiceHelper（installCore 同签名，duck-typing）；故 cast。
-          if (process.platform === 'darwin') this.helperManager ??= new HelperManager();
-          this.singboxPath = await resourceManager.ensureWritableCore(true, {
-            installCore: (seedDir) => (this.helperManager as HelperManager).installCore(seedDir),
-          });
-        } catch (e) {
-          reseedError = (e as Error)?.message ?? String(e);
-        }
-        // 诚实校验（issue #150 + review F1）：重读活二进制确认换核「真的」生效。用 getCoreVersionLine(true)
-        // ——其探测失败返回 ''、**不回落随包基线**；绝不用 getCoreVersion（探测失败会回落 bundledCoreVersion，
-        // 把「重读失败」伪装成「换核成功」→ 闸门误放行、带旧核硬跑退回死循环）。探测失败/版本未达基线 → 保守
-        // 保留换核前旧版本、判未生效，由下方版本闸门明确终止（而非谎报成功）。
-        const lineAfter = await this.getCoreVersionLine(true);
-        const { version, applied } = classifyReseedResult(lineAfter, before, bundledCore);
-        this.coreVersion = version;
-        if (applied) {
-          this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
-        } else {
-          this.logToManager(
-            'warn',
-            `随包内核刷新未生效（仍为 ${this.coreVersion}，期望 ≥ ${bundledCore}）${reseedError ? `：${reseedError}` : ''}；请退出代理后在「设置 · 内核 · 重置到出厂」手动切回随包核`
-          );
-        }
-      }
-      if (warn) {
-        this.logToManager(
-          'warn',
-          `检测到非官方内核 ${this.coreVersion} 低于随包基线 ${bundledCore}，可能与新版配置不兼容（连接异常/功能缺失）；建议手动升级内核或在「设置 · 内核 · 重置到出厂」切回随包官方核`
-        );
-        this.sendEventToRenderer(IPC_CHANNELS.EVENT_CORE_BASELINE_WARNING, {
-          current: this.coreVersion,
-          bundled: bundledCore,
-          kind: coreKind,
-        });
-      }
-      // 覆盖决策后仍 <1.14（仅 fork/unknown 旧核会到此；官方旧核已重播种到 ≥内置≥1.14）→ 配置 FATAL 前明确报错。
-      if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
-        throw new Error(
-          coreKind === 'official'
-            ? `当前 sing-box 内核版本 ${this.coreVersion} 低于所需的 1.14。请重新安装应用以获取随包内核，或在「设置 · 内核」更新到 1.14 及以上。`
-            : `当前使用的非官方内核 ${this.coreVersion} 低于所需的 1.14，与新版配置不兼容。请手动升级该内核到 ≥1.14，或在「设置 · 内核 · 重置到出厂」切回随包官方核。`
-        );
-      }
+      throw new Error(
+        coreKind === 'official'
+          ? `当前 sing-box 内核版本 ${this.coreVersion} 低于所需的 1.14。请重新安装应用以获取随包内核，或在「设置 · 内核」更新到 1.14 及以上。`
+          : `当前使用的非官方内核 ${this.coreVersion} 低于所需的 1.14，与新版配置不兼容。请手动升级该内核到 ≥1.14，或在「设置 · 内核 · 重置到出厂」切回随包官方核。`
+      );
     }
 
     // 1.14 管理 API 端口：解析一个空闲本地端口（排除 clash/用户端口），避免硬编 clash+1 撞占致 services bind FATAL（A1）。
@@ -2162,6 +2127,70 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     return st.backendState;
   }
 
+  /**
+   * 选中 TS 出口是否被 API 直判「无效」（供 IpInfoService 探测前置 gate + 翻转对账）：复用 deriveTsExitWarning 纯谓词
+   * （首页警示条同一真值），把 renderer 侧告警映射到 main 侧探测短路原因：
+   *  - 'no-exit-device'（选中 TS 全局出口、已登录、非 direct、未配 exit_node → 公网不经 TS）→ 'ts-no-exit-device'；
+   *  - 'exit-device-offline'（已配 exit_node 但该 exit peer 离线）→ 'ts-exit-device-offline'；
+   *  - 'none' → null。
+   * 输入取 currentConfig（选中节点/exitNode/proxyMode）+ tailscaleStatusCache 末帧（loggedIn/peers）+ getStatus().running。
+   * 新鲜度守卫：offline 依赖【实时 peers】——deriveTsExitWarning 已用 proxyRunning gate（!running→none），此处再显式
+   * 以 running（=STATUS 流 live，见 getTailscaleStatusSnapshot.connected）复核 offline，流断（停核）时保守返回 null，
+   * 防读到跨会话陈旧 peers 误判离线。no-exit-device 是 config 级、无新鲜度问题，断开态也照判（与警示条同口径）。
+   */
+  selectedTsExitBlock(): ProxyExitBlock | null {
+    const config = this.currentConfig;
+    if (!config) return null;
+    const selId = config.selectedServerId;
+    const selected = selId ? config.servers?.find((s) => s.id === selId) : undefined;
+    const cached = selId ? this.tailscaleStatusCache.get(selId) : undefined;
+    const running = this.getStatus().running; // =STATUS 流 live（停核后缓存 peers 为上次已知陈旧值）。
+    const warning = deriveTsExitWarning({
+      selectedServer: selected,
+      loggedIn: !!cached?.loggedIn,
+      proxyModeDirect: (config.proxyMode || 'smart').toLowerCase() === 'direct',
+      proxyRunning: running,
+      peers: cached?.peers,
+    });
+    if (warning === 'no-exit-device') return 'ts-no-exit-device';
+    if (warning === 'exit-device-offline') {
+      // 新鲜度守卫：仅 STATUS 流 live 时才据 peers 判离线；流断保守 null（防陈旧 peers 误判）。
+      return running ? 'ts-exit-device-offline' : null;
+    }
+    if (warning === 'exit-device-not-advertised') {
+      // 同上新鲜度守卫：未广告判据取实时 peers.exitNodeOption，流断保守 null。
+      return running ? 'ts-exit-not-advertised' : null;
+    }
+    return null;
+  }
+
+  /** 注入 IpInfoService 引用（index 启动接线）：供 TS 出口无效翻转对账即时通知出口探测层。 */
+  setIpInfoService(svc: {
+    markProxyBlocked: (reason: ProxyExitBlock) => void;
+    refreshProxy: () => Promise<unknown>;
+  }): void {
+    this.ipInfoService = svc;
+  }
+
+  /**
+   * TS 出口无效直判【翻转对账】（每帧 STATUS 末尾跑）：比对本次 selectedTsExitBlock() 与上次缓存值，仅在跨态时动作，
+   * 避免每帧重复触发——
+   *  - none→blocked（或 blocked 原因变更）→ 令 IpInfoService 立即落 proxyBlocked 终态（不等下一次探测/退避耗尽）；
+   *  - blocked→none（出口恢复有效/切走）→ 触发一次代理出口重探（refreshProxy），从「出口无效」回到真实探测。
+   * ipInfoService 未注入 → 优雅跳过（?.）。缓存值仍更新，保证注入后下次跨态能正确触发。
+   */
+  private reconcileTsExitBlock(): void {
+    const cur = this.selectedTsExitBlock();
+    const prev = this.lastTsExitBlock;
+    if (cur === prev) return;
+    this.lastTsExitBlock = cur;
+    if (cur) {
+      this.ipInfoService?.markProxyBlocked(cur);
+    } else {
+      void this.ipInfoService?.refreshProxy();
+    }
+  }
+
   /** 置让位 flag（PUT 成功后调，flag 与 selector 一致）。幂等，仅首次 emit engaged:true。 */
   private markLoginFallbackEngaged(serverId: string): void {
     if (this.bootstrapFallbackEngaged && this.bootstrapFallbackServerId === serverId) return;
@@ -2300,6 +2329,104 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         (s) => s.id === this.currentConfig?.selectedServerId
       ),
     };
+  }
+
+  /**
+   * §5 内核基线 reconcile（单一真值，供 startInternal 连接路径 + reseedBundledCoreOnStartup 启动路径复用）：
+   * 随包核是种子——本机在用的【非内置】核若「官方且旧于随包基线」→ 经 ensureWritableCore(helper installCore) 重播种随包核
+   * （darwin 受保护目录 / linux 受管核或 userData 兜底 / win userData）；无 helper 时 installCore socket 失败诚实降级、不弹窗。
+   * fork/unknown → 保持（绝不覆盖用户核），≤基线 → 记警告（emitRendererEvents=true 时发渲染端事件，仅连接期用户操作语境）。
+   * 前置：this.coreVersion / this.coreVersionLine 已由调用方 force 探测刷新。**不含** <1.14 版本闸 throw（留 startInternal）。
+   */
+  private async reconcileCoreWithBundledBaseline(opts: {
+    emitRendererEvents: boolean;
+  }): Promise<void> {
+    const bundledCore = coreManifest.bundledCoreVersion;
+    const coreKind = classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`);
+    const { reseed, warn } = decideCoreOverride(coreKind, this.coreVersion, bundledCore);
+    if (reseed) {
+      const before = this.coreVersion;
+      this.logToManager('info', `官方内核 ${before} 旧于随包基线 ${bundledCore}，用随包核替换...`);
+      let reseedError = '';
+      try {
+        // darwin helperManager 恒 HelperManager；linux 为注入的 LinuxServiceHelper（installCore 同签名 duck-typing）。
+        // 无 helper 时 installCore socket ECONNREFUSED 返 {ok:false}、只 warn 不弹 osascript（安装弹窗只在 install() 另一路径）。
+        if (process.platform === 'darwin') this.helperManager ??= new HelperManager();
+        this.singboxPath = await resourceManager.ensureWritableCore(true, {
+          installCore: (seedDir) => (this.helperManager as HelperManager).installCore(seedDir),
+        });
+      } catch (e) {
+        reseedError = (e as Error)?.message ?? String(e);
+      }
+      // 诚实校验（issue #150）：重读活二进制。getCoreVersionLine(true) 探测失败返 ''、不回落随包基线，避免把重读失败伪装成换核成功。
+      const lineAfter = await this.getCoreVersionLine(true);
+      const { version, applied } = classifyReseedResult(lineAfter, before, bundledCore);
+      this.coreVersion = version;
+      if (applied) {
+        this.logToManager('info', `内核已用随包版刷新至 ${this.coreVersion}`);
+      } else {
+        this.logToManager(
+          'warn',
+          `随包内核刷新未生效（仍为 ${this.coreVersion}，期望 ≥ ${bundledCore}）${reseedError ? `：${reseedError}` : ''}；请退出代理后在「设置 · 内核 · 重置到出厂」手动切回随包核`
+        );
+      }
+    }
+    if (warn) {
+      this.logToManager(
+        'warn',
+        `检测到非官方内核 ${this.coreVersion} 低于随包基线 ${bundledCore}，可能与新版配置不兼容（连接异常/功能缺失）；建议手动升级内核或在「设置 · 内核 · 重置到出厂」切回随包官方核`
+      );
+      if (opts.emitRendererEvents) {
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_CORE_BASELINE_WARNING, {
+          current: this.coreVersion,
+          bundled: bundledCore,
+          kind: coreKind,
+        });
+      }
+    }
+  }
+
+  /**
+   * 启动期随包核对齐（补 §5 只在连接时 reseed 的 gap，用户反馈：部署/自更新新随包核后运行时受保护核不自愈、须连接才刷新）：
+   * 代理未运行的安全窗口探活核 → reconcile（静默：不发渲染端事件、不弹横幅、不 throw、吞全部异常绝不阻断启动/autoConnect）。
+   * helper 在位=静默 reseed 到随包核；无 helper（孤儿受保护核）→ ensureWritableCore 内 installCore 失败、诚实 warn、延到
+   * 用户连接/重置出厂经既有流程装 helper 修（macOS root 跑核的安全模型下无免 root 静默修法）。由 startup-tasks 在
+   * tryApplyStaged 之后、autoConnect 之前调用。
+   */
+  async reseedBundledCoreOnStartup(): Promise<{
+    needsMacElevatedReseed: boolean;
+    bundledVersion: string;
+  }> {
+    const bundledVersion = coreManifest.bundledCoreVersion;
+    try {
+      // 代理运行中不动核（用户抢先手动连接 → startInternal §5 已覆盖同一逻辑）；与 staged 落位/手动换核窗口互斥。
+      if (this.getStatus().running || this.coreSwapInProgress) {
+        return { needsMacElevatedReseed: false, bundledVersion };
+      }
+      // 探活核（串行探测链，避免与其它 version 探测并发占用二进制）；探测失败由外层 catch 吞掉、放弃本轮。
+      await this.getCoreVersionLine(true);
+      this.coreVersion = await this.getCoreVersion(true);
+      await this.reconcileCoreWithBundledBaseline({ emitRendererEvents: false });
+      // reconcile 后仍旧于随包 + 官方核 + macOS = 孤儿受保护核（helper reseed 未成、root 目录写不动）→ 需 elevated 兜底。
+      const needsMacElevatedReseed =
+        process.platform === 'darwin' &&
+        compareSemver(this.coreVersion, bundledVersion) < 0 &&
+        classifyCoreBuild(this.coreVersionLine || `version ${this.coreVersion}`) === 'official';
+      return { needsMacElevatedReseed, bundledVersion };
+    } catch (e) {
+      this.logToManager('warn', `启动期随包核对齐异常: ${(e as Error)?.message ?? String(e)}`);
+      return { needsMacElevatedReseed: false, bundledVersion };
+    }
+  }
+
+  /**
+   * 外部（CoreUpdateService osascript-admin 孤儿态兜底）写受保护核后，ProxyManager 重解析核路径 + 强制刷版本缓存
+   * （getSingBoxPath 现解析到已更新的受保护核；顺带治 About/内核管理 显示陈旧）。
+   */
+  async refreshCoreVersionAfterExternalReseed(): Promise<void> {
+    this.singboxPath = resourceManager.getSingBoxPath();
+    await this.getCoreVersionLine(true);
+    this.coreVersion = await this.getCoreVersion(true);
   }
 
   /**
@@ -6375,6 +6502,9 @@ exit 0
     // 缺陷1 出口让位对账：读选中出口 STATUS 末帧（emitTailscaleStatus 已更新缓存）。每帧对账 → engage/restore 的 PUT
     // 失败会在后续帧重试，不被上面的 re-probe 去重扼杀。
     void this.reconcileLoginFallback(this.selectedExitBackendState());
+    // TS 出口无效直判翻转对账：缓存已由上面各 emitTailscaleStatus 更新末帧 → 据最新 peers/loggedIn 判 blocked 跨态，
+    // none→blocked 立即令探测层落终态、blocked→none 触发重探（同步、幂等、未注入 ipInfoService 时优雅跳过）。
+    this.reconcileTsExitBlock();
   }
 
   /**

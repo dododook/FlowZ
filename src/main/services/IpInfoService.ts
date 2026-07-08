@@ -10,10 +10,17 @@
  */
 import * as http from 'http';
 import { isIP } from 'net';
-import type { IpInfo, IpInfoSnapshot } from '../../shared/types';
+import type { IpInfo, IpInfoSnapshot, ProxyExitBlock } from '../../shared/types';
 
 const TTL_MS = 60_000;
-const REQ_TIMEOUT_MS = 5000; // 单个探测请求超时上限（httpText）——重试不会无限阻塞
+// 终态短 TTL：error（探测失败保留旧值）/ proxyBlocked（TS 出口直判无效）用更短 TTL——既不像正常态那样 60s 长缓存
+// 而误导用户看陈旧失败态，又不像旧实现那样「粘滞 error 使 TTL 恒失效、每次首页挂载全量重探」空转退避。10s 后可重探自愈。
+const ERROR_TTL_MS = 10_000;
+const REQ_TIMEOUT_MS = 6000; // 单个探测请求超时上限（httpText，用户定 6s）——重试不会无限阻塞
+// 整体探测总预算硬顶（含所有重试 + 间隔）：无论单请求多慢、重试多少轮，一次 withRetry 整体 ≤ 此值 → 杜绝
+// 「检测中」无限空转（用户定 10s，不无限延长/无限测试）。超时即视作本轮失败、落终态（检测超时/出口无效）；
+// known-invalid（TS 未广告/离线/未选出口）由 getProxyExitBlock 直判短路、根本不进重试，0 等待即「出口无效」。
+const TOTAL_PROBE_BUDGET_MS = 10_000;
 // 出口 IP 启动初期隧道/DNS 未就绪 → 首测易失败。重试至 MAX_PROBE_ATTEMPTS 上限、每次间隔 RETRY_DELAY_MS，
 // 期间保持 loading（界面显「获取中」）；全部失败才报错（界面友好提示，不闪「获取失败」）。
 //
@@ -127,7 +134,11 @@ export class IpInfoService {
       postConnectRetryDelayMs?: number;
       directMaxAttempts?: number;
       directRetryDelayMs?: number;
-    }
+    },
+    // TS 出口 API 直判无效（选中 TS 出口未广告出口设备 / exit peer 离线）→ 返非空则不探代理出口，直接落 proxyBlocked
+    // 终态（状态栏「出口无效」），修「无效 TS 出口触发跑满退避、状态栏永久检测中空转」。缺省（undefined）→ 恒不短路，
+    // 行为与旧版一致（非 TS / 未注入时保全）。风格同 getProbePorts：可选注入的探针前置 gate。
+    private readonly getProxyExitBlock?: () => ProxyExitBlock | null
   ) {
     this.maxAttempts = options?.maxAttempts ?? MAX_PROBE_ATTEMPTS;
     this.retryDelayMs = options?.retryDelayMs ?? RETRY_DELAY_MS;
@@ -150,7 +161,25 @@ export class IpInfoService {
    * 注：仅 start/switch 路径调本方法；TTL/手动刷新不调它 → 同节点瞬态抖动仍由 doRefresh 保留旧值（不受影响）。
    */
   markProxyConnecting(): void {
-    this.snapshot = { ...this.snapshot, proxy: null, loading: true };
+    // 清 proxyBlocked：切节点/重连=一次全新探测的开端（尚未直判无效），保留上一节点的 blocked 会让状态栏在探测窗口
+    // 内误显陈旧「出口无效」（invalid 优先级高于 detecting）。真正是否无效由随后的探测入口 gate 重判。
+    this.snapshot = { ...this.snapshot, proxy: null, loading: true, proxyBlocked: undefined };
+    this.onUpdate(this.getSnapshot());
+  }
+
+  /**
+   * TS 出口 API 直判无效时立即落终态（供 ProxyManager 翻转对账 none→blocked 时无探测直接收口，不等下一次 refresh）：
+   * 清 proxy + loading:false + 清 error（blocked 与 error 互斥语义），置 proxyBlocked=reason → 状态栏显「出口无效」。
+   */
+  markProxyBlocked(reason: ProxyExitBlock): void {
+    this.snapshot = {
+      ...this.snapshot,
+      proxy: null,
+      updatedAt: Date.now(),
+      loading: false,
+      error: undefined,
+      proxyBlocked: reason,
+    };
     this.onUpdate(this.getSnapshot());
   }
 
@@ -167,9 +196,12 @@ export class IpInfoService {
     });
   }
 
-  /** 取出口 IP；命中 TTL 直接返回缓存；force 排队重测，非 force 复用在途。 */
+  /** 取出口 IP；命中 TTL 直接返回缓存；force 排队重测，非 force 复用在途。
+   *  终态（error 探测失败 / proxyBlocked 直判无效）用短 TTL(10s)：既不 60s 长缓存误导陈旧失败态，又不像旧实现
+   *  「粘滞 error → TTL 恒失效 → 每次首页挂载全量重探」空转（无效 TS 出口下会跑满退避）。 */
   async refresh(force = false): Promise<IpInfoSnapshot> {
-    if (!force && !this.snapshot.error && Date.now() - this.snapshot.updatedAt < TTL_MS) {
+    const ttl = this.snapshot.error || this.snapshot.proxyBlocked ? ERROR_TTL_MS : TTL_MS;
+    if (!force && Date.now() - this.snapshot.updatedAt < ttl) {
       return this.getSnapshot();
     }
     // 非强制：有在途则复用其结果（去重正确）；强制：链式排队，不被在途吞掉
@@ -208,31 +240,78 @@ export class IpInfoService {
   private async withRetry<T>(
     fn: () => Promise<T | null>,
     attempts: number = this.maxAttempts,
-    retryDelayMs: number = this.retryDelayMs
+    retryDelayMs: number = this.retryDelayMs,
+    shouldAbort?: () => boolean
   ): Promise<T | null> {
-    for (let i = 0; i < attempts; i++) {
-      const r = await fn();
-      if (r) return r;
-      if (i < attempts - 1) await delay(retryDelayMs);
+    const deadline = Date.now() + TOTAL_PROBE_BUDGET_MS;
+    const loop = async (): Promise<T | null> => {
+      for (let i = 0; i < attempts; i++) {
+        // 在途中止（如探测中选中 TS 出口掉线/变无效）：≤一个 attempt 边界即停，不再空耗剩余退避预算 → 立即让终态收口。
+        if (shouldAbort?.()) return null;
+        if (Date.now() >= deadline) return null; // 总预算耗尽 → 停，不再发起新一轮（防无限空转）
+        const r = await fn();
+        if (r) return r;
+        if (i < attempts - 1) {
+          if (Date.now() + retryDelayMs >= deadline) return null; // 剩余预算不够下一轮 → 提前收口
+          await delay(retryDelayMs);
+        }
+      }
+      return null;
+    };
+    // 总预算硬顶：无论单请求多慢/重试多少轮，调用方最多等 TOTAL_PROBE_BUDGET_MS（超时即视作本轮失败 null）。
+    // loop 内 deadline 判据已保证不再发起新 attempt；此定时器再兜底封住「最后一个在途请求越界」的尾巴。
+    // loop 先返回即清定时器（不遗留计时器/不拖住事件循环、免 Jest 开放句柄告警）。
+    let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+    const budget = new Promise<T | null>((resolve) => {
+      budgetTimer = setTimeout(() => resolve(null), TOTAL_PROBE_BUDGET_MS);
+    });
+    try {
+      return await Promise.race([loop(), budget]);
+    } finally {
+      if (budgetTimer) clearTimeout(budgetTimer);
     }
-    return null;
   }
 
   /** postConnect=true：首连专用更宽退避（仅探代理出口）；否则常规预算。 */
   private async doRefreshProxy(postConnect = false): Promise<void> {
-    const ports = this.getProbePorts();
-    if (!this.isRunning() || !ports) {
-      this.snapshot = { ...this.snapshot, proxy: null, updatedAt: Date.now(), loading: false };
+    // TS 出口直判无效短路（置于 ports/isRunning gate 之前）：选中 TS 出口未广告出口设备 / exit peer 离线时，探测必
+    // 失败/超时，跑满退避 = 状态栏永久「检测中」空转（本修复根因）。直接落 proxyBlocked 终态、零探测，状态栏显「出口无效」。
+    const block = this.getProxyExitBlock?.() ?? null;
+    if (block) {
+      this.snapshot = {
+        ...this.snapshot,
+        proxy: null,
+        updatedAt: Date.now(),
+        loading: false,
+        error: undefined,
+        proxyBlocked: block,
+      };
       this.onUpdate(this.getSnapshot());
       return;
     }
-    this.snapshot = { ...this.snapshot, loading: true };
+    const ports = this.getProbePorts();
+    if (!this.isRunning() || !ports) {
+      this.snapshot = {
+        ...this.snapshot,
+        proxy: null,
+        updatedAt: Date.now(),
+        loading: false,
+        proxyBlocked: undefined,
+      };
+      this.onUpdate(this.getSnapshot());
+      return;
+    }
+    this.snapshot = { ...this.snapshot, loading: true, proxyBlocked: undefined };
     this.onUpdate(this.getSnapshot());
     const p = await this.withRetry(
       () => this.queryViaProxy(ports.proxy),
       postConnect ? this.postConnectMaxAttempts : this.maxAttempts,
-      postConnect ? this.postConnectRetryDelayMs : this.retryDelayMs
+      postConnect ? this.postConnectRetryDelayMs : this.retryDelayMs,
+      // 在途 exit 掉线/变无效（getProxyExitBlock 转真）→ ≤一个 attempt 边界中止重试，下方按 lateBlock 落 blocked 终态。
+      () => !!this.getProxyExitBlock?.()
     );
+    // 探测中出口变无效（lateBlock）→ 落 proxyBlocked 而非 error（区分「出口无效不该探」与「探测失败」两种终态语义）。
+    const lateBlock = this.getProxyExitBlock?.() ?? null;
     this.snapshot = {
       ...this.snapshot,
       // 切节点专用路径：探测失败清旧值(null)而非保留——旧值是【上一个节点】的出口，切节点后保留即误导
@@ -240,7 +319,8 @@ export class IpInfoService {
       proxy: p ?? null,
       updatedAt: Date.now(),
       loading: false,
-      error: p ? undefined : 'fetch_failed',
+      error: p ? undefined : lateBlock ? undefined : 'fetch_failed',
+      proxyBlocked: p ? undefined : (lateBlock ?? undefined),
     };
     this.onUpdate(this.getSnapshot());
   }
@@ -255,8 +335,12 @@ export class IpInfoService {
     let direct = this.snapshot.direct;
     let proxy = this.snapshot.proxy;
     let failed = false;
+    let proxyBlocked: ProxyExitBlock | undefined;
 
     if (running && ports) {
+      // TS 出口直判无效 → 本次不探【代理出口】（探必失败/超时空转），proxy 置 null + 落 proxyBlocked 终态；
+      // 【本地出口(direct)照常探】——它走 direct 出站、与 TS 出口无关，不受 block 影响（保全 direct 探测）。
+      const block = this.getProxyExitBlock?.() ?? null;
       // 启动初期隧道/DNS 未就绪 → withRetry 重试（期间 loading 仍 true，界面「获取中」），不闪失败。
       const [d, p] = await Promise.all([
         this.withRetry(
@@ -264,15 +348,18 @@ export class IpInfoService {
           this.directMaxAttempts,
           this.directRetryDelayMs
         ),
-        this.withRetry(() => this.queryViaProxy(ports.proxy)),
+        block ? Promise.resolve(null) : this.withRetry(() => this.queryViaProxy(ports.proxy)),
       ]);
       // 本地出口(direct)探测失败【不】污染全局 error/degraded：它走 direct 出站、与代理路径无关；direct 链改
       // 单端点 IPIP-only 后失败更频繁，旧的 direct↔全局 error 强耦合会让导流脊误显「外网降级」、即便代理出口正常。
       // IPIP 单点暂态失败只表现为本地出口「暂不可用」(direct 保留旧值/null)，绝不连累 degraded（#2 修复）。
       if (d) direct = d;
+      if (block) {
+        proxy = null; // 直判无效：不探、清旧值、落 blocked 终态（非 error，不误染降级）。
+        proxyBlocked = block;
+      } else if (p) proxy = p;
       // 代理出口(proxy)探测失败【保留旧值】仅标记失败（黄点/降级=代理路径信号）：doRefresh 也服务同节点手动刷新/
       // TTL 过期，瞬态抖动不清有效旧 IP（review MED）。切节点的清旧值由 doRefreshProxy（专用路径）负责，不在此泛化。
-      if (p) proxy = p;
       else failed = true;
     } else if (running) {
       // 核心在跑但探针端口分配失败：不能裸 fetch——TUN 下裸 fetch 会被捕获走代理出口，误标为本地出口。
@@ -292,6 +379,8 @@ export class IpInfoService {
       updatedAt: Date.now(),
       loading: false,
       error: failed ? 'fetch_failed' : undefined,
+      // 非 running&&ports&&block 分支 proxyBlocked 恒 undefined → 停核/直判无效解除时清陈旧 blocked（不残留误显）。
+      proxyBlocked,
     };
     this.onUpdate(this.getSnapshot());
   }

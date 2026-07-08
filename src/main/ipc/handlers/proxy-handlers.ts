@@ -5,12 +5,10 @@
 
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
-import type { UserConfig, ServerConfig, ProxyStatus, TrafficStats } from '../../../shared/types';
+import type { UserConfig, ServerConfig, ProxyStatus } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
 import { tailscaleStateExists } from '../../services/tailscale-state';
-// 只需「读快照」最小面（getSnapshot/getConnectionsSnapshot）：StatsWorkerHost（T4 生产）与 StatsService（单测）皆满足。
-import type { StatsProvider } from '../../services/StatsWorkerHost';
 import type { TailscaleStatusSnapshot } from '../../../shared/tailscale-status';
 
 /**
@@ -30,21 +28,9 @@ export function setTrayStateCallback(callback: TrayStateUpdateCallback): void {
 /**
  * 注册代理管理相关的 IPC 处理器
  */
-export function registerProxyHandlers(
-  proxyManager: ProxyManager,
-  statsService?: StatsProvider | null
-): void {
+export function registerProxyHandlers(proxyManager: ProxyManager): void {
   // 注：系统代理 enable/clear 已收口于 ProxyManager（start reconcile + ensureSystemProxyCleared），
   // 本 handler 不再直接持有 systemProxyManager（拆双轨，修 C1/M4）。
-  // 流量统计快照（一次性读；app-store.refreshStatistics 等非订阅型消费者，batch3 保留 STATS_GET）。连接明细
-  // （CONNECTIONS_GET）与拓扑聚合（CONNECTIONS_AGGREGATE_GET）已改订阅驱动（STATS_SUBSCRIBE + 订阅即回初始帧），
-  // 两 handler 随 batch3 删除。
-  registerIpcHandler<void, TrafficStats>(IPC_CHANNELS.STATS_GET, async () =>
-    statsService
-      ? statsService.getSnapshot()
-      : { uploadSpeed: 0, downloadSpeed: 0, totalUpload: 0, totalDownload: 0, activeConnections: 0 }
-  );
-
   // 自定义协议兼容性 probe：当前内核能否识别该 outbound/endpoint type（sing-box check 最小 config）。
   // 主进程子进程 + ProxyManager 内缓存 → 渲染端异步调用、UI 不阻塞。
   registerIpcHandler<

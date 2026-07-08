@@ -37,6 +37,7 @@ import {
   findBuiltin,
 } from './builtin-geo-rulesets';
 import { enumerateResourceRefs, isResourceReferenced } from '../../shared/rule-resource-refs';
+import { smartBaselineGeoTags } from '../../shared/region-routing';
 import { UpdateNetwork } from './UpdateNetwork';
 
 const IDLE_TIMEOUT_MS = 15_000;
@@ -282,7 +283,15 @@ export class RuleResourceManager {
   /** 枚举引用该资源的启用规则（路由规则 res:/geo 条件 + 应用分流 geo，单一真值见 shared/rule-resource-refs）。
    *  供 list 的 referencedBy 计数与删除确认分组展开复用——覆盖 geo 类型条件与 app 规则，删除提醒不再漏报。 */
   referencingRules(config: UserConfig, resId: string): RuleResourceRef[] {
-    return enumerateResourceRefs(resId, config);
+    const refs = enumerateResourceRefs(resId, config);
+    // 系统基线：智能分流 geo 基线层对内置默认(geosite-cn/geoip-cn/geosite-geolocation-!cn)的隐式引用 —— 纳入
+    // referencedBy 计数（否则默认资源恒显 0 引用，用户反馈）。仅内置 geo tag 命中；global/direct/关地区分流时基线为空、不加。
+    // 系统基线仅归属内置默认（builtin:geosite-cn 等）——用户自行下载的同名 geosite-cn 是独立可删资源，不应挂系统引用
+    // （否则删除弹窗计数含它却列不出、挡删无解释）。内置不可删，故系统引用只进 referencedBy 计数、绝不入删除确认路径。
+    if (isBuiltinId(resId) && smartBaselineGeoTags(config).has(builtinTagFromId(resId))) {
+      refs.push({ kind: 'system', id: 'smart-routing', label: 'smart-routing' });
+    }
+    return refs;
   }
 
   async delete(

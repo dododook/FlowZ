@@ -8,6 +8,9 @@
  *    不信 allowInternet**（覆盖 S-b）。配置级问题，断开态也成立（截图 2 即断开）。
  *  - exit-device-offline：选中 TS + 已登录 + 已配 exit_node + 代理运行 + 该 exit 设备 peer offline → 公网可能出不去。
  *    仅代理运行时判（静态 snapshot 判 offline 会误报）。
+ *  - exit-device-not-advertised：选中 TS + 已登录 + 已配 exit_node + 代理运行 + 该 exit 设备 peer 在线但【未广告出口】
+ *    （exitNodeOption=false）→ 流量无法经其出网（TS 拒绝路由到非出口 peer），公网出不去。判据 exitNodeOption 与出口
+ *    下拉「未广告出口」同源（TailscaleStatusPeer.exitNodeOption），修此前「在线但未广告」漏判→出口探测空转「检测中」。
  *
  * 未选中 TS / 未登录（含 NeedsLogin 让位期）/ direct 模式 / exit_node 为无法匹配的自定义值 → none（不误报，且与
  * 出口让位 reconcileLoginFallback + 登录 toast/角标天然互斥：让位/登录 UI 在 loggedIn=false 期，本警示在 loggedIn 期）。
@@ -15,7 +18,11 @@
 import type { ServerConfig } from './types';
 import type { TailscaleStatusPeer } from './tailscale-status';
 
-export type TsExitWarning = 'none' | 'no-exit-device' | 'exit-device-offline';
+export type TsExitWarning =
+  | 'none'
+  | 'no-exit-device'
+  | 'exit-device-offline'
+  | 'exit-device-not-advertised';
 
 export interface TsExitWarningInput {
   /** 当前选中的全局出口节点（config.selectedServerId 对应）。 */
@@ -38,8 +45,9 @@ export function deriveTsExitWarning(i: TsExitWarningInput): TsExitWarning {
   const exitNode = s.tailscaleSettings?.exitNode?.trim();
   if (!exitNode) return 'no-exit-device'; // 核心态：无 exit_node（S-a/S-b 统一，不信 allowInternet）→ 公网不经 TS
   if (!i.proxyRunning) return 'none'; // offline 判定须新鲜 STATUS（陈旧 snapshot 会误报）
-  // exit_node 值与 peer 匹配（复用 exit-node-field 的 ip/hostName 口径）；匹配到且 offline → 警示，自定义值不匹配 → 不误报。
+  // exit_node 值与 peer 匹配（复用 exit-node-field 的 ip/hostName 口径）；匹配到才判，自定义值不匹配 → 不误报。
   const peer = i.peers?.find((p) => p.ip === exitNode || p.hostName === exitNode);
-  if (peer && !peer.online) return 'exit-device-offline';
+  if (peer && !peer.online) return 'exit-device-offline'; // 离线优先（离线态 exitNodeOption 可能陈旧，先报离线更可行动）
+  if (peer && !peer.exitNodeOption) return 'exit-device-not-advertised'; // 在线但未广告出口 → 流量出不去（修空转检测）
   return 'none';
 }

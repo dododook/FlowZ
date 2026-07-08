@@ -227,6 +227,12 @@ export interface IpInfo {
   countryCode?: string;
 }
 
+/** TS 出口 API 直判无效、不探测的终态原因（非空=未选出口设备 / exit peer 离线 / exit peer 在线但未广告出口）。 */
+export type ProxyExitBlock =
+  | 'ts-no-exit-device'
+  | 'ts-exit-device-offline'
+  | 'ts-exit-not-advertised';
+
 export interface IpInfoSnapshot {
   /** 本地直连出口（auto_detect_interface 物理网卡），代理未连时也可测。 */
   direct: IpInfo | null;
@@ -235,6 +241,9 @@ export interface IpInfoSnapshot {
   updatedAt: number;
   loading?: boolean;
   error?: string;
+  /** TS API 直判出口无效、不探测的终态；非空=选中 TS 出口未广告 / exit peer 离线。状态栏据此显「出口无效」，
+   *  真探测发生（proxy 探到值或走真链探测）即清空——与 error（探测失败）互斥语义：blocked=没探（已知无效）。 */
+  proxyBlocked?: ProxyExitBlock;
 }
 
 // ============================================================================

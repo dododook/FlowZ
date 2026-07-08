@@ -115,6 +115,51 @@ describe('deriveTsExitWarning', () => {
     ).toBe('exit-device-offline');
   });
 
+  it('有 exit_node + peer online 但未广告出口(exitNodeOption=false)+ 运行 → exit-device-not-advertised（修空转检测）', () => {
+    expect(
+      deriveTsExitWarning(
+        base({
+          selectedServer: tsNode('100.1.1.1'),
+          peers: [peer({ ip: '100.1.1.1', online: true, exitNodeOption: false })],
+        })
+      )
+    ).toBe('exit-device-not-advertised');
+  });
+
+  it('未广告 + 代理未运行 → none（陈旧 snapshot 不误报，与 offline 同新鲜度守卫）', () => {
+    expect(
+      deriveTsExitWarning(
+        base({
+          selectedServer: tsNode('100.1.1.1'),
+          proxyRunning: false,
+          peers: [peer({ ip: '100.1.1.1', online: true, exitNodeOption: false })],
+        })
+      )
+    ).toBe('none');
+  });
+
+  it('peer 同时离线且未广告 → 离线优先（exit-device-offline，离线态 exitNodeOption 可能陈旧）', () => {
+    expect(
+      deriveTsExitWarning(
+        base({
+          selectedServer: tsNode('100.1.1.1'),
+          peers: [peer({ ip: '100.1.1.1', online: false, exitNodeOption: false })],
+        })
+      )
+    ).toBe('exit-device-offline');
+  });
+
+  it('exit_node 按 hostName 匹配 + online 未广告 → exit-device-not-advertised', () => {
+    expect(
+      deriveTsExitWarning(
+        base({
+          selectedServer: tsNode('mybox'),
+          peers: [peer({ hostName: 'mybox', online: true, exitNodeOption: false })],
+        })
+      )
+    ).toBe('exit-device-not-advertised');
+  });
+
   // §H.5 F2：警示与路由严格镜像——`no-exit-device ⟺ meshSelectedExitFallsBackToDirect=true`（选中 TS、非 direct）。
   // 两侧同源 `!exitNode` 派生，此跨谓词测试防将来单侧改口径而漂移。
   describe('警示 ⟺ 路由回退 镜像（防漂移）', () => {

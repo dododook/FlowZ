@@ -17,7 +17,7 @@ import * as http from 'http';
 jest.mock('http');
 
 import { parseTrace, IpInfoService } from '../IpInfoService';
-import type { IpInfoSnapshot } from '../../../shared/types';
+import type { IpInfoSnapshot, ProxyExitBlock } from '../../../shared/types';
 
 // 真实 ~196B trace 响应样本（含 fl/h/ip/ts/visit_scheme/uag/colo/sliver/http/loc/tls/sni/warp/gateway/rbi/kex）
 const REAL_SAMPLE = `fl=123abc
@@ -269,6 +269,7 @@ describe('IpInfoService 传输层', () => {
     postConnectRetryDelayMs?: number;
     directMaxAttempts?: number;
     directRetryDelayMs?: number;
+    proxyExitBlock?: () => ProxyExitBlock | null;
   }) {
     const snapshots: IpInfoSnapshot[] = [];
     const svc = new IpInfoService(
@@ -284,7 +285,8 @@ describe('IpInfoService 传输层', () => {
         // direct 链预算默认还原单跳（同 maxAttempts）；测 B 宽预算的用例显式传。
         directMaxAttempts: opts?.directMaxAttempts ?? 1,
         directRetryDelayMs: opts?.directRetryDelayMs ?? 0,
-      }
+      },
+      opts?.proxyExitBlock
     );
     return { svc, snapshots };
   }
@@ -303,6 +305,28 @@ describe('IpInfoService 传输层', () => {
 
   beforeEach(() => {
     installHttp();
+  });
+
+  describe('TS 出口无效直判 gate（proxyBlocked 短路，不空转探测）', () => {
+    it('proxyExitBlock 非空 → refreshProxy 短路不探测，落 proxyBlocked 终态（proxy null / loading false / error 空）', async () => {
+      // responders 为空：若 gate 失效真去探测会失败落 error='fetch_failed'；断言 error 空 + proxyBlocked 证明短路生效。
+      responders = [];
+      const { svc } = makeService({ proxyExitBlock: () => 'ts-no-exit-device' });
+      const snap = await svc.refreshProxy();
+      expect(snap.proxy).toBeNull();
+      expect(snap.proxyBlocked).toBe('ts-no-exit-device');
+      expect(snap.loading).toBe(false);
+      expect(snap.error).toBeUndefined();
+    });
+    it('markProxyBlocked → 立即落 proxyBlocked 终态（翻转对账用）', () => {
+      const { svc } = makeService();
+      svc.markProxyBlocked('ts-exit-device-offline');
+      const snap = svc.getSnapshot();
+      expect(snap.proxyBlocked).toBe('ts-exit-device-offline');
+      expect(snap.proxy).toBeNull();
+      expect(snap.loading).toBe(false);
+      expect(snap.error).toBeUndefined();
+    });
   });
 
   // --- httpText 四件套兜底 + 正常 200 ----------------------------------------
@@ -425,7 +449,7 @@ describe('IpInfoService 传输层', () => {
     expect(c.options.port).toBe(18081);
     expect(c.options.path).toBe('http://cloudflare.com/cdn-cgi/trace');
     expect(c.options.headers).toMatchObject({ Host: 'cloudflare.com', Connection: 'close' });
-    expect(c.options.timeout).toBe(5000);
+    expect(c.options.timeout).toBe(6000); // 单请求超时（REQ_TIMEOUT_MS，用户定 6s）
   });
 
   it('bare：直连目标 host:80、origin-form path（核心未运行）', async () => {

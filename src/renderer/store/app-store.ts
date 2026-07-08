@@ -146,7 +146,8 @@ interface AppState {
 
   // Status Actions
   refreshConnectionStatus: () => Promise<void>;
-  refreshStatistics: () => Promise<void>;
+  /** 手动重探出口 IP（force，绕 TTL）：状态栏检测超时/失败时的刷新按钮触发。 */
+  reprobeExitIp: () => Promise<void>;
   // Tailscale 登录态单条覆盖（loggedIn=Running||Starting），由 EVENT_TAILSCALE_STATUS 驱动。
   setTailscaleLoginState: (
     serverId: string,
@@ -431,12 +432,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  refreshStatistics: async () => {
+  // 手动重探出口 IP（force，绕 TTL）：状态栏检测超时/失败的刷新按钮触发；结果 set 回 ipInfo（EVENT 亦兜底推送）。
+  reprobeExitIp: async () => {
     try {
-      const stats = await api.stats.get();
-      set({ stats });
+      const snap = await api.ipInfo.get(true);
+      set({ ipInfo: snap });
     } catch (error) {
-      console.error('Failed to refresh statistics:', error);
+      console.error('Failed to reprobe exit IP:', error);
     }
   },
 

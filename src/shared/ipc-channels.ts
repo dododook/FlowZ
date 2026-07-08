@@ -78,7 +78,6 @@ export const IPC_CHANNELS = {
   AUTO_START_GET_STATUS: 'autoStart:getStatus',
 
   // 统计信息（batch3 §3.7：订阅驱动数据面。renderer 按 topic 声明订阅，main 据订阅集派生 worker demand + 精确 relay）
-  STATS_GET: 'stats:get', // 一次性流量快照读（app-store.refreshStatistics 非订阅型消费者，保留）
   STATS_SUBSCRIBE: 'stats:subscribe', // 订阅某 topic（stats|aggregate|detail）：main 挂订阅 + 即回初始帧（合并旧 GET 初值路径）
   STATS_UNSUBSCRIBE: 'stats:unsubscribe', // 退订某 topic（unmount/窗口隐藏/暂停）：无订阅者 → worker 逐级停机
   CONNECTIONS_CLOSE: 'connections:close', // 关单条连接（main 经 9090 DELETE /connections/{id}）
@@ -108,6 +107,7 @@ export const IPC_CHANNELS = {
   CORE_REPLACE_MANUAL: 'core:replaceManual',
   CORE_UPDATE_GET_AUTO_STATUS: 'core:getAutoStatus', // 内核自动更新状态（lastCheckAt/staged/跨带提示）
   CORE_UPDATE_APPLY_STAGED: 'core:applyStaged', // 用户点「立即应用」：停代理→换核→重启（唯一允许主动断流）
+  CORE_UPDATE_ACK_VERSION_CHANGE: 'core:ackVersionChange', // banner 展示版本变更通知后 ack 清除 pendingChangeNotice（show→ack，弹一次非每启）
   CORE_RESET_FACTORY: 'core-update:reset-factory', // B6：把内核恢复为随 App 出厂的版本
   APP_UNINSTALL_ALL: 'app:uninstall-all', // B6：完全卸载 FlowZ（提权 helper / 受保护目录内核 / 用户配置 / 应用本体）
 
