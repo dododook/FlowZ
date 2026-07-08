@@ -122,9 +122,10 @@ export function CoreManagementCard() {
   };
 
   const handleCheckCoreUpdate = async () => {
+    setCheckingCoreUpdate(true);
+    // 进度 toast 捕获 id：各结果分支带 { id } 原地替换，不残留「正在检查核心更新」；声明在 try 外供 catch 引用。
+    const coreToastId = toast.loading(t('settings.about.checkingCoreUpdate'));
     try {
-      setCheckingCoreUpdate(true);
-      toast.info(t('settings.about.checkingCoreUpdate'));
       // 兜底超时：即便主进程因意外永不返回，20s 后也强制 reject → catch 清 loading + 报错，绝不无限转圈（终极防线）。
       const response = await Promise.race([
         checkCoreUpdate(),
@@ -134,12 +135,16 @@ export function CoreManagementCard() {
       ]);
       if (!response || !response.success) {
         toast.error(t('settings.about.checkCoreUpdateFail'), {
+          id: coreToastId,
           description: response?.error || t('settings.about.cannotConnectServer'),
         });
         return;
       }
       const data = response.data;
-      if (!data) return;
+      if (!data) {
+        toast.dismiss(coreToastId); // 无数据但无结果文案：静默关掉进度 toast，不留转圈。
+        return;
+      }
       if (data.hasUpdate && data.latestVersion && data.downloadUrl) {
         // 写入常驻入口（数据源持久；toast 仅作可选即时提醒）
         setAvailableCoreUpdate({
@@ -148,6 +153,7 @@ export function CoreManagementCard() {
           crossBand: data.crossBand,
         });
         toast.success(t('settings.about.foundCoreUpdate', { version: data.latestVersion }), {
+          id: coreToastId,
           description: t('settings.coreManagement.updateEntryHint'),
           action: {
             label: t('settings.coreManagement.viewUpdate'),
@@ -156,17 +162,22 @@ export function CoreManagementCard() {
           duration: 8000,
         });
       } else if (data.error) {
-        toast.error(t('settings.about.checkCoreUpdateFail'), { description: data.error });
+        toast.error(t('settings.about.checkCoreUpdateFail'), {
+          id: coreToastId,
+          description: data.error,
+        });
       } else {
         // 已是最新：清除可能残留的常驻入口
         setAvailableCoreUpdate(null);
         toast.success(t('settings.about.coreAlreadyLatest'), {
+          id: coreToastId,
           description: t('settings.about.currentVersion', { version: data.currentVersion }),
         });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       toast.error(t('settings.about.checkCoreUpdateFail'), {
+        id: coreToastId,
         description: errorMessage || t('settings.about.unknownError'),
       });
     } finally {
@@ -175,25 +186,29 @@ export function CoreManagementCard() {
   };
 
   const handleUpdateCore = async (downloadUrl: string, version: string) => {
+    setUpdatingCore(true);
+    // 进度 toast 捕获 id：成功/失败原地替换「正在更新核心」（声明在 try 外供 catch 引用）。
+    const updateCoreToastId = toast.loading(t('settings.about.updatingCore', { version }), {
+      description: t('settings.about.doNotClose'),
+    });
     try {
-      setUpdatingCore(true);
-      toast.info(t('settings.about.updatingCore', { version }), {
-        description: t('settings.about.doNotClose'),
-      });
       const response = await updateCore(downloadUrl);
       if (response && response.success && response.data) {
         setAvailableCoreUpdate(null); // 更新成功：清除常驻入口
         toast.success(t('settings.about.coreUpdateSuccess'), {
+          id: updateCoreToastId,
           description: t('settings.about.newCoreActive'),
         });
         await loadVersionInfo();
       } else {
         toast.error(t('settings.about.coreUpdateFail'), {
+          id: updateCoreToastId,
           description: response?.error || t('settings.about.unknownError'),
         });
       }
     } catch (error) {
       toast.error(t('settings.about.coreUpdateFail'), {
+        id: updateCoreToastId,
         description: error instanceof Error ? error.message : String(error),
       });
     } finally {

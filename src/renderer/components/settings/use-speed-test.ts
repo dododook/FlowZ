@@ -37,15 +37,17 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
     const unsubscribeProgress = api.server.onSpeedTestProgress(({ tested, ok, total }) => {
       setSpeedProgress({ tested, ok, total });
     });
+    // 进度 toast 捕获 id：完成/失败原地替换「开始测速」（声明在 try 外供 catch 引用）。
+    const speedToastId = toast.loading(t('servers.speedTestStart'));
     try {
-      toast.info(t('servers.speedTestStart'));
       const results = await api.server.speedTest(serverIdsToTest);
       // 末尾兜底同步（确保最终结果一致，兜底事件丢失）；函数式合并保留未测节点的历史延迟。
       applyLatencyResults(results);
-      toast.success(t('servers.speedTestDone'));
+      toast.success(t('servers.speedTestDone'), { id: speedToastId });
       // 不再自动排序（保留用户排序偏好，测速只更新延迟值）
     } catch (error) {
       toast.error(t('servers.speedTestFail'), {
+        id: speedToastId,
         description: error instanceof Error ? error.message : String(error),
       });
     } finally {
