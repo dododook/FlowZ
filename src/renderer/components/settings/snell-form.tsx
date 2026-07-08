@@ -2,15 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -149,7 +141,7 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
         {coreLacksSnell && (
           <div className="rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/40 dark:text-amber-400">
             {t(
@@ -158,137 +150,109 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
             )}
           </div>
         )}
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.snell.psk', 'PSK')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    className="mono"
+                    type="password"
+                    placeholder={t('servers.snell.pskPlaceholder', 'Pre-shared key')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+          <FormField
+            control={form.control}
+            name="version"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.snell.version', 'Version')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="4">v4</SelectItem>
+                    <SelectItem value="6">v6</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          {/* v4：obfs 分支（none|http）；http 时显 Host。v6：mode 分支。互斥，按 version 条件渲染。 */}
+          {isV4 ? (
+            <FormField
+              control={form.control}
+              name="obfsMode"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.snell.obfsMode', 'Obfuscation')}</span>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t('servers.snell.obfsNone', 'None')}</SelectItem>
+                      <SelectItem value="http">HTTP</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          ) : (
+            <FormField
+              control={form.control}
+              name="mode"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.snell.mode', 'Mode')}</span>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">default</SelectItem>
+                      <SelectItem value="unshaped">unshaped</SelectItem>
+                      <SelectItem value="unsafe-raw">unsafe-raw</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          )}
+          {isV4 && isObfsHttp && (
             <FieldSpan>
               <FormField
                 control={form.control}
-                name="password"
+                name="obfsHost"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.snell.psk', 'PSK')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder={t('servers.snell.pskPlaceholder', 'Pre-shared key')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('servers.snell.pskDesc', 'Pre-shared key of the Snell server.')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                  <div className="nd-fld">
+                    <span className="nd-fld-lbl">
+                      {t('servers.snell.obfsHost', 'Obfuscation Host')}
+                    </span>
+                    <Input placeholder="bing.com" {...field} />
+                    <FormMessage className="fld-err" />
+                  </div>
                 )}
               />
             </FieldSpan>
-            <FormField
-              control={form.control}
-              name="version"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.snell.version', 'Version')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="4">v4</SelectItem>
-                      <SelectItem value="6">v6</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    {t(
-                      'servers.snell.versionDesc',
-                      'Protocol version; must match the server. v4 supports HTTP obfuscation, v6 supports transfer modes.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            {/* v4：obfs 分支（none|http）；http 时显 Host。v6：mode 分支。互斥，按 version 条件渲染。 */}
-            {isV4 ? (
-              <FormField
-                control={form.control}
-                name="obfsMode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.snell.obfsMode', 'Obfuscation')}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">{t('servers.snell.obfsNone', 'None')}</SelectItem>
-                        <SelectItem value="http">HTTP</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      {t('servers.snell.obfsModeDesc', 'v4 only. Must match the server config.')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : (
-              <FormField
-                control={form.control}
-                name="mode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.snell.mode', 'Mode')}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="default">default</SelectItem>
-                        <SelectItem value="unshaped">unshaped</SelectItem>
-                        <SelectItem value="unsafe-raw">unsafe-raw</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      {t('servers.snell.modeDesc', 'v6 only transfer mode; leave default unless the server requires otherwise.')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-            {isV4 && isObfsHttp && (
-              <FieldSpan>
-                <FormField
-                  control={form.control}
-                  name="obfsHost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.snell.obfsHost', 'Obfuscation Host')}</FormLabel>
-                      <FormControl>
-                        <Input placeholder="bing.com" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        {t(
-                          'servers.snell.obfsHostDesc',
-                          'HTTP Host header for obfuscation. Defaults to bing.com.'
-                        )}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </FieldSpan>
-            )}
-          </FieldGrid>
-        </FormSection>
+          )}
+        </FieldGrid>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           <FieldGrid cols={2}>
@@ -296,48 +260,38 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
               control={form.control}
               name="network"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.snell.network', 'Network')}</FormLabel>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.snell.network', 'Network')}</span>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="both">{t('servers.snell.networkBoth', 'TCP + UDP')}</SelectItem>
+                      <SelectItem value="both">
+                        {t('servers.snell.networkBoth', 'TCP + UDP')}
+                      </SelectItem>
                       <SelectItem value="tcp">TCP</SelectItem>
                       <SelectItem value="udp">UDP</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
-                    {t('servers.snell.networkDesc', 'Enabled transport; default both.')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="userkey"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.snell.userkey', 'User Key')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder={t('servers.snell.userkeyPlaceholder', 'Optional')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.snell.userkeyDesc',
-                      'Authentication key on multi-user servers; leave empty otherwise.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.snell.userkey', 'User Key')}</span>
+                  <Input
+                    className="mono"
+                    type="password"
+                    placeholder={t('servers.snell.userkeyPlaceholder', 'Optional')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FieldSpan>
@@ -345,7 +299,10 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
                 control={form.control}
                 name="reuse"
                 label={t('servers.snell.reuse', 'Connection reuse')}
-                tooltip={t('servers.snell.reuseDesc', 'Reuse connections (v2 CONNECT). Default off.')}
+                tooltip={t(
+                  'servers.snell.reuseDesc',
+                  'Reuse connections (v2 CONNECT). Default off.'
+                )}
               />
             </FieldSpan>
           </FieldGrid>

@@ -2,17 +2,9 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -178,33 +170,31 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.password')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder={t('servers.passwordPlaceholder')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>{t('servers.passwordDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-          </FieldGrid>
-        </FormSection>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.password')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    className="mono"
+                    type="password"
+                    placeholder={t('servers.passwordPlaceholder')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+        </FieldGrid>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           <FieldGrid cols={2}>
@@ -212,171 +202,157 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
               control={form.control}
               name="upMbps"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.upMbps')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      placeholder={t('servers.optional')}
-                      {...field}
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        field.onChange(val ? parseInt(val) : undefined);
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>{t('servers.bandwidthDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.upMbps')}</span>
+                  <Input
+                    type="number"
+                    placeholder={t('servers.optional')}
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      field.onChange(val ? parseInt(val) : undefined);
+                    }}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="downMbps"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.downMbps')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      placeholder={t('servers.optional')}
-                      {...field}
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        field.onChange(val ? parseInt(val) : undefined);
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>{t('servers.bandwidthDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.downMbps')}</span>
+                  <Input
+                    type="number"
+                    placeholder={t('servers.optional')}
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      field.onChange(val ? parseInt(val) : undefined);
+                    }}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FieldSpan>
-              <FormField
-                control={form.control}
-                name="obfsEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 rtl:space-x-reverse space-y-0">
-                    <FormControl>
-                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel>{t('servers.obfsEnabled')}</FormLabel>
-                      <FormDescription>{t('servers.obfsEnabledDesc')}</FormDescription>
+              <div className="nd-fset">
+                <FormField
+                  control={form.control}
+                  name="obfsEnabled"
+                  render={({ field }) => (
+                    <div className="nd-fset-h">
+                      {t('servers.obfsEnabled')}
+                      <Switch
+                        className="ml-auto"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
                     </div>
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            {isObfsEnabled && (
-              <>
-                <FormField
-                  control={form.control}
-                  name="obfsType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.obfsType', '混淆类型')}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="salamander">Salamander</SelectItem>
-                          <SelectItem value="gecko">Gecko</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>{t('servers.obfsTypeDesc')}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="obfsPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.obfsPassword')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={t('servers.obfsPasswordPlaceholder')}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>{t('servers.obfsPasswordDesc')}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                {obfsType === 'gecko' && (
+                {isObfsEnabled && (
                   <>
                     <FormField
                       control={form.control}
-                      name="obfsMinPacketSize"
+                      name="obfsType"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('servers.obfsMinPacketSize', '最小包长')}</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              placeholder={t('servers.optional')}
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                field.onChange(val ? parseInt(val) : undefined);
-                              }}
-                            />
-                          </FormControl>
-                          <FormDescription>{t('servers.obfsPacketSizeDesc')}</FormDescription>
-                          <FormMessage />
-                        </FormItem>
+                        <div className="nd-fld">
+                          <span className="nd-fld-lbl">{t('servers.obfsType', '混淆类型')}</span>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="salamander">Salamander</SelectItem>
+                              <SelectItem value="gecko">Gecko</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage className="fld-err" />
+                        </div>
                       )}
                     />
                     <FormField
                       control={form.control}
-                      name="obfsMaxPacketSize"
+                      name="obfsPassword"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('servers.obfsMaxPacketSize', '最大包长')}</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              placeholder={t('servers.optional')}
-                              {...field}
-                              value={field.value ?? ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                field.onChange(val ? parseInt(val) : undefined);
-                              }}
-                            />
-                          </FormControl>
-                          <FormDescription>{t('servers.obfsPacketSizeDesc')}</FormDescription>
-                          <FormMessage />
-                        </FormItem>
+                        <div className="nd-fld">
+                          <span className="nd-fld-lbl">{t('servers.obfsPassword')}</span>
+                          <Input
+                            className="mono"
+                            type="password"
+                            placeholder={t('servers.obfsPasswordPlaceholder')}
+                            {...field}
+                          />
+                          <FormMessage className="fld-err" />
+                        </div>
                       )}
                     />
+                    {obfsType === 'gecko' && (
+                      <FieldGrid cols={2}>
+                        <FormField
+                          control={form.control}
+                          name="obfsMinPacketSize"
+                          render={({ field }) => (
+                            <div className="nd-fld">
+                              <span className="nd-fld-lbl">
+                                {t('servers.obfsMinPacketSize', '最小包长')}
+                              </span>
+                              <Input
+                                type="number"
+                                placeholder={t('servers.optional')}
+                                {...field}
+                                value={field.value ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  field.onChange(val ? parseInt(val) : undefined);
+                                }}
+                              />
+                              <FormMessage className="fld-err" />
+                            </div>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="obfsMaxPacketSize"
+                          render={({ field }) => (
+                            <div className="nd-fld">
+                              <span className="nd-fld-lbl">
+                                {t('servers.obfsMaxPacketSize', '最大包长')}
+                              </span>
+                              <Input
+                                type="number"
+                                placeholder={t('servers.optional')}
+                                {...field}
+                                value={field.value ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  field.onChange(val ? parseInt(val) : undefined);
+                                }}
+                              />
+                              <FormMessage className="fld-err" />
+                            </div>
+                          )}
+                        />
+                      </FieldGrid>
+                    )}
                   </>
                 )}
-              </>
-            )}
+              </div>
+            </FieldSpan>
             <FormField
               control={form.control}
               name="bbrProfile"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.bbrProfile', 'BBR Profile')}</FormLabel>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.bbrProfile', 'BBR Profile')}</span>
                   <Select onValueChange={field.onChange} value={field.value || 'default'}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="default">
                         {t('servers.bbrProfileDefault', '默认')}
@@ -392,9 +368,8 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                       </SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>{t('servers.bbrProfileDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <TlsServerNameField control={form.control} t={t} />
@@ -408,30 +383,22 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
               control={form.control}
               name="serverPorts"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.hopPorts', 'Port Hopping Range')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="20000:30000,40000:50000" {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.hopPortsDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.hopPorts', 'Port Hopping Range')}</span>
+                  <Input placeholder="20000:30000,40000:50000" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="hopInterval"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.hopInterval', '跳跃间隔')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="30s" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t('servers.hopIntervalDesc', '端口跳跃的时间间隔，如 30s。留空使用默认值。')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.hopInterval', '跳跃间隔')}</span>
+                  <Input placeholder="30s" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FieldGrid>

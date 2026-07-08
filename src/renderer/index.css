@@ -4,31 +4,55 @@
 
 @layer base {
   :root {
-    /* Conduit 配色（#24 B1）：仪器纸底 + 导流青 primary；badge 线路色沿用既有梯度 */
-    --background: 210 25% 97%;
-    --foreground: 216 22% 10%;
-    --card: 0 0% 100%;
-    --card-foreground: 216 22% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 216 22% 10%;
-    --primary: 185 84% 35%;
+    /* ── Conduit 设计 token（单一真值，与原型设计稿逐值对齐）──
+       仪器纸底 + 导流青 flow；三层文字梯度 fg/-dim/-faint；分层表面 surface/-2/-3；
+       专用发丝线 hair（细于 line）；弱语义底 *-weak；方向流量色 dn(下行青)/up(上行紫）。 */
+    --bg: 213 24% 96%;
+    --surface: 0 0% 100%;
+    --surface-2: 213 24% 93.5%;
+    --surface-3: 213 20% 89%;
+    --line: 214 20% 87.5%;
+    --hair: 214 22% 84%;
+    --fg: 216 28% 14%;
+    --fg-dim: 215 13% 40%;
+    --fg-faint: 214 12% 57%;
+    --flow: 184 60% 34%;
+    --flow-hi: 184 80% 28%;
+    --flow-weak: 185 50% 92%;
+    --ok: 158 62% 34%;
+    --ok-weak: 158 46% 92%;
+    --warn: 34 82% 42%;
+    --warn-weak: 38 82% 92%;
+    --err: 358 66% 50%;
+    --err-weak: 358 74% 96%;
+    --dn: 196 78% 41%;
+    --up: 256 46% 55%;
+    --shadow: 214 40% 16%;
+
+    /* ── shadcn token 别名 → Conduit SoT（现有 ui 组件透过 var 间接自动换肤，消费端不动）── */
+    --background: var(--bg);
+    --foreground: var(--fg);
+    --card: var(--surface);
+    --card-foreground: var(--fg);
+    --popover: var(--surface);
+    --popover-foreground: var(--fg);
+    --primary: var(--flow);
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 25% 92%;
-    --secondary-foreground: 185 84% 28%;
-    --muted: 210 25% 94%;
-    --muted-foreground: 213 14% 40%;
-    --accent: 186 60% 92%;
-    --accent-foreground: 185 84% 30%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: var(--surface-2);
+    --secondary-foreground: var(--fg-dim);
+    --muted: var(--surface-2);
+    --muted-foreground: var(--fg-dim);
+    --accent: var(--flow-weak);
+    --accent-foreground: var(--flow-hi);
+    --destructive: var(--err);
     --destructive-foreground: 0 0% 100%;
-    /* 语义色：与 --primary/--muted/--destructive 同模式，供 badge/速率/告警/协议标识统一引用 */
-    --success: 157 73% 37%;
+    --success: var(--ok);
     --success-foreground: 0 0% 100%;
-    --warning: 32 80% 42%;
+    --warning: var(--warn);
     --warning-foreground: 0 0% 100%;
-    --info: 185 84% 35%;
+    --info: var(--flow);
     --info-foreground: 0 0% 100%;
-    /* badge 色相 token（分类/协议标识，与上方语义色同模式）：明=~600 阶（深色读字）；主题切换由本块/.dark 块切换驱动，消费端无需 dark: 变体 */
+    /* badge 色相 token（分类/协议标识，独立梯度、与 Conduit 语义色正交）：明=~600 阶（深色读字） */
     --badge-blue: 221.2 83.2% 53.3%;
     --badge-purple: 271.5 81.3% 55.9%;
     --badge-orange: 20.5 90.2% 48.2%;
@@ -40,38 +64,59 @@
     --badge-slate: 215.3 19.3% 34.5%;
     --badge-sky: 200.4 98% 39.4%;
     --badge-amber: 37.7 92.1% 50.2%;
-    --border: 210 22% 88%;
-    --input: 210 22% 86%;
-    --ring: 185 84% 35%;
+    --border: var(--line);
+    --input: var(--line);
+    --ring: 184 78% 38%;
     --radius: 0.5rem;
   }
 
   .dark {
-    /* Conduit 配色（#24 B1）：蓝石墨底 + 导流青 primary + live 绿；badge 沿用既有暗梯度 */
-    --background: 216 22% 7%;
-    --foreground: 210 25% 93%;
-    --card: 214 22% 11%;
-    --card-foreground: 210 25% 93%;
-    --popover: 216 22% 9%;
-    --popover-foreground: 210 25% 93%;
-    --primary: 184 70% 45%;
+    /* ── Conduit 暗色（蓝石墨底 + 导流青 + live 绿；逐值对齐原型 data-theme=dark）── */
+    --bg: 216 30% 8%;
+    --surface: 215 24% 11.5%;
+    --surface-2: 215 19% 15%;
+    --surface-3: 215 16% 20%;
+    --line: 215 15% 21%;
+    --hair: 215 14% 25%;
+    --fg: 210 20% 93%;
+    --fg-dim: 214 13% 64%;
+    --fg-faint: 214 11% 46%;
+    --flow: 184 50% 50%;
+    --flow-hi: 184 64% 60%;
+    --flow-weak: 200 34% 18%;
+    --ok: 158 54% 50%;
+    --ok-weak: 158 34% 15%;
+    --warn: 36 80% 59%;
+    --warn-weak: 34 40% 15%;
+    --err: 358 70% 66%;
+    --err-weak: 358 38% 18%;
+    --dn: 196 74% 58%;
+    --up: 256 56% 71%;
+    --shadow: 216 70% 2%;
+
+    --background: var(--bg);
+    --foreground: var(--fg);
+    --card: var(--surface);
+    --card-foreground: var(--fg);
+    --popover: var(--surface);
+    --popover-foreground: var(--fg);
+    --primary: var(--flow);
     --primary-foreground: 192 80% 6%;
-    --secondary: 214 14% 18%;
-    --secondary-foreground: 210 25% 93%;
-    --muted: 214 16% 16%;
-    --muted-foreground: 214 12% 60%;
-    --accent: 214 16% 17%;
-    --accent-foreground: 184 78% 58%;
-    --destructive: 0 62.8% 48%;
+    --secondary: var(--surface-2);
+    --secondary-foreground: var(--fg);
+    --muted: var(--surface-2);
+    --muted-foreground: var(--fg-dim);
+    --accent: var(--surface-3);
+    --accent-foreground: var(--flow-hi);
+    --destructive: var(--err);
     --destructive-foreground: 0 0% 98%;
-    /* 语义色（暗）：饱和度降、亮度提，与暗 destructive 同梯度 */
-    --success: 158 70% 54%;
+    --success: var(--ok);
     --success-foreground: 192 80% 6%;
-    --warning: 40 88% 60%;
+    --warning: var(--warn);
     --warning-foreground: 192 80% 6%;
-    --info: 184 78% 58%;
+    --info: var(--flow);
     --info-foreground: 192 80% 6%;
-    /* badge 色相 token（暗=~400 阶，浅色读字，与暗语义色同梯度） */
+    /* badge 色相 token（暗=~400 阶，浅色读字） */
     --badge-blue: 213.1 93.9% 67.8%;
     --badge-purple: 270 95.2% 75.3%;
     --badge-orange: 27 96% 61%;
@@ -83,9 +128,9 @@
     --badge-slate: 214.3 20.2% 65.1%;
     --badge-sky: 198.4 93.2% 59.6%;
     --badge-amber: 42.7 96.3% 56.5%;
-    --border: 214 14% 18%;
-    --input: 214 14% 20%;
-    --ring: 184 70% 45%;
+    --border: var(--line);
+    --input: var(--line);
+    --ring: 184 64% 54%;
   }
 }
 
@@ -138,6 +183,13 @@
   }
 
   .app-region-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* macOS main-layout 顶部 36px app-region-drag 覆盖 top-right toast。无 app-region 的 toast 对下方 drag 区透明
+     → 点击被判为窗口拖拽、关闭/操作钮无反应（用户反馈）。显式 no-drag 让整个 toast 区块回到可点。 */
+  [data-sonner-toaster],
+  [data-sonner-toast] {
     -webkit-app-region: no-drag;
   }
 
@@ -232,15 +284,15 @@
   .nav-item {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 11px;
     width: 100%;
-    padding: 8px 12px 8px 16px;
-    border-radius: 8px;
+    padding: 8px 10px;
+    border-radius: 9px;
     margin: 0 6px;
     width: calc(100% - 12px);
     text-align: left;
-    font-size: 14px;
-    color: hsl(var(--foreground) / 0.85);
+    font-size: 13px;
+    color: hsl(var(--muted-foreground));
     transition:
       background 0.15s,
       color 0.15s;
@@ -283,7 +335,7 @@
   }
 
   .nav-item:hover {
-    background: hsl(var(--primary) / 0.07);
+    background: hsl(var(--surface-3));
     color: hsl(var(--foreground));
   }
 
@@ -301,9 +353,9 @@
   }
 
   .nav-item.active {
-    background: hsl(var(--primary) / 0.1);
-    color: hsl(var(--primary));
-    font-weight: 500;
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    font-weight: 620;
   }
 
   .nav-item-indicator {
@@ -313,13 +365,13 @@
     transform: translateY(-50%);
     width: 3px;
     height: 0;
-    border-radius: 2px;
+    border-radius: 0 3px 3px 0;
     background: hsl(var(--primary));
     transition: height 0.2s;
   }
 
   .nav-item.active .nav-item-indicator {
-    height: 16px;
+    height: 18px;
   }
 
   /* Main content card */

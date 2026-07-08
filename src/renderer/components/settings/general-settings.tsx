@@ -1,12 +1,9 @@
-import { Card, CardContent } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { useAppStore } from '@/store/app-store';
 import { toast } from 'sonner';
 import { api } from '@/ipc';
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { SettingsRow } from './settings-row';
 
 type ToggleField =
@@ -77,112 +74,110 @@ export function GeneralSettings() {
 
   if (!config) return null;
 
-  // 卡片分组与「网络」节一致：每个主题一张卡（启动 / 行为与隐私），而非单卡内分隔标题（UI 风格统一）。
+  // Conduit 开关：静态复用 prototype 的 .swt 按钮（role=switch），保留 config 真值与 handleToggle。
+  const Toggle = ({ field, checked }: { field: ToggleField; checked: boolean }) => (
+    <button
+      type="button"
+      className={cn('swt', checked && 'on')}
+      role="switch"
+      aria-checked={checked}
+      onClick={() => handleToggle(field, !checked)}
+    />
+  );
+
+  // 卡片分组与「网络」节一致：每个主题一张卡（启动 / 行为与隐私），set-h 作卡头。
   return (
-    <div className="space-y-6">
+    <div className="set-panel">
       {/* 启动 */}
-      <Card>
-        <CardContent className="divide-y divide-border/60 pt-2">
-          <SettingsRow heading label={t('settings.general.groupStartup', '启动')} />
+      <div className="card set-card">
+        <div className="set-h">
+          <b>{t('settings.general.groupStartup', '启动')}</b>
+          <small>{t('settings.general.startupSub', '应用启动与托盘行为')}</small>
+        </div>
+        <SettingsRow
+          label={t('settings.general.silentStart')}
+          description={t('settings.general.silentStartDesc')}
+        >
+          <Toggle field="silentStart" checked={config.silentStart} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.autoStartTitle')}
+          description={t('settings.general.autoStartDesc', '登录系统时自动运行 FlowZ')}
+        >
+          <Toggle field="autoStart" checked={config.autoStart} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.autoConnect')}
+          description={t('settings.general.autoConnectDesc', '恢复上次的出口节点与接管方式并连接')}
+        >
+          <Toggle field="autoConnect" checked={config.autoConnect} />
+        </SettingsRow>
+        {!isMac && (
           <SettingsRow
-            label={t('settings.general.silentStart')}
-            description={t('settings.general.silentStartDesc')}
+            label={t('settings.general.minimizeToTrayTitle')}
+            description={t('settings.general.minimizeToTrayDesc')}
           >
-            <Switch
-              checked={config.silentStart}
-              onCheckedChange={(c) => handleToggle('silentStart', c)}
-            />
+            <Toggle field="minimizeToTray" checked={config.minimizeToTray} />
           </SettingsRow>
-          <SettingsRow label={t('settings.general.autoStartTitle')}>
-            <Switch
-              checked={config.autoStart}
-              onCheckedChange={(c) => handleToggle('autoStart', c)}
-            />
-          </SettingsRow>
-          <SettingsRow label={t('settings.general.autoConnect')}>
-            <Switch
-              checked={config.autoConnect}
-              onCheckedChange={(c) => handleToggle('autoConnect', c)}
-            />
-          </SettingsRow>
-          {!isMac && (
-            <SettingsRow
-              label={t('settings.general.minimizeToTrayTitle')}
-              description={t('settings.general.minimizeToTrayDesc')}
-            >
-              <Switch
-                checked={config.minimizeToTray}
-                onCheckedChange={(c) => handleToggle('minimizeToTray', c)}
-              />
-            </SettingsRow>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
       {/* 行为与隐私 */}
-      <Card>
-        <CardContent className="divide-y divide-border/60 pt-2">
-          <SettingsRow heading label={t('settings.general.groupBehavior', '行为与隐私')} />
-          <SettingsRow label={t('settings.general.autoCheckUpdate')}>
-            <Switch
-              checked={config.autoCheckUpdate !== false}
-              onCheckedChange={(c) => handleToggle('autoCheckUpdate', c)}
+      <div className="card set-card">
+        <div className="set-h">
+          <b>{t('settings.general.groupBehavior', '行为与隐私')}</b>
+          <small>{t('settings.general.behaviorSub', '更新提示、窗口与隐私遮罩')}</small>
+        </div>
+        <SettingsRow
+          label={t('settings.general.autoCheckUpdate')}
+          description={t('settings.general.autoCheckUpdateDesc', '发现新版本时在关于页提示')}
+        >
+          <Toggle field="autoCheckUpdate" checked={config.autoCheckUpdate !== false} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.rememberWindowSize')}
+          description={t('settings.general.rememberWindowSizeDesc', '下次打开时还原上次的窗口布局')}
+        >
+          <Toggle field="rememberWindowSize" checked={config.rememberWindowSize === true} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.desktopNotifications')}
+          description={t('settings.general.desktopNotificationsDesc')}
+        >
+          <Toggle field="desktopNotifications" checked={config.desktopNotifications !== false} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.autoLightweightMode')}
+          description={t('settings.general.autoLightweightModeDesc')}
+        >
+          <Toggle field="autoLightweightMode" checked={config.autoLightweightMode} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.autoPrivacyMode')}
+          description={t('settings.general.autoPrivacyModeDesc')}
+        >
+          <Toggle field="autoPrivacyMode" checked={config.autoPrivacyMode === true} />
+        </SettingsRow>
+        {config.autoPrivacyMode && (
+          <SettingsRow label={t('settings.general.privacyPassword')}>
+            <input
+              className="input"
+              type="password"
+              placeholder={t('settings.general.privacyPasswordPlaceholder')}
+              value={passwordValue}
+              onChange={(e) => setPasswordValue(e.target.value)}
+              onBlur={() => handlePasswordSave(passwordValue)}
+              aria-label={t('settings.general.privacyPassword')}
+              style={{ width: 200 }}
             />
+            {hasPrivacyPassword && (
+              <button type="button" className="btn ghost sm" onClick={handleClearPassword}>
+                {t('settings.general.clearPassword')}
+              </button>
+            )}
           </SettingsRow>
-          <SettingsRow label={t('settings.general.rememberWindowSize')}>
-            <Switch
-              checked={config.rememberWindowSize === true}
-              onCheckedChange={(c) => handleToggle('rememberWindowSize', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.general.autoLightweightMode')}
-            description={t('settings.general.autoLightweightModeDesc')}
-          >
-            <Switch
-              checked={config.autoLightweightMode}
-              onCheckedChange={(c) => handleToggle('autoLightweightMode', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.general.desktopNotifications')}
-            description={t('settings.general.desktopNotificationsDesc')}
-          >
-            <Switch
-              checked={config.desktopNotifications !== false}
-              onCheckedChange={(c) => handleToggle('desktopNotifications', c)}
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t('settings.general.autoPrivacyMode')}
-            description={t('settings.general.autoPrivacyModeDesc')}
-          >
-            <Switch
-              checked={config.autoPrivacyMode === true}
-              onCheckedChange={(c) => handleToggle('autoPrivacyMode', c)}
-            />
-          </SettingsRow>
-          {config.autoPrivacyMode && (
-            <SettingsRow label={t('settings.general.privacyPassword')} stacked>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="password"
-                  placeholder={t('settings.general.privacyPasswordPlaceholder')}
-                  value={passwordValue}
-                  onChange={(e) => setPasswordValue(e.target.value)}
-                  onBlur={() => handlePasswordSave(passwordValue)}
-                  className="h-8 max-w-[260px]"
-                />
-                {hasPrivacyPassword && (
-                  <Button variant="outline" size="sm" className="h-8" onClick={handleClearPassword}>
-                    {t('settings.general.clearPassword')}
-                  </Button>
-                )}
-              </div>
-            </SettingsRow>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </div>
   );
 }

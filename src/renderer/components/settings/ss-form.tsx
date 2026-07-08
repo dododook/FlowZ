@@ -1,15 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -18,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Shield } from 'lucide-react';
 import { FormButtons } from './shared/form-buttons';
 import { MultiplexFields } from './shared/anti-censor-fields';
@@ -149,82 +141,74 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="remarks"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.remarks')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t('servers.remarksPlaceholder')} {...field} />
-                    </FormControl>
-                    <FormDescription>{t('servers.remarksDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="8388" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="method"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.encryption')}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('servers.selectEncryption')} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {(() => {
-                          const sortedMethods = [...COMMON_METHODS];
-                          if (field.value && !COMMON_METHODS.includes(field.value)) {
-                            sortedMethods.unshift(field.value);
-                          }
-                          return sortedMethods.map((method) => (
-                            <SelectItem key={method} value={method}>
-                              {method}
-                            </SelectItem>
-                          ));
-                        })()}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>{t('servers.ssEncryptionDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.password')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder={t('servers.passwordPlaceholder')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>{t('servers.ssPasswordDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-          </FieldGrid>
-        </FormSection>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="remarks"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.remarks')}</span>
+                  <Input placeholder={t('servers.remarksPlaceholder')} {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="8388" />
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="method"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.encryption')}</span>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('servers.selectEncryption')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(() => {
+                        const sortedMethods = [...COMMON_METHODS];
+                        if (field.value && !COMMON_METHODS.includes(field.value)) {
+                          sortedMethods.unshift(field.value);
+                        }
+                        return sortedMethods.map((method) => (
+                          <SelectItem key={method} value={method}>
+                            {method}
+                          </SelectItem>
+                        ));
+                      })()}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.password')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    type="password"
+                    className="mono"
+                    placeholder={t('servers.passwordPlaceholder')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+        </FieldGrid>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           <FieldGrid cols={2}>
@@ -232,79 +216,68 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
               control={form.control}
               name="plugin"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('servers.plugin')} ({t('servers.optional')})
-                  </FormLabel>
-                  <FormControl>
-                    <Input placeholder="obfs-local" {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.pluginDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.plugin')}{' '}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input placeholder="obfs-local" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="pluginOptions"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('servers.pluginOptions')} ({t('servers.optional')})
-                  </FormLabel>
-                  <FormControl>
-                    <Input placeholder="obfs=http;obfs-host=..." {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.pluginOptionsDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.pluginOptions')}{' '}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input placeholder="obfs=http;obfs-host=..." {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FieldGrid>
 
           {/* Shadow-TLS v3 */}
-          <div className="border rounded-lg p-4 space-y-4">
+          <div className="nd-fset">
             <FormField
               control={form.control}
               name="enableShadowTls"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center space-x-3 rtl:space-x-reverse space-y-0">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel className="flex items-center gap-1.5 cursor-pointer">
-                      <Shield className="h-4 w-4 text-muted-foreground" />
-                      {t('servers.enableShadowTls', 'Enable Shadow-TLS v3')}
-                    </FormLabel>
-                    <FormDescription>
-                      {t(
-                        'servers.enableShadowTlsDesc',
-                        'Wrap Shadowsocks with a TLS obfuscation tunnel'
-                      )}
-                    </FormDescription>
-                  </div>
-                </FormItem>
+                <div className="nd-fset-h">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Shield className="h-4 w-4 text-muted-foreground" />
+                    {t('servers.enableShadowTls', 'Enable Shadow-TLS v3')}
+                  </span>
+                  <Switch
+                    className="ml-auto"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </div>
               )}
             />
 
             {enableShadowTls && (
-              <div className="space-y-4 pt-2 border-t">
+              <>
                 <FormField
                   control={form.control}
                   name="shadowTlsPassword"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.shadowTlsPassword')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={t('servers.shadowTlsPasswordPlaceholder')}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                    <div className="nd-fld">
+                      <span className="nd-fld-lbl">{t('servers.shadowTlsPassword')}</span>
+                      <Input
+                        type="password"
+                        className="mono"
+                        placeholder={t('servers.shadowTlsPasswordPlaceholder')}
+                        {...field}
+                      />
+                      <FormMessage className="fld-err" />
+                    </div>
                   )}
                 />
 
@@ -313,39 +286,36 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
                     control={form.control}
                     name="shadowTlsSni"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('servers.sniValue')}</FormLabel>
-                        <FormControl>
-                          <Input placeholder="www.microsoft.com" {...field} />
-                        </FormControl>
-                        <FormDescription>{t('servers.shadowTlsSniDesc')}</FormDescription>
-                        <FormMessage />
-                      </FormItem>
+                      <div className="nd-fld">
+                        <span className="nd-fld-lbl">{t('servers.sniValue')}</span>
+                        <Input placeholder="www.microsoft.com" {...field} />
+                        <FormMessage className="fld-err" />
+                      </div>
                     )}
                   />
                   <FormField
                     control={form.control}
                     name="shadowTlsPort"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('servers.realPort')} ({t('servers.optional')})
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            placeholder={t('servers.realPortPlaceholder')}
-                            {...field}
-                            value={field.value ?? ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              field.onChange(val ? parseInt(val) : undefined);
-                            }}
-                          />
-                        </FormControl>
-                        <FormDescription>{t('servers.realPortDesc')}</FormDescription>
-                        <FormMessage />
-                      </FormItem>
+                      <div className="nd-fld">
+                        <span className="nd-fld-lbl">
+                          {t('servers.realPort')}{' '}
+                          <small className="font-medium text-fg-faint">
+                            {t('servers.optional')}
+                          </small>
+                        </span>
+                        <Input
+                          type="number"
+                          placeholder={t('servers.realPortPlaceholder')}
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            field.onChange(val ? parseInt(val) : undefined);
+                          }}
+                        />
+                        <FormMessage className="fld-err" />
+                      </div>
                     )}
                   />
                 </FieldGrid>
@@ -354,14 +324,12 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
                   control={form.control}
                   name="shadowTlsFingerprint"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.fingerprint')}</FormLabel>
+                    <div className="nd-fld">
+                      <span className="nd-fld-lbl">{t('servers.fingerprint')}</span>
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="chrome">Chrome</SelectItem>
                           <SelectItem value="firefox">Firefox</SelectItem>
@@ -372,12 +340,11 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
                           <SelectItem value="random">{t('servers.random')}</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>{t('servers.fingerprintDesc')}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
+                      <FormMessage className="fld-err" />
+                    </div>
                   )}
                 />
-              </div>
+              </>
             )}
           </div>
 

@@ -1,32 +1,13 @@
 /**
- * 新增自定义应用对话框 —— 从 app-rules-card 抽出（审计 §6 Tier-2 #4：拆 AddCustomAppDialog）。
- * 自含：名称/图标/分类归属/Geosite/GeoIP/进程名 表单 + geo 分类 catalog 拉取/刷新 + 提交（注入默认 appRule
- * + fail-closed 下载 geo）。图标库视图委托 IconGalleryPicker。字段级错误内联（红框+红字，不弹 toast），
- * 仅全局/系统错误（保存失败/下载失败）才 toast。
+ * 新增自定义应用对话框（Conduit `.ap-dialog` / `.apd-*` / `.ms`，承载于 radix Dialog）——
+ * 图标（内联 `.ico-lib` 图标库）/ 名称 / 分类归属 / Geosite / GeoIP / 进程名 表单 + geo 分类 catalog 拉取/刷新
+ * + 提交（注入默认 appRule + fail-closed 下载缺失 geo）。字段级错误内联（红框+红字，不弹 toast），
+ * 仅全局/系统错误（保存失败/下载失败）才 toast。radix 内置关闭钮经 `[&>button]:hidden` 隐，改用 `.apd-x`。
  */
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { cn } from '@/lib/utils';
-import { Image as ImageIcon, ArrowRight, ListChecks } from 'lucide-react';
-import { iconProxySrc } from '../../../shared/icon-proxy';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ArrowRight, ListChecks, X, ChevronDown } from 'lucide-react';
 import type {
   AppRule,
   CustomAppPreset,
@@ -54,6 +35,12 @@ interface AddCustomAppDialogProps {
 
 const CUSTOM_CATEGORY = '__custom__';
 
+// 字段级错误内联红框：覆盖 `.apd-input` focus 描边。
+const ERR_STYLE = {
+  borderColor: 'hsl(var(--err))',
+  boxShadow: '0 0 0 3px hsl(var(--err) / 0.1)',
+} as const;
+
 export function AddCustomAppDialog({
   open,
   onOpenChange,
@@ -64,7 +51,6 @@ export function AddCustomAppDialog({
 }: AddCustomAppDialogProps) {
   const { t } = useTranslation();
 
-  const [showIconGallery, setShowIconGallery] = useState(false);
   const [newAppName, setNewAppName] = useState('');
   const [newAppEmoji, setNewAppEmoji] = useState('🌐');
   const [newAppIconUrl, setNewAppIconUrl] = useState('');
@@ -95,10 +81,9 @@ export function AddCustomAppDialog({
   // 展示层：未尝试提交前全 false（打开即报错反直觉）；submitAttempted 后随字段实时刷新 → 用户改好即消。
   const errors = submitAttempted ? fieldErrors : { name: false, geosite: false, category: false };
 
-  // 打开时重置为表单视图（取代原 +按钮的 setShowIconGallery(false)）+ 清尝试提交态（避免重开即报错）
+  // 打开时清尝试提交态（避免重开即报错）
   useEffect(() => {
     if (open) {
-      setShowIconGallery(false);
       setSubmitAttempted(false);
     }
   }, [open]);
@@ -123,7 +108,6 @@ export function AddCustomAppDialog({
   const customPresets: CustomAppPreset[] = config.customAppPresets || [];
 
   const resetForm = () => {
-    setShowIconGallery(false);
     setNewAppName('');
     setNewAppEmoji('🌐');
     setNewAppIconUrl('');
@@ -239,237 +223,225 @@ export function AddCustomAppDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[460px]">
-        {showIconGallery ? (
-          <IconGalleryPicker
-            onSelectIcon={(url, suggestedName) => {
-              setNewAppIconUrl(url);
-              if (!newAppName) setNewAppName(suggestedName);
-              setShowIconGallery(false);
+      <DialogContent className="[&>button]:hidden flex max-h-[84vh] w-[min(468px,94vw)] max-w-none flex-col gap-0 overflow-y-auto rounded-[14px] border-line bg-surface p-0 sm:rounded-[14px]">
+        {/* a11y：radix 需 Title；视觉标题另在 `.apd-h`，此处仅供辅助技术。 */}
+        <DialogTitle className="sr-only">{t('rules.customApp.addTitle')}</DialogTitle>
+        <DialogDescription className="sr-only">{t('rules.customApp.addDesc')}</DialogDescription>
+
+        <div className="apd-h">
+          <span className="apd-ico">＋</span>
+          <h3>{t('rules.customApp.addTitle')}</h3>
+          <button
+            type="button"
+            className="apd-x"
+            title={t('common.cancel')}
+            aria-label={t('common.cancel')}
+            onClick={() => onOpenChange(false)}
+          >
+            <X />
+          </button>
+        </div>
+
+        <div className="apd-body">
+          {/* 应用图标：内联图标库 `.ico-lib` */}
+          <div className="field">
+            <div className="field-lbl">
+              {t('rules.customApp.iconLabel')}{' '}
+              <small>
+                {t('rules.customApp.iconFieldHint', '远端图标 / emoji / URL，加载失败回退首字母')}
+              </small>
+            </div>
+            <IconGalleryPicker
+              emoji={newAppEmoji}
+              iconUrl={newAppIconUrl}
+              appName={newAppName}
+              onPickRemote={(url, suggestedName) => {
+                setNewAppIconUrl(url);
+                if (!newAppName) setNewAppName(suggestedName);
+              }}
+              onPickEmoji={(e) => {
+                setNewAppEmoji(e);
+                setNewAppIconUrl('');
+              }}
+              onApplyUrl={(u) => setNewAppIconUrl(u)}
+            />
+          </div>
+
+          {/* 名称（必填，内联校验） */}
+          <div className="field">
+            <div className="field-lbl">
+              {t('rules.customApp.nameLabel')} <small>{t('rules.customApp.nameReq', '必填')}</small>
+            </div>
+            <input
+              className="apd-input"
+              type="text"
+              value={newAppName}
+              onChange={(e) => setNewAppName(e.target.value)}
+              placeholder={t('rules.customApp.namePlaceholder')}
+              aria-invalid={errors.name}
+              style={errors.name ? ERR_STYLE : undefined}
+            />
+            {errors.name && (
+              <p className="text-xs text-err">
+                {t('rules.customApp.nameRequired', '请填写应用名称')}
+              </p>
+            )}
+          </div>
+
+          {/* 分类归属（含自定义） */}
+          <div className="field">
+            <div className="field-lbl">
+              {t('rules.customApp.categoryLabel', '分类归属')}{' '}
+              <small>
+                {t('rules.customApp.categoryFieldHint', '归入对应分类组，选「自定义…」新建分类组')}
+              </small>
+            </div>
+            <div className="apd-selwrap">
+              <select
+                className="apd-select"
+                value={newAppCategory}
+                onChange={(e) => setNewAppCategory(e.target.value)}
+              >
+                {KNOWN_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {t(`rules.categories.${c}` as any, c)}
+                  </option>
+                ))}
+                <option value={CUSTOM_CATEGORY}>
+                  {t('rules.customApp.categoryCustom', '自定义…')}
+                </option>
+              </select>
+              <ChevronDown className="apd-selchev" />
+            </div>
+            {newAppCategory === CUSTOM_CATEGORY && (
+              <>
+                <input
+                  className="apd-input apd-custom-cat"
+                  type="text"
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  placeholder={t('rules.customApp.categoryPlaceholder', '输入新分类名，如 办公')}
+                  aria-invalid={errors.category}
+                  style={errors.category ? ERR_STYLE : undefined}
+                />
+                {errors.category && (
+                  <p className="text-xs text-err">
+                    {t('rules.customApp.categoryRequired', '请输入分类名')}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Geosite（必填至少一个，内联校验） */}
+          <div className="field">
+            <div className="field-lbl">
+              Geosite <small>{t('rules.customApp.geositeFieldHint', '域名匹配 · 多选')}</small>
+            </div>
+            <GeoTagPicker
+              options={geositeOptions}
+              value={newAppGeositeTags}
+              onChange={setNewAppGeositeTags}
+              localTags={localGeositeTags}
+              loading={geoCatalogLoading}
+              refreshing={geoCatalogRefreshing}
+              onRefresh={refreshGeoCatalog}
+              placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
+            />
+            {errors.geosite && (
+              <p className="text-xs text-err">
+                {t('rules.customApp.geositeRequired', '请至少选择一个 Geosite 分类')}
+              </p>
+            )}
+          </div>
+
+          {/* GeoIP */}
+          <div className="field">
+            <div className="field-lbl">
+              GeoIP <small>{t('rules.customApp.geoipFieldHint', 'IP 段匹配 · 多选')}</small>
+            </div>
+            <GeoTagPicker
+              options={geoipOptions}
+              value={newAppGeoipTags}
+              onChange={setNewAppGeoipTags}
+              localTags={localGeoipTags}
+              loading={geoCatalogLoading}
+              refreshing={geoCatalogRefreshing}
+              onRefresh={refreshGeoCatalog}
+              placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
+            />
+          </div>
+
+          {/* 前往规则资源下载 */}
+          <a
+            className="apd-link"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              onOpenChange(false);
+              onGoToResources();
             }}
-            onSelectDefault={() => {
-              setNewAppIconUrl('');
-              setNewAppEmoji('🌐');
-              setShowIconGallery(false);
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpenChange(false);
+                onGoToResources();
+              }
             }}
-            onClose={() => setShowIconGallery(false)}
-            manualUrl={newAppIconUrl}
-            onManualUrlChange={setNewAppIconUrl}
-          />
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>{t('rules.customApp.addTitle')}</DialogTitle>
-              <DialogDescription>{t('rules.customApp.addDesc')}</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              {/* 图标 */}
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-end">{t('rules.customApp.iconLabel')}</Label>
-                <div className="col-span-3">
-                  <Button
-                    variant="outline"
-                    className="group flex h-12 w-full items-center justify-between gap-3 rounded-xl border-dashed px-4 transition-all hover:border-primary/50 hover:bg-primary/5"
-                    onClick={() => setShowIconGallery(true)}
-                  >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center">
-                        {newAppIconUrl ? (
-                          <img
-                            src={iconProxySrc(newAppIconUrl)}
-                            className="h-full w-full object-contain"
-                            onError={(e) => {
-                              e.currentTarget.style.visibility = 'hidden';
-                            }}
-                          />
-                        ) : (
-                          <span className="text-xl">{newAppEmoji}</span>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-start overflow-hidden">
-                        <span className="text-sm font-medium">
-                          {t('rules.customApp.browseIcons')}
-                        </span>
-                        <span className="truncate text-[10px] text-muted-foreground">
-                          {newAppIconUrl
-                            ? t('rules.customApp.iconSelected', { url: newAppIconUrl })
-                            : t('rules.customApp.iconChoosePrompt')}
-                        </span>
-                      </div>
-                    </div>
-                    <ImageIcon className="h-4 w-4 opacity-40 transition-all group-hover:text-primary group-hover:opacity-100" />
-                  </Button>
-                </div>
-              </div>
+          >
+            {t('rules.customApp.goToResources', '规则集没有？前往「规则资源」下载更多')}
+            <ArrowRight />
+          </a>
 
-              {/* 名称（必填，内联校验） */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="name" className="pt-2.5 text-end">
-                  {t('rules.customApp.nameLabel')}
-                </Label>
-                <div className="col-span-3 space-y-1">
-                  <Input
-                    id="name"
-                    value={newAppName}
-                    onChange={(e) => setNewAppName(e.target.value)}
-                    placeholder={t('rules.customApp.namePlaceholder')}
-                    aria-invalid={errors.name}
-                    className={cn(
-                      'h-10 rounded-lg border-none bg-muted/20 focus-visible:ring-1',
-                      errors.name && 'ring-1 ring-destructive'
-                    )}
-                  />
-                  {errors.name && (
-                    <p className="text-xs text-destructive">
-                      {t('rules.customApp.nameRequired', '请填写应用名称')}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* 分类归属（含自定义） */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label className="pt-2.5 text-end">
-                  {t('rules.customApp.categoryLabel', '分类归属')}
-                </Label>
-                <div className="col-span-3 space-y-1.5">
-                  <Select value={newAppCategory} onValueChange={setNewAppCategory}>
-                    <SelectTrigger className="h-10 rounded-lg border-none bg-muted/20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {KNOWN_CATEGORIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {t(`rules.categories.${c}` as any, c)}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value={CUSTOM_CATEGORY}>
-                        {t('rules.customApp.categoryCustom', '自定义…')}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {newAppCategory === CUSTOM_CATEGORY && (
-                    <>
-                      <Input
-                        value={customCategory}
-                        onChange={(e) => setCustomCategory(e.target.value)}
-                        placeholder={t(
-                          'rules.customApp.categoryPlaceholder',
-                          '输入新分类名，如 办公'
-                        )}
-                        aria-invalid={errors.category}
-                        className={cn(
-                          'h-9 rounded-lg border-none bg-muted/20 text-sm focus-visible:ring-1',
-                          errors.category && 'ring-1 ring-destructive'
-                        )}
-                      />
-                      {errors.category && (
-                        <p className="text-xs text-destructive">
-                          {t('rules.customApp.categoryRequired', '请输入分类名')}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Geosite（必填至少一个，内联校验） */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label className="pt-3 text-end">Geosite</Label>
-                <div className="col-span-3 space-y-1">
-                  <GeoTagPicker
-                    options={geositeOptions}
-                    value={newAppGeositeTags}
-                    onChange={setNewAppGeositeTags}
-                    localTags={localGeositeTags}
-                    loading={geoCatalogLoading}
-                    refreshing={geoCatalogRefreshing}
-                    onRefresh={refreshGeoCatalog}
-                    placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
-                  />
-                  {errors.geosite && (
-                    <p className="text-xs text-destructive">
-                      {t('rules.customApp.geositeRequired', '请至少选择一个 Geosite 分类')}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* GeoIP */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label className="pt-3 text-end">GeoIP</Label>
-                <div className="col-span-3">
-                  <GeoTagPicker
-                    options={geoipOptions}
-                    value={newAppGeoipTags}
-                    onChange={setNewAppGeoipTags}
-                    localTags={localGeoipTags}
-                    loading={geoCatalogLoading}
-                    refreshing={geoCatalogRefreshing}
-                    onRefresh={refreshGeoCatalog}
-                    placeholder={t('rules.customApp.geoSearchPlaceholder', '搜索分类，如 youtube')}
-                  />
-                </div>
-              </div>
-
-              {/* 前往规则资源下载 */}
+          {/* 进程名（可选，逗号分隔） */}
+          <div className="field">
+            <div className="field-lbl">
+              {t('rules.customApp.processLabel', '进程名')}{' '}
+              <small>{t('rules.customApp.processFieldHint', '可选 · 逗号分隔')}</small>
+            </div>
+            <div className="flex gap-2">
+              <input
+                className="apd-input"
+                type="text"
+                value={newAppProcessNames}
+                onChange={(e) => setNewAppProcessNames(e.target.value)}
+                placeholder={t('rules.customApp.processPlaceholder', 'App.exe, appname')}
+              />
               <button
                 type="button"
-                onClick={() => {
-                  onOpenChange(false);
-                  onGoToResources();
-                }}
-                className="col-span-4 flex items-center justify-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+                className="btn ghost sm"
+                style={{ flex: 'none' }}
+                onClick={() => setProcessPickerOpen(true)}
               >
-                {t('rules.customApp.goToResources', '规则集没有？前往「规则资源」下载更多')}
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ListChecks className="h-4 w-4" />
+                {t('rules.pickProcess', '从进程选择')}
               </button>
-
-              {/* 进程名（可选，逗号分隔） */}
-              <div className="grid grid-cols-4 items-start gap-4">
-                <Label htmlFor="procnames" className="pt-2.5 text-end">
-                  {t('rules.customApp.processLabel', '进程名')}
-                </Label>
-                <div className="col-span-3 space-y-1">
-                  <div className="flex gap-2">
-                    <Input
-                      id="procnames"
-                      value={newAppProcessNames}
-                      onChange={(e) => setNewAppProcessNames(e.target.value)}
-                      placeholder={t('rules.customApp.processPlaceholder', 'App.exe, appname')}
-                      className="h-10 flex-1 rounded-lg border-none bg-muted/20 text-sm focus-visible:ring-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setProcessPickerOpen(true)}
-                      className="h-10 shrink-0"
-                    >
-                      <ListChecks className="me-1.5 h-4 w-4" />
-                      {t('rules.pickProcess', '从进程选择')}
-                    </Button>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    {t('rules.customApp.processHint', '可选 · 逗号分隔，比 geo 域名匹配更精准')}
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-[11px] leading-relaxed text-muted-foreground">
-                {t(
-                  'rules.customApp.geoAutoDownloadNote',
-                  '选中的 geosite / geoip 规则集若本地缺失，添加时将自动下载（fail-closed：下载完成前该应用的 geo 匹配不生效，进程名匹配不受影响）。'
-                )}
-              </p>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button onClick={handleAddCustomApp}>{t('rules.customApp.save')}</Button>
-            </DialogFooter>
-          </>
-        )}
+            <p className="text-[10.5px] leading-relaxed text-fg-faint">
+              {t(
+                'rules.customApp.processHint',
+                '可选 · 逗号分隔，比 geo 域名匹配更精准。区分大小写，建议用「从进程选择」获取准确名称。'
+              )}
+            </p>
+          </div>
+
+          <div className="apd-note">
+            {t(
+              'rules.customApp.geoAutoDownloadNote',
+              '选中的 geosite / geoip 规则集若本地缺失，添加时将自动下载（fail-closed：下载完成前该应用的 geo 匹配不生效，进程名匹配不受影响）。'
+            )}
+          </div>
+        </div>
+
+        <div className="apd-foot">
+          <button type="button" className="btn ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </button>
+          <button type="button" className="btn flow" onClick={handleAddCustomApp}>
+            {t('rules.customApp.save')}
+          </button>
+        </div>
+
         <ProcessPickerDialog
           open={processPickerOpen}
           onOpenChange={setProcessPickerOpen}

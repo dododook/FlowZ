@@ -17,14 +17,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-10 w-full items-center justify-between rounded-md border border-input bg-muted/40 px-3 py-2 text-start text-sm ring-offset-background transition-colors hover:border-primary/50 data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:truncate [&>span]:text-start',
+      'flex h-[33px] w-full items-center justify-between rounded-lg border border-line bg-surface-2 px-3 py-[7px] text-start text-[13px] font-[540] text-fg data-[placeholder]:text-fg-faint focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:truncate [&>span]:text-start',
       className
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50" />
+      <ChevronDown className="h-4 w-4 text-fg-faint" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
@@ -66,7 +66,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'relative z-50 max-h-96 min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]',
+        'relative z-50 max-h-96 min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-lg border border-line bg-surface text-fg shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]',
         position === 'popper' &&
           'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
         className
@@ -98,7 +98,7 @@ const SelectLabel = React.forwardRef<
     ref={ref}
     // 组名与列表项分层：小一号字(text-xs)+ 弱化色(muted)+ 左对齐到容器边(px-2,去掉项的 pl-8 缩进)+ 上留白(pt-2)
     // 制造组间分割。组名像分组标题、项在其下缩进，不再混作一团；与 server-select-groups 的组名风格统一。
-    className={cn('px-2 pb-1.5 pt-2 text-xs font-semibold text-muted-foreground', className)}
+    className={cn('px-2 pb-1.5 pt-2 text-xs font-semibold text-fg-faint', className)}
     {...props}
   />
 ));
@@ -111,7 +111,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 ps-8 pe-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 ps-8 pe-2 text-[13px] outline-none focus:bg-flow-weak focus:text-flow-hi data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       // trailing 时让 ItemText（本组件恒为第 2 个子节点：indicator span 第 1、ItemText span 第 2）truncate 撑开：
       // radix @radix-ui/react-select 的 SelectItemText 会 strip className/style（不转发到 span），故无法直接给
       // ItemText 加类——改由父 Item 经 :nth-child(2) 定向。否则长节点名不截断、尾随徽标被 overflow-x-hidden 裁掉。
@@ -140,7 +140,7 @@ const SelectSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Separator
     ref={ref}
-    className={cn('-mx-1 my-1 h-px bg-muted', className)}
+    className={cn('-mx-1 my-1 h-px bg-line', className)}
     {...props}
   />
 ));

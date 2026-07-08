@@ -1,15 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -190,99 +182,95 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="uuid"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.uuid', 'UUID')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t('servers.uuidPlaceholder')} {...field} />
-                    </FormControl>
-                    <FormDescription>{t('servers.uuidDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FieldSpan>
             <FormField
               control={form.control}
-              name="encryption"
+              name="uuid"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.encryption')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectEncryption')} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">none</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>{t('servers.vlessEncryptionDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.uuid', 'UUID')} <span className="nd-req">*</span>
+                  </span>
+                  <Input className="mono" placeholder={t('servers.uuidPlaceholder')} {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
-            <FormField
-              control={form.control}
-              name="network"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.transport')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectTransport')} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="Tcp">TCP</SelectItem>
-                      <SelectItem value="Ws">WebSocket</SelectItem>
-                      <SelectItem value="Grpc">gRPC</SelectItem>
-                      <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
-                      <SelectItem value="Http">HTTP/2</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>{t('servers.transportDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="security"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.security')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectSecurity')} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="None">{t('servers.none')}</SelectItem>
-                      <SelectItem value="Tls">TLS</SelectItem>
-                      <SelectItem value="Reality">Reality</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>{t('servers.securityDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </FieldGrid>
-          {/* Reality：security=Reality 时 publicKey 为条件必填 → 放基础(不入折叠高级)。 */}
-          {isRealityEnabled && (
+          </FieldSpan>
+          <FormField
+            control={form.control}
+            name="encryption"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.encryption')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('servers.selectEncryption')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">none</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="network"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.transport')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('servers.selectTransport')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Tcp">TCP</SelectItem>
+                    <SelectItem value="Ws">WebSocket</SelectItem>
+                    <SelectItem value="Grpc">gRPC</SelectItem>
+                    <SelectItem value="HttpUpgrade">HTTPUpgrade</SelectItem>
+                    <SelectItem value="Http">HTTP/2</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="security"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.security')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('servers.selectSecurity')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="None">{t('servers.none')}</SelectItem>
+                    <SelectItem value="Tls">TLS</SelectItem>
+                    <SelectItem value="Reality">Reality</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+        </FieldGrid>
+        {/* Reality：security=Reality 时 publicKey 为条件必填 → 放基础(不入折叠高级)。 */}
+        {isRealityEnabled && (
+          <div className="nd-fset">
+            <div className="nd-fset-h">
+              Reality{' '}
+              <span className="nd-badge">
+                {t('servers.realityRequiredWhen', 'security=Reality')}
+              </span>
+            </div>
             <FieldGrid cols={2}>
               <TlsServerNameField
                 control={form.control}
@@ -300,35 +288,30 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
                 control={form.control}
                 name="flow"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Flow ({t('servers.optional')})</FormLabel>
+                  <div className="nd-fld">
+                    <span className="nd-fld-lbl">
+                      Flow{' '}
+                      <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                    </span>
                     <Select
                       onValueChange={(v) => field.onChange(v === '_none' ? '' : v)}
                       value={field.value || '_none'}
                     >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('servers.selectFlow', 'Select Flow')} />
-                        </SelectTrigger>
-                      </FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder={t('servers.selectFlow', 'Select Flow')} />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="_none">{t('servers.none')}</SelectItem>
                         <SelectItem value="xtls-rprx-vision">xtls-rprx-vision</SelectItem>
                       </SelectContent>
                     </Select>
-                    <FormDescription>
-                      {t(
-                        'servers.flowDesc',
-                        'XTLS flow control, Reality recommends xtls-rprx-vision'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                    <FormMessage className="fld-err" />
+                  </div>
                 )}
               />
             </FieldGrid>
-          )}
-        </FormSection>
+          </div>
+        )}
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           {isTlsEnabled && <TlsAdvancedFields control={form.control} t={t} />}

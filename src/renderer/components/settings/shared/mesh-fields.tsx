@@ -12,7 +12,7 @@ import { useRef } from 'react';
 import type { Control, FieldValues, FieldPath } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
-import { FormControl, FormField, FormItem, FormLabel, FormDescription } from '@/components/ui/form';
+import { FormField } from '@/components/ui/form';
 import {
   Select,
   SelectContent,
@@ -57,34 +57,30 @@ export function AccessModeField<TFieldValues extends FieldValues>({
         // 非 TUN 或 Windows：强制显示 gVisor（有效态），不动存储值；否则按实际 reverseMesh 显示。
         const shownSystem = systemSelectable && isSystem;
         return (
-          <FormItem className="space-y-1.5">
-            <FormLabel className="!mt-0 font-normal">
-              {t('servers.accessMode', 'Access mode')}
-            </FormLabel>
-            <FormControl>
-              <Select
-                value={shownSystem ? 'system' : 'userspace'}
-                disabled={!systemSelectable}
-                onOpenChange={(open) => {
-                  if (open) interacted.current = true;
-                }}
-                onValueChange={(v) => {
-                  if (!interacted.current) return; // 挂载/reset 期伪回调 → 忽略，不打回 gVisor
-                  field.onChange(v === 'system');
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-64">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="userspace">
-                    {t('servers.accessModeUserspace', 'gVisor')}
-                  </SelectItem>
-                  <SelectItem value="system">{t('servers.accessModeSystem', 'System')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormControl>
-            <FormDescription>
+          <div className="nd-fld">
+            <span className="nd-fld-lbl">{t('servers.accessMode', 'Access mode')}</span>
+            <Select
+              value={shownSystem ? 'system' : 'userspace'}
+              disabled={!systemSelectable}
+              onOpenChange={(open) => {
+                if (open) interacted.current = true;
+              }}
+              onValueChange={(v) => {
+                if (!interacted.current) return; // 挂载/reset 期伪回调 → 忽略，不打回 gVisor
+                field.onChange(v === 'system');
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="userspace">
+                  {t('servers.accessModeUserspace', 'gVisor')}
+                </SelectItem>
+                <SelectItem value="system">{t('servers.accessModeSystem', 'System')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="nd-swrow-d">
               {isWindows
                 ? t(
                     'servers.accessModeWindowsGvisorOnly',
@@ -104,8 +100,8 @@ export function AccessModeField<TFieldValues extends FieldValues>({
                         'servers.accessModeUserspaceDesc',
                         'gVisor userspace netstack — no privileges; outbound / access only.'
                       )}
-            </FormDescription>
-          </FormItem>
+            </div>
+          </div>
         );
       }}
     />

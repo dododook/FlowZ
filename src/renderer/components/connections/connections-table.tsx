@@ -8,17 +8,6 @@ import {
   useSyncExternalStore,
 } from 'react';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -28,17 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Activity,
-  Search,
-  Pause,
-  Play,
-  X,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-  Ban,
-} from 'lucide-react';
+import { Activity, Search, Pause, Play, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc';
@@ -64,11 +43,11 @@ import {
 type SortKey = 'type' | 'source' | 'dest' | 'rule' | 'chain' | 'speed' | 'traffic' | 'time';
 type SortDir = 'asc' | 'desc';
 
-/** 规则去向 action → Badge 配色：direct 中性灰 / block 系危险红 / 其它(proxy·具体节点) 主色。 */
-function ruleActionVariant(action: string): 'secondary' | 'destructive' | 'default' {
-  if (action.toLowerCase() === 'direct') return 'secondary';
-  if (isBlockedAction(action)) return 'destructive';
-  return 'default';
+/** 规则去向 action → Conduit pill 配色：direct 中性灰 / block 系危险红 / 其它(proxy·具体节点) 主色。 */
+function ruleActionPillClass(action: string): 'direct' | 'proxy' | 'block' {
+  if (action.toLowerCase() === 'direct') return 'direct';
+  if (isBlockedAction(action)) return 'block';
+  return 'proxy';
 }
 
 /** 稳定的零速率引用：speeds 无此 id 时传入，使 ConnectionRow memo 的 speed 比较恒定（不每帧新建对象）。 */
@@ -136,58 +115,93 @@ const ConnectionRow = memo(
     // 零速率的速率读数转中性灰（idle 连接不与活跃传输争夺注意力，突出真正在跑的行）。
     const blocked = isBlockedAction(rv.action);
     const zeroRate = s.up === 0 && s.down === 0;
+    // 类型 pill：形+色区分（tcp 实底灰 / udp 描边），文本取 L4 proto，完整 network/type 收进 title。
+    const network = (m.network || '').toLowerCase();
+    const typeText = typeOf(c);
+    const protoLabel = m.network || typeText;
+    // 节点链：直连/阻断/无出站 → node-dim 弱化（不与代理链争注意力）。
+    const chain = chainOf(c);
+    const nodeDim = blocked || (rv.action || '').toLowerCase() === 'direct' || chain === '-';
+    const dl = c.download ?? 0;
+    const ul = c.upload ?? 0;
+    const trafficTotal = dl + ul;
     return (
-      <TableRow className={blocked ? 'text-muted-foreground' : undefined}>
-        <TableCell className="py-2">
-          <button
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            title={closeLabel}
-            onClick={() => onClose(c.id)}
-          >
-            <X className="h-4 w-4" />
+      <tr className={blocked ? 'blocked' : undefined}>
+        <td className="cx">
+          <button className="crow-x" title={closeLabel} onClick={() => onClose(c.id)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
+            </svg>
           </button>
-        </TableCell>
-        <TableCell className="py-2 text-xs">{typeOf(c)}</TableCell>
-        <TableCell className="py-2 font-mono tabular-nums text-xs">{sourceOf(c)}</TableCell>
-        <TableCell className="max-w-[220px] truncate py-2 font-mono text-xs" title={destOf(c)}>
-          {destOf(c)}
-        </TableCell>
-        <TableCell className="max-w-[200px] py-2 text-xs" title={rv.full || undefined}>
-          {rv.action ? (
-            <span className="flex items-center gap-1.5">
-              {rv.type && <span className="truncate text-muted-foreground">{rv.type}</span>}
-              <Badge
-                variant={ruleActionVariant(rv.action)}
-                className="shrink-0 px-1.5 py-0 text-[10px] font-normal"
-              >
-                {rv.action}
-              </Badge>
+        </td>
+        <td>
+          <span className={cn('pill', network === 'udp' ? 'udp' : 'tcp')} title={typeText}>
+            {protoLabel}
+          </span>
+        </td>
+        <td>
+          {m.sourceIP ? (
+            <span className="mono tnum">
+              {m.sourceIP}
+              {m.sourcePort ? <span className="pt">:{m.sourcePort}</span> : null}
             </span>
           ) : (
-            <span className="block truncate">{rv.full || '-'}</span>
+            <span className="mono tnum">-</span>
           )}
-        </TableCell>
-        <TableCell className="max-w-[160px] truncate py-2 text-xs" title={chainOf(c)}>
-          {chainOf(c)}
-        </TableCell>
-        <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs">
-          <span className={zeroRate ? 'text-muted-foreground' : 'text-success'}>
-            ↓ {formatBytes(s.down)}/s
+        </td>
+        <td>
+          <span className="ell" title={destOf(c)}>
+            {destOf(c)}
           </span>
-          <span className={cn('ms-2', zeroRate ? 'text-muted-foreground' : 'text-info')}>
-            ↑ {formatBytes(s.up)}/s
+        </td>
+        <td>
+          {rv.action ? (
+            <div className="rule-cell">
+              <span className={cn('pill', ruleActionPillClass(rv.action))}>{rv.action}</span>
+              {rv.type ? (
+                <span className="rc-cond mono ell md" title={rv.full || undefined}>
+                  {rv.type}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <span className="ell md" title={rv.full || undefined}>
+              {rv.full || '-'}
+            </span>
+          )}
+        </td>
+        <td>
+          <span className={cn('ell md', nodeDim && 'node-dim')} title={chain}>
+            {chain}
           </span>
-        </TableCell>
-        <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs text-muted-foreground">
-          ↓ {formatBytes(c.download ?? 0)} / ↑ {formatBytes(c.upload ?? 0)}
-        </TableCell>
-        <TableCell className="whitespace-nowrap py-2 font-mono tabular-nums text-xs">
-          <DurationCell start={c.start} />
-        </TableCell>
-        <TableCell className="max-w-[180px] truncate py-2 text-xs" title={proc}>
-          {procName}
-        </TableCell>
-      </TableRow>
+        </td>
+        <td className="num">
+          <div className="rt">
+            <span className={cn('dn mono tnum', zeroRate && 'zero')}>
+              ↓ {formatBytes(s.down)}/s
+            </span>
+            <span className={cn('up mono tnum', zeroRate && 'zero')}>↑ {formatBytes(s.up)}/s</span>
+          </div>
+        </td>
+        <td className="num">
+          <span
+            className={cn('mono tnum', trafficTotal === 0 && 'zero')}
+            title={`↓ ${formatBytes(dl)} / ↑ ${formatBytes(ul)}`}
+          >
+            {formatBytes(trafficTotal)}
+          </span>
+        </td>
+        <td className="num">
+          <span className="mono tnum">
+            <DurationCell start={c.start} />
+          </span>
+        </td>
+        <td>
+          <span className="ell sm" title={proc}>
+            {procName}
+          </span>
+        </td>
+      </tr>
     );
   },
   // memo 比较：只比会变的展示字段。**契约**：对固定 conn.id，chains/rule/rulePayload/metadata（→ chainOf/parseRule/
@@ -299,7 +313,7 @@ export function ConnectionsTable() {
   }, [connections, search, sortKey, sortDir, speeds]);
 
   // 大列表渲染保护（LOW-B）：连接数极多时全量 .map 撑爆 DOM + 拖慢每秒重渲染。代理活动连接通常几十到几百，
-  // 超过软上限只渲染前 N 行并提示用搜索缩小（shadcn <table> 语义下真虚拟化需破坏表结构、收益有限，取此务实方案）。
+  // 超过软上限只渲染前 N 行并提示用搜索缩小（<table> 语义下真虚拟化需破坏表结构、收益有限，取此务实方案）。
   const MAX_VISIBLE_ROWS = 500;
   const visible =
     filtered.length > MAX_VISIBLE_ROWS ? filtered.slice(0, MAX_VISIBLE_ROWS) : filtered;
@@ -348,99 +362,75 @@ export function ConnectionsTable() {
     }
   };
 
-  const SortIcon = ({ k }: { k: SortKey }) => {
-    if (sortKey !== k) return <ArrowUpDown className="ms-1 inline h-3 w-3 opacity-40" />;
-    return sortDir === 'asc' ? (
-      <ArrowUp className="ms-1 inline h-3 w-3" />
-    ) : (
-      <ArrowDown className="ms-1 inline h-3 w-3" />
+  // 可排序表头：active 列 teal（.on）+ 显向 caret（▲/▼），非 active 列 caret hover 淡显（.car 默认 ▲）。
+  const sortableHeader = (k: SortKey, label: string, num?: boolean) => {
+    const active = sortKey === k;
+    return (
+      <th className={cn('srt', num && 'num', active && 'on')} onClick={() => toggleSort(k)}>
+        {label}
+        <span className="car">{active ? (sortDir === 'asc' ? '▲' : '▼') : '▲'}</span>
+      </th>
     );
   };
 
-  const headerCell = (k: SortKey, label: string, className?: string) => (
-    <TableHead
-      className={`cursor-pointer select-none whitespace-nowrap ${className ?? ''}`}
-      onClick={() => toggleSort(k)}
-    >
-      {label}
-      <SortIcon k={k} />
-    </TableHead>
-  );
-
   return (
-    <div className="space-y-3">
+    <>
       {/* 顶栏：摘要先行（连接总数 KPI + 实时/暂停指示）+ 搜索 + 暂停/恢复 + 全部关闭 */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-mono text-2xl font-semibold leading-none tracking-tight tabular-nums">
-              {connections.length}
-            </span>
-            <span className="text-xs font-medium text-muted-foreground">
-              {t('connections.active')}
-            </span>
-          </div>
-          {/* 数据流态：暂停 → 中性静态点「已暂停」；运行且未暂停 → teal 呼吸点「实时」；未运行不显（空态已说明）。
-              复用 ui/badge（secondary 中性 / success 语义 variant），取代自绘 span。 */}
-          {paused ? (
-            <Badge
-              variant="secondary"
-              className="gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-              {t('connections.paused')}
-            </Badge>
-          ) : proxyRunning ? (
-            <Badge
-              variant="success"
-              className="gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-success motion-safe:animate-pulse" />
-              {t('connections.live')}
-            </Badge>
-          ) : null}
+      <div className="conns-bar">
+        <div className="conns-sum">
+          <span className="n mono tnum">{connections.length}</span>
+          <span className="l">{t('connections.active')}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute start-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder={t('connections.search')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 w-[200px] ps-8 text-xs"
+        {/* 数据流态：暂停 → 中性静态点「已暂停」；运行且未暂停 → teal 呼吸点「实时」；未运行不显（空态已说明）。 */}
+        {paused ? (
+          <span className="pill idle">
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: 'hsl(var(--fg-faint))' }}
             />
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
-            {paused ? (
-              <>
-                <Play className="me-1 h-4 w-4" />
-                {t('connections.resume')}
-              </>
-            ) : (
-              <>
-                <Pause className="me-1 h-4 w-4" />
-                {t('connections.pause')}
-              </>
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setConfirmCloseAll(true)}
-            disabled={connections.length === 0}
-          >
-            <Ban className="me-1 h-4 w-4" />
-            {t('connections.closeAll')}
-          </Button>
+            {t('connections.paused')}
+          </span>
+        ) : proxyRunning ? (
+          <span className="pill ok clive">
+            <span className="ldot motion-safe:animate-pulse" />
+            {t('connections.live')}
+          </span>
+        ) : null}
+        <div className="conns-search">
+          <Search />
+          <input
+            type="text"
+            placeholder={t('connections.search')}
+            aria-label={t('connections.search')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
+        <button
+          className="btn ghost sm conns-pause"
+          title={paused ? t('connections.resume') : t('connections.pause')}
+          onClick={() => setPaused((p) => !p)}
+        >
+          {paused ? <Play size={13} /> : <Pause size={13} />}
+          {paused ? t('connections.resume') : t('connections.pause')}
+        </button>
+        <button
+          className="btn danger sm"
+          title={t('connections.closeAll')}
+          onClick={() => setConfirmCloseAll(true)}
+          disabled={connections.length === 0}
+        >
+          <X size={13} />
+          {t('connections.closeAll')}
+        </button>
       </div>
 
-      {/* 表 / 空态 */}
-      <div className="rounded-lg border bg-muted/40">
+      {/* 数据表卡：宽表自身横向滚动 · sticky 表头 hairline 分隔 · 截断脚注常驻卡底 · 空态居中于卡内 */}
+      <div className="card conns-card">
         {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-20 text-sm text-muted-foreground">
-            <Activity className="h-8 w-8 opacity-50" />
-            <span>
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-16 text-center">
+            <Activity className="h-6 w-6" style={{ color: 'hsl(var(--fg-faint))' }} />
+            <span className="text-[13px]" style={{ color: 'hsl(var(--fg-faint))' }}>
               {connections.length > 0 && search
                 ? t('connections.noMatch')
                 : proxyRunning
@@ -449,46 +439,80 @@ export function ConnectionsTable() {
             </span>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10" />
-                {headerCell('type', t('connections.colType'))}
-                {headerCell('source', t('connections.colSource'))}
-                {headerCell('dest', t('connections.colDest'))}
-                {headerCell('rule', t('connections.colRule'))}
-                {headerCell('chain', t('connections.colChain'))}
-                {headerCell('speed', t('connections.colSpeed'))}
-                {headerCell('traffic', t('connections.colTraffic'))}
-                {headerCell('time', t('connections.colTime'))}
-                <TableHead className="whitespace-nowrap">{t('connections.colProcess')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((c) => (
-                <ConnectionRow
-                  key={c.id}
-                  conn={c}
-                  speed={speeds.get(c.id) ?? ZERO_SPEED}
-                  onClose={handleClose}
-                  closeLabel={t('connections.close')}
-                />
-              ))}
-              {filtered.length > MAX_VISIBLE_ROWS && (
-                <TableRow>
-                  <TableCell
-                    colSpan={10}
-                    className="py-2 text-center text-xs text-muted-foreground"
-                  >
-                    {t('connections.rowsTruncated', {
-                      shown: MAX_VISIBLE_ROWS,
-                      total: filtered.length,
-                    })}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <>
+            <div className="conns-scroll">
+              {/* fit-to-width：数字列（速率/流量/时长）+ 操作/类型列固定像素恒显；文本列（源/目标/规则/链路/进程）
+                  弹性收缩 + .ell 截断（长节点名/IP 不挤占数字列，用户反馈）。table-layout:fixed + 内联 minWidth 覆盖
+                  conduit .ctbl 的 min-width:1000（否则窄窗强制横滚、右侧速率/连接数被隐）。 */}
+              <table
+                className="ctbl ctbl-fit"
+                style={{ tableLayout: 'fixed', width: '100%', minWidth: 720 }}
+              >
+                <colgroup>
+                  <col style={{ width: 34 }} />
+                  <col style={{ width: 54 }} />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                  <col style={{ width: 104 }} />
+                  <col style={{ width: 82 }} />
+                  <col style={{ width: 64 }} />
+                  <col />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="cx" aria-label={t('connections.close')} />
+                    {sortableHeader('type', t('connections.colType'))}
+                    {sortableHeader('source', t('connections.colSource'))}
+                    {sortableHeader('dest', t('connections.colDest'))}
+                    {sortableHeader('rule', t('connections.colRule'))}
+                    {sortableHeader('chain', t('connections.colChain'))}
+                    {sortableHeader('speed', t('connections.colSpeed'), true)}
+                    {sortableHeader('traffic', t('connections.colTraffic'), true)}
+                    {sortableHeader('time', t('connections.colTime'), true)}
+                    <th>{t('connections.colProcess')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((c) => (
+                    <ConnectionRow
+                      key={c.id}
+                      conn={c}
+                      speed={speeds.get(c.id) ?? ZERO_SPEED}
+                      onClose={handleClose}
+                      closeLabel={t('connections.close')}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* 500 行截断保护提示行（常驻卡底 · warn 语义） */}
+            {filtered.length > MAX_VISIBLE_ROWS && (
+              <div className="conns-foot">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.9}
+                  width={14}
+                  height={14}
+                >
+                  <path
+                    d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>
+                  {t('connections.rowsTruncated', {
+                    shown: MAX_VISIBLE_ROWS,
+                    total: filtered.length,
+                  })}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -507,6 +531,6 @@ export function ConnectionsTable() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

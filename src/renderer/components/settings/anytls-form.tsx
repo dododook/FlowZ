@@ -1,15 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -160,57 +152,61 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.password')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder={t('servers.passwordPlaceholder')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="security"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.securityType')}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="tls">TLS</SelectItem>
-                        <SelectItem value="reality">Reality</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>{t('servers.securityTypeDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-          </FieldGrid>
-          {/* Reality：security=reality 时 publicKey 为条件必填 → 放基础（不入折叠高级）。 */}
-          {isReality && (
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.password')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    type="password"
+                    className="mono"
+                    placeholder={t('servers.passwordPlaceholder')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="security"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.securityType')}</span>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tls">TLS</SelectItem>
+                      <SelectItem value="reality">Reality</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+        </FieldGrid>
+        {/* Reality：security=reality 时 publicKey 为条件必填 → 放基础（不入折叠高级）。 */}
+        {isReality && (
+          <div className="nd-fset">
+            <div className="nd-fset-h">
+              Reality{' '}
+              <span className="nd-badge">
+                {t('servers.realityRequiredWhen', 'security=Reality')}
+              </span>
+            </div>
             <FieldGrid cols={2}>
               <TlsServerNameField
                 control={form.control}
@@ -227,8 +223,8 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
                 <RealityShortIdField control={form.control} t={t} />
               </FieldSpan>
             </FieldGrid>
-          )}
-        </FormSection>
+          </div>
+        )}
 
         {/* 高级仅 TLS 模式有可选项（SNI/指纹/insecure/ECH）；Reality 模式全为基础项，故无高级区。 */}
         {isTls && (
@@ -253,69 +249,49 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
               control={form.control}
               name="idleSessionCheckInterval"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
                     {t('servers.anytls.idleCheckInterval', 'Idle check interval')}
-                  </FormLabel>
-                  <FormControl>
-                    <Input placeholder="30s" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.anytls.idleCheckIntervalDesc',
-                      'How often to check idle sessions, e.g. 30s.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                  </span>
+                  <Input placeholder="30s" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="idleSessionTimeout"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.anytls.idleTimeout', 'Idle session timeout')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="30s" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.anytls.idleTimeoutDesc',
-                      'Close a session after it stays idle this long, e.g. 30s.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.anytls.idleTimeout', 'Idle session timeout')}
+                  </span>
+                  <Input placeholder="30s" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="minIdleSession"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.anytls.minIdleSession', 'Min idle sessions')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="0"
-                      {...field}
-                      value={field.value ?? ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        field.onChange(val ? parseInt(val) : undefined);
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.anytls.minIdleSessionDesc',
-                      'Minimum idle sessions to keep open. Default 0.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.anytls.minIdleSession', 'Min idle sessions')}
+                  </span>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="0"
+                    {...field}
+                    value={field.value ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      field.onChange(val ? parseInt(val) : undefined);
+                    }}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FieldGrid>

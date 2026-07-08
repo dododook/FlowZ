@@ -2,15 +2,7 @@ import * as z from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormDescription,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { AddressField, PortField } from './shared/basic-fields';
@@ -86,39 +78,37 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
-            <FormField
-              control={form.control}
-              name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.username', 'Username')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Enter username" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.password', 'Password')}</FormLabel>
-                  <FormControl>
-                    <Input type="password" placeholder="Enter password" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </FieldGrid>
-        </FormSection>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FormField
+            control={form.control}
+            name="username"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.username', 'Username')} <span className="nd-req">*</span>
+                </span>
+                <Input placeholder="Enter username" {...field} />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.password', 'Password')} <span className="nd-req">*</span>
+                </span>
+                <Input type="password" className="mono" placeholder="Enter password" {...field} />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+        </FieldGrid>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           <FieldGrid cols={2}>
@@ -127,14 +117,11 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
                 control={form.control}
                 name="tlsServerName"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.sni')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t('servers.sniPlaceholder')} {...field} />
-                    </FormControl>
-                    <FormDescription>{t('servers.sniDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                  <div className="nd-fld">
+                    <span className="nd-fld-lbl">{t('servers.sni')}</span>
+                    <Input placeholder={t('servers.sniPlaceholder')} {...field} />
+                    <FormMessage className="fld-err" />
+                  </div>
                 )}
               />
             </FieldSpan>
@@ -143,18 +130,16 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
                 control={form.control}
                 name="useHttp3"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <FormLabel className="flex items-center gap-1.5">
+                  <div className="nd-swrow">
+                    <div className="nd-swrow-main">
+                      <div className="nd-swrow-t inline-flex items-center gap-1.5">
                         {t('servers.naive.useHttp3', 'HTTP/3 (QUIC)')}
                         <InfoTooltip content={t('servers.naive.useHttp3DescFull')} />
-                      </FormLabel>
-                      <FormDescription>{t('servers.naive.useHttp3Desc')}</FormDescription>
+                      </div>
+                      <div className="nd-swrow-d">{t('servers.naive.useHttp3Desc')}</div>
                     </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </div>
                 )}
               />
             </FieldSpan>

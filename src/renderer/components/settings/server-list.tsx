@@ -1,8 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,32 +12,18 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { SegmentedControl } from '@/components/ui/segmented-control';
-import {
-  Plus,
-  Trash2,
-  Server,
   LayoutGrid,
   List,
   Search,
+  Filter,
   ArrowUpDown,
-  CheckSquare,
-  Square,
-  Copy,
+  ChevronDown,
+  Check,
   Zap,
+  CheckSquare,
+  Copy,
+  Trash2,
+  Plus,
   HardDriveDownload,
 } from 'lucide-react';
 import { generateShareUrl } from '@/bridge/api-wrapper';
@@ -274,175 +257,188 @@ export function ServerList({
     onDelete: handleDelete,
   };
 
+  // 协议过滤 / 排序下拉的展示辅助（纯派生，无状态）
+  const protoCount = (value: string) =>
+    servers.filter((s) => s.protocol.toLowerCase() === value).length;
+  const sortLabel: Record<SortKey, string> = {
+    name: t('servers.sortName'),
+    protocol: t('servers.sortProtocol'),
+    latency: t('servers.sortLatency'),
+    address: t('servers.sortAddress'),
+  };
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortOrder('asc');
+    }
+  };
+  const allSelected = selectedIds.size === filteredServers.length && filteredServers.length > 0;
+
   return (
-    <div className="space-y-4">
-      {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-medium">{t('servers.serverList')}</h3>
-          <p className="text-sm text-muted-foreground">{t('servers.serverListDesc')}</p>
-        </div>
-        <div className="flex gap-2 items-center">
-          {/* 视图切换（复用设计系统 SegmentedControl，与首页接管/分流同款，形+态一致） */}
-          <SegmentedControl<ViewMode>
-            className="w-auto"
-            value={viewMode}
-            onChange={setViewMode}
-            options={[
-              {
-                value: 'card',
-                label: <LayoutGrid className="h-4 w-4" />,
-                title: t('servers.viewCard'),
-              },
-              { value: 'list', label: <List className="h-4 w-4" />, title: t('servers.viewList') },
-            ]}
-          />
-
-          <Button
-            variant="outline"
-            className="flex items-center gap-2"
-            onClick={handleSpeedTest}
-            disabled={isTestingSpeed}
+    <div className="flex flex-col gap-4">
+      {/* 工具栏：双视图切换 + 搜索 + 协议过滤 + 排序 + 本组测速 + 多选 */}
+      <div className="nd-toolbar">
+        <div className="seg2 nd-view">
+          <button
+            type="button"
+            className={viewMode === 'card' ? 'on' : ''}
+            title={t('servers.viewCard')}
+            onClick={() => setViewMode('card')}
           >
-            <Zap className={`h-4 w-4 ${isTestingSpeed ? 'animate-pulse fill-current/20' : ''}`} />
-            {isTestingSpeed
-              ? speedProgress
-                ? `${t('servers.speedTesting')} ${speedProgress.tested}/${speedProgress.total}`
-                : t('servers.speedTesting')
-              : t('servers.speedTestGroup')}
-          </Button>
-
-          {/* 批量选择按钮 */}
-          {showAddButton && (
-            <Button
-              variant={isSelecting ? 'secondary' : 'outline'}
-              size="sm"
-              className="flex items-center gap-1"
-              onClick={() => {
-                setIsSelecting(!isSelecting);
-                setSelectedIds(new Set());
-              }}
-            >
-              <CheckSquare className="h-4 w-4" />
-              {isSelecting ? t('common.cancel') : t('servers.multiSelect')}
-            </Button>
-          )}
+            <LayoutGrid />
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'list' ? 'on' : ''}
+            title={t('servers.viewList')}
+            onClick={() => setViewMode('list')}
+          >
+            <List />
+          </button>
         </div>
-      </div>
 
-      {/* 搜索 + 过滤 + 排序栏 */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <Input
-            className="ps-8 h-9"
+        <label className="nd-search">
+          <Search />
+          <input
+            type="text"
             placeholder={t('servers.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+        </label>
+
+        {/* 协议过滤（CSS-only :focus-within 弹出） */}
+        <div className="nd-dd">
+          <button type="button" className="btn ghost sm nd-dd-btn">
+            <Filter />
+            {t('servers.protocol')}
+            <ChevronDown className="nd-chev" />
+          </button>
+          <div className="nd-menu">
+            <button
+              type="button"
+              className={`nd-mi${filterProtocol === 'all' ? ' on' : ''}`}
+              onClick={() => setFilterProtocol('all')}
+            >
+              {t('servers.allProtocols')}
+              {filterProtocol === 'all' && <Check className="nd-mi-ck" />}
+            </button>
+            {availableProtocols.map((p) => (
+              <button
+                type="button"
+                key={p.value}
+                className={`nd-mi${filterProtocol === p.value ? ' on' : ''}`}
+                onClick={() => setFilterProtocol(p.value)}
+              >
+                {p.label}
+                {filterProtocol === p.value ? (
+                  <Check className="nd-mi-ck" />
+                ) : (
+                  <span className="nd-mi-r tnum">{protoCount(p.value)}</span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <Select value={filterProtocol} onValueChange={setFilterProtocol}>
-          <SelectTrigger className="w-[130px] h-9">
-            <SelectValue placeholder={t('servers.protocol')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('servers.allProtocols')}</SelectItem>
-            {availableProtocols.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 flex items-center gap-1">
-              <ArrowUpDown className="h-3.5 w-3.5" />
-              {t('servers.sort')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {(
-              [
-                ['name', t('servers.sortName')],
-                ['protocol', t('servers.sortProtocol')],
-                ['latency', t('servers.sortLatency')],
-                ['address', t('servers.sortAddress')],
-              ] as [SortKey, string][]
-            ).map(([key, label]) => (
-              <DropdownMenuItem
+        {/* 排序（CSS-only :focus-within 弹出） */}
+        <div className="nd-dd">
+          <button type="button" className="btn ghost sm nd-dd-btn">
+            <ArrowUpDown />
+            {sortLabel[sortKey]}
+            <ChevronDown className="nd-chev" />
+          </button>
+          <div className="nd-menu">
+            {(['name', 'protocol', 'latency', 'address'] as SortKey[]).map((key) => (
+              <button
+                type="button"
                 key={key}
-                onClick={() => {
-                  if (sortKey === key) {
-                    setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
-                  } else {
-                    setSortKey(key);
-                    setSortOrder('asc');
-                  }
-                }}
+                className={`nd-mi${sortKey === key ? ' on' : ''}`}
+                onClick={() => toggleSort(key)}
               >
-                {label} {sortKey === key ? (sortOrder === 'asc' ? '↑' : '↓') : ''}
-              </DropdownMenuItem>
+                {sortLabel[key]}
+                {sortKey === key && (
+                  <span className="nd-mi-r">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                )}
+              </button>
             ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
+            <button
+              type="button"
+              className="nd-mi"
               onClick={() => {
                 setSortKey('name');
                 setSortOrder('asc');
               }}
             >
               {t('servers.resetSort')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </button>
+          </div>
+        </div>
+
+        {/* 本组测速 */}
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={handleSpeedTest}
+          disabled={isTestingSpeed}
+        >
+          <Zap className={isTestingSpeed ? 'animate-pulse fill-current/20' : ''} />
+          {isTestingSpeed
+            ? speedProgress
+              ? `${t('servers.speedTesting')} ${speedProgress.tested}/${speedProgress.total}`
+              : t('servers.speedTesting')
+            : t('servers.speedTestGroup')}
+        </button>
+
+        {/* 多选 */}
+        {showAddButton && (
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => {
+              setIsSelecting(!isSelecting);
+              setSelectedIds(new Set());
+            }}
+          >
+            <CheckSquare />
+            {isSelecting ? t('common.cancel') : t('servers.multiSelect')}
+          </button>
+        )}
       </div>
 
       {/* 批量操作栏 */}
       {isSelecting && (
-        <div className="flex items-center justify-between px-3 py-2 rounded-md bg-muted/60 border">
-          <div className="flex items-center gap-3">
-            <button
-              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-              onClick={toggleSelectAll}
-            >
-              {selectedIds.size === filteredServers.length && filteredServers.length > 0 ? (
-                <CheckSquare className="h-4 w-4" />
-              ) : (
-                <Square className="h-4 w-4" />
-              )}
+        <div className="nd-batch">
+          <label className={`nd-chk${allSelected ? ' on' : ''}`} onClick={toggleSelectAll} />
+          <span className="nd-batch-n">
+            {t('servers.selectedCount', {
+              count: selectedIds.size,
+              total: filteredServers.length,
+            })}
+          </span>
+          <div className="nd-batch-acts">
+            <button type="button" className="btn ghost sm" onClick={toggleSelectAll}>
               {t('servers.selectAll')}
             </button>
-            <span className="text-sm text-muted-foreground">
-              {t('servers.selectedCount', {
-                count: selectedIds.size,
-                total: filteredServers.length,
-              })}
-            </span>
-          </div>
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="flex items-center gap-1"
-                onClick={handleBatchCopy}
-              >
-                <Copy className="h-3.5 w-3.5" />
+            {selectedIds.size > 0 && (
+              <button type="button" className="btn ghost sm" onClick={handleBatchCopy}>
+                <Copy />
                 {t('servers.batchCopyCount', { count: selectedIds.size })}
-              </Button>
+              </button>
+            )}
+            {selectedIds.size > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="flex items-center gap-1"
+                  <button
+                    type="button"
+                    className="btn danger sm"
                     disabled={deletableSelected.length === 0}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 />
                     {t('servers.deleteCount', { count: deletableSelected.length })}
-                  </Button>
+                  </button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -462,51 +458,52 @@ export function ServerList({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => {
+                setIsSelecting(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
         </div>
       )}
 
       {/* 节点列表 */}
       {filteredServers.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Server className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">
-              {servers.length === 0
-                ? showAddButton
-                  ? t('servers.noServers')
-                  : t('servers.noNodes')
-                : t('servers.noMatchingNodes')}
-            </h3>
-            <p className="text-sm text-muted-foreground mb-4 text-center">
-              {servers.length === 0
-                ? showAddButton
-                  ? t('servers.noServersDesc')
-                  : t('servers.noSubNodesDesc')
-                : t('servers.noMatchingDesc')}
-            </p>
-            {servers.length === 0 && showAddButton && (
-              <div className="flex gap-2">
-                <Button onClick={onAddServer} className="flex items-center gap-2">
-                  <Plus className="h-4 w-4" />
-                  {t('servers.manualAdd')}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={onImportClick}
-                  className="flex items-center gap-2"
-                >
-                  <HardDriveDownload className="h-4 w-4" />
-                  {t('servers.importFromLocal')}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="stub">
+          <b>
+            {servers.length === 0
+              ? showAddButton
+                ? t('servers.noServers')
+                : t('servers.noNodes')
+              : t('servers.noMatchingNodes')}
+          </b>
+          {servers.length === 0
+            ? showAddButton
+              ? t('servers.noServersDesc')
+              : t('servers.noSubNodesDesc')
+            : t('servers.noMatchingDesc')}
+          {servers.length === 0 && showAddButton && (
+            <div className="nd-stub-cta flex justify-center gap-2">
+              <button type="button" className="btn flow sm" onClick={onAddServer}>
+                <Plus />
+                {t('servers.manualAdd')}
+              </button>
+              <button type="button" className="btn ghost sm" onClick={onImportClick}>
+                <HardDriveDownload />
+                {t('servers.importFromLocal')}
+              </button>
+            </div>
+          )}
+        </div>
       ) : viewMode === 'card' ? (
         /* ========= 卡片视图 ========= */
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="nd-grid">
           {filteredServers.map((server) => (
             <ServerCard
               key={server.id}
@@ -526,7 +523,7 @@ export function ServerList({
         </div>
       ) : (
         /* ========= 列表视图 ========= */
-        <div className="rounded-md border divide-y">
+        <div className="nd-rows">
           {filteredServers.map((server) => (
             <ServerRow
               key={server.id}

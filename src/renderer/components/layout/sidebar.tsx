@@ -1,19 +1,4 @@
-import {
-  Home,
-  Server,
-  ListFilter,
-  Settings,
-  ChevronLeft,
-  Sliders,
-  Palette,
-  Cpu,
-  Info,
-  Network,
-  ScrollText,
-  FolderDown,
-  Activity,
-  PanelLeft,
-} from 'lucide-react';
+import { ChevronLeft, Sliders, Palette, Cpu, Info, Network, PanelLeft } from 'lucide-react';
 
 // 自定义的分流图标（完整连贯的 Y 型，不带断点）
 function FlowSplitIcon(props: any) {
@@ -43,6 +28,72 @@ import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import { useSidebarStore } from './use-sidebar-store';
 
+// 侧栏导航图标：1:1 复刻设计稿原型内联 SVG（viewBox 24、stroke 1.9、currentColor）。appPolicy 用上方 FlowSplitIcon（已与原型 Y 型一致）。
+type NavIconProps = { className?: string; strokeWidth?: number | string };
+function svgProps(p: NavIconProps) {
+  return {
+    className: p.className,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: p.strokeWidth ?? 1.9,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+  };
+}
+function HomeIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <path d="M3 11l9-8 9 8M5 10v10h14V10" />
+    </svg>
+  );
+}
+function NodesIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <rect x="3" y="10" width="18" height="4" rx="1" />
+      <rect x="3" y="16" width="18" height="4" rx="1" />
+    </svg>
+  );
+}
+function RulesIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <path d="M4 6h16M7 12h10M10 18h4" />
+    </svg>
+  );
+}
+function ResourcesIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <path d="M4 7l8-3 8 3-8 3zM4 7v10l8 3 8-3V7" />
+    </svg>
+  );
+}
+function ConnsIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <path d="M3 12h4l3 8 4-16 3 8h4" />
+    </svg>
+  );
+}
+function LogsIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" />
+    </svg>
+  );
+}
+function SettingsIcon(p: NavIconProps) {
+  return (
+    <svg {...svgProps(p)}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+    </svg>
+  );
+}
+
 interface SidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
@@ -55,23 +106,24 @@ interface SidebarProps {
 const mainNavGroups: { label?: string; items: { id: string; icon: React.ElementType }[] }[] = [
   {
     items: [
-      { id: 'home', icon: Home },
-      { id: 'server', icon: Server },
+      { id: 'home', icon: HomeIcon },
+      { id: 'server', icon: NodesIcon },
     ],
   },
   {
     label: 'routing',
     items: [
+      // 顺序对齐设计稿原型：规则 → 应用分流 → 规则资源
+      { id: 'rules', icon: RulesIcon },
       { id: 'appPolicy', icon: FlowSplitIcon },
-      { id: 'rules', icon: ListFilter },
-      { id: 'ruleResources', icon: FolderDown },
+      { id: 'ruleResources', icon: ResourcesIcon },
     ],
   },
   {
     label: 'diagnostics',
     items: [
-      { id: 'connections', icon: Activity },
-      { id: 'logs', icon: ScrollText },
+      { id: 'connections', icon: ConnsIcon },
+      { id: 'logs', icon: LogsIcon },
     ],
   },
 ];
@@ -127,7 +179,6 @@ export function Sidebar({
         <Icon
           className={`${collapsed ? (isMac ? 'h-[26px] w-[26px]' : 'h-[22px] w-[22px]') : 'h-[16px] w-[16px]'} flex-shrink-0`}
           strokeWidth={isActive ? 2.2 : 1.8}
-          style={{ color: isActive ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))' }}
         />
         {!collapsed && <span>{label}</span>}
       </button>
@@ -136,11 +187,11 @@ export function Sidebar({
 
   return (
     <div
-      className={`${collapsed ? railWidth : 'w-[184px]'} sidebar h-full flex flex-col relative z-20 select-none transition-[width] duration-300 ease-out`}
+      className={`${collapsed ? railWidth : 'w-[158px]'} sidebar h-full flex flex-col relative z-20 select-none transition-[width] duration-300 ease-out`}
     >
       {/* 集成标题栏顶部条：Mac 让出红绿灯(52)、Windows/Linux 让出右上窗口控制按钮(32)、可拖窗。 */}
       {isMac ? (
-        <div className="h-[52px] flex-shrink-0 app-region-drag" />
+        <div className="h-[36px] flex-shrink-0 app-region-drag" />
       ) : (
         <div
           className="h-[32px] flex-shrink-0 app-region-drag"
@@ -151,12 +202,10 @@ export function Sidebar({
         />
       )}
 
-      {/* 折叠 toggle：独立一行置于顶部条下方。
-          —— 不放进顶部条：Mac 收起栏被窗口锚定的红绿灯(~72px)几乎占满，toggle 在栏内会飘出到内容区（布局奇怪）；
-          —— 不放进拖拽区：下方是普通 no-drag 内容，天然可点（无需 Electron drag/no-drag 兜底）。
-          展开左对齐(齐导航项)、收起居中。 */}
+      {/* 折叠 toggle 置顶（首页上方，用户反馈）：紧接拖拽区、与红绿灯小间距（无上 padding + drag 36）。
+          展开左对齐（齐导航项）、收起居中方块。 */}
       <div
-        className={`flex px-2 py-1 app-region-no-drag ${collapsed ? 'justify-center' : 'justify-start'}`}
+        className={`flex px-2 pb-1 app-region-no-drag ${collapsed ? 'justify-center' : 'justify-start'}`}
       >
         <button
           onClick={toggleCollapsed}
@@ -165,19 +214,12 @@ export function Sidebar({
             collapsed ? (isMac ? 'h-[52px] w-[52px]' : 'h-[44px] w-[44px]') : 'h-7 w-7'
           }`}
         >
-          {/* 折叠态与导航项(.nav-item.collapsed)同尺寸方块+图标，使 icon-rail 顶部 toggle 与下方导航整齐对齐
-              （Mac 52/26、Win·Linux 44/22）；展开态保持 28/18 小巧 toggle。 */}
           <PanelLeft
             className={`${collapsed ? (isMac ? 'h-[26px] w-[26px]' : 'h-[22px] w-[22px]') : 'h-[18px] w-[18px]'} rtl-mirror`}
             strokeWidth={1.8}
           />
         </button>
       </div>
-
-      {/* 折叠态：toggle(控制) 与下方导航(目标) 之间补一条边界线，与组间分隔同款。
-          收起后 toggle 被放大成与导航项同尺寸方块，易被误读为首个导航项 → 分隔澄清「控制≠导航」、
-          并使顶部分组节奏与中段(routing/diagnostics 组前分隔)一致。
-          展开态 toggle 为 28px 小按钮、形态已区分，不渲染。 */}
       {collapsed && <div className={RAIL_DIVIDER_CLASS} />}
 
       {isSettings ? (
@@ -225,7 +267,7 @@ export function Sidebar({
                     /* 收起态：分区标题转居中短分隔线，保留分组视觉、不显凌乱 */
                     <div className={RAIL_DIVIDER_CLASS} />
                   ) : (
-                    <div className="px-3 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground select-none">
+                    <div className="whitespace-nowrap px-[11px] pb-[6px] pt-[15px] text-[10px] font-[660] uppercase tracking-[0.09em] text-fg-faint select-none">
                       {t(`sidebar.group.${group.label}`)}
                     </div>
                   ))}
@@ -239,7 +281,7 @@ export function Sidebar({
           {/* Settings pinned to bottom */}
           <div className="pb-4 app-region-no-drag space-y-[6px]">
             {renderNavItem(
-              { id: 'settings', icon: Settings },
+              { id: 'settings', icon: SettingsIcon },
               () => onViewChange('settings'),
               false
             )}

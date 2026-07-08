@@ -2,15 +2,7 @@ import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -160,80 +152,72 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.password')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder={t('servers.passwordPlaceholder')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>{t('servers.trojanPasswordDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FieldSpan>
             <FormField
               control={form.control}
-              name="network"
+              name="password"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.transport')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectTransport')} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="tcp">TCP</SelectItem>
-                      <SelectItem value="ws">WebSocket</SelectItem>
-                      <SelectItem value="grpc">gRPC</SelectItem>
-                      <SelectItem value="httpupgrade">HTTPUpgrade</SelectItem>
-                      <SelectItem value="http">HTTP/2</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>{t('servers.transportDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.password')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    type="password"
+                    className="mono"
+                    placeholder={t('servers.passwordPlaceholder')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
-            <FormField
-              control={form.control}
-              name="security"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.security')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectSecurity')} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">{t('servers.none')}</SelectItem>
-                      <SelectItem value="tls">TLS</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>{t('servers.securityDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </FieldGrid>
-        </FormSection>
+          </FieldSpan>
+          <FormField
+            control={form.control}
+            name="network"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.transport')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('servers.selectTransport')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tcp">TCP</SelectItem>
+                    <SelectItem value="ws">WebSocket</SelectItem>
+                    <SelectItem value="grpc">gRPC</SelectItem>
+                    <SelectItem value="httpupgrade">HTTPUpgrade</SelectItem>
+                    <SelectItem value="http">HTTP/2</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="security"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.security')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('servers.selectSecurity')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t('servers.none')}</SelectItem>
+                    <SelectItem value="tls">TLS</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+        </FieldGrid>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           {isTlsEnabled && <TlsAdvancedFields control={form.control} t={t} alpn="http/1.1" />}

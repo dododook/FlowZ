@@ -1,25 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Server,
-  Network,
-  Rss,
-  ListFilter,
-  Shield,
-  SlidersHorizontal,
-  AlertTriangle,
-} from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
+import { Server, Network, Rss, ListFilter, Shield, SlidersHorizontal } from 'lucide-react';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { BACKUP_CATEGORIES, type BackupCategory } from '../../../shared/backup-categories';
 
 /** 类别 → 图标 + i18n key（节点/订阅/规则复用现有 backup.* 文案，通用设置新增）。 */
@@ -50,7 +33,7 @@ interface BackupCategoryDialogProps {
   onConfirm: (selected: BackupCategory[]) => void;
 }
 
-/** 选择性导入导出的类别勾选对话框（默认全选 + 全选框含半选态）。 */
+/** 选择性导入导出的类别勾选对话框（Conduit `.bk-dialog` 结构；默认全选 + 全选框含半选态）。 */
 export function BackupCategoryDialog({
   open,
   onOpenChange,
@@ -87,69 +70,101 @@ export function BackupCategoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {t(
-              isExport
-                ? 'settings.advanced.backup.selectExportTitle'
-                : 'settings.advanced.backup.selectImportTitle'
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
+        <div className="bk-h">
+          <span className="bk-ico">
+            {isExport ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <path
+                  d="M12 15V3M8 7l4-4 4 4M5 21h14"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <path
+                  d="M12 3v12M8 11l4 4 4-4M5 21h14"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             )}
+          </span>
+          <DialogTitle asChild>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 680 }}>
+              {t(
+                isExport
+                  ? 'settings.advanced.backup.selectExportTitle'
+                  : 'settings.advanced.backup.selectImportTitle'
+              )}
+            </h3>
           </DialogTitle>
-          <DialogDescription>
-            {t(
-              isExport
-                ? 'settings.advanced.backup.selectExportDesc'
-                : 'settings.advanced.backup.selectImportDesc'
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* 高危覆盖操作：恢复模式醒目警示条（破坏性视觉，比 desc 小字辨识度高）。 */}
-        {!isExport && (
-          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
-            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <span className="text-xs">{t('settings.advanced.backup.importWarning')}</span>
-          </div>
-        )}
-
-        <div className="space-y-0.5">
-          {/* 全选 */}
-          <label className="flex items-center gap-2.5 px-2 py-2 mb-1 rounded-md border-b hover:bg-muted/50 cursor-pointer">
-            <Checkbox
-              checked={allChecked ? true : someChecked ? 'indeterminate' : false}
-              onCheckedChange={toggleAll}
-            />
-            <span className="text-sm font-medium">{t('settings.advanced.backup.selectAll')}</span>
-          </label>
-
-          {ordered.map((c) => {
-            const meta = CATEGORY_META[c];
-            const Icon = meta.icon;
-            return (
-              <label
-                key={c}
-                className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-muted/50 cursor-pointer"
-              >
-                <Checkbox checked={selected.has(c)} onCheckedChange={() => toggle(c)} />
-                <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-sm flex-1">{t(meta.i18nKey)}</span>
-                {meta.countable && (
-                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                    {counts[c] ?? 0}
-                  </Badge>
-                )}
-              </label>
-            );
-          })}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+        <div className="bk-body">
+          <DialogDescription asChild>
+            <div className={cn('bk-note', !isExport && 'warn')}>
+              {t(
+                isExport
+                  ? 'settings.advanced.backup.selectExportDesc'
+                  : 'settings.advanced.backup.selectImportDesc'
+              )}
+              {/* 高危覆盖操作：恢复模式追加破坏性警示（比 desc 小字辨识度高）。 */}
+              {!isExport && (
+                <>
+                  {' '}
+                  <b>{t('settings.advanced.backup.importWarning')}</b>
+                </>
+              )}
+            </div>
+          </DialogDescription>
+
+          <div className="bk-cats">
+            {/* 全选（含半选态 indeterminate） */}
+            <label className="bk-cat">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                ref={(el) => {
+                  if (el) el.indeterminate = someChecked;
+                }}
+                onChange={toggleAll}
+              />
+              <span className="bk-cat-tx">
+                <b>{t('settings.advanced.backup.selectAll')}</b>
+              </span>
+            </label>
+
+            {ordered.map((c) => {
+              const meta = CATEGORY_META[c];
+              const Icon = meta.icon;
+              return (
+                <label key={c} className="bk-cat">
+                  <input type="checkbox" checked={selected.has(c)} onChange={() => toggle(c)} />
+                  <Icon className="h-4 w-4 shrink-0" style={{ color: 'hsl(var(--fg-faint))' }} />
+                  <span className="bk-cat-tx">
+                    <b>{t(meta.i18nKey)}</b>
+                  </span>
+                  {meta.countable && <span className="bk-cat-n mono tnum">{counts[c] ?? 0}</span>}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="bk-foot">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
             {t('common.cancel')}
-          </Button>
-          <Button
-            variant={isExport ? 'default' : 'destructive'}
+          </button>
+          <button
+            type="button"
+            className={cn('btn', isExport ? 'flow' : 'danger')}
             disabled={selCount === 0 || busy}
             onClick={() => onConfirm(ordered.filter((c) => selected.has(c)))}
           >
@@ -159,8 +174,8 @@ export function BackupCategoryDialog({
                 : 'settings.advanced.backup.importSelected',
               { count: selCount }
             )}
-          </Button>
-        </DialogFooter>
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );

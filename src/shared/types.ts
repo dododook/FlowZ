@@ -100,6 +100,7 @@ export type {
   TrafficStats,
   IpInfo,
   IpInfoSnapshot,
+  ProxyExitBlock,
   ApiResponse,
   AutoStartStatus,
   PlatformInfo,

@@ -1,0 +1,107 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">FlowZ minimalist app icon final corrected</title>
+  <desc id="desc">A corrected minimalist FlowZ app icon preserving the original F/Z flow monogram with the upper Z diagonal aligned as a clean continuous line.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="120" y1="92" x2="904" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.58" stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#EEF4FB"/>
+    </linearGradient>
+
+    <linearGradient id="topFlow" x1="224" y1="260" x2="876" y2="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22B8E6"/>
+      <stop offset="0.54" stop-color="#18D7D0"/>
+      <stop offset="1" stop-color="#16C8CC"/>
+    </linearGradient>
+
+    <linearGradient id="zFlow" x1="334" y1="360" x2="824" y2="804" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#27BCEB"/>
+      <stop offset="0.52" stop-color="#2589EE"/>
+      <stop offset="1" stop-color="#405BE8"/>
+    </linearGradient>
+
+    <linearGradient id="leftTrace" x1="140" y1="538" x2="415" y2="590" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22C6D9"/>
+      <stop offset="1" stop-color="#229AEF"/>
+    </linearGradient>
+
+    <linearGradient id="rightTrace" x1="520" y1="636" x2="884" y2="570" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B8FEB"/>
+      <stop offset="1" stop-color="#356CE7"/>
+    </linearGradient>
+
+    <filter id="tileShadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#12304A" flood-opacity="0.14"/>
+    </filter>
+
+    <filter id="softLift" x="80" y="120" width="864" height="780" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#1E4D7A" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+
+  <!-- App tile -->
+  <rect x="48" y="48" width="928" height="928" rx="188" fill="url(#bg)" filter="url(#tileShadow)"/>
+  <rect x="49.5" y="49.5" width="925" height="925" rx="186.5" stroke="#E8EEF6" stroke-width="3"/>
+
+  <!-- Minimal routing traces, intentionally placed behind the monogram -->
+  <g stroke-linecap="round" stroke-linejoin="round" filter="url(#softLift)">
+    <path d="M172 542H264C316 542 304 594 364 594H407" stroke="url(#leftTrace)" stroke-width="13"/>
+    <circle cx="154" cy="542" r="28" fill="#FAFDFF" stroke="url(#leftTrace)" stroke-width="13"/>
+
+    <path d="M522 636H610C684 636 650 574 728 574H850" stroke="url(#rightTrace)" stroke-width="13"/>
+    <circle cx="872" cy="574" r="28" fill="#FAFDFF" stroke="url(#rightTrace)" stroke-width="13"/>
+  </g>
+
+  <!-- FlowZ F/Z monogram -->
+  <g filter="url(#softLift)">
+    <!-- Upper flow / F top stroke -->
+    <path fill="url(#topFlow)" d="
+      M224 430
+      C224 306 317 246 414 246
+      H758
+      V202
+      L874 306
+      L758 410
+      V366
+      H414
+      C348 366 283 380 224 430
+      Z"/>
+
+    <!-- Middle F hint -->
+    <path fill="url(#zFlow)" opacity="0.94" d="
+      M284 516
+      C284 440 338 394 415 394
+      H694
+      L633 476
+      H424
+      C362 476 315 486 284 516
+      Z"/>
+
+    <!-- Main Z / lower directional flow: original silhouette with smoother lower Z turn -->
+    <path fill="url(#zFlow)" d="
+      M415 394
+      H694
+      L492 666
+      C474 686 489 718 518 718
+      H742
+      C750 718 756 712 756 704
+      V678
+      L846 758
+      L756 838
+      V812
+      C756 804 750 798 742 798
+      H356
+      C318 798 295 755 321 724
+      L538 486
+      C542 481 538 476 531 476
+      H424
+      C362 476 315 486 284 516
+      V470
+      C284 427 324 394 415 394
+      Z"/>
+  </g>
+
+  <!-- Subtle highlight to keep the vector clean but not flat-dead -->
+  <path d="M345 734L575 478" stroke="white" stroke-opacity="0.28" stroke-width="9" stroke-linecap="round"/>
+</svg>

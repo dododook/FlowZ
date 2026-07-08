@@ -1,9 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Search, X, RotateCw } from 'lucide-react';
+import { Search, RotateCw } from 'lucide-react';
 
 interface GeoTagPickerProps {
   /** 可选分类名（已按 kind 过滤 + 去重 + 排序，来自 catalog）。 */
@@ -23,9 +20,10 @@ interface GeoTagPickerProps {
 const MAX_VISIBLE = 50;
 
 /**
- * geosite / geoip 分类多选选择器：从规则资源 catalog 受限选择，替代自由文本。
+ * geosite / geoip 分类多选选择器（Conduit `.ms` 芯片 + `.ico-search`）：从规则资源 catalog 受限选择，替代自由文本。
  * 自由文本会让 typo/不存在的分类 → 运行时 remote rule_set 404 → sing-box FATAL 崩整个代理；
  * 受限选择把可选项约束到源上真实存在的标准 geo 分类，从源头消灭该 footgun。
+ * 已选项恒显为选中 `.ms` 芯片（再点取消）；搜索时下方列出匹配项（未下载项带标注），点选即加入。
  */
 export function GeoTagPicker({
   options,
@@ -48,69 +46,62 @@ export function GeoTagPicker({
       .slice(0, MAX_VISIBLE);
   }, [options, value, q]);
 
-  const add = (tag: string) => {
-    if (!value.includes(tag)) onChange([...value, tag]);
-    setQuery('');
+  const toggle = (tag: string) => {
+    if (value.includes(tag)) onChange(value.filter((tg) => tg !== tag));
+    else {
+      onChange([...value, tag]);
+      setQuery('');
+    }
   };
-  const remove = (tag: string) => onChange(value.filter((tg) => tg !== tag));
 
   return (
-    <div className="space-y-2 rounded-lg border border-muted-foreground/10 bg-muted/20 p-2">
-      {/* 已选 chips */}
+    <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface-2 p-2">
+      {/* 已选 chips（选中态 `.ms`，`::before` ✓ 由 CSS 加；点击取消） */}
       {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="ms">
           {value.map((tag) => (
-            <Badge key={tag} variant="secondary" className="gap-1 pe-1 font-normal">
+            <label key={tag}>
+              <input type="checkbox" checked onChange={() => toggle(tag)} />
               {tag}
-              <button
-                type="button"
-                onClick={() => remove(tag)}
-                className="rounded-full p-0.5 hover:bg-foreground/10"
-                aria-label={`remove ${tag}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </Badge>
+            </label>
           ))}
         </div>
       )}
 
       {/* 搜索 */}
-      <div className="relative">
-        <Search className="absolute start-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
+      <label className="ico-search">
+        <Search />
+        <input
+          type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          className="h-9 border-none bg-background/60 ps-8 text-sm focus-visible:ring-1"
         />
-      </div>
+      </label>
 
       {/* 匹配列表（仅在搜索时展开，保持紧凑） */}
       {q && (
-        <div className="max-h-40 overflow-y-auto rounded-md border border-muted-foreground/10 bg-background/40">
+        <div className="max-h-40 overflow-y-auto">
           {loading ? (
-            <div className="px-3 py-3 text-center text-xs text-muted-foreground">
+            <div className="px-1 py-3 text-center text-xs text-fg-faint">
               {t('rules.customApp.geoLoading', '加载分类…')}
             </div>
           ) : matches.length > 0 ? (
-            matches.map((o) => (
-              <button
-                key={o}
-                type="button"
-                onClick={() => add(o)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-start text-xs hover:bg-muted/60"
-              >
-                <span className="truncate">{o}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {localTags?.has(o)
-                    ? t('rules.customApp.geoLocalMark', '本地')
-                    : t('rules.customApp.geoRemoteMark', '未下载')}
-                </span>
-              </button>
-            ))
+            <div className="ms">
+              {matches.map((o) => (
+                <label key={o}>
+                  <input type="checkbox" checked={false} onChange={() => toggle(o)} />
+                  {o}
+                  <span className="ms-1 text-[9.5px] text-fg-faint">
+                    {localTags?.has(o)
+                      ? t('rules.customApp.geoLocalMark', '本地')
+                      : t('rules.customApp.geoRemoteMark', '未下载')}
+                  </span>
+                </label>
+              ))}
+            </div>
           ) : (
-            <div className="px-3 py-3 text-center text-xs text-muted-foreground">
+            <div className="px-1 py-3 text-center text-xs text-fg-faint">
               {t('rules.customApp.geoNoMatch', '无匹配分类')}
             </div>
           )}
@@ -119,26 +110,24 @@ export function GeoTagPicker({
 
       {/* 友好提示：选中的「未下载」分类会在保存时下载进规则资源（与路由生成本地优先联动） */}
       {value.some((tg) => !localTags?.has(tg)) && (
-        <p className="text-[10px] leading-tight text-muted-foreground">
+        <p className="text-[10px] leading-tight text-fg-faint">
           {t('rules.customApp.geoUnsavedHint', '「未下载」的分类将在保存时下载到规则资源')}
         </p>
       )}
 
       {/* 刷新全量（内置/缓存只含精选） */}
       {onRefresh && (
-        <Button
+        <button
           type="button"
-          variant="link"
-          size="sm"
           onClick={onRefresh}
           disabled={refreshing}
-          className="h-auto p-0 text-[10px] text-muted-foreground"
+          className="inline-flex items-center gap-1 self-start text-[10px] text-fg-faint hover:text-fg-dim disabled:opacity-60"
         >
-          <RotateCw className={`me-1 h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+          <RotateCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
           {refreshing
             ? t('rules.customApp.geoRefreshing', '加载中…')
             : t('rules.customApp.geoLoadFull', '加载完整分类清单')}
-        </Button>
+        </button>
       )}
     </div>
   );

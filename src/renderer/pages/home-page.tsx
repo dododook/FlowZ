@@ -1,11 +1,42 @@
 import { ConnectionControlCard } from '@/components/home/connection-control-card';
-import { NetworkInfoCard } from '@/components/home/network-info-card';
 import { ConnectionTopology } from '@/components/home/connection-topology';
-import { HomeStatusBar } from '@/components/home/home-status-bar';
-import { PageHeader } from '@/components/page-header';
 import { useAppStore } from '@/store/app-store';
 import { HomePageSkeleton } from './home-page-skeleton';
 import { useTranslation } from 'react-i18next';
+
+const TAKEOVER_LABEL_KEY: Record<string, string> = {
+  systemProxy: 'home.takeoverSystemProxy',
+  tun: 'home.takeoverTun',
+  manual: 'home.takeoverManual',
+};
+const ROUTING_LABEL_KEY: Record<string, string> = {
+  smart: 'home.routingSmart',
+  global: 'home.routingGlobal',
+  direct: 'home.routingDirect',
+};
+
+/**
+ * 页头 `.sub` 实时摘要：接管方式 · 分流策略 · 运行时长（仅连接态且有 uptime）。
+ * 独立订阅 connectionStatus 的 running/uptime（uptime 每 ~2s 变）——隔离在本小组件内，
+ * 使轮询重渲不外溢到 HomePage / ConnectionTopology（沿用拓扑 F17 隔离意图）。
+ */
+function HomeHeaderSub() {
+  const { t } = useTranslation();
+  const proxyModeType = useAppStore(
+    (s) => s.config?.proxyModeType || s.connectionStatus?.proxyModeType || 'systemProxy'
+  );
+  const proxyMode = useAppStore((s) => s.config?.proxyMode || 'smart');
+  const running = useAppStore((s) => s.connectionStatus?.proxyCore?.running ?? false);
+  const uptime = useAppStore((s) => s.connectionStatus?.proxyCore?.uptime);
+
+  const parts = [
+    t(TAKEOVER_LABEL_KEY[proxyModeType] ?? 'home.takeoverSystemProxy'),
+    t(ROUTING_LABEL_KEY[proxyMode] ?? 'home.routingSmart'),
+    running && uptime ? t('home.uptime', { min: Math.floor(uptime / 60) }) : '',
+  ].filter(Boolean);
+
+  return <span className="sub">{parts.join(' · ')}</span>;
+}
 
 export function HomePage() {
   const { t } = useTranslation();
@@ -16,20 +47,17 @@ export function HomePage() {
   if (!config) return <HomePageSkeleton />;
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title={t('home.pageTitle')} description={t('home.pageDesc')} />
+    <div className="flex min-h-0 flex-1 flex-col gap-4" data-page="home">
+      <div className="page-h">
+        <h1>{t('home.pageTitle')}</h1>
+        <HomeHeaderSub />
+      </div>
 
-      {/* 连接控制卡（合并原状态卡 + 代理控制卡）：出口节点 .npick + 连接圆钮三态 + 接管/分流分段 */}
+      {/* 连接控制卡（合并原状态卡 + 代理控制卡）：出口节点 .npick + 连接圆钮三态 + 接管/分流 seg2 */}
       <ConnectionControlCard />
 
-      {/* 网络信息卡：导流脊 + 双出口 IP + 遥测（保留全部功能） */}
-      <NetworkInfoCard />
-
-      {/* 连接拓扑 hero：三列桑基，随窗口高自适应 */}
+      {/* 连接拓扑 hero：三列桑基前置为视觉主体，随窗口高自适应。状态栏已固化为窗口级底栏（main-layout） */}
       <ConnectionTopology />
-
-      {/* 状态栏：粘底聚合当前态（出口按连接分态） */}
-      <HomeStatusBar />
     </div>
   );
 }

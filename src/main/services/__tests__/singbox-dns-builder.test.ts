@@ -107,7 +107,13 @@ describe('buildDnsConfig — P4b Tailscale 按名解析', () => {
   it('根治 §3.5：resolveByName 的 TS 未发射（不在 pendingEndpoints）→ 不注入（防悬空引用 FATAL）', () => {
     const idToTagMap = buildIdToTagMap([tsNode()]);
     // 不传 pendingEndpoints（默认 []）= TS endpoint 未发射 → tailnet 解析跳过
-    const dns = buildDnsConfig(baseConfig([tsNode()], 'ts1'), 'proxy-selector', null, idToTagMap, noopLog);
+    const dns = buildDnsConfig(
+      baseConfig([tsNode()], 'ts1'),
+      'proxy-selector',
+      null,
+      idToTagMap,
+      noopLog
+    );
     expect(dns.servers.find((s) => s.type === 'tailscale')).toBeUndefined();
     expect(dns.rules!.some((r) => r.preferred_by)).toBe(false);
   });

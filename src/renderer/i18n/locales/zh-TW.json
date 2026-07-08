@@ -57,16 +57,19 @@
     "restoreDefault": "恢復預設",
     "moreInfo": "更多資訊",
     "search": "搜尋",
-    "noResults": "無相符項目"
+    "noResults": "無相符項目",
+    "apply": "套用",
+    "remove": "移除",
+    "copy": "複製"
   },
   "sidebar": {
-    "home": "首頁",
-    "logs": "即時記錄",
-    "connections": "連線資訊",
-    "server": "伺服器",
-    "appPolicy": "應用程式分流",
+    "home": "主頁",
+    "logs": "記錄",
+    "connections": "連線",
+    "server": "節點",
+    "appPolicy": "應用分流",
     "ruleResources": "規則資源",
-    "rules": "路由規則",
+    "rules": "規則",
     "settings": "設定",
     "collapse": "收合側欄",
     "expand": "展開側欄",
@@ -76,13 +79,13 @@
     }
   },
   "logs": {
-    "pageTitle": "即時記錄",
+    "pageTitle": "記錄",
     "pageDesc": "檢視 sing-box 核心與應用程式執行記錄",
     "settingsTitle": "記錄與診斷",
     "currentLevel": "層級"
   },
   "connections": {
-    "pageTitle": "連線資訊",
+    "pageTitle": "連線",
     "pageDesc": "即時檢視活動連線及逐連線速率",
     "active": "活躍連線",
     "live": "即時",
@@ -228,9 +231,36 @@
       "placeholder": "選擇規則集",
       "search": "搜尋規則集",
       "noMatch": "沒有符合的規則集"
-    }
+    },
+    "accelHintCustom": "自填鏡像網域",
+    "accelHintDirect": "官方源 · 可能較慢",
+    "accelHintPreset": "鏡像加速",
+    "autoUpdateOffHint": "已關閉，資源需手動更新",
+    "autoUpdateOnHint": "已開啟，按所選間隔在背景重新整理已下載資源",
+    "catalogTruncatedNote": "清單較多，僅顯示前 {{shown}} 項符合（共 {{total}} 項）· 用搜尋縮小範圍",
+    "customDomainLabel": "自訂加速網域",
+    "dismiss": "忽略",
+    "downloadingBadge": "下載中",
+    "downloadMethod": "下載方式",
+    "failedBadge": "失敗",
+    "ghProxyHint": "留空回退直連；下載失敗自動回退直連兜底。",
+    "ghProxySmall": "資源經此處下載",
+    "libSelected": "已選 {{n}} 項",
+    "refGroupCount": "{{n}} 條",
+    "refKindApp": "應用程式",
+    "refKindRoute": "路由",
+    "refNone": "未引用",
+    "searchDownloaded": "搜尋資源…",
+    "searchEmpty": "找不到符合的資源",
+    "summaryCount": "共 {{n}} 項",
+    "summaryMissing": "{{n}} 項缺失",
+    "tableUsage": "佔用",
+    "urlRequired": "必填"
   },
   "home": {
+    "takeoverHint": "怎麼進",
+    "routingHint": "怎麼分",
+    "topologyHint": "右鍵網域可一鍵新增規則",
     "connectionStatus": "連線狀態",
     "directGlobalHint": "全域直連：未命中規則的流量直連，僅按規則走代理",
     "selectServer": "選擇伺服器",
@@ -250,7 +280,7 @@
     "stopProxy": "關閉代理",
     "startProxy": "開啟代理",
     "scrollToBottom": "捲動到底部",
-    "pageTitle": "首頁",
+    "pageTitle": "主頁",
     "pageDesc": "連線狀態和快速操作",
     "statusError": "錯誤",
     "statusUnknown": "未知",
@@ -308,21 +338,10 @@
     "logLines": "{{count}} 行",
     "logLinesFiltered": "{{shown}} / {{total}}",
     "logLinesFilteredTitle": "符合 / 緩衝總行數",
-    "networkInfo": "網路資訊",
-    "localExit": "本地出口",
-    "proxyExit": "代理出口",
-    "detecting": "檢測中…",
-    "directLabel": "直連",
     "upload": "上行",
     "download": "下行",
-    "activeConnections": "活動連線",
-    "ipNotConnected": "未連線",
     "ipFetchFailed": "取得失敗",
-    "ipProxyUnavailable": "代理出口暫不可用",
-    "ipLocalUnavailable": "本地出口暫不可用",
-    "refreshIp": "重新整理",
-    "maskIp": "隱藏 IP",
-    "ipStale": "部分出口 IP 取得失敗，顯示為上次結果",
+    "exitInvalid": "出口無效",
     "loading": "載入中...",
     "noActiveConnections": "暫無活動連線",
     "addToRule": "加入自訂規則",
@@ -341,8 +360,10 @@
     "speedTestNoResult": "已測 {{count}} 個節點 · 均逾時",
     "tsExitNoDeviceWarn": "已設為出口，但未選擇出口裝置，外網流量仍走直連。",
     "tsExitDeviceOfflineWarn": "出口裝置目前離線，外網可能無法經 Tailscale 出網。",
+    "tsExitNotAdvertisedWarn": "所選出口裝置未廣告為出口節點，外網無法經其出網，請改用一台已廣告出口的裝置。",
     "tsExitPickDevice": "選擇出口裝置",
-    "exitNode": "出口節點"
+    "exitNode": "出口節點",
+    "reprobeExit": "重新檢測出口"
   },
   "settings": {
     "nav": {
@@ -377,7 +398,13 @@
       "privacyPasswordPlaceholder": "設定解鎖密碼(留空則全螢幕單擊解鎖)",
       "successUpdate": "設定已儲存",
       "failUpdate": "儲存設定失敗",
-      "clearPassword": "清除密碼"
+      "clearPassword": "清除密碼",
+      "startupSub": "應用程式啟動與系統匣行為",
+      "autoStartDesc": "登入系統時自動執行 FlowZ",
+      "autoConnectDesc": "還原上次的出口節點與接管方式並連線",
+      "behaviorSub": "更新提示、視窗與隱私遮罩",
+      "autoCheckUpdateDesc": "發現新版本時在關於頁提示",
+      "rememberWindowSizeDesc": "下次開啟時還原上次的視窗版面"
     },
     "coreVersion": {
       "changedTitle": "sing-box 核心已更新",
@@ -447,7 +474,22 @@
       "uninstallConfirmBtn": "完全解除安裝",
       "uninstallFail": "解除安裝失敗",
       "restrictCoreUpdateDescFull": "關閉後「檢查更新」可發現跨版本帶新版，仍需手動確認安裝；自動更新始終只在帶內，不受此項影響。",
-      "autoUpdateDescFull": "僅在相容版本帶內自動更新；跨大版本需手動確認。執行中只下載暫存，不打斷連線。"
+      "autoUpdateDescFull": "僅在相容版本帶內自動更新；跨大版本需手動確認。執行中只下載暫存，不打斷連線。",
+      "sourceOfficial": "官方",
+      "sourceFork": "第三方",
+      "sourceUnknown": "未知",
+      "cardSub": "sing-box 版本、來源與更新",
+      "sourceDesc": "核心來源：官方 / 第三方 / 未知 自動識別",
+      "srcNoteOfficial": "GitHub 線上更新可用",
+      "srcNoteFork": "禁線上 / 自動更新",
+      "srcNoteUnknown": "無法確認，僅提示",
+      "backupVersionDesc": "升級失敗或異常時可回復至此版本",
+      "manualReplaceDesc": "匯入本地 sing-box 可執行檔（同版本 / 覆蓋基線需二次確認）",
+      "selectFile": "選擇檔案…",
+      "resetFactoryRowDesc": "還原隨 App 出廠的官方核心版本",
+      "resetShort": "重設",
+      "uninstallRowDesc": "移除核心、助手、設定與全部本地資料",
+      "uninstallShort": "完全解除安裝"
     },
     "appearance": {
       "title": "外觀",
@@ -459,7 +501,11 @@
       "language": "語言",
       "languageAuto": "自動（跟隨系統）",
       "themeUpdated": "主題已更新",
-      "languageUpdated": "已切換為繁體中文"
+      "languageUpdated": "已切換為繁體中文",
+      "themeSub": "跟隨系統或手動鎖定明暗",
+      "themeRowLabel": "配色主題",
+      "languageSub": "介面顯示語言，切換即時生效",
+      "languageRowLabel": "顯示語言"
     },
     "network": {
       "title": "網路",
@@ -485,7 +531,15 @@
       "webrtcLeakBlock": "阻斷",
       "webrtcLeakTunOnlyHint": "WebRTC 防洩漏僅在 TUN 模式生效，請切換到 TUN 模式後啟用。",
       "meshLoginFallback": "組網登入期出口讓位",
-      "meshLoginFallbackDesc": "所選 Tailscale 出口尚未連接時，登入/授權期間預設路由暫時走直連（避免授權頁被導向未連上的出口而卡死），連接成功後自動切回該出口。關閉則登入期不直連（寧可授權失敗也不產生直連流量）。"
+      "meshLoginFallbackDesc": "所選 Tailscale 出口尚未連接時，登入/授權期間預設路由暫時走直連（避免授權頁被導向未連上的出口而卡死），連接成功後自動切回該出口。關閉則登入期不直連（寧可授權失敗也不產生直連流量）。",
+      "dnsCardSub": "網域解析、FakeIP 與節點解析器",
+      "localProxyLanSub": "連接埠、LAN 共享與 TUN 排除",
+      "onlyTun": "僅 TUN",
+      "onlyTunLinuxMac": "僅 TUN · Linux / macOS",
+      "onlyLinux": "僅 Linux",
+      "tunModeSub": "虛擬網卡網路堆疊（僅 TUN 接管時顯示）",
+      "connectionSub": "切換行為與 QUIC / TLS / IPv6 治理",
+      "updateAndSpeedTestSub": "訂閱自動更新、更新流量走向與測速端點"
     },
     "proxyMode": {
       "systemProxyMode": "系統代理模式",
@@ -580,7 +634,7 @@
       "subProxyPolicyFollow": "跟隨訂閱設定",
       "subProxyPolicyProxy": "全部經代理",
       "subProxyPolicyDirect": "全部直連",
-      "singboxDashboard": "sing-box 官方面板",
+      "singboxDashboard": "面板",
       "singboxDashboardDesc": "可選：本機 serve sing-box 官方面板，作為進階使用者/除錯的全功能逃生艙。預設關閉。",
       "openDashboard": "開啟面板",
       "dashboardNeedsNetwork": "面板隨包內建、開啟即時離線可用；點「開啟面板」在應用內視窗直連，無需手填後端。secret 與 API Secret 相同。",
@@ -718,7 +772,11 @@
       "nodeResolverErrDomain": "僅支援純 IP，不支援網域",
       "nodeResolverErrDuplicate": "該上游已存在",
       "nodeResolverSingleLabel": "解析上游",
-      "nodeResolverSingleHint": "單上游，無並行容錯（退回單點 DNS）。"
+      "nodeResolverSingleHint": "單上游，無並行容錯（退回單點 DNS）。",
+      "nodeResolverRaceGroup": "競速組",
+      "nodeResolverRaceGroupCap": "加密 · 上限 3",
+      "singboxDashboardCardSub": "sing-box 原生控制 API",
+      "singboxDashboardEnable": "啟用外部控制"
     },
     "about": {
       "title": "關於",
@@ -761,7 +819,8 @@
       "checking": "檢查中...",
       "updating": "更新中...",
       "checkUpdate": "檢查更新",
-      "downloading": "正在下載更新..."
+      "downloading": "正在下載更新...",
+      "updateAvailable": "可更新 {{version}}"
     }
   },
   "servers": {
@@ -1242,7 +1301,20 @@
     "meshLoginFallbackTitle": "組網登入期已暫時直連",
     "meshLoginFallbackDesc": "所選 Tailscale 出口尚未連接，登入/授權期間流量暫走直連；連接成功後自動切回該出口。",
     "meshLoginFallbackRestored": "已連接「{{name}}」，已切回該出口",
-    "tsConnCardOpenLogin": "開啟登入頁"
+    "tsConnCardOpenLogin": "開啟登入頁",
+    "nodeCountSummary": "共 {{total}} · 自建 {{manual}} · 組網 {{mesh}} · 訂閱 {{sub}}",
+    "expireAt": "到期 {{date}}",
+    "realityRequiredWhen": "security=Reality",
+    "meshAccessEntryHint": "Tailscale / WARP 已接入可在此管理，WireGuard 可繼續新增",
+    "meshWgAddSub": ".conf 匯入 / 手動填寫",
+    "meshWarpManageTitle": "WARP 帳戶管理",
+    "meshJoinedTag": "已接入",
+    "meshWarpManageSub": "重新註冊 / 註銷裝置",
+    "meshWarpAddSub": "註冊匿名裝置接入",
+    "meshTsManageSub": "設定 · 登出 / 切換帳戶",
+    "meshTsKeyReadySub": "設定 · 刪除",
+    "meshTsAddSub": "互動登入 / AuthKey",
+    "meshTsEntryTitle": "Tailscale 組網接入與帳戶管理"
   },
   "rules": {
     "ruleColumn": "規則",
@@ -1257,7 +1329,7 @@
     "ruleDeleted": "規則已刪除",
     "delete": "刪除",
     "valueLabel": "符合值",
-    "processHint": "僅本機發起的連線可識別處理程序",
+    "processHint": "僅本機發起的連線可識別處理程序，區分大小寫",
     "invalidInline": "格式不正確：{{values}}",
     "commonTags": "常用標籤",
     "typeHints": {
@@ -1435,7 +1507,8 @@
       "nodeLocked": "已鎖定出口",
       "ruleSetLabel": "規則集",
       "ruleSetSub": "geosite / geoip / 進程名",
-      "download": "下載"
+      "download": "下載",
+      "policyClickHint": "點擊切換"
     },
     "apps": {
       "youtube": "YouTube",
@@ -1538,14 +1611,33 @@
       "goToResources": "沒有規則集？前往「規則資源」下載更多",
       "processLabel": "進程名",
       "processPlaceholder": "App.exe, appname",
-      "processHint": "選填 · 以逗號分隔，比 geo 網域比對更精準",
+      "processHint": "選填 · 以逗號分隔，比 geo 網域比對更精準。區分大小寫，建議使用「從處理程序選擇」取得準確名稱。",
       "geoAutoDownloadNote": "選中的 geosite / geoip 規則集若本機缺失，新增時將自動下載（fail-closed：下載完成前該應用程式的 geo 比對不生效，進程名比對不受影響）。",
-      "save": "儲存應用程式"
+      "save": "儲存應用程式",
+      "categoryFieldHint": "歸入對應分類組，選「自訂…」新建分類組",
+      "geoipFieldHint": "IP 段比對 · 多選",
+      "geositeFieldHint": "網域比對 · 多選",
+      "iconEmojiGroup": "emoji 備用",
+      "iconFallbackHint": "遠端圖示載入失敗時，自動回退為應用程式名首字母。",
+      "iconFieldHint": "遠端圖示 / emoji / URL，載入失敗回退首字母",
+      "iconLetterFallback": "首字母圖示",
+      "iconRemoteGroup": "遠端圖示",
+      "iconUrlGroup": "或貼上圖示 URL",
+      "nameReq": "必填",
+      "processFieldHint": "選填 · 以逗號分隔"
     },
     "errorRemarksRequired": "請填寫備註名",
     "multiCondition": "多條件",
     "policyLabel": "策略",
-    "unnamedRule": "未命名規則"
+    "unnamedRule": "未命名規則",
+    "appRoutingReenable": "重新啟用",
+    "chainStepBypassLan": "略過區域網路",
+    "chainStepDefault": "預設出口",
+    "chainStepSmart": "智慧分流",
+    "conditionCount": "{{count}} 條",
+    "disabledBadge": "已停用",
+    "orderDraftUnsaved": "未儲存的排序草稿",
+    "viewDensity": "檢視密度"
   },
   "sub": {
     "requireName": "請輸入訂閱名稱",

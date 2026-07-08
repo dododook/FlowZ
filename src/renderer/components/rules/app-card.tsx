@@ -1,10 +1,10 @@
 /**
- * 单张应用分流卡片 —— 从 app-rules-card 抽出（可读性 + 每卡独立「正在选指定节点」局部态）。
- * 展开式：卡首摘要（图标 + 名 + 分类 · 副文 + 当前策略 dot+文字）→ 展开四态策略矩阵（代理/直连/阻止/指定节点）
- * + 指定节点一步 `.npick` 下拉（选中即回填卡首摘要）+ 规则集 chips + fail-closed 缺失说明。
+ * 单张应用分流卡片（Conduit `<details class="app-card">`）—— 卡首 `.ac-face`（图标 + 名 + 分类·副文 + 当前策略 dot+文字 + chev）
+ * 经原生 `<details>` 展开为 `.ac-body`：四态策略矩阵 `.matrix`（代理/直连/阻止/指定节点，原生 radio + `.pol`，选中态 `:has(input:checked)`）
+ * + 指定节点 `.npick` 下拉（`.node-sel`，由 `:has(.pol-node input:checked)` CSS 揭示）+ 规则集 `.chips` + fail-closed 缺失 `.ac-warn`。
  * 不新增 store action：策略变更统一回调 onPolicyChange（值口径同 handlePolicyChange：proxy-default/direct/block/node-<id>）。
+ * 视图密度（舒适/紧凑）由父级 `.ap-viewseg` + 反应式 CSS 排版，本卡不再按 viewMode 分支尺寸。
  */
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Trash2, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ import { NodePicker, type NodePickerGroup, type NodePickerItem } from '@/compone
 import { iconProxySrc } from '../../../shared/icon-proxy';
 import type { AppRule } from '../../../shared/types';
 import { resolveAppIcon, type AppPolicyKind, type DisplayAppPreset } from './app-rules-logic';
+import { FOLLOW_GLOBAL_NODE_ID } from './rule-dialog-logic';
 
 interface AppCardProps {
   preset: DisplayAppPreset;
@@ -27,7 +28,6 @@ interface AppCardProps {
   nodeLabel?: string;
   targetItems: NodePickerItem[];
   targetGroups: NodePickerGroup[];
-  viewMode: 'comfortable' | 'compact';
   iconFailed: boolean;
   onIconError: () => void;
   /** 值口径同 handlePolicyChange：'proxy-default' | 'direct' | 'block' | `node-${id}`。 */
@@ -38,18 +38,12 @@ interface AppCardProps {
   onGoToResources: () => void;
 }
 
-const DOT_CLASS: Record<AppPolicyKind, string> = {
-  proxy: 'bg-primary',
-  node: 'bg-primary',
-  direct: 'bg-success',
-  block: 'bg-destructive',
-};
-
-const TEXT_CLASS: Record<AppPolicyKind, string> = {
-  proxy: 'text-primary',
-  node: 'text-primary',
-  direct: 'text-success',
-  block: 'text-destructive',
+/** 四态派生 → 卡首 `.ac-policy` / `.pdot` 语义色（node 复用 proxy teal）。 */
+const FACE_CLASS: Record<AppPolicyKind, 'proxy' | 'direct' | 'block'> = {
+  proxy: 'proxy',
+  node: 'proxy',
+  direct: 'direct',
+  block: 'block',
 };
 
 export function AppCard({
@@ -62,7 +56,6 @@ export function AppCard({
   nodeLabel,
   targetItems,
   targetGroups,
-  viewMode,
   iconFailed,
   onIconError,
   onPolicyChange,
@@ -70,15 +63,14 @@ export function AppCard({
   onGoToResources,
 }: AppCardProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-  // 局部「正在选指定节点」：点「指定节点」瓦片即揭示下拉但先不提交（未选节点前仍是跟随全局）；选中节点才写回。
-  const [pickingNode, setPickingNode] = useState(false);
-
-  const showPicker = policyKind === 'node' || pickingNode;
-  const activeKind: AppPolicyKind = showPicker ? 'node' : policyKind;
+  // 策略模型对齐路由规则（用户反馈）：3 态 代理/直连/阻断。「代理」态下方揭示节点选择器（跟随全局哨兵=proxy-default /
+  // 具体节点=node-<id>），不再单列「指定节点」瓦片。proxyActive = 代理瓦片选中（policyKind 为 proxy 或 node）。
+  const proxyActive = policyKind === 'proxy' || policyKind === 'node';
 
   const icon = resolveAppIcon(preset, preset.id, iconFailed ? new Set([preset.id]) : undefined);
+  const isLetterIcon = icon.type === 'emoji' && /^[A-Za-z0-9]$/.test(icon.char);
 
+  const faceKind = FACE_CLASS[policyKind];
   const faceLabel =
     policyKind === 'node'
       ? nodeLabel || t('rules.proxy')
@@ -88,203 +80,170 @@ export function AppCard({
           ? t('rules.block')
           : t('rules.proxy');
 
-  const chips: { text: string; kind: 'geosite' | 'geoip' | 'proc' }[] = [
-    ...preset.geositeTags.map((g) => ({ text: `geosite:${g}`, kind: 'geosite' as const })),
-    ...(preset.geoipTags || []).map((g) => ({ text: `geoip:${g}`, kind: 'geoip' as const })),
-    ...(preset.processNames || []).map((p) => ({ text: p, kind: 'proc' as const })),
+  const chips: { text: string; proc: boolean }[] = [
+    ...preset.geositeTags.map((g) => ({ text: `geosite:${g}`, proc: false })),
+    ...(preset.geoipTags || []).map((g) => ({ text: `geoip:${g}`, proc: false })),
+    ...(preset.processNames || []).map((p) => ({ text: p, proc: true })),
   ];
 
   const selectTile = (kind: AppPolicyKind) => {
-    if (kind === 'node') {
-      setPickingNode(true);
+    // 代理：切到代理态——默认跟随全局；已是代理/指定节点则不动（下方 picker 承接节点选择）。直连/阻断：直接提交。
+    if (kind === 'proxy') {
+      if (!proxyActive) onPolicyChange('proxy-default');
       return;
     }
-    setPickingNode(false);
-    onPolicyChange(kind === 'proxy' ? 'proxy-default' : kind);
+    onPolicyChange(kind);
   };
 
-  const tiles: { kind: AppPolicyKind; title: string; hint: string }[] = [
-    { kind: 'proxy', title: t('rules.proxy'), hint: t('rules.appTile.proxyHint', '跟随全局出口') },
-    { kind: 'direct', title: t('rules.direct'), hint: t('rules.appTile.directHint', '不经代理') },
-    { kind: 'block', title: t('rules.block'), hint: t('rules.appTile.blockHint', '丢弃连接') },
+  const tiles: {
+    kind: AppPolicyKind;
+    dot: 'proxy' | 'direct' | 'block';
+    node?: boolean;
+    title: string;
+    hint: string;
+  }[] = [
     {
-      kind: 'node',
-      title: t('rules.appTile.nodeTitle', '指定节点'),
-      hint:
-        policyKind === 'node'
-          ? t('rules.appTile.nodeLocked', '已锁定出口')
-          : t('rules.appTile.nodePick', '选择出口'),
+      kind: 'proxy',
+      dot: 'proxy',
+      title: t('rules.proxy'),
+      hint: t('rules.appTile.proxyHint', '跟随全局出口'),
+    },
+    {
+      kind: 'direct',
+      dot: 'direct',
+      title: t('rules.direct'),
+      hint: t('rules.appTile.directHint', '不经代理'),
+    },
+    {
+      kind: 'block',
+      dot: 'block',
+      title: t('rules.block'),
+      hint: t('rules.appTile.blockHint', '丢弃连接'),
     },
   ];
 
   return (
-    <div
-      className={cn(
-        'group/card relative rounded-xl border border-muted-foreground/10 bg-muted/40 transition-colors',
-        expanded && 'bg-muted/60'
-      )}
-    >
-      {/* 卡首：点击展开/收起 */}
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        className={cn(
-          'flex w-full items-center gap-2.5 rounded-xl text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          viewMode === 'comfortable' ? 'p-3' : 'p-2.5'
-        )}
-      >
-        <span
-          className={cn(
-            'flex shrink-0 items-center justify-center rounded-lg border border-white/10 bg-background/80 shadow-sm',
-            viewMode === 'comfortable' ? 'h-9 w-9 p-1' : 'h-7 w-7 p-0.5'
-          )}
-        >
+    // name= 令同组 details 互斥（手风琴）：展开一张即收起其他（用户反馈）。Chromium 136 原生支持。
+    <details className="app-card" name="app-policy-card">
+      <summary className="ac-face">
+        <span className={cn('app-ico', isLetterIcon && 'letter')}>
           {icon.type === 'img' ? (
-            <img
-              src={iconProxySrc(icon.url)}
-              alt=""
-              className="h-full w-full object-contain"
-              loading="lazy"
-              onError={onIconError}
-            />
+            <img src={iconProxySrc(icon.url)} alt="" loading="lazy" onError={onIconError} />
           ) : (
-            <span className={viewMode === 'comfortable' ? 'text-xl' : 'text-sm'}>{icon.char}</span>
+            icon.char
           )}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
-            <span className="truncate text-[13px] font-bold tracking-tight">{label}</span>
+        <span className="ac-meta">
+          <span className="ac-name">{label}</span>
+          <span className="ac-sub">
+            {subText}
             {missing && (
-              <AlertTriangle
-                className="h-3.5 w-3.5 shrink-0 text-destructive"
-                aria-label={t('rules.appGeoMissingShort', '规则集缺失')}
-              />
+              <>
+                {' · '}
+                <span className="miss">⚠ {t('rules.appGeoMissingShort', '规则集缺失')}</span>
+              </>
             )}
           </span>
-          <span className="truncate text-[10.5px] text-muted-foreground">{subText}</span>
         </span>
-        <span
-          className={cn(
-            'flex shrink-0 items-center gap-1 text-[11px] font-bold',
-            TEXT_CLASS[policyKind]
-          )}
-        >
-          <span className={cn('h-1.5 w-1.5 rounded-full', DOT_CLASS[policyKind])} />
-          <span className="max-w-[7rem] truncate">{faceLabel}</span>
+        <span className={cn('ac-policy', faceKind)}>
+          <span className={cn('pdot', faceKind)} />
+          {faceLabel}
         </span>
-        <ChevronDown
-          className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform',
-            expanded && 'rotate-180'
-          )}
-        />
-      </button>
+        <ChevronDown className="ac-chev" />
+      </summary>
 
-      {expanded && (
-        <div className="space-y-3 border-t border-muted-foreground/10 px-3 pb-3 pt-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('rules.appTile.policyLabel', '出站策略')}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {tiles.map((tile) => {
-              const active = tile.kind === activeKind;
-              return (
-                <button
-                  key={tile.kind}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => selectTile(tile.kind)}
-                  className={cn(
-                    'flex items-center gap-2 rounded-lg border p-2 text-start transition-colors',
-                    active
-                      ? 'border-primary/50 bg-primary/5'
-                      : 'border-muted-foreground/10 hover:bg-muted/60'
-                  )}
-                >
-                  <span className={cn('h-2 w-2 shrink-0 rounded-full', DOT_CLASS[tile.kind])} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-bold">{tile.title}</span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
-                      {tile.hint}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 指定节点：一步 `.npick` 下拉（选中即回填卡首摘要）。 */}
-          {showPicker && (
-            <NodePicker
-              items={targetItems}
-              groups={targetGroups}
-              value={rule?.targetServerId ?? null}
-              onSelect={(id) => onPolicyChange(`node-${id}`)}
-              placeholder={t('rules.appTile.nodePick', '选择出口')}
-              searchPlaceholder={t('common.search', '搜索')}
-              ariaLabel={t('rules.appTile.nodeTitle', '指定节点')}
-            />
-          )}
-
-          {chips.length > 0 && (
-            <div>
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {t('rules.appTile.ruleSetLabel', '规则集')}
-                <span className="ms-1 font-normal normal-case opacity-70">
-                  {t('rules.appTile.ruleSetSub', 'geosite / geoip / 进程名')}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {chips.map((c, i) => (
-                  <span
-                    key={`${c.kind}-${c.text}-${i}`}
-                    className={cn(
-                      'rounded px-1.5 py-0.5 font-mono text-[10px]',
-                      c.kind === 'proc'
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-muted text-muted-foreground'
-                    )}
-                  >
-                    {c.text}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {missing && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-[11px] text-muted-foreground">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-              <span className="min-w-0">
-                {t(
-                  'rules.appGeoMissingTip',
-                  '该应用引用的分流规则集缺失（已删除或文件丢失），仅按进程名生效；请到「规则资源」页下载恢复'
-                )}
-                <button
-                  type="button"
-                  onClick={onGoToResources}
-                  className="ms-1 font-medium text-primary underline-offset-2 hover:underline"
-                >
-                  {t('rules.appTile.download', '下载')}
-                </button>
-              </span>
-            </div>
-          )}
-
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              className="flex items-center gap-1.5 text-[11px] font-medium text-destructive/80 hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t('rules.customApp.delete', '删除应用')}
-            </button>
-          )}
+      <div className="ac-body">
+        <div className="ac-lbl">
+          {t('rules.appTile.policyLabel', '出站策略')}{' '}
+          <small>{t('rules.appTile.policyClickHint', '点击切换')}</small>
         </div>
-      )}
-    </div>
+        <div className="matrix">
+          {tiles.map((tile) => (
+            <label key={tile.kind} className={cn('pol', tile.kind === 'proxy' && 'pol-proxy')}>
+              <input
+                type="radio"
+                name={`pol-${preset.id}`}
+                checked={tile.kind === 'proxy' ? proxyActive : policyKind === tile.kind}
+                onChange={() => selectTile(tile.kind)}
+              />
+              <span className={cn('pdot', tile.dot)} />
+              <span className="pt">
+                <b>{tile.title}</b>
+                <small>{tile.hint}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {/* 代理态节点选择器（对齐路由规则）：跟随全局哨兵置顶 = proxy-default，具体节点 = node-<id>。
+            显隐由 `:has(.pol-proxy input:checked)` CSS 驱动（选中「代理」瓦片即显）。 */}
+        <div className="node-sel">
+          <NodePicker
+            items={targetItems}
+            groups={targetGroups}
+            value={policyKind === 'node' ? (rule?.targetServerId ?? null) : FOLLOW_GLOBAL_NODE_ID}
+            onSelect={(id) =>
+              onPolicyChange(id === FOLLOW_GLOBAL_NODE_ID ? 'proxy-default' : `node-${id}`)
+            }
+            placeholder={t('rules.appTile.nodePick', '选择出口')}
+            searchPlaceholder={t('common.search', '搜索')}
+            ariaLabel={t('rules.targetNode', '目标节点')}
+          />
+        </div>
+
+        {chips.length > 0 && (
+          <>
+            <div className="ac-lbl">
+              {t('rules.appTile.ruleSetLabel', '规则集')}{' '}
+              <small>{t('rules.appTile.ruleSetSub', 'geosite / geoip / 进程名')}</small>
+            </div>
+            <div className="chips">
+              {chips.map((c, i) => (
+                <span key={`${c.text}-${i}`} className={cn('chip', c.proc && 'proc')}>
+                  {c.text}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {missing && (
+          <div className="ac-warn">
+            <AlertTriangle />
+            <span>
+              {t(
+                'rules.appGeoMissingTip',
+                '该应用引用的分流规则集缺失（已删除或文件丢失），仅按进程名生效；请到「规则资源」页下载恢复'
+              )}
+            </span>
+            <span
+              className="lk"
+              role="button"
+              tabIndex={0}
+              onClick={onGoToResources}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onGoToResources();
+                }
+              }}
+            >
+              {t('rules.appTile.download', '下载')}
+            </span>
+          </div>
+        )}
+
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex items-center gap-1.5 self-start text-[11px] font-medium text-err/80 hover:text-err"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('rules.customApp.delete', '删除应用')}
+          </button>
+        )}
+      </div>
+    </details>
   );
 }

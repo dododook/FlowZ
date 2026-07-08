@@ -1,7 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
 import { effectiveRegionRouting } from '../../../shared/region-routing';
 import type { RegionId, RegionRoutingConfig } from '../../../shared/types';
@@ -25,73 +22,84 @@ export function RegionRoutingCard() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>{t('rules.regionRouting', 'Region routing')}</CardTitle>
-            <CardDescription className="mt-1.5 leading-relaxed">
-              {t(
-                'rules.regionRoutingDesc',
-                'Auto-route by region: local direct, overseas via proxy. Only in Smart mode.'
-              )}
-            </CardDescription>
-          </div>
-          <Switch
-            checked={region.enabled}
-            onCheckedChange={(v) => update({ enabled: v })}
-            aria-label={t('rules.regionRouting', 'Region routing')}
-          />
-        </div>
-      </CardHeader>
+    <div className="card rl-region">
+      <div className="rl-region-h">
+        <div className="field-lbl">{t('rules.regionRouting', 'Region routing')}</div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={region.enabled}
+          aria-label={t('rules.regionRouting', 'Region routing')}
+          className={`swt${region.enabled ? ' on' : ''}`}
+          onClick={() => update({ enabled: !region.enabled })}
+        />
+      </div>
+
       {region.enabled && (
-        <CardContent className="space-y-4">
-          <div>
-            <p className="mb-2 text-sm font-medium">{t('rules.region', 'Region')}</p>
-            <div className="inline-flex rounded-lg border bg-secondary/40 p-1">
-              {REGIONS.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => update({ region: r.id })}
-                  className={cn(
-                    'rounded-md px-4 py-1.5 text-sm transition-colors',
-                    region.region === r.id
-                      ? 'bg-background font-medium shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
+        <>
+          <div className="cc-hair" />
+          <div className="rl-region-body">
+            <div className="field">
+              <div className="field-lbl">
+                {t('rules.region', 'Region')}{' '}
+                <small>
+                  {t(
+                    'rules.regionRoutingDesc',
+                    'Auto-route by region: local direct, overseas via proxy. Only in Smart mode.'
                   )}
-                >
-                  {t(r.key, r.fallback)}
-                </button>
-              ))}
+                </small>
+              </div>
+              <div className="seg2">
+                {REGIONS.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className={region.region === r.id ? 'on' : ''}
+                    onClick={() => update({ region: r.id })}
+                  >
+                    {t(r.key, r.fallback)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rl-region-row">
+              <div>
+                <div className="rl-row-t">
+                  {region.region === 'cn'
+                    ? t('rules.regionReverseCn', 'Back to China')
+                    : t('rules.regionReverse', 'Reverse (access local from abroad)')}
+                </div>
+                <div className="rl-row-d">
+                  {t(
+                    'rules.regionReverseDesc',
+                    "Local via proxy, overseas direct — access the selected region's local content from abroad."
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={region.reverse}
+                aria-label={
+                  region.region === 'cn'
+                    ? t('rules.regionReverseCn', 'Back to China')
+                    : t('rules.regionReverse', 'Reverse (access local from abroad)')
+                }
+                className={`swt${region.reverse ? ' on' : ''}`}
+                onClick={() => update({ reverse: !region.reverse })}
+              />
             </div>
           </div>
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div className="space-y-0.5 pe-3">
-              <p className="text-sm font-medium">
-                {region.region === 'cn'
-                  ? t('rules.regionReverseCn', 'Back to China')
-                  : t('rules.regionReverse', 'Reverse (access local from abroad)')}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  'rules.regionReverseDesc',
-                  "Local via proxy, overseas direct — access the selected region's local content from abroad."
-                )}
-              </p>
-            </div>
-            <Switch checked={region.reverse} onCheckedChange={(v) => update({ reverse: v })} />
-          </div>
-          {!isSmart && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">
-              {t(
-                'rules.smartOnlyHint',
-                'Not active in the current mode — only Smart mode applies.'
-              )}
-            </p>
-          )}
-        </CardContent>
+        </>
       )}
-    </Card>
+
+      {!isSmart && (
+        <div className="rl-smartonly">
+          <span className="dot idle" />
+          {t('rules.smartOnlyHint', 'Not active in the current mode — only Smart mode applies.')}
+        </div>
+      )}
+    </div>
   );
 }

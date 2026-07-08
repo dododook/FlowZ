@@ -4,17 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { FormButtons } from './shared/form-buttons';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { AccessModeField, SubnetReachabilitySwitch } from './shared/mesh-fields';
@@ -221,88 +212,78 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
         {/* 组网概要：降低 WG/组网概念门槛（与 Tailscale tsIntro 对齐） */}
         <p className="text-xs text-muted-foreground">
           {t('servers.wgIntro', 'WireGuard node: reach a peer LAN, or act as an internet exit.')}
         </p>
 
         {/* 基础：仅连接必填（地址/端口/私钥/对端公钥/本地地址）。 */}
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            {/* WARP 的服务器地址/端口可改（Cloudflare 端点可换：engage / 162.159.x、备用端口 2408/500/1701/4500）；
-                密钥/接口地址/reserved 才是注册身份，保持只读。 */}
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="51820" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="privateKey"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.wgPrivateKey', 'Private Key')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="base64 private key"
-                        {...field}
-                        readOnly={isWarp}
-                        className={isWarp ? 'cursor-default opacity-70' : undefined}
-                      />
-                    </FormControl>
-                    {!isWarp && (
-                      <FormDescription>
-                        {t('servers.wgPrivateKeyDesc', 'Local interface private key (base64)')}
-                      </FormDescription>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
+        <FieldGrid cols={2}>
+          {/* WARP 的服务器地址/端口可改（Cloudflare 端点可换：engage / 162.159.x、备用端口 2408/500/1701/4500）；
+              密钥/接口地址/reserved 才是注册身份，保持只读。 */}
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="51820" />
+          <FieldSpan>
             <FormField
               control={form.control}
-              name="peerPublicKey"
+              name="privateKey"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.wgPeerPublicKey', 'Peer Public Key')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="base64 peer public key"
-                      {...field}
-                      readOnly={isWarp}
-                      className={isWarp ? 'cursor-default opacity-70' : undefined}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.wgPrivateKey', 'Private Key')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    type="password"
+                    placeholder="base64 private key"
+                    {...field}
+                    readOnly={isWarp}
+                    className={isWarp ? 'mono cursor-default opacity-70' : 'mono'}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
-            <FormField
-              control={form.control}
-              name="localAddress"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.wgLocalAddress', 'Interface Address')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="10.0.0.2/32, fd00::2/128"
-                      {...field}
-                      readOnly={isWarp}
-                      className={isWarp ? 'cursor-default opacity-70' : undefined}
-                    />
-                  </FormControl>
-                  {!isWarp && (
-                    <FormDescription>
-                      {t('servers.wgLocalAddressDesc', 'Local tunnel address(es), comma-separated')}
-                    </FormDescription>
-                  )}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </FieldGrid>
-        </FormSection>
+          </FieldSpan>
+          <FormField
+            control={form.control}
+            name="peerPublicKey"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.wgPeerPublicKey', 'Peer Public Key')}{' '}
+                  <span className="nd-req">*</span>
+                </span>
+                <Input
+                  placeholder="base64 peer public key"
+                  {...field}
+                  readOnly={isWarp}
+                  className={isWarp ? 'mono cursor-default opacity-70' : 'mono'}
+                />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="localAddress"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.wgLocalAddress', 'Interface Address')}{' '}
+                  <span className="nd-req">*</span>
+                </span>
+                <Input
+                  placeholder="10.0.0.2/32, fd00::2/128"
+                  {...field}
+                  readOnly={isWarp}
+                  className={isWarp ? 'mono cursor-default opacity-70' : 'mono'}
+                />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+        </FieldGrid>
 
         {/* 接入与出口（常显）：接入模式选择器 + 全隧道出口开关。WARP=Cloudflare anycast 出口，恒 gVisor 全隧道、
             不可作子网路由器 → 隐藏接入模式选择器（无 System 选项）。 */}
@@ -372,31 +353,24 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
               control={form.control}
               name="allowedIPs"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="flex items-center gap-1.5">
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl inline-flex items-center gap-1.5">
                     {t('servers.wgAllowedIPs', 'Routed subnets')}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
                     <InfoTooltip content={t('servers.wgAllowedIPsDescFull')} />
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={t(
-                        'servers.wgAllowedIPsPlaceholder',
-                        '留空=全隧道；或 10.8.0.0/24'
-                      )}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.wgAllowedIPsDesc',
-                      'Subnets (CIDR) to route through this node. Empty = full tunnel.'
+                  </span>
+                  <Input
+                    placeholder={t(
+                      'servers.wgAllowedIPsPlaceholder',
+                      '留空=全隧道；或 10.8.0.0/24'
                     )}
-                  </FormDescription>
+                    {...field}
+                  />
                   {!allowInternet && (
                     <p className="text-sm text-amber-600 dark:text-amber-500">{meshRoutesHint}</p>
                   )}
-                  <FormMessage />
-                </FormItem>
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FormSection>
@@ -407,17 +381,16 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
               WARP 节点参数是 Cloudflare 注册产出（含自删凭据），导入 .conf 会冲掉其身份 → 对 WARP 隐藏此入口。 */}
           {!isWarp && (
             <div className="space-y-2 rounded-md border border-dashed p-3">
-              <FormLabel>
+              <span className="nd-fld-lbl">
                 {t('servers.wgImportConf', 'Import from wg-quick .conf (optional)')}
-              </FormLabel>
-              <Textarea
-                rows={4}
+              </span>
+              <textarea
+                className="nd-textarea"
                 placeholder={
                   '[Interface]\nPrivateKey = ...\nAddress = 10.0.0.2/32\n[Peer]\nPublicKey = ...\nEndpoint = host:51820\nAllowedIPs = 0.0.0.0/0, ::/0'
                 }
                 value={confText}
                 onChange={(e) => setConfText(e.target.value)}
-                className="font-mono text-xs"
               />
               {confError && <p className="text-sm text-destructive">{confError}</p>}
               <Button type="button" variant="outline" size="sm" onClick={handleParseConf}>
@@ -429,13 +402,18 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
             control={form.control}
             name="preSharedKey"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.wgPreSharedKey', 'Pre-Shared Key (optional)')}</FormLabel>
-                <FormControl>
-                  <Input type="password" placeholder="base64 pre-shared key" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.wgPreSharedKey', 'Pre-Shared Key (optional)')}
+                </span>
+                <Input
+                  type="password"
+                  placeholder="base64 pre-shared key"
+                  {...field}
+                  className="mono"
+                />
+                <FormMessage className="fld-err" />
+              </div>
             )}
           />
           <FieldGrid cols={3}>
@@ -443,53 +421,48 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
               control={form.control}
               name="persistentKeepalive"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.wgKeepalive', 'Keepalive (s)')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('servers.wgKeepaliveDesc', '25s recommended to avoid NAT disconnects')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.wgKeepalive', 'Keepalive (s)')} <span className="nd-req">*</span>
+                  </span>
+                  <Input
+                    type="number"
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="mtu"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>MTU</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      onChange={(e) => field.onChange(Number(e.target.value))}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    MTU <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input
+                    type="number"
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="reserved"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.wgReserved', 'Reserved')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="1,2,3" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t('servers.wgReservedDesc', 'WARP only, 3 bytes')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.wgReserved', 'Reserved')}{' '}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input placeholder="1,2,3" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FieldGrid>

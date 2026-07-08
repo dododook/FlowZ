@@ -1,12 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { X } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -15,7 +10,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { VlessForm } from './vless-form';
 import { TrojanForm } from './trojan-form';
 import { Hysteria2Form } from './hysteria2-form';
@@ -213,94 +207,129 @@ export function ServerConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[92vw] max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
+      <DialogContent className="[&>button]:hidden flex max-h-[90vh] w-[min(452px,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-[12px] border-line bg-surface p-0">
+        {/* a11y：radix 需 Title/Description；视觉标题另在 `.nd-dlg-h`，此处仅供辅助技术。 */}
+        <DialogTitle className="sr-only">
+          {isEditing
+            ? t('servers.editServer', 'Edit Server Config')
+            : t('servers.addServerConfig', 'Add Server Config')}
+        </DialogTitle>
+        <DialogDescription className="sr-only">
+          {isEditing
+            ? t(
+                'servers.editServerDesc',
+                'Modify server configuration. Proxy will not restart automatically after saving.'
+              )
+            : t(
+                'servers.addServerDesc',
+                'Add a new proxy server. Supports VLESS, Trojan, Hysteria2, Shadowsocks, AnyTLS.'
+              )}
+        </DialogDescription>
+
+        <div className="nd-dlg-h">
+          <span className="nd-dlg-title">
             {isEditing
               ? t('servers.editServer', 'Edit Server Config')
               : t('servers.addServerConfig', 'Add Server Config')}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? t(
-                  'servers.editServerDesc',
-                  'Modify server configuration. Proxy will not restart automatically after saving.'
-                )
-              : t(
-                  'servers.addServerDesc',
-                  'Add a new proxy server. Supports VLESS, Trojan, Hysteria2, Shadowsocks, AnyTLS.'
-                )}
-          </DialogDescription>
-        </DialogHeader>
+          </span>
+          <button
+            type="button"
+            className="nd-dlg-x"
+            aria-label={t('common.cancel', 'Cancel')}
+            onClick={() => onOpenChange(false)}
+          >
+            <X />
+          </button>
+        </div>
 
-        {isEditing && server?.subscriptionId && (
-          <div className="rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/40 dark:text-amber-400">
-            {t(
-              'servers.subNodeEditHint',
-              'This node belongs to a subscription; edits are overwritten on the next update. For lasting changes, use "Clone to Manual Nodes".'
+        <div className="nd-dlg-body">
+          {isEditing && server?.subscriptionId && (
+            <div className="nd-amber">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4M12 16h.01" />
+              </svg>
+              <span>
+                {t(
+                  'servers.subNodeEditHint',
+                  'This node belongs to a subscription; edits are overwritten on the next update. For lasting changes, use "Clone to Manual Nodes".'
+                )}
+              </span>
+            </div>
+          )}
+
+          {/* 协议：组网节点编辑锁协议（disabled 禁打开 + 改值）；WARP 显示「Cloudflare WARP」，其余走 SelectValue。 */}
+          <div className="nd-fld">
+            <span className="nd-fld-lbl">
+              {t('servers.protocol')}
+              {!isMeshEdit && (
+                <small className="font-medium text-fg-faint">
+                  {t('servers.selectProtocol', 'Select your proxy server protocol')}
+                </small>
+              )}
+            </span>
+            <Select
+              value={selectedProtocol}
+              onValueChange={handleProtocolChange}
+              disabled={isMeshEdit}
+            >
+              <SelectTrigger>
+                {isMeshEdit ? <span>{meshLockedLabel}</span> : <SelectValue />}
+              </SelectTrigger>
+              <SelectContent>
+                {/* 组网协议（WireGuard/WARP/Tailscale）始终不进可选下拉——新增走组网 tab 顶部「接入组网」区；编辑
+                    组网节点时协议被锁定，故下拉永不含 wireguard/tailscale，代理节点编辑时也无法被改成组网协议。 */}
+                {getSortedProtocolOptions(t, i18n.language, (v) => v !== 'wireguard').map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {isMeshEdit && (
+              <div className="nd-swrow-d">
+                {t(
+                  'servers.protocolLockedOnEdit',
+                  'Protocol cannot be changed when editing — delete and re-add to switch.'
+                )}
+              </div>
             )}
           </div>
-        )}
 
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="serverName">{t('servers.remarks')}</Label>
-              <Input
-                id="serverName"
-                placeholder={t('servers.remarksPlaceholder')}
-                value={serverName}
-                onChange={(e) => {
-                  setServerName(e.target.value);
-                  if (nameError) setNameError('');
-                }}
-                className={nameError ? 'border-destructive focus-visible:ring-destructive' : ''}
-              />
-              {nameError ? (
-                <p className="text-sm text-destructive">{nameError}</p>
-              ) : isDuplicateName ? (
-                <p className="text-sm text-amber-600 dark:text-amber-500">
-                  {t('servers.nameDuplicate', 'A node with this name already exists')}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t('servers.remarksDesc')}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label>{t('servers.protocol')}</Label>
-              {/* 组网节点编辑锁协议：disabled 禁打开 + 改值；WARP 显示「Cloudflare WARP」，其余走 SelectValue 显真实协议。 */}
-              <Select
-                value={selectedProtocol}
-                onValueChange={handleProtocolChange}
-                disabled={isMeshEdit}
-              >
-                <SelectTrigger>
-                  {isMeshEdit ? <span>{meshLockedLabel}</span> : <SelectValue />}
-                </SelectTrigger>
-                <SelectContent>
-                  {/* 组网协议（WireGuard/WARP/Tailscale）始终不进可选下拉——新增走组网 tab 顶部「接入组网」区；编辑
-                      组网节点时协议被锁定（disabled + 上方 span 显示标签），故下拉永不含 wireguard/tailscale，代理节点
-                      编辑时也无法被改成组网协议（组网↔代理隔离，用户要求）。 */}
-                  {getSortedProtocolOptions(t, i18n.language, (v) => v !== 'wireguard').map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {isMeshEdit
-                  ? t(
-                      'servers.protocolLockedOnEdit',
-                      'Protocol cannot be changed when editing — delete and re-add to switch.'
-                    )
-                  : t('servers.selectProtocol', 'Select your proxy server protocol')}
-              </p>
-            </div>
+          {/* 备注名（必填，内联校验；重名给琥珀软提示不拦保存） */}
+          <div className="nd-fld">
+            <span className="nd-fld-lbl">
+              {t('servers.remarks')} <span className="nd-req">*</span>
+            </span>
+            <Input
+              id="serverName"
+              placeholder={t('servers.remarksPlaceholder')}
+              value={serverName}
+              onChange={(e) => {
+                setServerName(e.target.value);
+                if (nameError) setNameError('');
+              }}
+              className={
+                nameError ? 'border-destructive focus-visible:ring-destructive' : undefined
+              }
+            />
+            {nameError ? (
+              <div className="fld-err">{nameError}</div>
+            ) : isDuplicateName ? (
+              <div className="nd-swrow-d text-amber-600 dark:text-amber-500">
+                {t('servers.nameDuplicate', 'A node with this name already exists')}
+              </div>
+            ) : null}
           </div>
 
-          <div className="border-t pt-6">
+          <div className="contents">
             {selectedProtocol === 'warp' && (
               <WarpPanel onSubmit={handleSave} nameMissing={!serverName.trim()} />
             )}
@@ -483,12 +512,12 @@ export function ServerConfigDialog({
               value={detour}
               onSelect={(id) => setDetour(id === DETOUR_DIRECT ? undefined : id)}
             />
-            <p className="text-sm text-muted-foreground">
+            <div className="nd-swrow-d">
               {t(
                 'servers.detourDesc',
                 'Connect to this node through another proxy server (proxy chain)'
               )}
-            </p>
+            </div>
           </FormSection>
         </div>
       </DialogContent>

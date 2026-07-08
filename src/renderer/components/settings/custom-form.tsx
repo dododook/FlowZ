@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { FormSection } from './shared/form-layout';
@@ -129,21 +128,22 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <FormSection title={t('servers.basic', 'Basic')}>
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-[13px]">
+      <div className="nd-fld">
+        <span className="nd-fld-lbl inline-flex items-center gap-1.5">
           {t('servers.customIntro', 'Paste a raw sing-box outbound JSON (e.g. snell).')}
+          <span className="nd-req">*</span>
           <InfoTooltip content={t('servers.customIntroFull')} />
-        </p>
-        <Textarea
-          rows={10}
+        </span>
+        <textarea
+          className="nd-textarea"
+          style={{ minHeight: 130 }}
           placeholder={PLACEHOLDER}
           value={jsonText}
           onChange={(e) => setJsonText(e.target.value)}
-          className="font-mono text-xs"
         />
         {jsonError ? (
-          <p className="text-sm text-destructive">{jsonError}</p>
+          <p className="fld-err">{jsonError}</p>
         ) : (
           <div className="flex items-start gap-1.5 text-xs">
             {probe.state === 'checking' && (
@@ -185,36 +185,32 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
             )}
           </div>
         )}
-      </FormSection>
+      </div>
 
       <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium">{t('servers.customIsEndpoint', 'Endpoint type')}</p>
-            <InfoTooltip
-              content={t(
-                'servers.customIsEndpointDesc',
-                'Enable if this type belongs to sing-box endpoints[] (wireguard/tailscale-like) instead of outbounds[].'
-              )}
-            />
+        <div className="nd-swrow">
+          <div className="nd-swrow-main">
+            <div className="nd-swrow-t inline-flex items-center gap-1.5">
+              {t('servers.customIsEndpoint', 'Endpoint type')}
+              <InfoTooltip
+                content={t(
+                  'servers.customIsEndpointDesc',
+                  'Enable if this type belongs to sing-box endpoints[] (wireguard/tailscale-like) instead of outbounds[].'
+                )}
+              />
+            </div>
           </div>
           <Switch checked={isEndpoint} onCheckedChange={setIsEndpoint} />
         </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">
+        <div className="nd-fld">
+          <span className="nd-fld-lbl">
             {t('servers.customSecretKeys', 'Secret field names (optional)')}
-          </p>
+          </span>
           <Input
             placeholder="password, psk, uuid"
             value={secretKeys}
             onChange={(e) => setSecretKeys(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'servers.customSecretKeysDesc',
-              'Keys treated as secrets when exporting diagnostics (the whole JSON is masked by default).'
-            )}
-          </p>
         </div>
       </FormSection>
 

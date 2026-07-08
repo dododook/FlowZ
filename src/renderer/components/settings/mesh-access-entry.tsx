@@ -1,5 +1,5 @@
 /**
- * 「接入组网」区（组网 tab 顶部）。批3b：统一节点模型 + 各协议按接入态分流。
+ * 「接入组网」区（组网 tab 内，节点网格下方）。批3b：统一节点模型 + 各协议按接入态分流。
  *
  * 三协议按「是否已接入」派生入口（见 tailscale-connection-redesign 设计）：
  *  - Tailscale：账号制单例——委托 MeshTailscaleControl（连接/AuthKey/打开登录页/取消/登出/切换/设置的完整登录状态机）；
@@ -8,15 +8,14 @@
  *
  * 单例守卫（TS=tailscaleSlotTaken 硬闸门 + 本区不给「再加」；WARP=warpSlotTaken + 本区「已接入·管理」）均纯函数、可离线单测。
  * WARP「注销」=删节点（主进程据 warpDevice 凭据后台注销远端匿名设备，防孤儿计费）；「重新注册」=先注销旧、再注册新替换。
+ *
+ * Conduit 1:1 移植：整区改为原型 `.field-lbl.nd-mesh-lbl` 标签 + `.nd-mesh`（3 列网格）承载三个 `.nd-mesh-btn`。
+ * 单例已接入的 WARP 管理走 radix DropdownMenu（a11y 保留，触发器即 `.nd-mesh-btn.is-joined`）；弹窗保 radix（chrome 归 ui/*）。
  */
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Zap, ChevronDown } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -53,12 +52,67 @@ interface MeshAccessEntryProps {
   tsNode: ServerConfig | undefined;
   /** 当前已注册的 WARP 节点（单例）；有则「已接入·管理」，无则「接入」。 */
   warpNode: ServerConfig | undefined;
-  /** 代理是否运行——透传给 TS 控件决定副标题文案。 */
+  /** 代理是否运行——透传给 TS 控件（其状态文案已相位到节点卡）。 */
   proxyRunning: boolean;
   /** §H：一次性外部指令——首页「选择出口设备」导航进来时自动打开 TS 设置弹窗。透传给 TS 控件。 */
   autoOpenSettings?: boolean;
   onAutoOpenConsumed?: () => void;
 }
+
+// 原型接入入口图标：WireGuard 盾牌 / WARP 地球。
+const WG_ICON = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />
+  </svg>
+);
+
+const WARP_ICON = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 000 18M12 3a14 14 0 010 18" />
+  </svg>
+);
+
+const JOINED_CHECK = (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="3.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+
+const MESH_CHEV = (
+  <svg
+    className="nd-mesh-chev"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+);
 
 export function MeshAccessEntry({
   tsNode,
@@ -122,19 +176,19 @@ export function MeshAccessEntry({
   };
 
   return (
-    <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-medium">{t('servers.meshAccessTitle', '接入组网')}</p>
-        <p className="text-xs text-muted-foreground">
+    <div className="flex flex-col gap-2.5">
+      <div className="field-lbl nd-mesh-lbl">
+        {t('servers.meshAccessTitle', '接入组网')}
+        <small>
           {t(
-            'servers.meshAccessDesc',
-            '把本机加入组网：账号制 Tailscale 或节点制 WireGuard / WARP'
+            'servers.meshAccessEntryHint',
+            'Tailscale / WARP 已接入可在此管理，WireGuard 可继续新增'
           )}
-        </p>
+        </small>
       </div>
 
-      <div className="space-y-2">
-        {/* Tailscale：账号制单例，完整登录状态机委托给 MeshTailscaleControl。 */}
+      <div className="nd-mesh">
+        {/* Tailscale：账号制单例，完整登录状态机委托给 MeshTailscaleControl（渲染为单个 .nd-mesh-btn）。 */}
         <MeshTailscaleControl
           tsNode={tsNode}
           proxyRunning={proxyRunning}
@@ -142,81 +196,69 @@ export function MeshAccessEntry({
           onAutoOpenConsumed={onAutoOpenConsumed}
         />
 
-        {/* WireGuard：节点制多实例，恒「新增」。 */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border bg-background/60 p-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-badge-cyan/15 text-badge-cyan">
-              <Plus className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">WireGuard</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
-              </p>
-            </div>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => setWgOpen(true)}>
-            <Plus className="me-2 h-4 w-4" />
-            {t('servers.meshAddWireguard', '新增 WireGuard')}
-          </Button>
-        </div>
+        {/* WARP：单例。未注册→接入（新增态）；已注册→已接入·管理{ 重新注册 / 注销 }（DropdownMenu）。
+            顺序：Tailscale → WARP → WireGuard（用户定：WARP 第二、WireGuard 第三）。 */}
+        {warpNode ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="nd-mesh-btn is-joined"
+                title={t('servers.meshWarpManageTitle', 'WARP 账户管理')}
+              >
+                <span className="nd-mesh-ic">{WARP_ICON}</span>
+                <span className="nd-mesh-tx">
+                  <span className="nd-mesh-hd">
+                    <span className="nd-mesh-nm">WARP</span>
+                    <span className="nd-mesh-joined-tag">
+                      {JOINED_CHECK}
+                      {t('servers.meshJoinedTag', '已接入')}
+                    </span>
+                  </span>
+                  <span className="nd-mesh-sub">
+                    {t('servers.meshWarpManageSub', '重新注册 / 注销设备')}
+                  </span>
+                </span>
+                {MESH_CHEV}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setWarpReRegisterOpen(true)}>
+                <Zap className="me-2 h-4 w-4" />
+                {t('servers.meshWarpReRegister', '重新注册')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setWarpDeregisterOpen(true)}
+                className="text-destructive focus:text-destructive"
+              >
+                {t('servers.meshWarpDeregister', '注销')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <button type="button" className="nd-mesh-btn" onClick={() => setWarpOpen(true)}>
+            <span className="nd-mesh-ic">{WARP_ICON}</span>
+            <span className="nd-mesh-tx">
+              <span className="nd-mesh-hd">
+                <span className="nd-mesh-nm">WARP</span>
+              </span>
+              <span className="nd-mesh-sub">{t('servers.meshWarpAddSub', '注册匿名设备接入')}</span>
+            </span>
+          </button>
+        )}
 
-        {/* WARP：单例。未注册→接入；已注册→已接入·管理{ 重新注册 / 注销 }。 */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border bg-background/60 p-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-badge-sky/15 text-badge-sky">
-              <Zap className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-sm font-medium">
-                WARP
-                {warpNode && (
-                  <Badge
-                    variant="outline"
-                    className="h-4 border-success/30 bg-success/15 px-1 text-[10px] text-success"
-                  >
-                    {t('servers.meshWarpJoined', '已接入 WARP')}
-                  </Badge>
-                )}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {warpNode
-                  ? warpNode.name
-                  : t(
-                      'servers.meshAccessAddWarpDesc',
-                      '一键注册匿名 WARP 设备并加入为 WireGuard 节点。'
-                    )}
-              </p>
-            </div>
-          </div>
-          {warpNode ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline">
-                  {t('servers.meshManage', '管理')}
-                  <ChevronDown className="ms-1 h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setWarpReRegisterOpen(true)}>
-                  <Zap className="me-2 h-4 w-4" />
-                  {t('servers.meshWarpReRegister', '重新注册')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setWarpDeregisterOpen(true)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  {t('servers.meshWarpDeregister', '注销')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => setWarpOpen(true)}>
-              <Zap className="me-2 h-4 w-4" />
-              WARP
-            </Button>
-          )}
-        </div>
+        {/* WireGuard：节点制多实例，恒「新增」态（第三位）。 */}
+        <button type="button" className="nd-mesh-btn" onClick={() => setWgOpen(true)}>
+          <span className="nd-mesh-ic">{WG_ICON}</span>
+          <span className="nd-mesh-tx">
+            <span className="nd-mesh-hd">
+              <span className="nd-mesh-nm">WireGuard</span>
+            </span>
+            <span className="nd-mesh-sub">
+              {t('servers.meshWgAddSub', '.conf 导入 / 手动填写')}
+            </span>
+          </span>
+        </button>
       </div>
 
       {/* WireGuard 接入：名称（dialog 级）+ WireGuardForm（.conf 导入已内置）。 */}
@@ -230,19 +272,22 @@ export function MeshAccessEntry({
           }
         }}
       >
-        <DialogContent className="w-[92vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[min(452px,94vw)] max-w-none max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('servers.meshAccessAddWg', '添加 WireGuard 节点')}</DialogTitle>
             <DialogDescription>
               {t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="meshWgName">{t('servers.remarks')}</Label>
-              <Input
+          <div className="flex flex-col gap-4">
+            <div className="field">
+              <label className="field-lbl" htmlFor="meshWgName">
+                {t('servers.remarks')}
+              </label>
+              <input
                 ref={wgNameInputRef}
                 id="meshWgName"
+                className={cn('input', wgNameError && 'err')}
                 placeholder={t('servers.remarksPlaceholder')}
                 value={wgName}
                 onChange={(e) => {
@@ -250,10 +295,9 @@ export function MeshAccessEntry({
                   if (wgNameError) setWgNameError(false);
                 }}
                 aria-invalid={wgNameError}
-                className={cn(wgNameError && 'border-destructive')}
               />
               {wgNameError && (
-                <p className="text-xs text-destructive">
+                <p className="text-[11px] text-[hsl(var(--err))]">
                   {t('servers.meshAccessNameFirst', '请先填写节点名称')}
                 </p>
               )}
@@ -265,7 +309,7 @@ export function MeshAccessEntry({
 
       {/* WARP 接入：名称（预填）+ WarpPanel（一键注册→WG 节点）。 */}
       <Dialog open={warpOpen} onOpenChange={setWarpOpen}>
-        <DialogContent className="w-[92vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[min(452px,94vw)] max-w-none max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('servers.meshAccessAddWarp', '添加 Cloudflare WARP')}</DialogTitle>
             <DialogDescription>
@@ -275,11 +319,14 @@ export function MeshAccessEntry({
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="meshWarpName">{t('servers.remarks')}</Label>
-              <Input
+          <div className="flex flex-col gap-4">
+            <div className="field">
+              <label className="field-lbl" htmlFor="meshWarpName">
+                {t('servers.remarks')}
+              </label>
+              <input
                 id="meshWarpName"
+                className="input"
                 placeholder={t('servers.remarksPlaceholder')}
                 value={warpName}
                 onChange={(e) => setWarpName(e.target.value)}

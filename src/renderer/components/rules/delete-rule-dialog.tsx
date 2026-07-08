@@ -1,29 +1,24 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
 import type { Rule } from '@/bridge/types';
-import {
-  TYPE_TO_CATEGORY,
-  CATEGORY_BADGE_CLASS,
-  RULE_TYPE_NAME,
-} from '@/components/rules/rule-type-meta';
+import { RULE_TYPE_NAME } from '@/components/rules/rule-type-meta';
 
 interface DeleteRuleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rule: Rule;
+}
+
+/** 规则 action → Conduit pill 配色 class（代理主色 / 直连中性 / 阻断危险红）。 */
+function actionPillClass(action: string): string {
+  const a = (action || '').toLowerCase();
+  if (a === 'direct') return 'rl-direct';
+  if (a === 'block' || a === 'reject' || a === 'reject-drop' || a === 'drop') return 'rl-block';
+  return 'rl-proxy';
 }
 
 export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogProps) {
@@ -64,57 +59,65 @@ export function DeleteRuleDialog({ open, onOpenChange, rule }: DeleteRuleDialogP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            {t('rules.deleteRule', '删除规则')}
-          </DialogTitle>
-          <DialogDescription>
-            {t('rules.deleteConfirm', '此操作无法撤销。确定要删除此规则吗？')}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="flex max-h-[92vh] max-w-[425px] flex-col gap-0 overflow-hidden p-0">
+        <div className="rl-dlg-h">
+          <div>
+            <DialogTitle
+              className="rl-dlg-title"
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <AlertTriangle size={18} style={{ color: 'hsl(var(--err))' }} />
+              {t('rules.deleteRule', '删除规则')}
+            </DialogTitle>
+            <DialogDescription className="rl-dlg-desc">
+              {t('rules.deleteConfirm', '此操作无法撤销。确定要删除此规则吗？')}
+            </DialogDescription>
+          </div>
+        </div>
 
-        <div className="py-4">
-          <div className="space-y-2 rounded-lg border p-4 bg-muted/50">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">{t('rules.typeColumn', '类型')}</span>
-              <Badge
-                variant="outline"
-                className={CATEGORY_BADGE_CLASS[TYPE_TO_CATEGORY[rule.type]]}
+        <div className="rl-dlg-body min-h-0 flex-1 overflow-y-auto">
+          <div className="rl-zone">
+            <div className="rl-optcard" style={{ padding: '12px 14px', display: 'grid', gap: 10 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
-                {t(`rules.types.${rule.type}.name`, RULE_TYPE_NAME[rule.type])}
-              </Badge>
-            </div>
-            <div className="text-sm">
-              <span className="text-muted-foreground">{t('rules.valueLabel', '匹配值')}</span>
-              <div className="font-mono font-medium mt-1 max-h-[120px] overflow-y-auto">
-                {rule.values.map((value, index) => (
-                  <div key={index}>{value}</div>
-                ))}
+                <span className="rl-hc-lbl">{t('rules.typeColumn', '类型')}</span>
+                <span className="pill rl-cond">
+                  {t(`rules.types.${rule.type}.name`, RULE_TYPE_NAME[rule.type])}
+                </span>
               </div>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">{t('rules.policy', '策略')}</span>
-              <span className="font-medium">{actionLabel}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span className="rl-hc-lbl">{t('rules.valueLabel', '匹配值')}</span>
+                <div className="mono" style={{ maxHeight: 120, overflowY: 'auto', fontSize: 12 }}>
+                  {rule.values.map((value, index) => (
+                    <div key={index}>{value}</div>
+                  ))}
+                </div>
+              </div>
+              <div
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <span className="rl-hc-lbl">{t('rules.policy', '策略')}</span>
+                <span className={`pill ${actionPillClass(rule.action)}`}>{actionLabel}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <DialogFooter>
-          <Button
+        <div className="rl-dlg-foot">
+          <button
             type="button"
-            variant="outline"
+            className="btn ghost"
             onClick={() => onOpenChange(false)}
             disabled={isDeleting}
           >
             {t('servers.cancel', '取消')}
-          </Button>
-          <Button type="button" variant="destructive" onClick={handleDelete} disabled={isDeleting}>
-            {isDeleting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+          </button>
+          <button type="button" className="btn danger" onClick={handleDelete} disabled={isDeleting}>
+            {isDeleting && <Loader2 className="animate-spin" size={15} />}
             {t('rules.delete', '删除')}
-          </Button>
-        </DialogFooter>
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );

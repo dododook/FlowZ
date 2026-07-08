@@ -1,17 +1,9 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { FormButtons } from './shared/form-buttons';
 import { AddressField, PortField } from './shared/basic-fields';
 import {
@@ -20,7 +12,7 @@ import {
   TlsEngineField,
   TlsSpoofField,
 } from './shared/tls-fields';
-import { FormSection, FieldGrid } from './shared/form-layout';
+import { FieldGrid, FieldSpan } from './shared/form-layout';
 import {
   tlsSpoofSchemaShape,
   tlsSpoofDefaults,
@@ -114,77 +106,78 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder={isHttps ? '443' : '80'} />
-            <FormField
-              control={form.control}
-              name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('servers.username')} ({t('servers.optional', 'Optional')})
-                  </FormLabel>
-                  <FormControl>
-                    <Input placeholder={t('servers.usernamePlaceholder', 'Username')} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('servers.password')} ({t('servers.optional', 'Optional')})
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder={t('servers.passwordPlaceholder', 'Password')}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder={isHttps ? '443' : '80'} />
+          <FormField
+            control={form.control}
+            name="username"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.username')}{' '}
+                  <small className="font-medium text-fg-faint">
+                    {t('servers.optional', 'Optional')}
+                  </small>
+                </span>
+                <Input placeholder={t('servers.usernamePlaceholder', 'Username')} {...field} />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.password')}{' '}
+                  <small className="font-medium text-fg-faint">
+                    {t('servers.optional', 'Optional')}
+                  </small>
+                </span>
+                <Input
+                  type="password"
+                  className="mono"
+                  placeholder={t('servers.passwordPlaceholder', 'Password')}
+                  {...field}
+                />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FieldSpan>
             <FormField
               control={form.control}
               name="isHttps"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 rtl:space-x-reverse space-y-0">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>{t('servers.httpsEnable', 'HTTPS/TLS')}</FormLabel>
-                    <FormDescription>{t('servers.httpsEnableDesc')}</FormDescription>
+                <div className="nd-swrow">
+                  <div className="nd-swrow-main">
+                    <div className="nd-swrow-t">{t('servers.httpsEnable', 'HTTPS/TLS')}</div>
+                    <div className="nd-swrow-d">{t('servers.httpsEnableDesc')}</div>
                   </div>
-                </FormItem>
+                  <Switch checked={field.value} onCheckedChange={field.onChange} />
+                </div>
               )}
             />
-          </FieldGrid>
+          </FieldSpan>
+        </FieldGrid>
 
-          {isHttps && (
-            <FieldGrid cols={2}>
-              <TlsServerNameField
-                control={form.control}
-                t={t}
-                labelKey="servers.sni"
-                descKey="servers.sniDesc"
-                optional
-              />
-              <AllowInsecureField control={form.control} t={t} />
-              <TlsEngineField control={form.control} t={t} />
-              <TlsSpoofField control={form.control} t={t} />
-            </FieldGrid>
-          )}
-        </FormSection>
+        {isHttps && (
+          <FieldGrid cols={2}>
+            <TlsServerNameField
+              control={form.control}
+              t={t}
+              labelKey="servers.sni"
+              descKey="servers.sniDesc"
+              optional
+            />
+            <AllowInsecureField control={form.control} t={t} />
+            <TlsEngineField control={form.control} t={t} />
+            <TlsSpoofField control={form.control} t={t} />
+          </FieldGrid>
+        )}
 
         <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>

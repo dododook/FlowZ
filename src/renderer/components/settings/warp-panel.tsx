@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Loader2, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { api } from '@/ipc/api-client';
 import { useTranslation } from 'react-i18next';
 
@@ -15,8 +14,11 @@ interface WarpPanelProps {
 
 /**
  * Cloudflare WARP「一键」面板——降低理解成本：用户无需懂 WireGuard，点一下即注册匿名设备并直接保存为
- * WireGuard 节点（不暴露 privateKey/reserved 等技术字段）。WARP+ license 默认折叠（多数人用免费版）。
+ * WireGuard 节点（不暴露 privateKey/reserved 等技术字段）。WARP+ license 可选（多数人用免费版）。
  * 生成的就是普通 WG 节点，后续可在「编辑」里查看/调整 AllowedIPs 等。
+ *
+ * Conduit 1:1 移植：改用原型设计系统类（`.field`/`.field-lbl`/`.input.mono`/`.btn.flow`）+ conduit token 提示框。
+ * 注册/保存逻辑（api.server.registerWarp → onSubmit 构造普通 WireGuard 节点 + warpDevice 自删凭据）逐字保留。
  */
 export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
   const { t } = useTranslation();
@@ -55,10 +57,10 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-3">
-        <Cloud className="mt-0.5 h-5 w-5 flex-shrink-0 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-4">
+      <div className="flex items-start gap-3 rounded-[10px] border border-[hsl(var(--line))] bg-[hsl(var(--surface-2))] p-3">
+        <Cloud className="mt-0.5 h-5 w-5 flex-shrink-0 text-[hsl(var(--fg-faint))]" />
+        <p className="text-[12.5px] leading-relaxed text-[hsl(var(--fg-dim))]">
           {t(
             'servers.warpPanelIntro',
             'One click registers an anonymous Cloudflare WARP device and adds it as a node — no keys or settings to fill in. Edit it later to fine-tune routing.'
@@ -67,17 +69,18 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
       </div>
 
       {/* WARP+ license（可选）：默认可见——留空=免费版；填 license 则注册后直接应用为 WARP+。 */}
-      <div className="space-y-1.5">
-        <label className="text-sm font-medium">
+      <div className="field">
+        <label className="field-lbl" htmlFor="warpLicenseKey">
           {t('servers.warpLicenseLabel', 'WARP+ license key (optional)')}
         </label>
-        <Input
+        <input
+          id="warpLicenseKey"
+          className="input mono text-xs"
           placeholder={t('servers.warpLicense', 'WARP+ license key')}
           value={license}
           onChange={(e) => setLicense(e.target.value)}
-          className="font-mono text-xs"
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-[hsl(var(--fg-faint))]">
           {t(
             'servers.warpLicenseHint',
             'Leave empty for free WARP; enter a license to register as WARP+.'
@@ -85,18 +88,21 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
         </p>
       </div>
 
-      <div className="space-y-1">
-        <Button
+      <div className="flex flex-col gap-1.5">
+        <button
           type="button"
           onClick={handleGenerate}
           disabled={loading || nameMissing}
-          className="w-full sm:w-auto"
+          className={cn(
+            'btn flow self-start',
+            (loading || nameMissing) && 'cursor-not-allowed opacity-60'
+          )}
         >
-          {loading && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           {t('servers.warpGenerateSave', 'Generate & Add WARP node')}
-        </Button>
+        </button>
         {nameMissing && (
-          <p className="text-xs text-amber-600 dark:text-amber-500">
+          <p className="text-[11px] text-[hsl(var(--warn))]">
             {t('servers.warpNameFirst', 'Enter a node name above first')}
           </p>
         )}

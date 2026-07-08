@@ -1,8 +1,4 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { SegmentedControl } from '@/components/ui/segmented-control';
 import { NodePicker } from '@/components/ui/node-picker';
 import { buildServerPickerModel } from '@/components/ui/server-picker-items';
 import {
@@ -23,10 +19,10 @@ import {
   AlertTriangle,
   ArrowDownNarrowWide,
   Loader2,
+  Pause,
   Play,
   Plus,
   Rss,
-  Square,
   Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -99,10 +95,11 @@ function ExitNodePicker({
 }
 
 /**
- * 首页连接控制卡：合并原「连接状态卡 + 代理控制卡」——出口节点（`.npick` 一步选）+ 连接圆钮三态
- * （未连 teal ▶ / 已连 红 ‖ / 错误 橘 !）+ 接管方式 seg（系统/TUN/手动，切换时若已连弹重连确认）+ 分流策略
- * seg（智能/全局/直连）。功能全保留：空态引导、就地测速/延迟排序、TS 出口警示、选中详情、组网回退提示、
- * manual 提示、置灰原因。接管方式的 FakeIP-TUN 待纠正 / native gate 引导逻辑与原卡逐字迁移。
+ * 首页连接控制卡（Conduit `.card.conn-card`）：出口节点 `.npick` 一步选 + 连接圆钮三态
+ * （未连 teal ▶ `.conn-toggle.off` / 已连 红 ‖ `.on` / 错误 橘 ! `.err`）+ 接管方式 `.seg2`（系统/TUN/手动，
+ * 切换时若已连弹重连确认）+ 分流策略 `.seg2`（智能/全局/直连）。功能全保留：空态引导、就地测速/延迟排序、
+ * TS 出口警示、选中详情、组网回退提示、manual 提示、置灰原因。接管方式的 FakeIP-TUN 待纠正 / native gate
+ * 引导逻辑逐字迁移。附加状态（空态/提示/详情/重连确认）以同一 conduit 语言渲染在卡片下方，自然承接。
  */
 export function ConnectionControlCard() {
   const { t } = useTranslation();
@@ -183,7 +180,7 @@ export function ConnectionControlCard() {
     if (!config) return;
     try {
       await saveConfig({ ...config, selectedServerId: serverId });
-      toast.success(t('home.serverSwitched'));
+      // 选节点不弹「已切换」成功 toast（用户反馈：picker 即时反映选择即为反馈、无需提醒；同接管方式 toast 移除理由）。
     } catch (error) {
       toast.error(t('home.switchFailed'), {
         description: error instanceof Error ? error.message : t('home.switchError'),
@@ -210,9 +207,8 @@ export function ConnectionControlCard() {
         proxyModeType: modeType,
       });
       await saveConfig(next);
-      toast.success(t('settings.proxyMode.successUpdate'), {
-        description: isConnected ? t('settings.proxyMode.reconnectToast') : undefined,
-      });
+      // 接管方式变更不弹「代理模式已更新」成功 toast（用户反馈：无需提醒、避免叠加）；分段控件即时反映即为反馈。
+      // 仅保留 FakeIP 自动纠正的一次性提示（罕见、有实际副作用需告知）。
       if (corrected) toast.info(t('settings.proxyMode.fakeIpAutoEnabled'));
     } catch {
       toast.error(t('settings.proxyMode.failUpdate'));
@@ -267,22 +263,23 @@ export function ConnectionControlCard() {
     { value: 'global' as const, label: t('home.routingGlobal'), title: t('home.modeGlobalDesc') },
     { value: 'direct' as const, label: t('home.routingDirect'), title: t('home.modeDirectDesc') },
   ];
+  const currentRouting = config?.proxyMode || 'smart';
 
-  // 连接圆钮：三态配色（token 双主题）+ spinner + 图标。
-  const connBtnColor =
+  // 连接圆钮三态：off=未连（teal ▶）/ on=已连或断开中（红 ‖）/ err=错误（橘 !）；busy 期间显 spinner。
+  const connState =
     connBtn.kind === 'stop' || connBtn.kind === 'stopping'
-      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+      ? 'on'
       : connBtn.kind === 'error'
-        ? 'bg-warning text-warning-foreground hover:bg-warning/90'
-        : 'bg-primary text-primary-foreground hover:bg-primary/90';
+        ? 'err'
+        : 'off';
   const connIcon = connBtn.busy ? (
-    <Loader2 className="h-5 w-5 animate-spin" />
+    <Loader2 className="h-4 w-4 animate-spin" />
   ) : connBtn.kind === 'stop' ? (
-    <Square className="h-5 w-5 fill-current" />
+    <Pause className="h-4 w-4 fill-current" />
   ) : connBtn.kind === 'error' ? (
-    <AlertCircle className="h-5 w-5" />
+    <AlertCircle className="h-4 w-4" />
   ) : (
-    <Play className="h-5 w-5 translate-x-px fill-current" />
+    <Play className="h-4 w-4 translate-x-px fill-current" />
   );
   const connTitle =
     connBtn.kind === 'stop'
@@ -291,201 +288,192 @@ export function ConnectionControlCard() {
         ? startDisabledReason || t('home.startProxy')
         : t('home.startProxy');
 
-  // 就地测速 + 延迟排序（仅有节点时显）：紧凑图标按钮，放出口节点行内。
-  const nodeControls =
-    servers.length > 0 ? (
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-pressed={sortByLatency}
-          title={t('home.sortByLatency')}
-          onClick={toggleSortByLatency}
-          className={cn(
-            'h-9 w-9',
-            sortByLatency && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary'
-          )}
-        >
-          <ArrowDownNarrowWide className="h-4 w-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-9 w-9"
-          disabled={isTestingSpeed}
-          title={
-            isTestingSpeed && speedProgress
-              ? `${speedProgress.tested}/${speedProgress.total}`
-              : t('servers.speedTestGroup')
-          }
-          onClick={handleSpeedTest}
-        >
-          <Zap className={cn('h-4 w-4', isTestingSpeed && 'animate-pulse')} />
-        </Button>
-      </div>
-    ) : null;
+  const speedTitle =
+    isTestingSpeed && speedProgress
+      ? `${speedProgress.tested}/${speedProgress.total}`
+      : t('servers.speedTestGroup');
+
+  const isEmptyState = servers.length === 0 && !isDirect;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle>{t('home.connectionStatus')}</CardTitle>
-          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* 出口节点：一步选下拉 + 测速/排序 + 连接圆钮 */}
-        <div className="space-y-2">
-          <span className="text-sm text-muted-foreground">{t('home.exitNode', '出口节点')}</span>
-          {servers.length === 0 && !isDirect ? (
+    <div className="flex flex-col gap-3">
+      <div className="card conn-card">
+        {/* 出口节点：一步选下拉 + 测速/排序 + 连接圆钮三态 */}
+        <div className="field">
+          <div className="field-lbl">{t('home.exitNode', '出口节点')}</div>
+          {isEmptyState ? (
             // 空态引导：无节点 → 添加节点/订阅（连接圆钮同排但置灰）。
-            <div className="flex items-center gap-2">
-              <div className="flex flex-1 flex-wrap gap-2 rounded-md border border-dashed border-muted-foreground/25 p-3">
-                <span className="w-full text-sm text-muted-foreground">
+            <div className="cc-node-row">
+              <div className="flex flex-1 flex-wrap items-center gap-2 rounded-[9px] border border-dashed border-[hsl(var(--line))] bg-[hsl(var(--surface-2))] p-3">
+                <span className="w-full text-[12.5px] text-[hsl(var(--fg-dim))]">
                   {t('home.noServerConfig')}
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
+                <button
+                  type="button"
+                  className="btn ghost sm"
                   onClick={() => {
                     setServerPageAction('add-server');
                     setCurrentView('server');
                   }}
-                  className="gap-1.5"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-3.5 w-3.5" />
                   {t('home.addServer')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm"
                   onClick={() => {
                     setServerPageAction('add-sub');
                     setCurrentView('server');
                   }}
-                  className="gap-1.5"
                 >
-                  <Rss className="h-4 w-4" />
+                  <Rss className="h-3.5 w-3.5" />
                   {t('home.addSubscription')}
-                </Button>
+                </button>
               </div>
-              <ConnectButton
+              <ConnToggle
                 disabled
                 title={t('home.plsConfigServer')}
-                colorClass={connBtnColor}
+                state={connState}
                 icon={connIcon}
               />
             </div>
           ) : (
-            <>
-              <div className="flex items-center gap-1.5">
-                <ExitNodePicker
-                  servers={servers}
-                  selectedServerId={selectedServerId ?? undefined}
-                  onSelect={handleServerChange}
-                />
-                {nodeControls}
-                <ConnectButton
-                  onClick={handleToggleProxy}
-                  disabled={connBtn.disabled}
-                  title={connTitle}
-                  colorClass={connBtnColor}
-                  icon={connIcon}
-                />
-              </div>
-
-              {/* 有节点未选中：行内提示（选出口）。直连不触发。 */}
-              {!selectedServer && !isDirect && (
-                <p className="flex items-center gap-1.5 text-xs text-warning">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  {t('home.selectServerHint')}
-                </p>
+            <div className="cc-node-row">
+              <ExitNodePicker
+                servers={servers}
+                selectedServerId={selectedServerId ?? undefined}
+                onSelect={handleServerChange}
+              />
+              {servers.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className="btn ghost icon"
+                    disabled={isTestingSpeed}
+                    title={speedTitle}
+                    aria-label={speedTitle}
+                    onClick={handleSpeedTest}
+                  >
+                    <Zap className={cn('h-4 w-4', isTestingSpeed && 'animate-pulse')} />
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      'btn ghost icon',
+                      sortByLatency &&
+                        'border-[hsl(var(--flow)/0.4)] bg-[hsl(var(--flow-weak))] text-[hsl(var(--flow-hi))] hover:bg-[hsl(var(--flow-weak))]'
+                    )}
+                    aria-pressed={sortByLatency}
+                    title={t('home.sortByLatency')}
+                    aria-label={t('home.sortByLatency')}
+                    onClick={toggleSortByLatency}
+                  >
+                    <ArrowDownNarrowWide className="h-4 w-4" />
+                  </button>
+                </>
               )}
-
-              {/* §H：TS 出口名不副实行内警示；none→null。 */}
-              <TsExitWarning />
-
-              {/* 选中详情（协议/地址/端口）/ 全局直连说明。 */}
-              {isDirect ? (
-                <p className="text-xs text-muted-foreground">
-                  {t('home.directGlobalHint', '全局直连：未命中规则的流量直连，仅按规则走代理')}
-                </p>
-              ) : selectedServer ? (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    {t('home.protocol')}
-                    <Badge variant="outline" className="text-[10px]">
-                      {selectedServer.protocol}
-                    </Badge>
-                  </span>
-                  {selectedServer.address && (
-                    <span className="inline-flex min-w-0 items-center gap-1">
-                      {t('home.address')}
-                      <span
-                        className="max-w-[180px] truncate font-mono text-foreground"
-                        title={selectedServer.address}
-                      >
-                        {selectedServer.address}
-                      </span>
-                    </span>
-                  )}
-                  {selectedServer.port ? (
-                    <span className="inline-flex items-center gap-1">
-                      {t('home.port')}
-                      <span className="font-mono text-foreground">{selectedServer.port}</span>
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
+              <ConnToggle
+                onClick={handleToggleProxy}
+                disabled={connBtn.disabled}
+                title={connTitle}
+                state={connState}
+                icon={connIcon}
+              />
+            </div>
           )}
         </div>
 
-        <div className="h-px bg-border" />
+        <div className="cc-hair" />
 
-        {/* 接管方式 + 分流策略：两列等宽分段（窄屏转单列） */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <span className="text-sm text-muted-foreground">{t('home.takeoverMethod')}</span>
-            <SegmentedControl
-              options={takeoverOptions}
-              value={proxyModeType}
-              onChange={handleTakeoverChange}
-              disabled={proxyBusy}
-            />
+        {/* 接管方式 + 分流策略：两列等宽 seg2 */}
+        <div className="mode-grid">
+          <div className="field">
+            <div className="field-lbl">
+              {t('home.takeoverMethod')} <small>{t('home.takeoverHint')}</small>
+            </div>
+            <div className="seg2">
+              {takeoverOptions.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={cn(
+                    o.value === proxyModeType && 'on',
+                    'disabled:cursor-not-allowed disabled:opacity-50'
+                  )}
+                  title={o.title}
+                  disabled={proxyBusy}
+                  onClick={() => handleTakeoverChange(o.value)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <span className="text-sm text-muted-foreground">{t('home.routingStrategy')}</span>
-            <SegmentedControl
-              options={routingOptions}
-              value={config?.proxyMode || 'smart'}
-              onChange={handleRoutingChange}
-              disabled={proxyBusy || routingBusy}
-            />
+          <div className="field">
+            <div className="field-lbl">
+              {t('home.routingStrategy')} <small>{t('home.routingHint')}</small>
+            </div>
+            <div className="seg2">
+              {routingOptions.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  className={cn(
+                    o.value === currentRouting && 'on',
+                    'disabled:cursor-not-allowed disabled:opacity-50'
+                  )}
+                  title={o.title}
+                  disabled={proxyBusy || routingBusy}
+                  onClick={() => handleRoutingChange(o.value)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+      </div>
 
-        {meshExitDirect && (
-          <p className="text-xs text-warning">
-            {t(
-              'home.meshExitDirectHint',
-              '所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。'
-            )}
-          </p>
-        )}
+      {/* 附加状态（同一 conduit 语言，承接卡片下方；不适用时各自渲 null，不占位）───────────────── */}
 
-        {/* 状态描述 + 仅本地代理（manual）提示 */}
-        <p className="text-xs text-muted-foreground">{statusInfo.description}</p>
-        {(statusInfo as { isManualNotice?: boolean }).isManualNotice && (
-          <div className="flex items-center gap-1.5 rounded-md border border-info/20 bg-info/10 p-2.5 text-sm font-medium text-info">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-info opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-info" />
-            </span>
-            {t('home.manualModeTip')}
-          </div>
-        )}
-      </CardContent>
+      {/* 有节点未选中：行内提示（选出口）。直连不触发。 */}
+      {servers.length > 0 && !selectedServer && !isDirect && (
+        <p className="flex items-center gap-1.5 text-xs text-warning">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {t('home.selectServerHint')}
+        </p>
+      )}
+
+      {/* §H：TS 出口名不副实行内警示；none→null。 */}
+      <TsExitWarning />
+
+      {/* 全局直连说明（仅 direct 模式）。选中节点协议/地址/端口已由出口 npick + 状态栏承载，首页不再重复该行。 */}
+      {isDirect && (
+        <p className="text-xs text-muted-foreground">
+          {t('home.directGlobalHint', '全局直连：未命中规则的流量直连，仅按规则走代理')}
+        </p>
+      )}
+
+      {meshExitDirect && (
+        <p className="text-xs text-warning">
+          {t(
+            'home.meshExitDirectHint',
+            '所选组网节点未开启外网访问：外网流量走直连，仅其网段经此节点。'
+          )}
+        </p>
+      )}
+
+      {/* 仅本地代理（manual）提示。通用连接状态（未启用/已连接等）已由状态栏 + 页头摘要承载，首页卡内不再重复状态描述行。 */}
+      {(statusInfo as { isManualNotice?: boolean }).isManualNotice && (
+        <div className="flex items-center gap-1.5 rounded-md border border-info/20 bg-info/10 p-2.5 text-sm font-medium text-info">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-info opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-info" />
+          </span>
+          {t('home.manualModeTip')}
+        </div>
+      )}
 
       {/* 已连接时切换接管方式 → 确认重连（pendingModeType 非空即开；关闭即清 pending） */}
       <AlertDialog
@@ -522,22 +510,25 @@ export function ConnectionControlCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 }
 
-/** 连接圆钮（三态圆形按钮）：颜色/图标由父卡按 deriveConnectButtonState 传入。 */
-function ConnectButton({
+/**
+ * 连接圆钮（Conduit `.conn-toggle` 三态圆钮，40px）：state=off（teal ▶）/ on（红 ‖）/ err（橘 !）由父卡按
+ * deriveConnectButtonState 传入；禁用时降透明度。图标（含 spinner）由父卡传入。
+ */
+function ConnToggle({
   onClick,
   disabled,
   title,
-  colorClass,
+  state,
   icon,
 }: {
   onClick?: () => void;
   disabled?: boolean;
   title: string;
-  colorClass: string;
+  state: 'off' | 'on' | 'err';
   icon: ReactNode;
 }) {
   return (
@@ -547,10 +538,7 @@ function ConnectButton({
       disabled={disabled}
       title={title}
       aria-label={title}
-      className={cn(
-        'ms-1 flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-        colorClass
-      )}
+      className={cn('conn-toggle', state, disabled && 'cursor-not-allowed opacity-50')}
     >
       {icon}
     </button>

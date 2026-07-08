@@ -1,15 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -171,79 +163,64 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="443" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="uuid"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.uuid', 'UUID')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t('servers.uuidPlaceholder')} {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      {t('servers.vmessUuidDesc', 'VMess 用户 UUID')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="443" />
+          <FieldSpan>
             <FormField
               control={form.control}
-              name="alterId"
+              name="uuid"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>AlterID</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      placeholder="0"
-                      {...field}
-                      onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    {t('servers.alterIdDesc', 'V2Ray 兼容属性，通常设为 0')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.uuid', 'UUID')} <span className="nd-req">*</span>
+                  </span>
+                  <Input className="mono" placeholder={t('servers.uuidPlaceholder')} {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
-            <FormField
-              control={form.control}
-              name="vmessSecurity"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.encryption')}</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectEncryption')} />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="auto">auto</SelectItem>
-                      <SelectItem value="aes-128-gcm">aes-128-gcm</SelectItem>
-                      <SelectItem value="chacha20-poly1305">chacha20-poly1305</SelectItem>
-                      <SelectItem value="none">none</SelectItem>
-                      <SelectItem value="zero">zero</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    {t('servers.vmessSecurityDesc', 'VMess 加密方式')}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </FieldGrid>
-        </FormSection>
+          </FieldSpan>
+          <FormField
+            control={form.control}
+            name="alterId"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">AlterID</span>
+                <Input
+                  type="number"
+                  placeholder="0"
+                  {...field}
+                  onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="vmessSecurity"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.encryption')}</span>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('servers.selectEncryption')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">auto</SelectItem>
+                    <SelectItem value="aes-128-gcm">aes-128-gcm</SelectItem>
+                    <SelectItem value="chacha20-poly1305">chacha20-poly1305</SelectItem>
+                    <SelectItem value="none">none</SelectItem>
+                    <SelectItem value="zero">zero</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+        </FieldGrid>
 
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           <FieldGrid cols={2}>
@@ -251,14 +228,12 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
               control={form.control}
               name="network"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.transport')}</FormLabel>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.transport')}</span>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectTransport')} />
-                      </SelectTrigger>
-                    </FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('servers.selectTransport')} />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Tcp">TCP</SelectItem>
                       <SelectItem value="Ws">WebSocket</SelectItem>
@@ -267,31 +242,27 @@ export function VmessForm({ serverConfig, onSubmit }: VmessFormProps) {
                       <SelectItem value="Http">HTTP/2</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>{t('servers.transportDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="security"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.security')}</FormLabel>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.security')}</span>
                   <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('servers.selectSecurity')} />
-                      </SelectTrigger>
-                    </FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('servers.selectSecurity')} />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="None">{t('servers.none')}</SelectItem>
                       <SelectItem value="Tls">TLS</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>{t('servers.securityDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FieldGrid>

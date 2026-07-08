@@ -57,13 +57,16 @@
     "restoreDefault": "Restore defaults",
     "moreInfo": "More info",
     "search": "Search",
-    "noResults": "No results"
+    "noResults": "No results",
+    "apply": "Apply",
+    "remove": "Remove",
+    "copy": "Copy"
   },
   "sidebar": {
     "home": "Home",
-    "logs": "Live Logs",
+    "logs": "Logs",
     "connections": "Connections",
-    "server": "Servers",
+    "server": "Nodes",
     "appPolicy": "App Policy",
     "ruleResources": "Rule Resources",
     "rules": "Rules",
@@ -76,7 +79,7 @@
     }
   },
   "logs": {
-    "pageTitle": "Live Logs",
+    "pageTitle": "Logs",
     "pageDesc": "View sing-box core and application runtime logs",
     "settingsTitle": "Logs & Diagnostics",
     "currentLevel": "Level"
@@ -228,9 +231,36 @@
       "placeholder": "Select rule-sets",
       "search": "Search rule-sets",
       "noMatch": "No matching rule-sets"
-    }
+    },
+    "accelHintCustom": "Enter a mirror domain",
+    "accelHintDirect": "Official source · may be slow",
+    "accelHintPreset": "Mirror acceleration",
+    "autoUpdateOffHint": "Off — resources must be updated manually",
+    "autoUpdateOnHint": "On — refreshes downloaded resources in the background at the selected interval",
+    "catalogTruncatedNote": "Long list — showing the first {{shown}} matches (of {{total}}) · narrow it with search",
+    "customDomainLabel": "Custom accelerator domain",
+    "dismiss": "Dismiss",
+    "downloadingBadge": "Downloading",
+    "downloadMethod": "Download method",
+    "failedBadge": "Failed",
+    "ghProxyHint": "Leave empty to fall back to direct; on download failure it auto-falls back to direct.",
+    "ghProxySmall": "Resources download through this",
+    "libSelected": "{{n}} selected",
+    "refGroupCount": "{{n}} items",
+    "refKindApp": "App",
+    "refKindRoute": "Route",
+    "refNone": "Unused",
+    "searchDownloaded": "Search resources…",
+    "searchEmpty": "No matching resources",
+    "summaryCount": "{{n}} total",
+    "summaryMissing": "{{n}} missing",
+    "tableUsage": "Usage",
+    "urlRequired": "Required"
   },
   "home": {
+    "takeoverHint": "Capture",
+    "routingHint": "Route",
+    "topologyHint": "Right-click a domain to add a rule",
     "connectionStatus": "Connection Status",
     "directGlobalHint": "Global Direct: unmatched traffic goes direct; only rule-matched traffic uses proxy",
     "selectServer": "Select Server",
@@ -308,21 +338,10 @@
     "logLines": "{{count}} lines",
     "logLinesFiltered": "{{shown}} / {{total}}",
     "logLinesFilteredTitle": "Matched / buffered lines",
-    "networkInfo": "Network Info",
-    "localExit": "Local Exit",
-    "proxyExit": "Proxy Exit",
-    "detecting": "Detecting…",
-    "directLabel": "Direct",
     "upload": "Upload",
     "download": "Download",
-    "activeConnections": "Active",
-    "ipNotConnected": "Not connected",
     "ipFetchFailed": "Failed",
-    "ipProxyUnavailable": "Proxy exit unavailable",
-    "ipLocalUnavailable": "Local exit unavailable",
-    "refreshIp": "Refresh",
-    "maskIp": "Hide IP",
-    "ipStale": "Some exit IPs failed to fetch; showing last known result",
+    "exitInvalid": "Exit invalid",
     "loading": "Loading...",
     "noActiveConnections": "No active connections",
     "addToRule": "Add to Custom Rule",
@@ -341,8 +360,10 @@
     "speedTestNoResult": "Tested {{count}} nodes · all timed out",
     "tsExitNoDeviceWarn": "Set as exit, but no exit node selected — internet traffic still goes direct.",
     "tsExitDeviceOfflineWarn": "The exit node is offline; internet may not route through Tailscale.",
+    "tsExitNotAdvertisedWarn": "The selected exit node isn't advertising as an exit; internet can't route through it — pick a device that advertises exit.",
     "tsExitPickDevice": "Pick exit node",
-    "exitNode": "Exit Node"
+    "exitNode": "Exit Node",
+    "reprobeExit": "Re-check exit"
   },
   "settings": {
     "nav": {
@@ -377,7 +398,13 @@
       "privacyPasswordPlaceholder": "Set password (leave blank to unlock freely)",
       "successUpdate": "Settings saved",
       "failUpdate": "Failed to save settings",
-      "clearPassword": "Clear"
+      "clearPassword": "Clear",
+      "startupSub": "App startup and tray behavior",
+      "autoStartDesc": "Run FlowZ automatically when you log in",
+      "autoConnectDesc": "Restore the last exit node and takeover mode, then connect",
+      "behaviorSub": "Update prompts, window and privacy mask",
+      "autoCheckUpdateDesc": "Notify on the About page when a new version is found",
+      "rememberWindowSizeDesc": "Restore the last window layout the next time you open it"
     },
     "coreVersion": {
       "changedTitle": "sing-box Core Updated",
@@ -447,7 +474,22 @@
       "uninstallConfirmBtn": "Uninstall completely",
       "uninstallFail": "Uninstall failed",
       "restrictCoreUpdateDescFull": "When off, \"Check for updates\" can surface cross-band versions, which still require manual confirmation to install. Auto-update always stays within the band and is unaffected by this option.",
-      "autoUpdateDescFull": "Auto-updates only within the compatible version band; crossing a major version requires manual confirmation. While running, updates are only downloaded and staged — your connection is never interrupted."
+      "autoUpdateDescFull": "Auto-updates only within the compatible version band; crossing a major version requires manual confirmation. While running, updates are only downloaded and staged — your connection is never interrupted.",
+      "sourceOfficial": "Official",
+      "sourceFork": "Third-party",
+      "sourceUnknown": "Unknown",
+      "cardSub": "sing-box version, source and updates",
+      "sourceDesc": "Core source: Official / Third-party / Unknown, auto-detected",
+      "srcNoteOfficial": "GitHub online updates available",
+      "srcNoteFork": "Online / auto-update disabled",
+      "srcNoteUnknown": "Cannot verify, notice only",
+      "backupVersionDesc": "Roll back to this version if an upgrade fails or misbehaves",
+      "manualReplaceDesc": "Import a local sing-box executable (same version / overwriting the baseline needs confirmation)",
+      "selectFile": "Choose file…",
+      "resetFactoryRowDesc": "Restore the official core version bundled with the app",
+      "resetShort": "Reset",
+      "uninstallRowDesc": "Remove the core, helper, config and all local data",
+      "uninstallShort": "Uninstall completely"
     },
     "appearance": {
       "title": "Appearance",
@@ -459,7 +501,11 @@
       "language": "Language",
       "languageAuto": "Auto (follow system)",
       "themeUpdated": "Theme updated",
-      "languageUpdated": "Switched to English"
+      "languageUpdated": "Switched to English",
+      "themeSub": "Follow the system or lock light/dark manually",
+      "themeRowLabel": "Color theme",
+      "languageSub": "Interface language, applies instantly",
+      "languageRowLabel": "Display language"
     },
     "network": {
       "title": "Network",
@@ -485,7 +531,15 @@
       "webrtcLeakBlock": "Block",
       "webrtcLeakTunOnlyHint": "WebRTC leak protection only works in TUN mode. Switch to TUN mode to enable it.",
       "meshLoginFallback": "Fall back to direct during mesh login",
-      "meshLoginFallbackDesc": "When the selected Tailscale exit isn't connected yet, route traffic directly during login/authorization (so the auth page isn't sent to the not-yet-connected exit and deadlocks), then switch back to the exit once connected. Turn off to never go direct during login (authorization may fail instead)."
+      "meshLoginFallbackDesc": "When the selected Tailscale exit isn't connected yet, route traffic directly during login/authorization (so the auth page isn't sent to the not-yet-connected exit and deadlocks), then switch back to the exit once connected. Turn off to never go direct during login (authorization may fail instead).",
+      "dnsCardSub": "Domain resolution, FakeIP and node resolver",
+      "localProxyLanSub": "Port, LAN sharing and TUN exclusions",
+      "onlyTun": "TUN only",
+      "onlyTunLinuxMac": "TUN only · Linux / macOS",
+      "onlyLinux": "Linux only",
+      "tunModeSub": "Virtual NIC network stack (shown only with TUN takeover)",
+      "connectionSub": "Switching behavior and QUIC / TLS / IPv6 governance",
+      "updateAndSpeedTestSub": "Subscription auto-update, update-traffic routing and speed-test endpoint"
     },
     "proxyMode": {
       "systemProxyMode": "System Proxy Mode",
@@ -718,7 +772,11 @@
       "nodeResolverErrDomain": "Only plain IPs are supported, not domains",
       "nodeResolverErrDuplicate": "This upstream already exists",
       "nodeResolverSingleLabel": "Resolve upstream",
-      "nodeResolverSingleHint": "Single upstream, no concurrent fault-tolerance (falls back to a single DNS)."
+      "nodeResolverSingleHint": "Single upstream, no concurrent fault-tolerance (falls back to a single DNS).",
+      "nodeResolverRaceGroup": "Race group",
+      "nodeResolverRaceGroupCap": "Encrypted · max 3",
+      "singboxDashboardCardSub": "sing-box native control API",
+      "singboxDashboardEnable": "Enable external control"
     },
     "about": {
       "title": "About",
@@ -761,7 +819,8 @@
       "checking": "Checking...",
       "updating": "Updating...",
       "checkUpdate": "Check for Updates",
-      "downloading": "Downloading update..."
+      "downloading": "Downloading update...",
+      "updateAvailable": "Update {{version}} available"
     }
   },
   "servers": {
@@ -1242,7 +1301,20 @@
     "meshLoginFallbackTitle": "Temporarily connecting directly (mesh login)",
     "meshLoginFallbackDesc": "The selected Tailscale exit isn't connected yet, so traffic goes directly during login/authorization; it switches back to the exit automatically once connected.",
     "meshLoginFallbackRestored": "Connected to {{name}}, routing switched back to this exit",
-    "tsConnCardOpenLogin": "Open login page"
+    "tsConnCardOpenLogin": "Open login page",
+    "nodeCountSummary": "Total {{total}} · Custom {{manual}} · Mesh {{mesh}} · Subscription {{sub}}",
+    "expireAt": "Expires {{date}}",
+    "realityRequiredWhen": "security=Reality",
+    "meshAccessEntryHint": "Tailscale / WARP can be managed here once joined; WireGuard can keep being added",
+    "meshWgAddSub": ".conf import / manual entry",
+    "meshWarpManageTitle": "WARP account management",
+    "meshJoinedTag": "Joined",
+    "meshWarpManageSub": "Re-register / Deregister device",
+    "meshWarpAddSub": "Register an anonymous device to join",
+    "meshTsManageSub": "Settings · Log out / Switch account",
+    "meshTsKeyReadySub": "Settings · Delete",
+    "meshTsAddSub": "Interactive login / AuthKey",
+    "meshTsEntryTitle": "Tailscale mesh access and account management"
   },
   "rules": {
     "ruleColumn": "Rule",
@@ -1257,7 +1329,7 @@
     "ruleDeleted": "Rule deleted",
     "delete": "Delete",
     "valueLabel": "Match values",
-    "processHint": "Only locally-originated connections can be matched by process",
+    "processHint": "Only locally-originated connections can be matched by process, case-sensitive",
     "invalidInline": "Invalid format: {{values}}",
     "commonTags": "Common tags",
     "typeHints": {
@@ -1435,7 +1507,8 @@
       "nodeLocked": "Outbound locked",
       "ruleSetLabel": "Rule sets",
       "ruleSetSub": "geosite / geoip / process",
-      "download": "Download"
+      "download": "Download",
+      "policyClickHint": "Click to switch"
     },
     "apps": {
       "youtube": "YouTube",
@@ -1538,14 +1611,33 @@
       "goToResources": "No rule set? Go to Rule Resources to download more",
       "processLabel": "Process",
       "processPlaceholder": "App.exe, appname",
-      "processHint": "Optional · comma-separated, more precise than geo domain matching",
+      "processHint": "Optional · comma-separated, more precise than geo domain matching. Case-sensitive — use \"Pick process\" to get the exact name.",
       "geoAutoDownloadNote": "Selected geosite / geoip rule sets that are missing locally will be downloaded on add (fail-closed: geo matching for this app is inactive until download completes; process-name matching is unaffected).",
-      "save": "Save App"
+      "save": "Save App",
+      "categoryFieldHint": "Group under a category; choose “Custom…” to create a new one",
+      "geoipFieldHint": "IP-range match · multi-select",
+      "geositeFieldHint": "Domain match · multi-select",
+      "iconEmojiGroup": "emoji fallback",
+      "iconFallbackHint": "If the remote icon fails to load, it falls back to the app name’s initial.",
+      "iconFieldHint": "Remote icon / emoji / URL; falls back to the initial on load failure",
+      "iconLetterFallback": "Initial icon",
+      "iconRemoteGroup": "Remote icons",
+      "iconUrlGroup": "Or paste an icon URL",
+      "nameReq": "Required",
+      "processFieldHint": "Optional · comma-separated"
     },
     "errorRemarksRequired": "Please enter a remark",
     "multiCondition": "Multi-condition",
     "policyLabel": "Policy",
-    "unnamedRule": "Unnamed rule"
+    "unnamedRule": "Unnamed rule",
+    "appRoutingReenable": "Re-enable",
+    "chainStepBypassLan": "Bypass LAN",
+    "chainStepDefault": "Default egress",
+    "chainStepSmart": "Smart routing",
+    "conditionCount": "{{count}}",
+    "disabledBadge": "Disabled",
+    "orderDraftUnsaved": "Unsaved order draft",
+    "viewDensity": "View density"
   },
   "sub": {
     "requireName": "Please enter a subscription name",

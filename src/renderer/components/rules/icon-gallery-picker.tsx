@@ -1,16 +1,12 @@
 /**
- * 图标库选择器 —— 从 app-rules-card 抽出（审计 §6 Tier-2 #4：拆 IconGallery）。
- * 自含：多 CDN 兜底拉取图标库 + 搜索 + 网格选择 + 加载失败手动输入兜底。
- * 与主卡的 preset 图标失败缓存（_failedIconsCache）无关，故可独立成组件。
- * 图标库经模块级缓存跨「打开/关闭」持久化（同 _failedIconsCache 模式），避免每次开重拉 CDN。
+ * 图标库选择器（Conduit `.ico-lib`，内联 `<details>` 展开）—— 用于新增自定义应用的「应用图标」字段：
+ * 远端图标搜索 + 网格选择（`.ico-remote`，加载失败回退首字母 `.ico-fallback`）+ emoji 兜底调色板 `.ico-emoji`
+ * + 手动粘贴图标 URL `.ico-url`。图标库经模块级缓存跨「打开/关闭」持久化，避免每次重拉 CDN。
+ * 数据源解耦：只吃当前 emoji/iconUrl + appName，回调回填父级表单（onPickRemote / onPickEmoji / onApplyUrl）。
  */
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Plus } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Search, ChevronDown } from 'lucide-react';
 import { ruleResourcesApi } from '@/ipc/api-client';
 import { iconProxySrc } from '../../../shared/icon-proxy';
 
@@ -19,30 +15,43 @@ type IconItem = { name: string; url: string };
 // 模块级缓存：已拉取的图标库跨组件挂载持久化（图标库每次打开不重拉 CDN）；空结果不缓存（length>0 才跳过重拉）。
 let _iconGalleryCache: IconItem[] = [];
 
+// emoji 兜底调色板（远端图标不可用/不想用时的快速选择）。
+const EMOJI_PALETTE = ['🌐', '📺', '🎬', '🎮', '💬', '🤖', '🛒', '🎵'];
+
 interface IconGalleryPickerProps {
-  /** 选中图标库中的某图标（url + 由文件名推导的建议名，供未命名时回填）。 */
-  onSelectIcon: (url: string, suggestedName: string) => void;
-  /** 选「默认 🌐」：清图标 URL、置 emoji 🌐 并关闭图标库。 */
-  onSelectDefault: () => void;
-  /** 关闭图标库（返回新增表单）。 */
-  onClose: () => void;
-  /** 手动输入图标 URL 兜底（绑定外层 newAppIconUrl）。 */
-  manualUrl: string;
-  onManualUrlChange: (v: string) => void;
+  /** 当前 emoji（无 iconUrl 时展示 + `.sel` 高亮）。 */
+  emoji: string;
+  /** 当前远端/URL 图标。 */
+  iconUrl: string;
+  /** 应用名（首字母回退用）。 */
+  appName: string;
+  /** 选中远端图标（url + 由文件名推导的建议名，供未命名时回填）。 */
+  onPickRemote: (url: string, suggestedName: string) => void;
+  /** 选中 emoji（清 iconUrl、置 emoji）。 */
+  onPickEmoji: (emoji: string) => void;
+  /** 应用手动粘贴的图标 URL。 */
+  onApplyUrl: (url: string) => void;
 }
 
+const firstLetter = (s: string): string => (s.trim()[0] || '?').toUpperCase();
+
 export function IconGalleryPicker({
-  onSelectIcon,
-  onSelectDefault,
-  onClose,
-  manualUrl,
-  onManualUrlChange,
+  emoji,
+  iconUrl,
+  appName,
+  onPickRemote,
+  onPickEmoji,
+  onApplyUrl,
 }: IconGalleryPickerProps) {
   const { t } = useTranslation();
   const [iconGalleries, setIconGalleries] = useState<IconItem[]>(() => _iconGalleryCache);
   const [isLoadingIcons, setIsLoadingIcons] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [urlInput, setUrlInput] = useState('');
+  // 加载失败的远端图标 url 集合 → 回退首字母（.ico-fallback）。
+  const [failedRemotes, setFailedRemotes] = useState<Set<string>>(() => new Set());
+  const [previewFailed, setPreviewFailed] = useState(false);
 
   useEffect(() => {
     // 已缓存有内容且非重试 → 跳过（保留原 iconGalleries.length>0 guard 语义）
@@ -51,10 +60,10 @@ export function IconGalleryPicker({
     const fetchIcons = async () => {
       setIsLoadingIcons(true);
       try {
-        // 图标库拉取下沉主进程经 update-in 统一会话（Phase 1b：renderer 不再直接 fetch 走 default session）。
+        // 图标库拉取下沉主进程经 update-in 统一会话（renderer 不再直接 fetch 走 default session）。
         // 多 CDN 源兜底 + 全失败返 [] 由主进程 RuleResourceManager.fetchIconGalleries 处理。
         const allIcons = await ruleResourcesApi.fetchIconGalleries();
-        // 无论是否拿到数据都正常结束，失败时 allIcons 为空数组，UI 会显示手动输入兜底
+        // 无论是否拿到数据都正常结束，失败时 allIcons 为空数组，UI 会显示 emoji/URL 兜底
         _iconGalleryCache = allIcons;
         setIconGalleries(allIcons);
       } catch (e) {
@@ -67,104 +76,150 @@ export function IconGalleryPicker({
     fetchIcons();
   }, [retryTick]);
 
+  // 预览 img 换源时清失败态（避免上次失败缓存到新 url）。
+  useEffect(() => {
+    setPreviewFailed(false);
+  }, [iconUrl]);
+
   const filteredIcons = searchQuery
     ? iconGalleries.filter((i) => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : iconGalleries.slice(0, 100);
+    : iconGalleries.slice(0, 60);
+
+  const markRemoteFailed = (url: string) =>
+    setFailedRemotes((prev) => (prev.has(url) ? prev : new Set(prev).add(url)));
+
+  const applyUrl = () => {
+    const u = urlInput.trim();
+    if (!u) return;
+    onApplyUrl(u);
+    setUrlInput('');
+  };
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
-            <Plus className="h-4 w-4 rotate-45" />
-          </Button>
-          {t('rules.customApp.selectIconGallery')}
-        </DialogTitle>
-      </DialogHeader>
-      <div className="space-y-4 py-2">
-        <div className="relative">
-          <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
+    <details className="ico-lib">
+      <summary className="ico-cur">
+        <span className="ico-prev">
+          {iconUrl && !previewFailed ? (
+            <img src={iconProxySrc(iconUrl)} alt="" onError={() => setPreviewFailed(true)} />
+          ) : iconUrl && previewFailed ? (
+            <span className="ico-fallback">{firstLetter(appName || 'A')}</span>
+          ) : (
+            emoji
+          )}
+        </span>
+        <span className="ico-cur-tx">
+          {iconUrl
+            ? t('rules.customApp.iconSelected', { url: iconUrl })
+            : t('rules.customApp.iconChoosePrompt')}
+        </span>
+        <ChevronDown className="chev" />
+      </summary>
+
+      <div className="ico-lib-body">
+        <label className="ico-search">
+          <Search />
+          <input
+            type="text"
             placeholder={t('rules.customApp.searchIconPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="ps-9 h-10 text-sm bg-muted/30 border-none focus-visible:ring-1"
           />
-        </div>
-        <ScrollArea className="h-[300px] pe-4">
-          <div className="grid grid-cols-5 gap-3 p-1">
-            {isLoadingIcons ? (
-              <div className="col-span-5 py-20 text-center text-sm text-muted-foreground animate-pulse">
-                {t('rules.customApp.loadingIcons')}
-              </div>
-            ) : (
-              <>
-                {!searchQuery && (
-                  <Button
-                    variant="outline"
-                    className="h-12 w-12 p-0 text-xl hover:bg-primary/5 hover:border-primary/30"
-                    onClick={onSelectDefault}
-                  >
-                    🌐
-                  </Button>
-                )}
-                {filteredIcons.map((icon, idx) => (
-                  <Button
-                    key={`${icon.name}-${idx}`}
-                    variant="ghost"
-                    className="h-12 w-12 p-1.5 hover:bg-primary/5 hover:border-primary/30 border border-transparent transition-all"
-                    onClick={() =>
-                      onSelectIcon(icon.url, icon.name.replace('.png', '').replace(/_/g, ' '))
-                    }
-                  >
+        </label>
+
+        <div className="ico-sub">{t('rules.customApp.iconRemoteGroup', '远端图标')}</div>
+        {isLoadingIcons ? (
+          <div className="px-1 py-3 text-center text-xs text-fg-faint">
+            {t('rules.customApp.loadingIcons')}
+          </div>
+        ) : iconGalleries.length === 0 ? (
+          <div className="flex flex-col items-center gap-1.5 px-1 py-2 text-center">
+            <span className="text-xs text-fg-faint">{t('rules.customApp.iconLoadFailed')}</span>
+            <button
+              type="button"
+              className="text-[11px] text-flow-hi hover:underline"
+              onClick={() => setRetryTick((n) => n + 1)}
+            >
+              {t('rules.customApp.retryLoad')}
+            </button>
+          </div>
+        ) : (
+          <div className="ico-grid">
+            {filteredIcons.map((icon, idx) => {
+              const failed = failedRemotes.has(icon.url);
+              const selected = iconUrl === icon.url;
+              const suggested = icon.name.replace('.png', '').replace(/_/g, ' ');
+              return (
+                <button
+                  key={`${icon.name}-${idx}`}
+                  type="button"
+                  className={selected ? 'ico-remote sel' : 'ico-remote'}
+                  title={icon.name}
+                  onClick={() => onPickRemote(icon.url, suggested)}
+                >
+                  {failed ? (
+                    <span className="ico-fallback">{firstLetter(icon.name)}</span>
+                  ) : (
                     <img
                       src={iconProxySrc(icon.url)}
-                      className="h-full w-full object-contain"
-                      alt={icon.name}
-                      onError={(e) => {
-                        // 图标代理 403(SSRF)/502(拉取失败) → 隐藏破图（缩略图为可选展示，无需占位）
-                        e.currentTarget.style.visibility = 'hidden';
-                      }}
+                      alt=""
+                      loading="lazy"
+                      onError={() => markRemoteFailed(icon.url)}
                     />
-                  </Button>
-                ))}
-              </>
-            )}
+                  )}
+                  <span className="rn">{suggested}</span>
+                </button>
+              );
+            })}
           </div>
-          {!isLoadingIcons && iconGalleries.length === 0 && (
-            <div className="py-6 px-2 space-y-3">
-              <p className="text-xs text-center text-muted-foreground">
-                {t('rules.customApp.iconLoadFailed')}
-              </p>
-              {/* 兜底方案：手动输入图标 URL */}
-              <div className="space-y-2">
-                <p className="text-[10px] text-muted-foreground">
-                  {t('rules.customApp.manualIconHint')}
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="https://example.com/icon.png"
-                    value={manualUrl}
-                    onChange={(e) => onManualUrlChange(e.target.value)}
-                    className="h-9 text-xs bg-muted/30 border-none focus-visible:ring-1"
-                  />
-                  <Button size="sm" variant="outline" className="shrink-0 h-9" onClick={onClose}>
-                    {t('common.confirm')}
-                  </Button>
-                </div>
-              </div>
-              <Button
-                variant="link"
-                size="sm"
-                className="text-[10px] w-full"
-                onClick={() => setRetryTick((n) => n + 1)}
-              >
-                {t('rules.customApp.retryLoad')}
-              </Button>
-            </div>
+        )}
+
+        <div className="ico-sub">{t('rules.customApp.iconEmojiGroup', 'emoji 兜底')}</div>
+        <div className="ico-emoji">
+          {EMOJI_PALETTE.map((e) => (
+            <button
+              key={e}
+              type="button"
+              className={!iconUrl && emoji === e ? 'sel' : undefined}
+              onClick={() => onPickEmoji(e)}
+            >
+              {e}
+            </button>
+          ))}
+          {appName.trim() && (
+            <button
+              type="button"
+              className={!iconUrl && emoji === firstLetter(appName) ? 'ltr sel' : 'ltr'}
+              title={t('rules.customApp.iconLetterFallback', '首字母图标')}
+              onClick={() => onPickEmoji(firstLetter(appName))}
+            >
+              {firstLetter(appName)}
+            </button>
           )}
-        </ScrollArea>
+        </div>
+
+        <div className="ico-sub">{t('rules.customApp.iconUrlGroup', '或粘贴图标 URL')}</div>
+        <div className="ico-url">
+          <input
+            type="text"
+            placeholder="https://…/icon.png"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                applyUrl();
+              }
+            }}
+          />
+          <button type="button" className="btn sm ghost" onClick={applyUrl}>
+            {t('common.apply', '应用')}
+          </button>
+        </div>
+
+        <div className="ico-hint">
+          {t('rules.customApp.iconFallbackHint', '远端图标加载失败时，自动回退为应用名首字母。')}
+        </div>
       </div>
-    </>
+    </details>
   );
 }

@@ -933,9 +933,9 @@ describe('Snell — review 边界补测', () => {
   });
 
   it('v6 + obfs → 拒绝（sing-box v6 无混淆能力）', () => {
-    expect(() =>
-      parser.parseUrl('snell://pw@s.example.com:443?version=6&obfs=http#n')
-    ).toThrow(/obfs 不受支持/);
+    expect(() => parser.parseUrl('snell://pw@s.example.com:443?version=6&obfs=http#n')).toThrow(
+      /obfs 不受支持/
+    );
   });
 
   it('空白 psk → 拒绝（trim 语义与 completeness 闸门对齐）', () => {

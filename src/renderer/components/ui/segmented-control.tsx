@@ -29,7 +29,12 @@ export function SegmentedControl<T extends string>({
   className,
 }: SegmentedControlProps<T>) {
   return (
-    <div className={cn('inline-flex w-full gap-1 rounded-lg bg-muted p-1', className)}>
+    <div
+      className={cn(
+        'inline-flex w-full gap-[3px] rounded-[9px] border border-line bg-surface-2 p-[3px]',
+        className
+      )}
+    >
       {options.map((opt) => {
         const active = opt.value === value;
         return (
@@ -41,12 +46,10 @@ export function SegmentedControl<T extends string>({
             onClick={() => !active && onChange(opt.value)}
             className={cn(
               // whitespace-nowrap：禁止「TUN 网卡」等含空格标签在窄列里从空格处折行（双列布局下曾断成两行）。
-              'flex-1 whitespace-nowrap rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+              'flex-1 whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-[550] text-fg-dim transition-colors',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               'disabled:pointer-events-none disabled:opacity-50',
-              active
-                ? 'bg-white text-foreground shadow-sm dark:bg-card'
-                : 'text-muted-foreground hover:text-foreground'
+              active ? 'bg-surface font-[650] text-flow-hi shadow-sm' : 'hover:text-fg'
             )}
           >
             {opt.label}

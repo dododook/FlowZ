@@ -5,19 +5,17 @@ import { ServerList } from '@/components/settings/server-list';
 import { MeshAccessEntry } from '@/components/settings/mesh-access-entry';
 import { ServerConfigDialog } from '@/components/settings/server-config-dialog';
 import { SubscriptionDialog } from '@/components/settings/subscription-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Plus,
   RefreshCw,
   Rss,
-  Server,
-  Network,
   ChevronDown,
   Zap,
   HardDriveDownload,
+  Edit,
+  Trash2,
 } from 'lucide-react';
+import { formatBytes } from '@/lib/format';
 import { isAccountBasedProtocol, isEndpointProtocol } from '../../shared/endpoint-routes';
 import { findWarpNode } from '../../shared/warp';
 import { groupServersBySubscription } from '../../shared/server-grouping';
@@ -34,16 +32,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
-import { PageHeader } from '@/components/page-header';
 import { useServerActions } from './use-server-actions';
 import { useSpeedTest } from '@/components/settings/use-speed-test';
 import { LocalImportDialog } from '@/components/settings/local-import-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 type ServerConfigWithId = ServerConfig;
 
@@ -227,123 +218,132 @@ export function ServerPage() {
   const handleSaveSubscription = (subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>) =>
     saveSubscription(subData, editingSub);
 
+  // 页头摘要计数：共 / 自建 / 组网 / 订阅（订阅=各订阅组节点数之和）。
+  const subTotal = subscriptions.reduce((n, sub) => n + serversOfGroup(sub.id).length, 0);
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={t('servers.pageTitle')}
-        description={t('servers.pageDesc')}
-        actions={
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={allSpeed.handleSpeedTest}
-              disabled={allSpeed.isTestingSpeed}
-              className="flex items-center gap-1.5"
-            >
-              <Zap
-                className={`h-4 w-4 ${allSpeed.isTestingSpeed ? 'animate-pulse fill-current/20' : ''}`}
-              />
-              {allSpeed.isTestingSpeed
-                ? allSpeed.speedProgress
-                  ? `${t('servers.speedTesting')} ${allSpeed.speedProgress.tested}/${allSpeed.speedProgress.total}`
-                  : t('servers.speedTesting')
-                : t('servers.speedTestAll')}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" className="flex items-center gap-1.5">
-                  <Plus className="h-4 w-4" />
-                  {t('servers.add')}
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleAddServer}>
-                  <Plus className="h-4 w-4 me-2" />
-                  {t('servers.manualAdd')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsLocalImportOpen(true)}>
-                  <HardDriveDownload className="h-4 w-4 me-2" />
-                  {t('servers.importFromLocal')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleAddSubscription}>
-                  <Rss className="h-4 w-4 me-2" />
-                  {t('servers.addSubscription')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        }
-      />
-
-      <Tabs value={activeTab} onValueChange={setTabOverride}>
-        {/* Tab 栏：自建节点 + 组网 + 每个订阅（可横向滚动；添加/导入/添加订阅已上移页头全局动作） */}
-        <div className="flex items-center gap-4">
-          {/* 可滚动的 Tab 区域，两侧渐变遮罩提示还有更多内容 */}
-          <div className="relative min-w-0 flex-1">
-            {/* 左侧渐变遮罩 */}
-            <div className="pointer-events-none absolute start-0 top-0 z-10 h-full w-8 bg-gradient-to-r from-background to-transparent" />
-            {/* 右侧渐变遮罩 */}
-            <div className="pointer-events-none absolute end-0 top-0 z-10 h-full w-8 bg-gradient-to-l from-background to-transparent" />
-
-            <div
-              ref={scrollContainerRef}
-              className="overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] scroll-smooth"
-            >
-              <TabsList className="inline-flex w-max justify-start">
-                {/* 自建节点 Tab（仅代理节点） */}
-                <TabsTrigger value="manual" className="flex items-center gap-1.5 whitespace-nowrap">
-                  <Server className="h-3.5 w-3.5" />
-                  {t('servers.manualNodes')}
-                  {manualProxyServers.length > 0 && (
-                    <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
-                      {manualProxyServers.length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-
-                {/* 组网 Tab 常显：批3 起它承载 TS/WG/WARP「接入组网」入口，新用户（无组网节点）也须可达——
-                    否则 protocol-options 已移除 tailscale，首个 Tailscale 将无处接入。无节点时不显数量 Badge。 */}
-                <TabsTrigger value="mesh" className="flex items-center gap-1.5 whitespace-nowrap">
-                  <Network className="h-3.5 w-3.5" />
-                  {t('servers.meshNodes')}
-                  {meshServersAll.length > 0 && (
-                    <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
-                      {meshServersAll.length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-
-                {/* 每个订阅一个 Tab */}
-                {subscriptions.map((sub) => {
-                  const subServers = serversOfGroup(sub.id);
-                  const isUpdating = updatingSubId === sub.id;
-                  return (
-                    <TabsTrigger
-                      key={sub.id}
-                      value={sub.id}
-                      className="flex items-center gap-1.5 whitespace-nowrap"
-                    >
-                      <Rss className="h-3.5 w-3.5" />
-                      {sub.name}
-                      {subServers.length > 0 && (
-                        <Badge variant="secondary" className="ms-1 h-4 px-1 text-[10px]">
-                          {isUpdating ? '…' : subServers.length}
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
+    <section className="flex flex-col gap-4" data-page="nodes">
+      {/* 页头：标题 + 摘要计数 + 全部测速 + 添加下拉 */}
+      <div className="page-h">
+        <h1>{t('sidebar.server')}</h1>
+        <span className="nd-count">
+          {t('servers.nodeCountSummary', {
+            defaultValue: '共 {{total}} · 自建 {{manual}} · 组网 {{mesh}} · 订阅 {{sub}}',
+            total: servers.length,
+            manual: manualProxyServers.length,
+            mesh: meshServersAll.length,
+            sub: subTotal,
+          })}
+        </span>
+        <div className="nd-topbar">
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={allSpeed.handleSpeedTest}
+            disabled={allSpeed.isTestingSpeed}
+          >
+            <Zap className={allSpeed.isTestingSpeed ? 'animate-pulse fill-current/20' : ''} />
+            {allSpeed.isTestingSpeed
+              ? allSpeed.speedProgress
+                ? `${t('servers.speedTesting')} ${allSpeed.speedProgress.tested}/${allSpeed.speedProgress.total}`
+                : t('servers.speedTesting')
+              : t('servers.speedTestAll')}
+          </button>
+          {/* 添加下拉（CSS-only :focus-within 弹出，与工具栏协议/排序下拉同范式） */}
+          <div className="nd-dd">
+            <button type="button" className="btn flow sm nd-dd-btn">
+              <Plus />
+              {t('servers.add')}
+              <ChevronDown className="nd-chev" />
+            </button>
+            <div className="nd-menu">
+              <button type="button" className="nd-mi" onClick={handleAddServer}>
+                <Edit />
+                {t('servers.manualAdd')}
+              </button>
+              <button type="button" className="nd-mi" onClick={() => setIsLocalImportOpen(true)}>
+                <HardDriveDownload />
+                {t('servers.importFromLocal')}
+              </button>
+              <button type="button" className="nd-mi" onClick={handleAddSubscription}>
+                <Rss />
+                {t('servers.addSubscription')}
+              </button>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* 自建节点内容（仅代理节点） */}
-        <TabsContent value="manual">
+      {/* 分组 Tab：自建 / 组网 / 每订阅一 Tab，横向滚动（wheel 竖转横仍生效）。
+          添加/导入/添加订阅已上移页头全局动作。 */}
+      <div className="nd-tabs-scroll" ref={scrollContainerRef}>
+        <div className="tabs">
+          {/* 自建节点 Tab（仅代理节点） */}
+          <button
+            type="button"
+            className={activeTab === 'manual' ? 'on' : ''}
+            onClick={() => setTabOverride('manual')}
+          >
+            {t('servers.manualNodes')}
+            {manualProxyServers.length > 0 && ` · ${manualProxyServers.length}`}
+          </button>
+
+          {/* 组网 Tab 常显：批3 起它承载 TS/WG/WARP「接入组网」入口，新用户（无组网节点）也须可达。 */}
+          <button
+            type="button"
+            className={activeTab === 'mesh' ? 'on' : ''}
+            onClick={() => setTabOverride('mesh')}
+          >
+            {t('servers.meshNodes')}
+            {meshServersAll.length > 0 && ` · ${meshServersAll.length}`}
+          </button>
+
+          {/* 每个订阅一个 Tab */}
+          {subscriptions.map((sub) => {
+            const n = serversOfGroup(sub.id).length;
+            const isUpdating = updatingSubId === sub.id;
+            return (
+              <button
+                type="button"
+                key={sub.id}
+                className={activeTab === sub.id ? 'on' : ''}
+                onClick={() => setTabOverride(sub.id)}
+              >
+                {sub.name}
+                {n > 0 && ` · ${isUpdating ? '…' : n}`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 自建节点内容（仅代理节点） */}
+      {activeTab === 'manual' && (
+        <ServerList
+          servers={manualProxyServers}
+          selectedServerId={selectedServerId ?? undefined}
+          onAddServer={handleAddServer}
+          onEditServer={handleEditServer}
+          onDeleteServer={handleDeleteServer}
+          onDeleteServers={handleDeleteServers}
+          onCloneServer={handleCloneServer}
+          onSelectServer={handleSelectServer}
+          onImportClick={() => setIsLocalImportOpen(true)}
+        />
+      )}
+
+      {/* 组网节点内容：接入组网入口区（批3b：含 TS 完整登录状态机 + WARP 单例）+ 统一节点列表（含 Tailscale） */}
+      {activeTab === 'mesh' && (
+        <div className="flex flex-col gap-4">
+          <MeshAccessEntry
+            tsNode={tailscaleNode}
+            warpNode={warpNode}
+            proxyRunning={proxyRunning}
+            autoOpenSettings={tsAutoOpenSettings}
+            onAutoOpenConsumed={() => setTsAutoOpenSettings(false)}
+          />
           <ServerList
-            servers={manualProxyServers}
+            servers={meshServersAll}
             selectedServerId={selectedServerId ?? undefined}
             onAddServer={handleAddServer}
             onEditServer={handleEditServer}
@@ -353,22 +353,124 @@ export function ServerPage() {
             onSelectServer={handleSelectServer}
             onImportClick={() => setIsLocalImportOpen(true)}
           />
-        </TabsContent>
+        </div>
+      )}
 
-        {/* 组网节点内容：接入组网入口区（批3b：含 TS 完整登录状态机 + WARP 单例）+ 统一节点列表（含 Tailscale） */}
-        <TabsContent value="mesh">
-          <div className="space-y-4">
-            <MeshAccessEntry
-              tsNode={tailscaleNode}
-              warpNode={warpNode}
-              proxyRunning={proxyRunning}
-              autoOpenSettings={tsAutoOpenSettings}
-              onAutoOpenConsumed={() => setTsAutoOpenSettings(false)}
-            />
+      {/* 各订阅节点内容 */}
+      {subscriptions.map((sub) => {
+        if (activeTab !== sub.id) return null;
+        const subServers = serversOfGroup(sub.id);
+        const isUpdating = updatingSubId === sub.id;
+        const ui = sub.userInfo;
+        const used = ui ? (ui.upload ?? 0) + (ui.download ?? 0) : 0;
+        const total = ui?.total;
+        const pct = total ? Math.min(100, Math.round((used / total) * 100)) : 0;
+        return (
+          <div key={sub.id} className="flex flex-col gap-4">
+            {/* 订阅信息栏 */}
+            <div className="nd-subbar">
+              <div className="nd-subbar-main">
+                <div className="nd-subbar-nm">
+                  {sub.name}
+                  {sub.autoUpdate && <span className="nd-badge ok">{t('sub.autoUpdate')}</span>}
+                </div>
+                <div className="nd-subbar-meta">
+                  <span className="nd-subbar-url mono" title={sub.url}>
+                    {sub.url}
+                  </span>
+                  <span className="sb-sep">·</span>
+                  <span>
+                    {t('servers.lastUpdated')}{' '}
+                    {sub.lastUpdated
+                      ? new Date(sub.lastUpdated).toLocaleString(i18n.language)
+                      : t('servers.never')}
+                  </span>
+                  {ui && total !== undefined && (
+                    <>
+                      <span className="sb-sep">·</span>
+                      <span className="nd-subbar-usage">
+                        <span className={`nd-usage${pct >= 85 ? ' warn' : ''}`}>
+                          <i style={{ width: `${pct}%` }} />
+                        </span>
+                        <span className="mono tnum">
+                          {formatBytes(used)} / {formatBytes(total)}
+                        </span>
+                      </span>
+                    </>
+                  )}
+                  {ui?.expire && (
+                    <>
+                      <span className="sb-sep">·</span>
+                      <span>
+                        {t('servers.expireAt', {
+                          defaultValue: '到期 {{date}}',
+                          date: new Date(ui.expire * 1000).toLocaleDateString(i18n.language),
+                        })}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="nd-subbar-acts">
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => handleUpdateSubscriptionServers(sub.id)}
+                  disabled={isUpdating}
+                >
+                  <RefreshCw className={isUpdating ? 'animate-spin' : ''} />
+                  {isUpdating ? t('servers.updating') : t('servers.updateNodes')}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => handleEditSubscription(sub)}
+                  disabled={isUpdating}
+                >
+                  <Edit />
+                  {t('servers.edit')}
+                </button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="btn ghost sm icon"
+                      title={t('servers.deleteSub')}
+                      disabled={isUpdating}
+                    >
+                      <Trash2 />
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('servers.deleteSubTitle')}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t('servers.deleteSubDesc', {
+                          name: sub.name,
+                          count: subServers.length,
+                        })}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleDeleteSubscription(sub.id)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t('common.delete')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+
+            {/* 节点列表 */}
             <ServerList
-              servers={meshServersAll}
+              servers={subServers}
+              showAddButton={false}
               selectedServerId={selectedServerId ?? undefined}
-              onAddServer={handleAddServer}
+              onAddServer={() => {}}
               onEditServer={handleEditServer}
               onDeleteServer={handleDeleteServer}
               onDeleteServers={handleDeleteServers}
@@ -377,96 +479,8 @@ export function ServerPage() {
               onImportClick={() => setIsLocalImportOpen(true)}
             />
           </div>
-        </TabsContent>
-
-        {/* 各订阅节点内容 */}
-        {subscriptions.map((sub) => {
-          const subServers = serversOfGroup(sub.id);
-          const isUpdating = updatingSubId === sub.id;
-          return (
-            <TabsContent key={sub.id} value={sub.id}>
-              <div className="space-y-4">
-                {/* 订阅信息栏 */}
-                <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{sub.name}</p>
-                    <p className="text-xs text-muted-foreground truncate max-w-xs" title={sub.url}>
-                      {sub.url}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {t('servers.lastUpdated')}：
-                      {sub.lastUpdated
-                        ? new Date(sub.lastUpdated).toLocaleString(i18n.language)
-                        : t('servers.never')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 ms-4 flex-shrink-0">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleEditSubscription(sub)}
-                      disabled={isUpdating}
-                    >
-                      {t('servers.edit')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleUpdateSubscriptionServers(sub.id)}
-                      disabled={isUpdating}
-                      className="flex items-center gap-1.5"
-                    >
-                      <RefreshCw className={`h-3.5 w-3.5 ${isUpdating ? 'animate-spin' : ''}`} />
-                      {isUpdating ? t('servers.updating') : t('servers.updateNodes')}
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="destructive" disabled={isUpdating}>
-                          {t('servers.deleteSub')}
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t('servers.deleteSubTitle')}</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            {t('servers.deleteSubDesc', {
-                              name: sub.name,
-                              count: subServers.length,
-                            })}
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDeleteSubscription(sub.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            {t('common.delete')}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </div>
-
-                {/* 节点列表 */}
-                <ServerList
-                  servers={subServers}
-                  showAddButton={false}
-                  selectedServerId={selectedServerId ?? undefined}
-                  onAddServer={() => {}}
-                  onEditServer={handleEditServer}
-                  onDeleteServer={handleDeleteServer}
-                  onDeleteServers={handleDeleteServers}
-                  onCloneServer={handleCloneServer}
-                  onSelectServer={handleSelectServer}
-                  onImportClick={() => setIsLocalImportOpen(true)}
-                />
-              </div>
-            </TabsContent>
-          );
-        })}
-      </Tabs>
+        );
+      })}
 
       <ServerConfigDialog
         open={isDialogOpen}
@@ -489,6 +503,6 @@ export function ServerPage() {
         onOpenChange={setIsLocalImportOpen}
         onImportSuccess={handleImportSuccess}
       />
-    </div>
+    </section>
   );
 }

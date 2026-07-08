@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Stethoscope, FileDown, Activity, Square } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 
@@ -92,26 +91,26 @@ export function DiagnosticSection() {
   };
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <h4 className="flex items-center gap-2 text-sm font-semibold">
-          <Stethoscope className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className="field-lbl">
+          <Stethoscope className="h-3.5 w-3.5" />
           {t('settings.advanced.diagnostics.title')}
-        </h4>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        </div>
+        <p className="ng-hint" style={{ marginTop: 4 }}>
           {t('settings.advanced.diagnostics.desc')}
         </p>
       </div>
 
       {/* 采集中横幅（含隐私提示） */}
       {captureActive && (
-        <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3">
-          <Activity className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 animate-pulse text-warning" />
-          <div className="min-w-0">
-            <div className="text-sm font-medium">
+        <div className="set-note warn">
+          <Activity className="h-3.5 w-3.5 animate-pulse" />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 560 }}>
               {t('settings.advanced.diagnostics.captureActiveTitle')}
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="ng-hint" style={{ marginTop: 2 }}>
               {t('settings.advanced.diagnostics.captureActiveDesc')}
             </p>
           </div>
@@ -119,42 +118,39 @@ export function DiagnosticSection() {
       )}
 
       {/* 动作行 */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          variant="outline"
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <button
+          type="button"
+          className="btn ghost sm"
           disabled={isExporting || isToggling}
           onClick={handleExport}
-          className="flex items-center gap-1.5"
         >
           <FileDown className={`h-3.5 w-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
           {isExporting
             ? t('settings.advanced.diagnostics.exporting')
             : t('settings.advanced.diagnostics.export')}
-        </Button>
+        </button>
 
         {captureActive ? (
-          <Button
-            size="sm"
-            variant="outline"
+          <button
+            type="button"
+            className="btn ghost sm"
             disabled={isToggling}
             onClick={handleStopCapture}
-            className="flex items-center gap-1.5"
           >
             <Square className="h-3.5 w-3.5" />
             {t('settings.advanced.diagnostics.captureStop')}
-          </Button>
+          </button>
         ) : (
-          <Button
-            size="sm"
-            variant="outline"
+          <button
+            type="button"
+            className="btn ghost sm"
             disabled={isToggling}
             onClick={handleStartCapture}
-            className="flex items-center gap-1.5"
           >
             <Activity className="h-3.5 w-3.5" />
             {t('settings.advanced.diagnostics.captureStart')}
-          </Button>
+          </button>
         )}
       </div>
     </div>

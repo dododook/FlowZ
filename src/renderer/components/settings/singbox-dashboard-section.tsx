@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { SettingsRow } from './settings-row';
+import { InfoTooltip } from './shared/info-tooltip';
+import { Srow, Swt } from './conduit-controls';
 
 /**
- * sing-box 官方面板（opt-in 逃生舱）：开关 + 打开按钮。
+ * 控制面板卡（Conduit 高级面板 `.card.set-card`）：sing-box 原生控制 API（opt-in 逃生舱）。
+ * 主开关 `.srow` + 开启后配置区 `.ctl-group`（缩进 + teal 内脊，归组于主开关下）。
  * 开关写 config.singboxDashboard，经 saveConfig→CONFIG_CHANGED 自动重启生效（不显式 restart）。
  * 「打开面板」仅开关 on 且代理运行时可点 → 调 IPC，main 用运行期 api 端口构造 /dashboard/ URL + 系统浏览器打开。
- * 父级包 `<Card><CardContent className="divide-y...">` 渲染本组件返回的 SettingsRow 片段。
  */
 export function SingboxDashboardSection() {
   const config = useAppStore((s) => s.config);
@@ -75,54 +74,81 @@ export function SingboxDashboardSection() {
   };
 
   return (
-    <>
-      <SettingsRow heading label={t('settings.advanced.singboxDashboard')} />
-      <SettingsRow
-        label={t('settings.advanced.singboxDashboard')}
-        description={t('settings.advanced.singboxDashboardDesc')}
-        tooltip={t('settings.advanced.dashboardNeedsNetwork')}
+    <div className="card set-card">
+      <div className="set-h">
+        <b>{t('settings.advanced.singboxDashboard')}</b>
+        <small>{t('settings.advanced.singboxDashboardCardSub', 'sing-box 原生控制 API')}</small>
+      </div>
+      <Srow
+        label={
+          <>
+            {t('settings.advanced.singboxDashboardEnable', '启用外部控制')}
+            <InfoTooltip content={t('settings.advanced.dashboardNeedsNetwork')} />
+          </>
+        }
+        desc={t('settings.advanced.singboxDashboardDesc')}
       >
-        <Switch checked={enabled} onCheckedChange={handleToggle} />
-      </SettingsRow>
+        <Swt checked={enabled} onChange={handleToggle} />
+      </Srow>
       {enabled && (
-        <>
-          <SettingsRow
+        <div className="ctl-group">
+          <Srow
             label={t('settings.advanced.openDashboard')}
-            description={t('settings.advanced.dashboardNeedsNetwork')}
+            desc={t('settings.advanced.dashboardNeedsNetwork')}
           >
-            <Button variant="outline" size="sm" disabled={!running} onClick={openDashboard}>
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={!running}
+              onClick={openDashboard}
+            >
               {t('settings.advanced.openDashboard')}
-            </Button>
-          </SettingsRow>
-          <SettingsRow
+            </button>
+          </Srow>
+          <Srow
             label={t('settings.advanced.dashboardAddress')}
-            description={t('settings.advanced.dashboardAddressDesc')}
+            desc={t('settings.advanced.dashboardAddressDesc')}
           >
             {running && dashboardUrl ? (
-              <button
-                type="button"
-                onClick={() => api.system.openExternal(dashboardUrl).catch(() => undefined)}
+              <span
+                className="mono"
                 title={dashboardUrl}
-                className="max-w-[18rem] select-text truncate font-mono text-xs text-primary hover:underline"
+                onClick={() => api.system.openExternal(dashboardUrl).catch(() => undefined)}
+                style={{
+                  fontSize: 12,
+                  color: 'hsl(var(--flow-hi))',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: 2,
+                  maxWidth: '18rem',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
               >
                 {dashboardUrl}
-              </button>
+              </span>
             ) : (
-              <span className="font-mono text-xs text-muted-foreground">
+              <span className="mono" style={{ fontSize: 12, color: 'hsl(var(--fg-faint))' }}>
                 {t('settings.advanced.dashboardAddressUnavailable')}
               </span>
             )}
-          </SettingsRow>
-          <SettingsRow
+          </Srow>
+          <Srow
             label={t('settings.advanced.dashboardCopyConnection')}
-            description={t('settings.advanced.dashboardCopyConnectionDesc')}
+            desc={t('settings.advanced.dashboardCopyConnectionDesc')}
           >
-            <Button variant="outline" size="sm" disabled={!running} onClick={copyConnection}>
+            <button
+              type="button"
+              className="btn ghost sm"
+              disabled={!running}
+              onClick={copyConnection}
+            >
               {t('settings.advanced.dashboardCopyConnection')}
-            </Button>
-          </SettingsRow>
-        </>
+            </button>
+          </Srow>
+        </div>
       )}
-    </>
+    </div>
   );
 }

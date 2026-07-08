@@ -1,6 +1,8 @@
-import { ReactNode } from 'react';
+import { ReactNode, useRef, useEffect } from 'react';
 import { Sidebar } from './sidebar';
 import { LinuxWindowControls } from './linux-titlebar';
+// 状态栏固化为窗口级底栏（1:1 原型 .statusbar，全页常驻实心）——非首页专属。
+import { HomeStatusBar as StatusBar } from '@/components/home/home-status-bar';
 import { api } from '@/ipc/api-client';
 
 interface MainLayoutProps {
@@ -22,6 +24,12 @@ export function MainLayout({
   onSettingsSectionChange,
   children,
 }: MainLayoutProps) {
+  // 切换导航即新页面：滚动位置复位到顶部（用户反馈：切页不应停留在上一页滚动位）。含设置子导航切换。
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo(0, 0);
+  }, [currentView, settingsSection]);
+
   return (
     <div className="flex h-screen w-full overflow-hidden app-shell relative">
       <Sidebar
@@ -30,7 +38,7 @@ export function MainLayout({
         settingsSection={settingsSection}
         onSettingsSectionChange={onSettingsSectionChange}
       />
-      <main className="flex-1 overflow-auto flex flex-col relative z-10 main-content-card transition-all duration-300">
+      <main className="flex-1 min-w-0 flex flex-col relative z-10 main-content-card transition-all duration-300">
         {/* 集成标题栏拖拽区：Mac(hiddenInset) h-9；Windows(titleBarOverlay)/Linux(右上自绘按钮) 同高 32px。 */}
         {isMac && <div className="h-9 flex-shrink-0 app-region-drag" />}
         {(isWindows || isLinux) && (
@@ -43,9 +51,14 @@ export function MainLayout({
             }
           />
         )}
-        <div className="container mx-auto px-6 pb-6 app-region-no-drag max-w-[1400px]">
-          {children}
+        {/* 内容区滚动，状态栏固定在卡片底部（flex-none）——全页常驻实心底栏。 */}
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto app-region-no-drag">
+          {/* min-h-full + flex-col：hero 页（home/conns/logs）flex-fill 填满至底栏（保 pb-6 等距）；滚动页自然增长。 */}
+          <div className="container mx-auto flex min-h-full max-w-[1400px] flex-col px-6 pb-6">
+            {children}
+          </div>
         </div>
+        <StatusBar />
       </main>
       {/* Linux 无系统 titleBarOverlay → 自绘窗口控制按钮，绝对定位窗口右上角（与 Windows 系统按钮同位、同 32px 高），
           相对 app-shell 固定不随内容滚动；嵌入卡片右上直角区，与 Windows 嵌入式视觉统一（不再全宽标题条）。 */}

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './assets/fonts/fonts.css';
 import './index.css';
+import './conduit.css'; // Conduit 设计系统（1:1 移植原型；须在 index.css 后，依赖其 token）
 import './i18n'; // 导入 i18n 配置
 import { ThemeProvider } from '@/components/theme-provider';
 

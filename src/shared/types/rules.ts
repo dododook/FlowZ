@@ -140,7 +140,8 @@ export interface RuleResourceListItem extends RuleResource {
  * label：route=已就绪文案（备注/首条件摘要）；app=内置 labelKey(i18n key) 或自定义 name（由 appBuiltin 决定渲染端是否 i18n）。
  */
 export interface RuleResourceRef {
-  kind: 'route' | 'app';
+  // system = 智能分流 geo 基线层对内置默认(geosite-cn/geoip-cn/geolocation-!cn)的隐式引用（纳入 referencedBy 计数）
+  kind: 'route' | 'app' | 'system';
   id: string;
   label: string;
   appBuiltin?: boolean;

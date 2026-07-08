@@ -13,7 +13,7 @@ export function InfoTooltip({ content, className }: { content: ReactNode; classN
   // 键盘可聚焦 + 具名（a11y）：radix HoverCard 对触发器 focus 同样开卡，故 ⓘ 可 tab 聚焦后弹出说明；
   // icon-only 按钮需 aria-label 供屏幕阅读器朗读（不再 tabIndex=-1/aria-hidden 把它藏掉）。
   return (
-    <HoverCard openDelay={150} closeDelay={80}>
+    <HoverCard openDelay={1000} closeDelay={80}>
       <HoverCardTrigger asChild>
         <button
           type="button"

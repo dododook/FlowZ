@@ -11,15 +11,15 @@ interface SettingsRowProps {
   children?: ReactNode;
   /** 控件需换到下一行（如长输入框、密钥行）时设 true：标签在上、控件全宽在下 */
   stacked?: boolean;
-  /** 分组标题行（加粗、无右侧控件） */
+  /** 分组标题行（渲染为卡内 .set-h 头，加粗、无右侧控件） */
   heading?: boolean;
   className?: string;
 }
 
-/** 标签 + 可选 ⓘ 行（tooltip 存在时横排在 label 右侧）。 */
+/** 标签 + 可选 ⓘ 行（tooltip 存在时横排在 label 右侧，复用 conduit .srow-lbl 的 flex 排布）。 */
 function RowLabel({ label, tooltip }: { label: ReactNode; tooltip?: ReactNode }) {
   return (
-    <div className={cn('text-sm font-medium', tooltip && 'flex items-center gap-1.5')}>
+    <div className="srow-lbl">
       {tooltip ? <span>{label}</span> : label}
       {tooltip && <InfoTooltip content={tooltip} />}
     </div>
@@ -27,8 +27,9 @@ function RowLabel({ label, tooltip }: { label: ReactNode; tooltip?: ReactNode })
 }
 
 /**
- * 统一的设置行：左侧标签 + 副文案，右侧控件（macOS 系统设置范式）。
- * 卡片内用 `divide-y divide-border/60` 串联多行，替代零散的 border-t + ml-6 缩进，跨平台一致。
+ * 统一的设置行（Conduit .srow）：左侧标签 + 副文案，右侧控件（macOS 系统设置范式）。
+ * 卡内相邻 .srow 由 conduit `.srow + .srow` 规则自动生成分隔线，无需 divide-y 包裹。
+ * heading → 卡头 .set-h；stacked → .srow.stacked（标签在上、控件全宽在下）。
  */
 export function SettingsRow({
   label,
@@ -40,26 +41,30 @@ export function SettingsRow({
   className,
 }: SettingsRowProps) {
   if (heading) {
-    return <div className={cn('pb-1 pt-3 text-sm font-semibold', className)}>{label}</div>;
+    return (
+      <div className={cn('set-h', className)}>
+        <b>{label}</b>
+      </div>
+    );
   }
   if (stacked) {
     return (
-      <div className={cn('space-y-2 py-3', className)}>
-        <div>
+      <div className={cn('srow stacked', className)}>
+        <div className="srow-main">
           <RowLabel label={label} tooltip={tooltip} />
-          {description && <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>}
+          {description && <div className="srow-desc">{description}</div>}
         </div>
-        {children}
+        {children && <div className="srow-ctl">{children}</div>}
       </div>
     );
   }
   return (
-    <div className={cn('flex items-center justify-between gap-4 py-3', className)}>
-      <div className="min-w-0">
+    <div className={cn('srow', className)}>
+      <div className="srow-main">
         <RowLabel label={label} tooltip={tooltip} />
-        {description && <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>}
+        {description && <div className="srow-desc">{description}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      {children && <div className="srow-ctl">{children}</div>}
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Network } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
@@ -286,18 +285,16 @@ export function ConnectionTopology() {
   };
 
   return (
-    <Card className="col-span-1">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Network className="h-5 w-5" />
-          {t('home.connectionTopology')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="overflow-hidden">
+    <div className="card topo-card">
+      <div className="field-lbl" style={{ marginBottom: 8 }}>
+        {t('home.connectionTopology')} <small>{t('home.topologyHint')}</small>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           ref={containerRef}
-          // hero 高度随窗口自适应：52vh 为主、下限 360px（防挤扁）、上限 640px（防超宽窗口过高）。
-          className="relative h-[52vh] max-h-[640px] min-h-[360px] w-full cursor-default"
+          // hero flex-1 填满 topo-card（conduit .topo-card{flex:1} flex-col）；下限 300px 防挤扁。
+          // 用 flex-1 而非 h-full：h-full(height:100%) 在 flex 父级下不稳解析、会塌成内容高（同 logs 修复根因）。
+          className="relative min-h-[300px] w-full flex-1 cursor-default"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
@@ -477,7 +474,7 @@ export function ConnectionTopology() {
             ))}
           </svg>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -4,15 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { toast } from 'sonner';
 import { Check } from 'lucide-react';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { api } from '@/ipc/api-client';
@@ -197,98 +189,91 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
         {/* 基础：仅出网必需项（账号 + 出口节点）。 */}
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'servers.tsIntro',
-              'Tailscale is account-based — no address/port. Paste an auth key, or start the node to get a login URL.'
-            )}
-          </p>
-          <FieldGrid cols={2}>
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="authKey"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="flex items-center gap-1.5">
-                      {t('servers.tsAuthKey', 'Auth Key (optional)')}
-                      <InfoTooltip content={t('servers.tsAuthKeyDescFull')} />
-                    </FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="tskey-auth-..." {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      {loggedIn ? t('servers.tsLoggedInNoKeyHint') : t('servers.tsAuthKeyDesc')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-            {/* 登录区三态（读真实 loggedIn 替代纯静态 !authKey 门控）：
-                已登录 → 「✓ 已登录」+ 退出登录 + 重新登录；需登录（编辑态未登录未填 key）→ 立即登录；
-                新建态（无 id）→ 引导先保存，不显示。 */}
-            {!hideLoginSection &&
-              (loginUi === 'loggedIn' ? (
-                <FieldSpan>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-1.5 text-sm text-success">
-                      <Check className="h-4 w-4" />
-                      {t('servers.tsLoggedIn', 'Logged in')}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleTsLogout()}
-                      >
-                        {t('servers.tsLogout', 'Log out')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleTsReauth()}
-                      >
-                        {t('servers.tsReauth', 'Re-login · switch account')}
-                      </Button>
-                    </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'servers.tsIntro',
+            'Tailscale is account-based — no address/port. Paste an auth key, or start the node to get a login URL.'
+          )}
+        </p>
+        <FieldGrid cols={2}>
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="authKey"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl inline-flex items-center gap-1.5">
+                    {t('servers.tsAuthKey', 'Auth Key (optional)')}
+                    <InfoTooltip content={t('servers.tsAuthKeyDescFull')} />
+                  </span>
+                  <Input type="password" placeholder="tskey-auth-..." {...field} className="mono" />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+          {/* 登录区三态（读真实 loggedIn 替代纯静态 !authKey 门控）：
+              已登录 → 「✓ 已登录」+ 退出登录 + 重新登录；需登录（编辑态未登录未填 key）→ 立即登录；
+              新建态（无 id）→ 引导先保存，不显示。 */}
+          {!hideLoginSection &&
+            (loginUi === 'loggedIn' ? (
+              <FieldSpan>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1.5 text-sm text-success">
+                    <Check className="h-4 w-4" />
+                    {t('servers.tsLoggedIn', 'Logged in')}
                   </div>
-                </FieldSpan>
-              ) : loginUi === 'needsLogin' && serverConfig ? (
-                <FieldSpan>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       variant="outline"
-                      className="w-full sm:w-auto"
-                      disabled={loggingIn}
-                      onClick={() => void runTailscaleLogin(serverConfig)}
+                      size="sm"
+                      onClick={() => void handleTsLogout()}
                     >
-                      {loggingIn
-                        ? t('servers.tsLoggingIn', '登录中…')
-                        : t('servers.tsLoginNow', 'Log in now')}
+                      {t('servers.tsLogout', 'Log out')}
                     </Button>
-                    <p className="text-xs text-muted-foreground">
-                      {loggingIn
-                        ? t(
-                            'servers.tsLoggingInDesc',
-                            '已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。'
-                          )
-                        : t(
-                            'servers.tsLoginNowDesc',
-                            'Open the browser now to complete Tailscale login (no auth key needed).'
-                          )}
-                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleTsReauth()}
+                    >
+                      {t('servers.tsReauth', 'Re-login · switch account')}
+                    </Button>
                   </div>
-                </FieldSpan>
-              ) : null)}
-          </FieldGrid>
-        </FormSection>
+                </div>
+              </FieldSpan>
+            ) : loginUi === 'needsLogin' && serverConfig ? (
+              <FieldSpan>
+                <div className="flex flex-col gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={loggingIn}
+                    onClick={() => void runTailscaleLogin(serverConfig)}
+                  >
+                    {loggingIn
+                      ? t('servers.tsLoggingIn', '登录中…')
+                      : t('servers.tsLoginNow', 'Log in now')}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    {loggingIn
+                      ? t(
+                          'servers.tsLoggingInDesc',
+                          '已打开浏览器，请完成授权；登录成功后会自动更新（无需重开）。'
+                        )
+                      : t(
+                          'servers.tsLoginNowDesc',
+                          'Open the browser now to complete Tailscale login (no auth key needed).'
+                        )}
+                  </p>
+                </div>
+              </FieldSpan>
+            ) : null)}
+        </FieldGrid>
 
         {/* 接入与出口（常显）：接入模式（用户态/System）+ 出口节点。出口两模式可用（exit_node≠0/0 不触发 F4），
             故不再受 reverseMesh/allowInternet 门控；allowInternet 由「是否选了出口」在 handleSubmit 派生。 */}
@@ -298,22 +283,18 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
             control={form.control}
             name="exitNode"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.tsExitNode', 'Exit node')}</FormLabel>
-                <FormControl>
-                  <ExitNodeField
-                    value={field.value || ''}
-                    onChange={field.onChange}
-                    serverId={serverConfig?.id}
-                  />
-                </FormControl>
-                {!exitNodeValue?.trim() && (
-                  <FormDescription>
-                    {t('servers.tsExitNodeNoneHint', '未选出口：仅可访问内网 / tailnet')}
-                  </FormDescription>
-                )}
-                <FormMessage />
-              </FormItem>
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">
+                  {t('servers.tsExitNode', 'Exit node')}{' '}
+                  <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                </span>
+                <ExitNodeField
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  serverId={serverConfig?.id}
+                />
+                <FormMessage className="fld-err" />
+              </div>
             )}
           />
           {exitNodeValue?.trim() && (
@@ -349,16 +330,15 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
             control={form.control}
             name="routes"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel className="flex items-center gap-1.5">
+              <div className="nd-fld">
+                <span className="nd-fld-lbl inline-flex items-center gap-1.5">
                   {t('servers.tsRoutes', 'Routed subnets')}
+                  <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
                   <InfoTooltip content={t('servers.tsRoutesDescFull')} />
-                </FormLabel>
-                <FormControl>
-                  <Input placeholder="192.168.50.0/24, 10.0.0.0/24" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
+                </span>
+                <Input placeholder="192.168.50.0/24, 10.0.0.0/24" {...field} />
+                <FormMessage className="fld-err" />
+              </div>
             )}
           />
         </FormSection>
@@ -369,32 +349,28 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
               control={form.control}
               name="hostname"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.tsHostname', 'Hostname')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="my-device" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.tsHostname', 'Hostname')}{' '}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input placeholder="my-device" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="controlUrl"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.tsControlUrl', 'Control URL')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="https://controlplane.tailscale.com" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.tsControlUrlDesc',
-                      'Custom control server (Headscale). Empty = Tailscale default.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.tsControlUrl', 'Control URL')}{' '}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input placeholder="https://controlplane.tailscale.com" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FieldSpan>
@@ -402,19 +378,14 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                 control={form.control}
                 name="advertiseRoutes"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.tsAdvertiseRoutes', 'Advertise Routes')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="192.168.1.0/24, 10.0.0.0/24" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'servers.tsAdvertiseRoutesDesc',
-                        'Subnets this node makes reachable to the tailnet (subnet router). Comma-separated.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                  <div className="nd-fld">
+                    <span className="nd-fld-lbl">
+                      {t('servers.tsAdvertiseRoutes', 'Advertise Routes')}{' '}
+                      <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                    </span>
+                    <Input placeholder="192.168.1.0/24, 10.0.0.0/24" {...field} />
+                    <FormMessage className="fld-err" />
+                  </div>
                 )}
               />
             </FieldSpan>
@@ -435,19 +406,14 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
                 control={form.control}
                 name="advertiseTags"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.tsAdvertiseTags', 'Advertise tags')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="tag:server, tag:exit" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'servers.tsAdvertiseTagsDesc',
-                        'ACL tags this node advertises to the tailnet (tag:*). Comma-separated.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
+                  <div className="nd-fld">
+                    <span className="nd-fld-lbl">
+                      {t('servers.tsAdvertiseTags', 'Advertise tags')}{' '}
+                      <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                    </span>
+                    <Input placeholder="tag:server, tag:exit" {...field} />
+                    <FormMessage className="fld-err" />
+                  </div>
                 )}
               />
             </FieldSpan>
@@ -455,19 +421,14 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
               control={form.control}
               name="relayServerPort"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.tsRelayServerPort', 'Peer relay port')}</FormLabel>
-                  <FormControl>
-                    <Input type="number" min={1} max={65535} placeholder="0" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {t(
-                      'servers.tsRelayServerPortDesc',
-                      'Listen port to act as a peer relay (inbound relay). Empty = off.'
-                    )}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">
+                    {t('servers.tsRelayServerPort', 'Peer relay port')}{' '}
+                    <small className="font-medium text-fg-faint">{t('servers.optional')}</small>
+                  </span>
+                  <Input type="number" min={1} max={65535} placeholder="0" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FieldSpan>

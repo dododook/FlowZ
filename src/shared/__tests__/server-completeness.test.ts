@@ -76,14 +76,20 @@ describe('server-completeness（主/渲染共用单一真值）', () => {
     expect(protocolRequirementError(node('snell', { password: 'p' }))).toMatch(/version/i);
     // version 非 4|6（脏数据/手改）
     expect(
-      protocolRequirementError(node('snell', { password: 'p', snellSettings: { version: 5 } as any }))
+      protocolRequirementError(
+        node('snell', { password: 'p', snellSettings: { version: 5 } as any })
+      )
     ).toMatch(/version/i);
     // v4 / v6 完整
     expect(
-      protocolRequirementError(node('snell', { password: 'p', snellSettings: { version: 4 } as any }))
+      protocolRequirementError(
+        node('snell', { password: 'p', snellSettings: { version: 4 } as any })
+      )
     ).toBeNull();
     expect(
-      protocolRequirementError(node('snell', { password: 'p', snellSettings: { version: 6 } as any }))
+      protocolRequirementError(
+        node('snell', { password: 'p', snellSettings: { version: 6 } as any })
+      )
     ).toBeNull();
     expect(
       isServerComplete(node('snell', { password: 'p', snellSettings: { version: 6 } as any }))

@@ -62,6 +62,38 @@ module.exports = {
         "badge-slate": "hsl(var(--badge-slate) / <alpha-value>)",
         "badge-sky": "hsl(var(--badge-sky) / <alpha-value>)",
         "badge-amber": "hsl(var(--badge-amber) / <alpha-value>)",
+        // ── Conduit 富 token（三层文字/分层表面/hairline/弱语义/方向流量色）：供组件用作 utility ──
+        surface: {
+          DEFAULT: "hsl(var(--surface) / <alpha-value>)",
+          "2": "hsl(var(--surface-2) / <alpha-value>)",
+          "3": "hsl(var(--surface-3) / <alpha-value>)",
+        },
+        line: "hsl(var(--line) / <alpha-value>)",
+        hair: "hsl(var(--hair) / <alpha-value>)",
+        fg: {
+          DEFAULT: "hsl(var(--fg) / <alpha-value>)",
+          dim: "hsl(var(--fg-dim) / <alpha-value>)",
+          faint: "hsl(var(--fg-faint) / <alpha-value>)",
+        },
+        flow: {
+          DEFAULT: "hsl(var(--flow) / <alpha-value>)",
+          hi: "hsl(var(--flow-hi) / <alpha-value>)",
+          weak: "hsl(var(--flow-weak) / <alpha-value>)",
+        },
+        ok: {
+          DEFAULT: "hsl(var(--ok) / <alpha-value>)",
+          weak: "hsl(var(--ok-weak) / <alpha-value>)",
+        },
+        warn: {
+          DEFAULT: "hsl(var(--warn) / <alpha-value>)",
+          weak: "hsl(var(--warn-weak) / <alpha-value>)",
+        },
+        err: {
+          DEFAULT: "hsl(var(--err) / <alpha-value>)",
+          weak: "hsl(var(--err-weak) / <alpha-value>)",
+        },
+        dn: "hsl(var(--dn) / <alpha-value>)",
+        up: "hsl(var(--up) / <alpha-value>)",
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",

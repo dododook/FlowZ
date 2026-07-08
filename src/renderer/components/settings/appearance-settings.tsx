@@ -1,13 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { SegmentedControl } from '@/components/ui/segmented-control';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme-provider';
 import { toast } from 'sonner';
 import i18n, { initialLanguageChoice } from '@/i18n';
@@ -74,40 +66,61 @@ export function AppearanceSettings() {
     toast.success(t('settings.appearance.languageUpdated', { lng: effective }));
   };
 
+  // 跟随系统排首位：它是默认值（uiTheme 默认 'system'），默认项置首更符合预期。
+  const themeOptions = [
+    { value: 'system', label: t('settings.appearance.system') },
+    { value: 'light', label: t('settings.appearance.light') },
+    { value: 'dark', label: t('settings.appearance.dark') },
+  ];
+
   return (
-    <Card>
-      <CardContent className="divide-y divide-border/60 pt-2">
-        <SettingsRow label={t('settings.appearance.theme')} stacked>
-          <SegmentedControl
-            className="max-w-xs"
-            value={theme}
-            onChange={handleThemeChange}
-            options={[
-              // 跟随系统排首位：它是默认值（uiTheme 默认 'system'），默认项置首更符合预期。
-              { value: 'system', label: t('settings.appearance.system') },
-              { value: 'light', label: t('settings.appearance.light') },
-              { value: 'dark', label: t('settings.appearance.dark') },
-            ]}
-          />
+    <div className="set-panel">
+      {/* 主题 */}
+      <div className="card set-card">
+        <div className="set-h">
+          <b>{t('settings.appearance.theme', '主题')}</b>
+          <small>{t('settings.appearance.themeSub', '跟随系统或手动锁定明暗')}</small>
+        </div>
+        <SettingsRow label={t('settings.appearance.themeRowLabel', '配色主题')} stacked>
+          <div className="seg2" style={{ width: '100%', maxWidth: 280 }}>
+            {themeOptions.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={cn(theme === o.value && 'on')}
+                onClick={() => theme !== o.value && handleThemeChange(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </SettingsRow>
-        <SettingsRow label={t('settings.appearance.language')} stacked>
-          <Select value={langChoice} onValueChange={handleLanguageChange}>
-            <SelectTrigger className="max-w-xs">
-              <SelectValue />
-            </SelectTrigger>
-            {/* 固定 max-h-96：避免 radix popper 按可用高度算 max-h 造成顶部项命中死区 */}
-            <SelectContent className="max-h-96">
+      </div>
+
+      {/* 语言 */}
+      <div className="card set-card">
+        <div className="set-h">
+          <b>{t('settings.appearance.language', '语言')}</b>
+          <small>{t('settings.appearance.languageSub', '界面显示语言，切换即时生效')}</small>
+        </div>
+        <SettingsRow label={t('settings.appearance.languageRowLabel', '显示语言')} stacked>
+          <div className="sel" style={{ maxWidth: 280 }}>
+            <select
+              value={langChoice}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              aria-label={t('settings.appearance.languageRowLabel', '显示语言')}
+            >
               {/* 自动（跟随系统）置首位且为默认 */}
-              <SelectItem value={AUTO_LANGUAGE}>{t('settings.appearance.languageAuto')}</SelectItem>
+              <option value={AUTO_LANGUAGE}>{t('settings.appearance.languageAuto')}</option>
               {REAL_LANGUAGE_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
+                <option key={opt.value} value={opt.value}>
                   {opt.label}
-                </SelectItem>
+                </option>
               ))}
-            </SelectContent>
-          </Select>
+            </select>
+          </div>
         </SettingsRow>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

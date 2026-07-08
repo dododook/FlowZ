@@ -1,28 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { SegmentedControl } from '@/components/ui/segmented-control';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { HighlightText } from '@/components/ui/highlight-text';
-import {
-  CheckCircle2,
-  CircleAlert,
-  Loader2,
-  RotateCw,
-  Search,
-  Search as SearchIcon,
-} from 'lucide-react';
+import { Info, Loader2, RotateCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { api } from '@/ipc/api-client';
 import type {
   RuleResourceCatalogResult,
@@ -40,23 +21,25 @@ const BUILTIN_CATALOG_IDS = RULE_RESOURCE_CATALOG.map((i) => i.id);
 /** 资源库 TAB：内置=随包规则集（已内置、可直接引用）；外置=远程全量（需刷新拉取）+ 自定义 URL。 */
 type LibTab = 'builtin' | 'external';
 
-/** 统一展示项：内置（RuleResourceListItem）与外置（catalog）归一为同构两行渲染。 */
+/** 统一展示项：内置（RuleResourceListItem）与外置（catalog）归一为同构行渲染。 */
 interface DisplayItem {
   id: string;
   name: string;
   category: RuleResourceCategory;
-  path: string; // mono 次行：内置=rule_set tag，外置=仓库路径
+  path: string; // 内置=rule_set tag，外置=仓库路径（收进 title 悬浮）
   present: boolean; // 已内置 / 已下载（本地已有）
   selectable: boolean; // 可勾选下载（仅外置本地无的项）
   missing: boolean; // 标「文件缺失」（仅内置文件该在却没在）
+  size?: number; // 字节（仅内置随包项可得；外置 catalog 无 size）
 }
 
-export const RESOURCE_CATEGORY_BADGE: Record<RuleResourceCategory, string> = {
-  geosite: 'border-transparent bg-badge-blue/15 text-badge-blue',
-  'geosite-lite': 'border-transparent bg-badge-blue/10 text-badge-blue',
-  geoip: 'border-transparent bg-badge-purple/15 text-badge-purple',
-  'geoip-lite': 'border-transparent bg-badge-purple/10 text-badge-purple',
-  custom: 'border-transparent bg-muted text-muted-foreground',
+/** 资源分类 → Conduit pill 配色类（geosite 域名色 / geoip IP 色 / lite·custom 中性）。 */
+export const RESOURCE_CATEGORY_PILL: Record<RuleResourceCategory, string> = {
+  geosite: 'rc-site',
+  'geosite-lite': 'rc-lite',
+  geoip: 'rc-ip',
+  'geoip-lite': 'rc-lite',
+  custom: 'rc-app',
 };
 
 interface ResourceCatalogDialogProps {
@@ -132,6 +115,7 @@ export function ResourceCatalogDialog({
           category: b.category,
           path: b.id.replace(/^builtin:/, ''),
           present,
+          size: b.size,
           ...resolveCatalogItemState('builtin', present),
         };
       });
@@ -181,198 +165,193 @@ export function ResourceCatalogDialog({
       return next;
     });
 
+  const switchTab = (v: LibTab) => {
+    setTab(v);
+    setSearch('');
+    setSelected(new Set()); // 切 Tab 清选中，防跨 tab（内置↔外置）下载混入
+  };
+
   const handleDownload = () => {
     onDownload(Array.from(selected).map((id) => ({ catalogId: id })));
     onOpenChange(false);
   };
 
-  // 两行卡片式行：行1 = name(bold) + 右侧[分类 badge][状态 badge]（self-center 垂直居中）；
-  // 行2 = path(tag/仓库路径, mono muted, min-w-0 truncate 独占整行，不再被徽标挤压换行)。
-  // 可下载项 = Checkbox + label 全行点击；已内置/已下载 = 绿色 CheckCircle + 状态徽标，不可勾选。
-  const renderItem = (d: DisplayItem) => {
-    const meta = (
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">
-          <HighlightText text={d.name} query={search} />
-        </div>
-        <div className="truncate font-mono text-xs text-muted-foreground">
-          <HighlightText text={d.path} query={search} />
-        </div>
-      </div>
-    );
-    const badges = (
-      <div className="flex shrink-0 items-center gap-1.5 self-center">
-        <Badge variant="outline" className={RESOURCE_CATEGORY_BADGE[d.category]}>
-          {t(`ruleResources.category.${d.category}`, d.category)}
-        </Badge>
-        {d.present && (
-          <Badge variant="outline" className="border-transparent bg-success/15 text-success">
-            {tab === 'builtin'
-              ? t('ruleResources.builtinMark', '已内置')
-              : t('ruleResources.downloaded', '已下载')}
-          </Badge>
-        )}
-        {/* 「文件缺失」仅内置文件该在却没在（语义见 resolveCatalogItemState）；
-            外置未下载是常态，不标缺失——Checkbox 已表达「可下载」。 */}
-        {d.missing && (
-          <Badge
-            variant="outline"
-            className="border-transparent bg-destructive/15 text-xs text-destructive"
-          >
-            {t('ruleResources.missing', '文件缺失')}
-          </Badge>
-        )}
-      </div>
-    );
-    if (d.selectable) {
-      return (
-        <label
-          key={d.id}
-          className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-muted/50"
-        >
-          <Checkbox
-            checked={selected.has(d.id)}
-            onCheckedChange={() => toggle(d.id)}
-            className="mt-0.5"
-          />
-          {meta}
-          {badges}
-        </label>
-      );
-    }
-    return (
-      <div key={d.id} className="flex items-start gap-3 px-3 py-2.5">
-        {d.present ? (
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-        ) : (
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-        )}
-        {meta}
-        {badges}
-      </div>
-    );
-  };
+  // 单行卡片（Conduit .rsc-lib-row）：勾选框 + 名称(mono, 搜索高亮) + 分类 pill + 大小(内置可得) + 状态徽标。
+  // 可下载项 = 启用勾选框 + 全行 label 点击；已内置/已下载/文件缺失 = 禁用勾选框 + 对应徽标。
+  const renderRow = (d: DisplayItem) => (
+    <label key={d.id} className={cn('rsc-lib-row', !d.selectable && 'disabled')}>
+      <input
+        type="checkbox"
+        className="rsc-check"
+        checked={d.selectable ? selected.has(d.id) : d.present}
+        disabled={!d.selectable}
+        onChange={() => d.selectable && toggle(d.id)}
+      />
+      <span className="rc-nm mono" title={d.path}>
+        <HighlightText text={d.name} query={search} />
+      </span>
+      <span className={cn('pill', RESOURCE_CATEGORY_PILL[d.category])}>
+        {t(`ruleResources.category.${d.category}`, d.category)}
+      </span>
+      {d.size != null && <span className="rsc-lib-size mono tnum">{formatKb(d.size)}</span>}
+      {d.present ? (
+        <span className={cn('rsc-lib-badge', tab === 'builtin' ? 'bi' : 'have')}>
+          {tab === 'builtin'
+            ? t('ruleResources.builtinMark', '已内置')
+            : t('ruleResources.downloaded', '已下载')}
+        </span>
+      ) : d.missing ? (
+        <span className="rsc-lib-badge miss">{t('ruleResources.missing', '文件缺失')}</span>
+      ) : null}
+    </label>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <div className="flex items-center justify-between gap-2">
-            <DialogTitle>{t('ruleResources.library', '资源库')}</DialogTitle>
-            {/* 刷新仅外置 TAB 需要（内置=随包，无远程清单可刷）。带文字 outline 按钮，比纯图标更可发现。 */}
-            {tab === 'external' && (
-              <div className="flex items-center gap-2 pe-6">
-                {catalog?.fetchedAt && (
-                  <span className="text-xs text-muted-foreground">
-                    {t('ruleResources.catalogUpdatedAt', '更新于')}{' '}
-                    {new Date(catalog.fetchedAt).toLocaleDateString()}
-                  </span>
-                )}
-                <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing}>
-                  <RotateCw className={`me-2 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                  {t('ruleResources.refreshCatalogBtn', '刷新清单')}
-                </Button>
-              </div>
-            )}
+      {/* 复用 radix Dialog（焦点陷阱/Esc/portal），置零内边距后套 Conduit .rsc-dialog-lib 内部结构；
+          [&>button]:hidden 隐藏 DialogContent 自带右上角关闭钮（改用头部 .rsc-x）。 */}
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[520px] [&>button]:hidden">
+        <DialogDescription className="sr-only">
+          {t(
+            'ruleResources.libraryDesc',
+            '内置=随包规则集（已内置，可直接引用）；外置=刷新拉取远程全量 + 粘贴自定义 URL，可多选下载。'
+          )}
+        </DialogDescription>
+
+        <div className="rsc-dialog-h">
+          <DialogTitle>{t('ruleResources.library', '资源库')}</DialogTitle>
+          {/* 刷新仅外置 TAB 需要（内置=随包，无远程清单可刷） */}
+          {tab === 'external' && (
+            <button
+              className="btn ghost sm rsc-lib-refresh"
+              onClick={refresh}
+              disabled={refreshing}
+            >
+              <RotateCw className={refreshing ? 'animate-spin' : ''} />
+              {t('ruleResources.refreshCatalogBtn', '刷新清单')}
+            </button>
+          )}
+          <button
+            className="rsc-x"
+            aria-label={t('servers.cancel', '取消')}
+            onClick={() => onOpenChange(false)}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* 内置 / 外置 TAB（原型无此切换；真实功能保留：随包 vs 远程·URL 两态数据源） */}
+        <div className="px-4 pt-3">
+          <div className="tabs">
+            <button className={cn(tab === 'builtin' && 'on')} onClick={() => switchTab('builtin')}>
+              {t('ruleResources.libTabBuiltin', '内置 · 随包')}
+            </button>
+            <button
+              className={cn(tab === 'external' && 'on')}
+              onClick={() => switchTab('external')}
+            >
+              {t('ruleResources.libTabExternal', '外置 · 远程/URL')}
+            </button>
           </div>
-          <DialogDescription>
-            {t(
-              'ruleResources.libraryDesc',
-              '内置=随包规则集（已内置，可直接引用）；外置=刷新拉取远程全量 + 粘贴自定义 URL，可多选下载。'
-            )}
-          </DialogDescription>
-        </DialogHeader>
+        </div>
 
-        <div className="min-w-0 space-y-3">
-          <SegmentedControl<LibTab>
-            value={tab}
-            onChange={(v) => {
-              setTab(v);
-              setSearch('');
-              setSelected(new Set()); // 切 Tab 清选中，防跨 tab（内置↔外置）下载混入
-            }}
-            options={[
-              { value: 'builtin', label: t('ruleResources.libTabBuiltin', '内置 · 随包') },
-              { value: 'external', label: t('ruleResources.libTabExternal', '外置 · 远程/URL') },
-            ]}
-          />
-
-          <div className="relative">
-            <Search className="absolute start-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('ruleResources.searchCatalog', '搜索规则集')}
-              className="ps-8"
-            />
-          </div>
-
-          <SegmentedControl<CatalogFilter>
-            value={filter}
-            onChange={setFilter}
-            options={CATALOG_FILTERS.map((f) => ({
-              value: f,
-              label:
-                f === 'all'
+        <div className="rsc-lib-toolbar">
+          <div className="rsc-cat-filter">
+            {CATALOG_FILTERS.map((f) => (
+              <button
+                key={f}
+                className={cn('rsc-chip', filter === f && 'on')}
+                onClick={() => setFilter(f)}
+              >
+                {f === 'all'
                   ? t('ruleResources.filterAll', '全部')
                   : f === 'lite'
                     ? t('ruleResources.filterLite', '精简')
-                    : t(`ruleResources.category.${f}`, f),
-            }))}
-          />
-
-          {tab === 'external' && (
-            <div className="flex items-center gap-2">
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddUrl();
-                }}
-                placeholder={t('ruleResources.urlPlaceholder', '粘贴 .srs 规则集 URL（自定义源）')}
-                className="font-mono text-sm"
-              />
-              <Button variant="outline" onClick={handleAddUrl} disabled={!url.trim()}>
-                {t('ruleResources.addUrl', '添加')}
-              </Button>
-            </div>
-          )}
-
-          <ScrollArea className="h-80 rounded-md border">
-            {loading ? (
-              <div className="flex h-80 items-center justify-center text-muted-foreground">
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                {t('common.loading', '加载中...')}
-              </div>
-            ) : filtered.items.length === 0 ? (
-              <div className="flex h-80 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                {externalNeedsRefresh
-                  ? t('ruleResources.externalNeedRefresh', '点击右上角刷新，拉取远程全量清单')
-                  : t('ruleResources.noCatalog', '没有匹配的规则集')}
-              </div>
-            ) : (
-              <div className="divide-y divide-border/60">
-                {filtered.items.map(renderItem)}
-                {truncated && (
-                  <div className="flex items-center justify-center gap-1.5 px-3 py-3 text-xs text-muted-foreground">
-                    <SearchIcon className="h-3.5 w-3.5" />
-                    {t('ruleResources.searchMore', '结果较多，继续输入以精确搜索')}
-                  </div>
-                )}
-              </div>
-            )}
-          </ScrollArea>
+                    : t(`ruleResources.category.${f}`, f)}
+              </button>
+            ))}
+          </div>
+          <div className="rsc-search">
+            <Search />
+            <input
+              className="input"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('ruleResources.searchCatalog', '搜索规则集')}
+            />
+          </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        {/* 外置 TAB：粘贴自定义 URL 直接下载（真实功能保留，原型未含） */}
+        {tab === 'external' && (
+          <div className="flex items-center gap-2 px-4 pb-1">
+            <input
+              className="input mono"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleAddUrl();
+              }}
+              placeholder={t('ruleResources.urlPlaceholder', '粘贴 .srs 规则集 URL（自定义源）')}
+            />
+            <button className="btn ghost sm" onClick={handleAddUrl} disabled={!url.trim()}>
+              {t('ruleResources.addUrl', '添加')}
+            </button>
+          </div>
+        )}
+
+        {truncated && (
+          <div className="rsc-lib-note">
+            <Info />
+            {t(
+              'ruleResources.catalogTruncatedNote',
+              '清单较多，仅展示前 {{shown}} 项匹配（共 {{total}} 项）· 用搜索缩小范围',
+              { shown: filtered.items.length, total: filtered.total }
+            )}
+          </div>
+        )}
+
+        <div className="cc-hair" />
+
+        <div className="rsc-lib-list">
+          {loading ? (
+            <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+              <Loader2 className="me-2 h-4 w-4 animate-spin" />
+              {t('common.loading', '加载中...')}
+            </div>
+          ) : filtered.items.length === 0 ? (
+            <div className="flex h-[200px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              {externalNeedsRefresh
+                ? t('ruleResources.externalNeedRefresh', '点击右上角刷新，拉取远程全量清单')
+                : t('ruleResources.noCatalog', '没有匹配的规则集')}
+            </div>
+          ) : (
+            filtered.items.map(renderRow)
+          )}
+        </div>
+
+        <div className="rsc-dialog-f">
+          <span className="rsc-lib-sel">
+            {t('ruleResources.libSelected', '已选 {{n}} 项', { n: selected.size })}
+          </span>
+          <button className="btn ghost" onClick={() => onOpenChange(false)}>
             {t('servers.cancel', '取消')}
-          </Button>
-          <Button onClick={handleDownload} disabled={selected.size === 0}>
+          </button>
+          <button
+            className="btn flow rsc-lib-dl"
+            onClick={handleDownload}
+            disabled={selected.size === 0}
+          >
             {t('ruleResources.downloadNItems', '下载 {{count}} 项', { count: selected.size })}
-          </Button>
-        </DialogFooter>
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+/** 字节 → 「KB / MB」简短显示（资源库行右侧，与原型 mono tnum 尺寸列一致）。 */
+function formatKb(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }

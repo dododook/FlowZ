@@ -53,8 +53,12 @@ const wgServer = (over: Partial<ServerConfig> = {}): ServerConfig =>
 // 本文件内自设 platform 的用例（跨平台导入降级 ~L490 / shouldEmitTlsEngine 显式传 platform）各自 restore 到捕获的
 // orig，不受此 beforeEach 影响。
 const __realPlatform = process.platform;
-beforeEach(() => Object.defineProperty(process, 'platform', { value: 'win32', configurable: true }));
-afterEach(() => Object.defineProperty(process, 'platform', { value: __realPlatform, configurable: true }));
+beforeEach(() =>
+  Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+);
+afterEach(() =>
+  Object.defineProperty(process, 'platform', { value: __realPlatform, configurable: true })
+);
 
 describe('buildWireGuardEndpoint', () => {
   it('最小配置 → keepalive 兜 25s / allowed_ips 全量 / mtu 兜 1408 / system:false', () => {

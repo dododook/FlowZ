@@ -1,20 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import {
-  Download,
-  Upload,
-  Server,
-  Network,
-  Rss,
-  ListFilter,
-  Shield,
-  Database,
-  CheckCircle2,
-  AlertTriangle,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { AlertTriangle } from 'lucide-react';
 import { api } from '@/ipc/api-client';
 import type { BackupInfo } from '@/ipc/api-client';
 import { BACKUP_CATEGORIES, type BackupCategory } from '../../../shared/backup-categories';
@@ -23,6 +10,7 @@ import { BackupCategoryDialog, CATEGORY_META } from './backup-category-dialog';
 // localStorage key for last export timestamp
 const LAST_EXPORT_KEY = 'flowz_last_backup_export';
 
+/** 数据备份卡（Conduit 高级面板 `.card.set-card`）：概览条 `.bk-overview` + 操作 `.bk-actions` + 选类对话框。 */
 export function BackupRestoreSection() {
   const { t } = useTranslation();
   const [backupInfo, setBackupInfo] = useState<BackupInfo | null>(null);
@@ -167,140 +155,104 @@ export function BackupRestoreSection() {
   // 整个导出/导入流程（含选类对话框打开期间）都算忙，避免对话框开着时主按钮仍可点。
   const busy = isExporting || isImporting || showExportDialog || showImportDialog;
 
+  const manualCount = backupInfo?.manualServerCount ?? 0;
+  const meshCount = backupInfo?.meshServerCount ?? 0;
+  const subCount = backupInfo?.subscriptionCount ?? 0;
+  const ruleCount = backupInfo?.ruleCount ?? 0;
+  const appRuleCount = backupInfo?.appRuleCount ?? 0;
+  const subNodeCount = totalNodes - manualCount - meshCount;
+
   return (
-    <div className="space-y-4">
-      {/* Section header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h4 className="text-sm font-semibold flex items-center gap-2">
-            <Database className="h-3.5 w-3.5 text-muted-foreground" />
-            {t('settings.advanced.backup.title')}
-          </h4>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {t('settings.advanced.backup.desc')}
-          </p>
-        </div>
+    <div className="card set-card">
+      <div className="set-h">
+        <b>{t('settings.advanced.backup.title')}</b>
+        <small>{t('settings.advanced.backup.desc')}</small>
       </div>
 
-      {/* Action bar — mirrors the server page button row style */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          id="backup-export-btn"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => setShowExportDialog(true)}
-          className="flex items-center gap-1.5"
-        >
-          <Download className={`h-3.5 w-3.5 ${isExporting ? 'animate-pulse' : ''}`} />
-          {isExporting
-            ? t('settings.advanced.backup.exporting')
-            : t('settings.advanced.backup.export')}
-        </Button>
-
-        <Button
-          id="backup-import-btn"
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={handleImportClick}
-          className="flex items-center gap-1.5"
-        >
-          <Upload className={`h-3.5 w-3.5 ${isImporting ? 'animate-pulse' : ''}`} />
-          {isImporting
-            ? t('settings.advanced.backup.importing')
-            : t('settings.advanced.backup.import')}
-        </Button>
-
-        {lastExportTime && (
-          <span className="text-xs text-muted-foreground ms-1 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3 text-success" />
-            {t('settings.advanced.backup.lastExport')}：{lastExportTime}
-          </span>
-        )}
-      </div>
-
-      {/* Config overview card — styled exactly like the subscription info bar in server page */}
-      <div className="flex items-start justify-between rounded-lg border bg-muted/40 px-4 py-3 gap-4">
+      <div className="set-pad">
+        {/* 配置概览条 */}
         {hasData ? (
-          <div className="flex flex-wrap gap-x-6 gap-y-2 min-w-0">
-            {/* Manual servers (non-mesh) */}
-            <div className="flex items-center gap-2">
-              <Server className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-sm text-muted-foreground">
-                {t('settings.advanced.backup.manualNodes')}
-              </span>
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                {backupInfo?.manualServerCount ?? 0}
-              </Badge>
+          <div className="bk-overview">
+            <div className="bk-stat">
+              <span className="bk-n mono tnum">{manualCount}</span>
+              <span className="bk-l">{t('settings.advanced.backup.manualNodes')}</span>
             </div>
-
-            {/* Mesh servers (WireGuard / Tailscale) —— 与手动节点分开统计 */}
-            {(backupInfo?.meshServerCount ?? 0) > 0 && (
-              <div className="flex items-center gap-2">
-                <Network className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm text-muted-foreground">
-                  {t('settings.advanced.backup.meshNodes')}
-                </span>
-                <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                  {backupInfo?.meshServerCount ?? 0}
-                </Badge>
+            {meshCount > 0 && (
+              <div className="bk-stat">
+                <span className="bk-n mono tnum">{meshCount}</span>
+                <span className="bk-l">{t('settings.advanced.backup.meshNodes')}</span>
               </div>
             )}
-
-            {/* Subscriptions */}
-            <div className="flex items-center gap-2">
-              <Rss className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-sm text-muted-foreground">
+            <div className="bk-stat">
+              <span className="bk-n mono tnum">{subCount}</span>
+              <span className="bk-l">
                 {t('settings.advanced.backup.subscriptions')}
+                {subCount > 0 && (
+                  <small> {t('settings.advanced.backup.subNodes', { count: subNodeCount })}</small>
+                )}
               </span>
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                {backupInfo?.subscriptionCount ?? 0}
-              </Badge>
-              {(backupInfo?.subscriptionCount ?? 0) > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  (
-                  {t('settings.advanced.backup.subNodes', {
-                    count:
-                      totalNodes -
-                      (backupInfo?.manualServerCount ?? 0) -
-                      (backupInfo?.meshServerCount ?? 0),
-                  })}
-                  )
-                </span>
-              )}
             </div>
-
-            {/* Rules */}
-            <div className="flex items-center gap-2">
-              <ListFilter className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-              <span className="text-sm text-muted-foreground">
-                {t('settings.advanced.backup.rules')}
-              </span>
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                {backupInfo?.ruleCount ?? 0}
-              </Badge>
+            <div className="bk-stat">
+              <span className="bk-n mono tnum">{ruleCount}</span>
+              <span className="bk-l">{t('settings.advanced.backup.rules')}</span>
             </div>
-
-            {/* App rules */}
-            {(backupInfo?.appRuleCount ?? 0) > 0 && (
-              <div className="flex items-center gap-2">
-                <Shield className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm text-muted-foreground">
-                  {t('settings.advanced.backup.appRules')}
-                </span>
-                <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-                  {backupInfo?.appRuleCount ?? 0}
-                </Badge>
+            {appRuleCount > 0 && (
+              <div className="bk-stat">
+                <span className="bk-n mono tnum">{appRuleCount}</span>
+                <span className="bk-l">{t('settings.advanced.backup.appRules')}</span>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-2 text-muted-foreground">
+          <div className="ng-hint" style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <AlertTriangle className="h-3.5 w-3.5" />
-            <span className="text-sm">{t('settings.advanced.backup.noData')}</span>
+            {t('settings.advanced.backup.noData')}
           </div>
         )}
+
+        {/* 操作 + 上次导出 */}
+        <div className="bk-actions">
+          <button
+            id="backup-export-btn"
+            type="button"
+            className="btn ghost sm"
+            disabled={busy}
+            onClick={() => setShowExportDialog(true)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+              <path d="M12 15V3M8 7l4-4 4 4M5 21h14" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {isExporting
+              ? t('settings.advanced.backup.exporting')
+              : t('settings.advanced.backup.export')}
+          </button>
+
+          <button
+            id="backup-import-btn"
+            type="button"
+            className="btn ghost sm"
+            disabled={busy}
+            onClick={handleImportClick}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+              <path
+                d="M12 3v12M8 11l4 4 4-4M5 21h14"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {isImporting
+              ? t('settings.advanced.backup.importing')
+              : t('settings.advanced.backup.import')}
+          </button>
+
+          {lastExportTime && (
+            <span className="bk-last">
+              {t('settings.advanced.backup.lastExport')}{' '}
+              <span className="mono tnum">{lastExportTime}</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* 导出：选类别对话框（全部 6 类可选，默认全选） */}

@@ -11,7 +11,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Link as LinkIcon, Edit, Activity, AlertTriangle } from 'lucide-react';
+import {
+  Loader2,
+  Link as LinkIcon,
+  Edit,
+  Activity,
+  AlertTriangle,
+  ChevronDown,
+} from 'lucide-react';
 import type { SubscriptionConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '@/lib/format';
@@ -212,51 +219,62 @@ export function SubscriptionDialog({
             </div>
           )}
 
-          <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-            <div className="space-y-0.5">
-              <Label htmlFor="sub-auto-update">{t('sub.autoUpdate')}</Label>
-              <div className="text-[0.8rem] text-muted-foreground">{t('sub.autoUpdateDesc')}</div>
-            </div>
-            <Switch id="sub-auto-update" checked={autoUpdate} onCheckedChange={setAutoUpdate} />
-          </div>
-          {/* 开启自动更新即提示重启代价（订阅刷新带来节点变动会重启代理、短暂断流） */}
-          {autoUpdate && (
-            <p className="flex items-start gap-1.5 px-1 text-[0.8rem] text-warning">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-              <span>{t('sub.autoUpdateRestartHint')}</span>
-            </p>
-          )}
+          {/* 高级设置（默认折叠，用户反馈）：自动更新 + 经代理更新。 */}
+          <details className="group rounded-lg border shadow-sm">
+            <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2.5 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              <span>{t('sub.advancedSection', '高级')}</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="flex flex-col gap-3 border-t p-3">
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="sub-auto-update">{t('sub.autoUpdate')}</Label>
+                  <div className="text-[0.8rem] text-muted-foreground">
+                    {t('sub.autoUpdateDesc')}
+                  </div>
+                </div>
+                <Switch id="sub-auto-update" checked={autoUpdate} onCheckedChange={setAutoUpdate} />
+              </div>
+              {/* 开启自动更新即提示重启代价（订阅刷新带来节点变动会重启代理、短暂断流） */}
+              {autoUpdate && (
+                <p className="flex items-start gap-1.5 px-1 text-[0.8rem] text-warning">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{t('sub.autoUpdateRestartHint')}</span>
+                </p>
+              )}
 
-          {/* 经代理更新（per-sub）：仅全局策略为「跟随订阅设置」(follow) 时可设；'proxy'/'direct' 被全局覆盖、置灰 */}
-          <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="sub-via-proxy">{t('sub.updateViaProxy', '经代理更新')}</Label>
-                <InfoTooltip
-                  content={t(
-                    'sub.updateViaProxyDescFull',
-                    '开启后该订阅经运行中的代理拉取（订阅地址被直连封锁时用）；代理未运行时本轮跳过、就绪后自动补更。仅当「更新与测速」的全局「订阅更新经代理」为「跟随订阅设置」时本开关生效。'
-                  )}
+              {/* 经代理更新（per-sub）：仅全局策略为「跟随订阅设置」(follow) 时可设；'proxy'/'direct' 被全局覆盖、置灰 */}
+              <div className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="sub-via-proxy">{t('sub.updateViaProxy', '经代理更新')}</Label>
+                    <InfoTooltip
+                      content={t(
+                        'sub.updateViaProxyDescFull',
+                        '开启后该订阅经运行中的代理拉取（订阅地址被直连封锁时用）；代理未运行时本轮跳过、就绪后自动补更。仅当「更新与测速」的全局「订阅更新经代理」为「跟随订阅设置」时本开关生效。'
+                      )}
+                    />
+                  </div>
+                  <div className="text-[0.8rem] text-muted-foreground">
+                    {subscriptionProxyPolicy === 'proxy'
+                      ? t('sub.updateViaProxyOverrideProxy', '已由全局策略覆盖：全部订阅经代理')
+                      : subscriptionProxyPolicy === 'direct'
+                        ? t('sub.updateViaProxyOverrideDirect', '已由全局策略覆盖：全部订阅直连')
+                        : t(
+                            'sub.updateViaProxyDesc',
+                            '该订阅经运行中的代理拉取（代理未运行则就绪后补更）'
+                          )}
+                  </div>
+                </div>
+                <Switch
+                  id="sub-via-proxy"
+                  checked={updateViaProxy}
+                  onCheckedChange={setUpdateViaProxy}
+                  disabled={subscriptionProxyPolicy !== 'follow'}
                 />
               </div>
-              <div className="text-[0.8rem] text-muted-foreground">
-                {subscriptionProxyPolicy === 'proxy'
-                  ? t('sub.updateViaProxyOverrideProxy', '已由全局策略覆盖：全部订阅经代理')
-                  : subscriptionProxyPolicy === 'direct'
-                    ? t('sub.updateViaProxyOverrideDirect', '已由全局策略覆盖：全部订阅直连')
-                    : t(
-                        'sub.updateViaProxyDesc',
-                        '该订阅经运行中的代理拉取（代理未运行则就绪后补更）'
-                      )}
-              </div>
             </div>
-            <Switch
-              id="sub-via-proxy"
-              checked={updateViaProxy}
-              onCheckedChange={setUpdateViaProxy}
-              disabled={subscriptionProxyPolicy !== 'follow'}
-            />
-          </div>
+          </details>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>

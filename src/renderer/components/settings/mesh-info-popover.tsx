@@ -1,14 +1,15 @@
 /**
- * 组网节点信息 ⓘ（#61）：组网类型节点（WireGuard / Tailscale，WARP 本质是 wireguard）卡片在「传输:」前加 info 图标，
- * hover/click 弹出内网 IP + 路由，消「要登录 Tailscale 控制台才看得到」的信息黑盒。
+ * 组网节点信息 ⓘ（#61）：组网类型节点（WireGuard / Tailscale，WARP 本质是 wireguard）卡片在角标行末尾加 info 图标，
+ * hover/focus 弹出内网 IP + 路由，消「要登录 Tailscale 控制台才看得到」的信息黑盒。
  *   - 内网 IP：Tailscale = api STATUS 流携带的 tailnet IP（store.tailscaleIps，100.x）；WireGuard = wireguardSettings.localAddress。
  *   - 路由：Tailscale = accept / advertise routes（acceptRoutes ? routes∪advertiseRoutes）；WireGuard = peer.allowed_ips（allowedIPs）。
- * 非组网节点（vless 等）不渲染此图标。基于既有 hover-card（@radix-ui/react-hover-card），lucide Info 触发器，
- * 复用 InfoTooltip 同范式（a11y：键盘可聚焦 + aria-label）。
+ * 非组网节点（vless 等）不渲染此图标。
+ *
+ * Conduit 1:1 移植：由 radix HoverCard 改为原型纯 CSS 结构 `.nd-info`/`.nd-info-btn`/`.nd-info-pop`（`:hover`/`:focus-within`
+ * 揭示，见 conduit.css）。a11y 不降级——触发器仍是可聚焦 `<button aria-label>`，键盘聚焦即 focus-within 弹出；
+ * onClick stopPropagation 保「点 ⓘ 不选中卡片」。字段派生逻辑（IP/路由/出口/接受子网路由/陈旧标注）逐字保留。
  */
 import { useTranslation } from 'react-i18next';
-import { Info } from 'lucide-react';
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { isAccountBasedProtocol, isEndpointProtocol } from '../../../shared/endpoint-routes';
 import { dedupe } from '../../../shared/collections';
 import { useAppStore } from '../../store/app-store';
@@ -54,56 +55,59 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
   const exitNode = ts?.exitNode?.trim();
 
   return (
-    <HoverCard openDelay={150} closeDelay={80}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          aria-label={t('common.moreInfo')}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex shrink-0 items-center text-muted-foreground/70 hover:text-foreground"
-        >
-          <Info className="h-3.5 w-3.5" />
-        </button>
-      </HoverCardTrigger>
-      <HoverCardContent
+    <span className="nd-info">
+      <button
+        type="button"
+        className="nd-info-btn"
+        aria-label={t('common.moreInfo')}
         onClick={(e) => e.stopPropagation()}
-        className="w-64 text-xs leading-relaxed text-muted-foreground"
       >
-        <div className="space-y-1.5">
-          <div>
-            <div className="font-medium text-foreground">{t('servers.meshInfoIntranetIp')}</div>
-            <div className="break-all font-mono">
-              {ips.length > 0 ? ips.join(', ') : t('servers.meshInfoNotAssigned')}
-              {/* 「上次已知」仅对 Tailscale：其内网IP 来自 STATUS 流缓存、停代理时确为陈旧。WG/WARP 的内网IP 是
-                  静态 config(localAddress)、永不陈旧，故不标（isAccountBasedProtocol=仅 Tailscale）。 */}
-              {ips.length > 0 && !proxyRunning && isAccountBasedProtocol(server.protocol) && (
-                <span className="ms-1 font-sans text-muted-foreground">
-                  · {t('servers.meshInfoLastKnown', 'last known')}
-                </span>
-              )}
-            </div>
-          </div>
-          <div>
-            <div className="font-medium text-foreground">{t('servers.meshInfoRoutes')}</div>
-            <div className="break-all font-mono">
-              {routes.length > 0 ? routes.join(', ') : t('servers.meshInfoNoRoutes')}
-            </div>
-          </div>
-          {exitNode && (
-            <div>
-              <div className="font-medium text-foreground">
-                {t('servers.meshInfoExitNode', '出口节点')}
-              </div>
-              <div className="break-all font-mono">{exitNode}</div>
-            </div>
-          )}
-          {ts?.acceptRoutes && (
-            <div className="font-medium text-foreground">
-              {t('servers.meshInfoAcceptRoutesOn', '接受子网路由：已开启')}
-            </div>
-          )}
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 7.5h.01" />
+        </svg>
+      </button>
+      <div className="nd-info-pop" onClick={(e) => e.stopPropagation()}>
+        <div className="nd-info-row">
+          <span className="nd-info-k">{t('servers.meshInfoIntranetIp')}</span>
+          <span className="nd-info-v mono tnum break-all text-right">
+            {ips.length > 0 ? ips.join(', ') : t('servers.meshInfoNotAssigned')}
+            {/* 「上次已知」仅对 Tailscale：其内网IP 来自 STATUS 流缓存、停代理时确为陈旧。WG/WARP 的内网IP 是
+                静态 config(localAddress)、永不陈旧，故不标（isAccountBasedProtocol=仅 Tailscale）。 */}
+            {ips.length > 0 && !proxyRunning && isAccountBasedProtocol(server.protocol) && (
+              <span className="ms-1 font-sans text-[hsl(var(--fg-faint))]">
+                · {t('servers.meshInfoLastKnown', 'last known')}
+              </span>
+            )}
+          </span>
         </div>
-      </HoverCardContent>
-    </HoverCard>
+        <div className="nd-info-row">
+          <span className="nd-info-k">{t('servers.meshInfoRoutes')}</span>
+          <span className="nd-info-v mono tnum break-all text-right">
+            {routes.length > 0 ? routes.join(', ') : t('servers.meshInfoNoRoutes')}
+          </span>
+        </div>
+        {exitNode && (
+          <div className="nd-info-row">
+            <span className="nd-info-k">{t('servers.meshInfoExitNode', '出口节点')}</span>
+            <span className="nd-info-v mono break-all text-right">{exitNode}</span>
+          </div>
+        )}
+        {ts?.acceptRoutes && (
+          <div className="nd-info-row">
+            <span className="nd-info-k">
+              {t('servers.meshInfoAcceptRoutesOn', '接受子网路由：已开启')}
+            </span>
+          </div>
+        )}
+      </div>
+    </span>
   );
 }

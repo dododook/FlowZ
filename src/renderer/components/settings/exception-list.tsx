@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 import { parseLines } from '../../../shared/parse-lines';
 
 interface ExceptionListProps {
@@ -19,8 +18,8 @@ interface ExceptionListProps {
 }
 
 /**
- * 设置项「例外清单」统一展开式编辑器（开关 ON 时由父级条件渲染）：
- * textarea 每行一条、onBlur 提交、恢复默认。FakeIP 例外域名 / 绕过局域网共用。
+ * 设置项「例外清单」统一展开式编辑器（Conduit `.excl`）：textarea 每行一条、onBlur 提交、恢复默认。
+ * FakeIP 例外域名 / 绕过局域网 / TUN 连入排除 / 邻居后缀 / MAC 过滤共用。
  */
 export function ExceptionList({
   value,
@@ -34,30 +33,34 @@ export function ExceptionList({
   const [text, setText] = useState((value ?? defaults).join('\n'));
   // defaults 为模块常量（引用稳定）；value 变化时同步 textarea。
   useEffect(() => setText((value ?? defaults).join('\n')), [value, defaults]);
-  const hintClass = `text-xs ${hintTone === 'warning' ? 'font-medium text-warning' : 'text-muted-foreground'}`;
 
   const isModified = value !== undefined;
   return (
-    <div className="space-y-1.5 pb-2">
-      <Textarea
+    <div className="excl">
+      <textarea
+        className="ta"
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => onChange?.(parseLines(text))}
-        rows={5}
+        rows={4}
         spellCheck={false}
         placeholder={placeholder}
-        className="w-full font-mono text-xs"
       />
-      <div className="flex items-center justify-between gap-2">
-        {hint ? <p className={hintClass}>{hint}</p> : <span />}
-        <Button
-          size="sm"
+      <div className="excl-foot">
+        {hint ? (
+          <span className={cn('ng-hint', hintTone === 'warning' && 'ng-warn')}>{hint}</span>
+        ) : (
+          <span />
+        )}
+        <button
+          type="button"
+          className="btn ghost sm"
           disabled={!isModified}
+          style={!isModified ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
           onClick={() => onChange?.([...defaults])}
-          className="shrink-0"
         >
           {t('common.restoreDefault', '恢复默认')}
-        </Button>
+        </button>
       </div>
     </div>
   );

@@ -57,13 +57,16 @@
     "restoreDefault": "بازگردانی به پیش‌فرض",
     "moreInfo": "اطلاعات بیشتر",
     "search": "جستجو",
-    "noResults": "نتیجه‌ای یافت نشد"
+    "noResults": "نتیجه‌ای یافت نشد",
+    "apply": "اعمال",
+    "remove": "حذف",
+    "copy": "کپی"
   },
   "sidebar": {
     "home": "خانه",
-    "logs": "لاگ زنده",
+    "logs": "لاگ",
     "connections": "اتصالات",
-    "server": "سرورها",
+    "server": "گره‌ها",
     "appPolicy": "سیاست برنامه‌ها",
     "ruleResources": "منابع قوانین",
     "rules": "قوانین",
@@ -76,7 +79,7 @@
     }
   },
   "logs": {
-    "pageTitle": "لاگ زنده",
+    "pageTitle": "لاگ",
     "pageDesc": "مشاهدهٔ لاگ‌های هستهٔ sing-box و زمان اجرای برنامه",
     "settingsTitle": "لاگ و عیب‌یابی",
     "currentLevel": "سطح"
@@ -228,9 +231,36 @@
       "placeholder": "انتخاب مجموعه‌قوانین",
       "search": "جستجوی مجموعه‌قوانین",
       "noMatch": "مجموعه‌قانون مطابقی وجود ندارد"
-    }
+    },
+    "accelHintCustom": "دامنهٔ آینه را وارد کنید",
+    "accelHintDirect": "منبع رسمی · ممکن است کند باشد",
+    "accelHintPreset": "شتاب‌دهی آینه",
+    "autoUpdateOffHint": "خاموش — منابع باید دستی به‌روزرسانی شوند",
+    "autoUpdateOnHint": "روشن — منابع دانلودشده را در پس‌زمینه با بازهٔ انتخاب‌شده تازه می‌کند",
+    "catalogTruncatedNote": "فهرست طولانی — {{shown}} مورد اول از {{total}} نمایش داده شد · با جستجو محدود کنید",
+    "customDomainLabel": "دامنهٔ شتاب‌دهندهٔ سفارشی",
+    "dismiss": "نادیده گرفتن",
+    "downloadingBadge": "در حال دانلود",
+    "downloadMethod": "روش دانلود",
+    "failedBadge": "ناموفق",
+    "ghProxyHint": "برای بازگشت به اتصال مستقیم خالی بگذارید؛ در صورت خطای دانلود به‌طور خودکار به مستقیم بازمی‌گردد.",
+    "ghProxySmall": "منابع از این طریق دانلود می‌شوند",
+    "libSelected": "{{n}} انتخاب شد",
+    "refGroupCount": "{{n}} مورد",
+    "refKindApp": "برنامه",
+    "refKindRoute": "مسیر",
+    "refNone": "استفاده‌نشده",
+    "searchDownloaded": "جستجوی منابع…",
+    "searchEmpty": "منبع مطابقی یافت نشد",
+    "summaryCount": "مجموع {{n}}",
+    "summaryMissing": "{{n}} مورد گم‌شده",
+    "tableUsage": "استفاده",
+    "urlRequired": "الزامی"
   },
   "home": {
+    "takeoverHint": "دریافت",
+    "routingHint": "تفکیک",
+    "topologyHint": "کلیک راست روی دامنه برای افزودن قانون",
     "connectionStatus": "وضعیت اتصال",
     "directGlobalHint": "اتصال مستقیم سراسری: ترافیک نامطابق مستقیم می‌رود؛ فقط ترافیک مطابق با قانون از پروکسی استفاده می‌کند",
     "selectServer": "انتخاب سرور",
@@ -308,21 +338,10 @@
     "logLines": "{{count}} خط",
     "logLinesFiltered": "{{shown}} / {{total}}",
     "logLinesFilteredTitle": "مطابق / کل بافر",
-    "networkInfo": "اطلاعات شبکه",
-    "localExit": "خروجی محلی",
-    "proxyExit": "خروجی پروکسی",
-    "detecting": "در حال تشخیص…",
-    "directLabel": "مستقیم",
     "upload": "آپلود",
     "download": "دانلود",
-    "activeConnections": "فعال",
-    "ipNotConnected": "متصل نیست",
     "ipFetchFailed": "ناموفق",
-    "ipProxyUnavailable": "خروجی پروکسی در دسترس نیست",
-    "ipLocalUnavailable": "خروجی محلی در دسترس نیست",
-    "refreshIp": "تازه‌سازی",
-    "maskIp": "پنهان کردن IP",
-    "ipStale": "دریافت برخی IPهای خروجی ناموفق بود؛ آخرین نتیجهٔ شناخته‌شده نمایش داده می‌شود",
+    "exitInvalid": "خروجی نامعتبر",
     "loading": "در حال بارگذاری...",
     "noActiveConnections": "اتصال فعالی وجود ندارد",
     "addToRule": "افزودن به قانون سفارشی",
@@ -341,8 +360,10 @@
     "speedTestNoResult": "{{count}} گره · همه ناموفق",
     "tsExitNoDeviceWarn": "به‌عنوان خروجی تنظیم شده، اما نود خروجی انتخاب نشده — ترافیک اینترنت همچنان مستقیم است.",
     "tsExitDeviceOfflineWarn": "نود خروجی آفلاین است؛ ممکن است اینترنت از طریق Tailscale مسیردهی نشود.",
+    "tsExitNotAdvertisedWarn": "نود خروجی انتخاب‌شده به‌عنوان خروجی اعلام نشده است؛ اینترنت نمی‌تواند از آن عبور کند — دستگاهی را انتخاب کنید که خروجی را اعلام کرده باشد.",
     "tsExitPickDevice": "انتخاب نود خروجی",
-    "exitNode": "نود خروجی"
+    "exitNode": "نود خروجی",
+    "reprobeExit": "بررسی مجدد خروجی"
   },
   "settings": {
     "nav": {
@@ -377,7 +398,13 @@
       "privacyPasswordPlaceholder": "رمز را تنظیم کنید (برای باز شدن آزادانه خالی بگذارید)",
       "successUpdate": "تنظیمات ذخیره شد",
       "failUpdate": "ذخیرهٔ تنظیمات ناموفق بود",
-      "clearPassword": "پاک کردن"
+      "clearPassword": "پاک کردن",
+      "startupSub": "راه‌اندازی برنامه و رفتار سینی سیستم",
+      "autoStartDesc": "اجرای خودکار FlowZ هنگام ورود به سیستم",
+      "autoConnectDesc": "بازیابی آخرین نود خروجی و روش تسلط و سپس اتصال",
+      "behaviorSub": "اعلان‌های به‌روزرسانی، پنجره و ماسک حریم خصوصی",
+      "autoCheckUpdateDesc": "هنگام یافتن نسخهٔ جدید در صفحهٔ درباره اطلاع بده",
+      "rememberWindowSizeDesc": "بازیابی چیدمان پنجرهٔ قبلی در دفعهٔ بعدی که باز می‌کنید"
     },
     "coreVersion": {
       "changedTitle": "هستهٔ sing-box به‌روزرسانی شد",
@@ -447,7 +474,22 @@
       "uninstallConfirmBtn": "حذف کامل",
       "uninstallFail": "حذف نصب ناموفق بود",
       "restrictCoreUpdateDescFull": "وقتی خاموش است، «بررسی به‌روزرسانی‌ها» می‌تواند نسخه‌های خارج از محدوده را نشان دهد، که برای نصب همچنان به تأیید دستی نیاز دارند. به‌روزرسانی خودکار همیشه در محدوده می‌ماند و تحت تأثیر این گزینه قرار نمی‌گیرد.",
-      "autoUpdateDescFull": "به‌روزرسانی خودکار فقط در محدودهٔ نسخهٔ سازگار انجام می‌شود؛ عبور از یک نسخهٔ اصلی به تأیید دستی نیاز دارد. هنگام اجرا، به‌روزرسانی‌ها فقط دانلود و آماده‌سازی می‌شوند — اتصال شما هرگز قطع نمی‌شود."
+      "autoUpdateDescFull": "به‌روزرسانی خودکار فقط در محدودهٔ نسخهٔ سازگار انجام می‌شود؛ عبور از یک نسخهٔ اصلی به تأیید دستی نیاز دارد. هنگام اجرا، به‌روزرسانی‌ها فقط دانلود و آماده‌سازی می‌شوند — اتصال شما هرگز قطع نمی‌شود.",
+      "sourceOfficial": "رسمی",
+      "sourceFork": "شخص ثالث",
+      "sourceUnknown": "نامشخص",
+      "cardSub": "نسخه، منبع و به‌روزرسانی‌های sing-box",
+      "sourceDesc": "منبع هسته: رسمی / شخص ثالث / نامشخص، به‌صورت خودکار تشخیص داده می‌شود",
+      "srcNoteOfficial": "به‌روزرسانی‌های آنلاین GitHub در دسترس است",
+      "srcNoteFork": "به‌روزرسانی آنلاین / خودکار غیرفعال است",
+      "srcNoteUnknown": "قابل تأیید نیست، فقط اطلاع‌رسانی",
+      "backupVersionDesc": "در صورت شکست یا اختلال در ارتقا، به این نسخه بازگردید",
+      "manualReplaceDesc": "وارد کردن فایل اجرایی محلی sing-box (نسخهٔ یکسان / بازنویسی نسخهٔ پایه نیاز به تأیید دارد)",
+      "selectFile": "انتخاب فایل…",
+      "resetFactoryRowDesc": "بازیابی نسخهٔ رسمی هستهٔ همراه با برنامه",
+      "resetShort": "بازنشانی",
+      "uninstallRowDesc": "حذف هسته، دستیار، پیکربندی و همهٔ داده‌های محلی",
+      "uninstallShort": "حذف کامل"
     },
     "appearance": {
       "title": "ظاهر",
@@ -459,7 +501,11 @@
       "language": "زبان",
       "languageAuto": "خودکار (پیرو سیستم)",
       "themeUpdated": "پوسته به‌روزرسانی شد",
-      "languageUpdated": "به فارسی تغییر یافت"
+      "languageUpdated": "به فارسی تغییر یافت",
+      "themeSub": "پیروی از سیستم یا قفل دستی روشن/تاریک",
+      "themeRowLabel": "پوستهٔ رنگی",
+      "languageSub": "زبان رابط کاربری، بلافاصله اعمال می‌شود",
+      "languageRowLabel": "زبان نمایش"
     },
     "network": {
       "title": "شبکه",
@@ -485,7 +531,15 @@
       "webrtcLeakBlock": "مسدود",
       "webrtcLeakTunOnlyHint": "حفاظت در برابر نشت WebRTC فقط در حالت TUN کار می‌کند. برای فعال‌سازی به حالت TUN تغییر دهید.",
       "meshLoginFallback": "بازگشت به اتصال مستقیم هنگام ورود به Mesh",
-      "meshLoginFallbackDesc": "وقتی خروجی Tailscale انتخاب‌شده هنوز متصل نیست، در حین ورود/احراز هویت ترافیک مستقیم مسیردهی می‌شود (تا صفحه احراز هویت به خروجی متصل‌نشده هدایت نشود و قفل نکند) و پس از اتصال به همان خروجی بازمی‌گردد. برای اینکه هنگام ورود هرگز مستقیم نشود آن را خاموش کنید (در این صورت ممکن است احراز هویت شکست بخورد)."
+      "meshLoginFallbackDesc": "وقتی خروجی Tailscale انتخاب‌شده هنوز متصل نیست، در حین ورود/احراز هویت ترافیک مستقیم مسیردهی می‌شود (تا صفحه احراز هویت به خروجی متصل‌نشده هدایت نشود و قفل نکند) و پس از اتصال به همان خروجی بازمی‌گردد. برای اینکه هنگام ورود هرگز مستقیم نشود آن را خاموش کنید (در این صورت ممکن است احراز هویت شکست بخورد).",
+      "dnsCardSub": "تفکیک دامنه، FakeIP و تفکیک‌کنندهٔ نود",
+      "localProxyLanSub": "پورت، اشتراک‌گذاری LAN و استثناهای TUN",
+      "onlyTun": "فقط TUN",
+      "onlyTunLinuxMac": "فقط TUN · Linux / macOS",
+      "onlyLinux": "فقط Linux",
+      "tunModeSub": "پشتهٔ شبکهٔ کارت شبکهٔ مجازی (فقط هنگام تسلط TUN نمایش داده می‌شود)",
+      "connectionSub": "رفتار جابه‌جایی و مدیریت QUIC / TLS / IPv6",
+      "updateAndSpeedTestSub": "به‌روزرسانی خودکار اشتراک، مسیر ترافیک به‌روزرسانی و endpoint تست سرعت"
     },
     "proxyMode": {
       "systemProxyMode": "حالت پروکسی سیستم",
@@ -718,7 +772,11 @@
       "nodeResolverErrDomain": "فقط IP خالص پشتیبانی می‌شود، نه دامنه",
       "nodeResolverErrDuplicate": "این upstream از قبل وجود دارد",
       "nodeResolverSingleLabel": "upstream resolve",
-      "nodeResolverSingleHint": "یک upstream، بدون تحمل‌پذیری خطای هم‌زمان (بازگشت به یک DNS)."
+      "nodeResolverSingleHint": "یک upstream، بدون تحمل‌پذیری خطای هم‌زمان (بازگشت به یک DNS).",
+      "nodeResolverRaceGroup": "گروه race",
+      "nodeResolverRaceGroupCap": "رمزگذاری‌شده · حداکثر ۳",
+      "singboxDashboardCardSub": "API کنترل بومی sing-box",
+      "singboxDashboardEnable": "فعال‌سازی کنترل خارجی"
     },
     "about": {
       "title": "درباره",
@@ -761,7 +819,8 @@
       "checking": "در حال بررسی...",
       "updating": "در حال به‌روزرسانی...",
       "checkUpdate": "بررسی به‌روزرسانی‌ها",
-      "downloading": "در حال دانلود به‌روزرسانی..."
+      "downloading": "در حال دانلود به‌روزرسانی...",
+      "updateAvailable": "به‌روزرسانی {{version}} در دسترس است"
     }
   },
   "servers": {
@@ -1242,7 +1301,20 @@
     "meshLoginFallbackTitle": "اتصال مستقیم موقت (ورود به Mesh)",
     "meshLoginFallbackDesc": "خروجی Tailscale انتخاب‌شده هنوز متصل نیست، بنابراین در حین ورود/احراز هویت ترافیک مستقیم است؛ پس از اتصال به‌طور خودکار به خروجی بازمی‌گردد.",
     "meshLoginFallbackRestored": "به «{{name}}» متصل شد، مسیردهی به این خروجی بازگشت",
-    "tsConnCardOpenLogin": "باز کردن صفحه ورود"
+    "tsConnCardOpenLogin": "باز کردن صفحه ورود",
+    "nodeCountSummary": "مجموع {{total}} · سفارشی {{manual}} · شبکه {{mesh}} · اشتراک {{sub}}",
+    "expireAt": "انقضا {{date}}",
+    "realityRequiredWhen": "security=Reality",
+    "meshAccessEntryHint": "پس از پیوستن، Tailscale / WARP را می‌توان اینجا مدیریت کرد؛ WireGuard را می‌توان همچنان افزود",
+    "meshWgAddSub": "وارد کردن .conf / ورود دستی",
+    "meshWarpManageTitle": "مدیریت حساب WARP",
+    "meshJoinedTag": "متصل",
+    "meshWarpManageSub": "ثبت‌نام مجدد / لغو ثبت دستگاه",
+    "meshWarpAddSub": "ثبت یک دستگاه ناشناس برای پیوستن",
+    "meshTsManageSub": "تنظیمات · خروج / تعویض حساب",
+    "meshTsKeyReadySub": "تنظیمات · حذف",
+    "meshTsAddSub": "ورود تعاملی / AuthKey",
+    "meshTsEntryTitle": "دسترسی به شبکهٔ Tailscale و مدیریت حساب"
   },
   "rules": {
     "ruleColumn": "قانون",
@@ -1257,7 +1329,7 @@
     "ruleDeleted": "قانون حذف شد",
     "delete": "حذف",
     "valueLabel": "مقادیر تطبیق",
-    "processHint": "فقط اتصالاتی که منشأ محلی دارند می‌توانند با پردازه تطبیق داده شوند",
+    "processHint": "فقط اتصالاتی که منشأ محلی دارند می‌توانند با پردازه تطبیق داده شوند، به‌صورت حساس به حروف بزرگ و کوچک",
     "invalidInline": "قالب نامعتبر: {{values}}",
     "commonTags": "برچسب‌های رایج",
     "typeHints": {
@@ -1435,7 +1507,8 @@
       "nodeLocked": "خروجی قفل‌شده",
       "ruleSetLabel": "مجموعه‌قوانین",
       "ruleSetSub": "geosite / geoip / فرآیند",
-      "download": "دانلود"
+      "download": "دانلود",
+      "policyClickHint": "برای تغییر کلیک کنید"
     },
     "apps": {
       "youtube": "YouTube",
@@ -1538,14 +1611,33 @@
       "goToResources": "مجموعه‌قانون ندارید؟ برای دانلود بیشتر به «منابع قوانین» بروید",
       "processLabel": "فرآیند",
       "processPlaceholder": "App.exe, appname",
-      "processHint": "اختیاری · جدا شده با کاما، دقیق‌تر از تطبیق دامنهٔ geo",
+      "processHint": "اختیاری · جدا شده با کاما، دقیق‌تر از تطبیق دامنهٔ geo. به حروف بزرگ و کوچک حساس است — برای دریافت نام دقیق از «انتخاب پردازه» استفاده کنید.",
       "geoAutoDownloadNote": "مجموعه‌قوانین geosite / geoip انتخاب‌شده که به‌صورت محلی موجود نیستند هنگام افزودن دانلود می‌شوند (fail-closed: تا پایان دانلود، تطبیق geo این برنامه غیرفعال است؛ تطبیق نام فرآیند تحت تأثیر قرار نمی‌گیرد).",
-      "save": "ذخیرهٔ برنامه"
+      "save": "ذخیرهٔ برنامه",
+      "categoryFieldHint": "در دستهٔ متناظر قرار می‌گیرد؛ «سفارشی…» را برای ساخت دستهٔ جدید انتخاب کنید",
+      "geoipFieldHint": "تطبیق محدودهٔ IP · چند‌انتخابی",
+      "geositeFieldHint": "تطبیق دامنه · چند‌انتخابی",
+      "iconEmojiGroup": "emoji جایگزین",
+      "iconFallbackHint": "اگر نماد راه‌دور بارگذاری نشود، به‌طور خودکار به حرف اول نام برنامه بازمی‌گردد.",
+      "iconFieldHint": "نماد راه‌دور / emoji / URL؛ در صورت خطای بارگذاری به حرف اول بازمی‌گردد",
+      "iconLetterFallback": "نماد حرف اول",
+      "iconRemoteGroup": "نمادهای راه‌دور",
+      "iconUrlGroup": "یا URL نماد را جای‌گذاری کنید",
+      "nameReq": "الزامی",
+      "processFieldHint": "اختیاری · جدا شده با کاما"
     },
     "errorRemarksRequired": "لطفاً یک یادداشت وارد کنید",
     "multiCondition": "چند‌شرطی",
     "policyLabel": "سیاست",
-    "unnamedRule": "قانون بدون نام"
+    "unnamedRule": "قانون بدون نام",
+    "appRoutingReenable": "فعال‌سازی مجدد",
+    "chainStepBypassLan": "دور زدن شبکهٔ محلی",
+    "chainStepDefault": "خروجی پیش‌فرض",
+    "chainStepSmart": "مسیریابی هوشمند",
+    "conditionCount": "{{count}}",
+    "disabledBadge": "غیرفعال",
+    "orderDraftUnsaved": "پیش‌نویس ترتیب ذخیره‌نشده",
+    "viewDensity": "تراکم نمایش"
   },
   "sub": {
     "requireName": "لطفاً یک نام اشتراک وارد کنید",

@@ -1,8 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
 import { HighlightText } from '@/components/ui/highlight-text';
 import {
   AlertDialog,
@@ -15,24 +11,19 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store/app-store';
-import { Trash2, ArrowDown, Search } from 'lucide-react';
+import { ArrowDown } from 'lucide-react';
 import { getLogs, clearLogs, addEventListener } from '@/bridge/api-wrapper';
 import type { LogEntry } from '@/bridge/types';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
-import {
-  logMatchesSearch,
-  truncateToBuffer,
-  getLevelColorClass,
-  getLevelRowClass,
-} from './real-time-logs-logic';
+import { logMatchesSearch, truncateToBuffer } from './real-time-logs-logic';
 
 /** 渲染端为每条日志附加单调自增 _id 作为稳定 key —— 环形缓冲淘汰首元素后剩余项 key 不变，
  *  避免 key={index} 错位导致滚动期全量重渲染并打断文本选区。 */
 type LogRow = LogEntry & { _id: number; historical?: true };
 
 interface RealTimeLogsProps {
-  /** Tailwind height class for the scroll viewport. Defaults to fixed h-64 (home card). */
+  /** Tailwind height class for the log-viewer card (bounds `.lv-stream` internal scroll). Defaults to h-64. */
   heightClass?: string;
   /** How many historical lines to load on mount. */
   initialLimit?: number;
@@ -52,8 +43,9 @@ export function RealTimeLogs({
   const [confirmClear, setConfirmClear] = useState(false);
   // 吸附底部（默认开）：进页即定位到底并跟随最新；用户上滚脱离底部即停跟随，滚回底部即恢复。
   const [isAutoScroll, setIsAutoScroll] = useState(true);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  // 进页「定位到底」只做一次（等首批历史日志渲染 + radix viewport 布局就绪）。
+  // `.lv-stream` 自身即滚动容器（替代原 radix ScrollArea + viewport 查询）。
+  const streamRef = useRef<HTMLDivElement>(null);
+  // 进页「定位到底」只做一次（等首批历史日志渲染 + 布局就绪）。
   const didInitScrollRef = useRef(false);
   const nextIdRef = useRef(0);
   const maxBufferRef = useRef(maxBuffer);
@@ -117,12 +109,8 @@ export function RealTimeLogs({
     setLogs((prev) => truncateToBuffer(prev, maxBuffer));
   }, [maxBuffer]);
 
-  // 获取滚动元素
-  const getScrollElement = useCallback(() => {
-    return scrollAreaRef.current?.querySelector(
-      '[data-radix-scroll-area-viewport]'
-    ) as HTMLElement | null;
-  }, []);
+  // 获取滚动元素（`.lv-stream` 自身）。
+  const getScrollElement = useCallback(() => streamRef.current, []);
 
   // 检查是否在底部
   const checkIsAtBottom = useCallback((element: HTMLElement) => {
@@ -152,7 +140,7 @@ export function RealTimeLogs({
     if (isAutoScroll) scrollToBottom();
   }, [logs, isAutoScroll, scrollToBottom]);
 
-  // 进页定位到底（修「点进实时日志默认不在底部」）：等首批日志渲染 + radix viewport 布局完成（双 rAF）后滚一次。
+  // 进页定位到底（修「点进实时日志默认不在底部」）：等首批日志渲染 + 布局完成（双 rAF）后滚一次。
   // 条件渲染（App.tsx currentView==='logs' && …）下每次进页都重挂载 → 每次重新定位到底。
   useEffect(() => {
     if (didInitScrollRef.current || logs.length === 0) return;
@@ -183,80 +171,101 @@ export function RealTimeLogs({
   const filteredLogs = logs.filter((log) => logMatchesSearch(log, searchTerm));
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>{t('home.realTimeLogs')}</CardTitle>
-          <div className="flex items-center space-x-2 rtl:space-x-reverse">
-            <div className="relative">
-              <Search className="absolute start-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder={t('home.searchLogs')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-8 w-[160px] ps-8 text-xs"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmClear(true)}
-              disabled={logs.length === 0}
+    // 外层裸容器定高（heightClass），card 用 h-full 填满 → `.lv-stream` 内部滚动。
+    // 不直接把 heightClass 挂到 `.log-viewer`：conduit 未分层的 `.log-viewer{flex:1;flex-basis:0%}`
+    // 会盖过 tailwind 分层 utility，在非定高父级下把卡压塌；h-full(height:100%) 对定高父级稳定解析。
+    <div className={heightClass}>
+      <div className="card log-viewer h-full">
+        {/* 顶栏：搜索（消息/级别子串过滤）+ 清空（二次确认） */}
+        <div className="lv-bar">
+          <div className="lv-search">
+            <svg
+              className="lv-search-ic"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
             >
-              <Trash2 className="h-4 w-4 me-1" />
-              {t('home.clear')}
-            </Button>
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4-4" strokeLinecap="round" />
+            </svg>
+            <input
+              className="input"
+              type="text"
+              placeholder={t('home.searchLogs') as string}
+              aria-label={t('home.searchLogs') as string}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => setConfirmClear(true)}
+            disabled={logs.length === 0}
+          >
+            {t('home.clear')}
+          </button>
         </div>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea
-          ref={scrollAreaRef}
-          className={`${heightClass} w-full rounded border bg-muted/30 p-3`}
+
+        {/* 日志流：容器自身滚动（等宽 mono），级别形+色经 CSS `.lg[data-lvl]` */}
+        <div
+          className="lv-stream mono"
+          tabIndex={0}
+          role="log"
+          aria-label={t('home.realTimeLogs') as string}
+          ref={streamRef}
         >
           {filteredLogs.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              {logs.length > 0 && searchTerm
-                ? t('home.noLogsMatch')
-                : connectionStatus?.proxyCore?.running
-                  ? t('home.waitingForLogs')
-                  : t('home.plsStartProxy')}
+            <div className="lv-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path
+                  d="M4 13h4l2 3h4l2-3h4M5 13V6a2 2 0 012-2h10a2 2 0 012 2v7M4 13v4a2 2 0 002 2h12a2 2 0 002-2v-4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {/* 空态三形态：无匹配 / 等待日志 / 未启动（原 3 分支保留） */}
+              <b className="lv-empty-t">
+                {logs.length > 0 && searchTerm
+                  ? t('home.noLogsMatch')
+                  : connectionStatus?.proxyCore?.running
+                    ? t('home.waitingForLogs')
+                    : t('home.plsStartProxy')}
+              </b>
             </div>
           ) : (
-            <div className="space-y-1 select-text cursor-text">
-              {filteredLogs.map((log) => {
-                const timestamp = new Date(log.timestamp).toLocaleTimeString(i18n.language);
-
-                return (
-                  <div
-                    key={log._id}
-                    className={cn(
-                      'text-xs font-mono select-text rounded-sm ps-1.5',
-                      getLevelRowClass(log.level)
-                    )}
-                  >
-                    <span className="text-muted-foreground">[{timestamp}]</span>
-                    <span className={cn('ms-2 font-semibold', getLevelColorClass(log.level))}>
-                      {log.level.toUpperCase()}:
-                    </span>
-                    <span className="ms-2">
-                      <HighlightText text={log.message} query={searchTerm} />
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            filteredLogs.map((log) => {
+              const timestamp = new Date(log.timestamp).toLocaleTimeString(i18n.language);
+              return (
+                <div key={log._id} className="lg" data-lvl={log.level}>
+                  <span className="lg-t">[{timestamp}]</span>
+                  <span className="lg-l">{log.level.toUpperCase()}:</span>
+                  <span className="lg-m">
+                    <HighlightText text={log.message} query={searchTerm} />
+                  </span>
+                </div>
+              );
+            })
           )}
-        </ScrollArea>
+        </div>
 
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {isAutoScroll ? t('home.autoScrollOn') : t('home.autoScrollOff')}
+        {/* 底栏：吸附状态 + 行数 + 到底部 */}
+        <div className="lv-foot">
+          <span className="lv-follow">
+            <span className={cn('dot', isAutoScroll ? 'ok' : 'idle')} />
+            <span className="lv-follow-t">
+              {isAutoScroll ? t('home.autoScrollOn') : t('home.autoScrollOff')}
+            </span>
           </span>
-          <div className="flex items-center gap-3">
+          <span className="lv-foot-r">
             <span
-              className="text-xs text-muted-foreground font-mono tabular-nums"
-              title={searchTerm ? t('home.logLinesFilteredTitle', '命中 / 缓冲总行数') : undefined}
+              className="lv-lines mono tnum"
+              title={
+                searchTerm
+                  ? (t('home.logLinesFilteredTitle', '命中 / 缓冲总行数') as string)
+                  : undefined
+              }
             >
               {searchTerm
                 ? t('home.logLinesFiltered', {
@@ -267,41 +276,40 @@ export function RealTimeLogs({
                 : t('home.logLines', { count: filteredLogs.length })}
             </span>
             {!isAutoScroll && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
+                className="btn ghost sm"
                 onClick={() => {
                   setIsAutoScroll(true);
                   scrollToBottom();
                 }}
-                className="text-xs h-7"
               >
-                <ArrowDown className="h-3 w-3 me-1" />
+                <ArrowDown className="h-3 w-3" />
                 {t('home.scrollToBottom')}
-              </Button>
+              </button>
             )}
-          </div>
+          </span>
         </div>
-      </CardContent>
 
-      {/* 清空日志高危二次确认（统一 alert-dialog pattern，对齐「连接全部关闭 / 删除节点」等） */}
-      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('home.clearLogsTitle')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('home.clearLogsWarn')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleClearLogs}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {t('home.clear')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </Card>
+        {/* 清空日志高危二次确认（统一 alert-dialog pattern，对齐「连接全部关闭 / 删除节点」等） */}
+        <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('home.clearLogsTitle')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('home.clearLogsWarn')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleClearLogs}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {t('home.clear')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
   );
 }

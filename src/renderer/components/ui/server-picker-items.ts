@@ -9,6 +9,7 @@
 import type { ServerConfig, SubscriptionConfig } from '../../../shared/types';
 import { groupServersBySubscription } from '../../../shared/server-grouping';
 import { isEndpointProtocol, isSpeedTestable } from '../../../shared/endpoint-routes';
+import { isWarpServer } from '../../../shared/warp';
 import type { NodePickerGroup, NodePickerItem } from './node-picker-logic';
 
 /** 节点显示地址（触发器副文本 + 参与搜索）：无地址回退 undefined。 */
@@ -98,7 +99,9 @@ export function buildServerPickerModel(opts: BuildServerPickerModelOptions): {
     return list.map<NodePickerItem>((s) => ({
       id: s.id,
       name: s.name,
-      protocol: s.protocol,
+      // WARP 基于 wireguard 但语义独立 → 角标显 'warp' 而非叠加 'wireguard'（用户反馈；小写与 vless/trojan 等协议名一致，
+      // 不用大写 'WARP' 以免下拉里唯一大写显突兀；isWarpServer 兜底旧/导入无标记 WARP）。
+      protocol: isWarpServer(s) ? 'warp' : s.protocol,
       address: withAddress ? nodeAddress(s) : undefined,
       latency: latencyMap[s.id],
       latencyNA: !isSpeedTestable(s),

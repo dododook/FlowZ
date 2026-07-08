@@ -1410,7 +1410,11 @@ describe('parseClashProxies — snell', () => {
     expect(servers).toHaveLength(1);
     expect(servers[0].protocol).toBe('snell');
     expect(servers[0].password).toBe('psk-secret');
-    expect(servers[0].snellSettings).toEqual({ version: 4, obfsMode: 'http', obfsHost: 'bing.com' });
+    expect(servers[0].snellSettings).toEqual({
+      version: 4,
+      obfsMode: 'http',
+      obfsHost: 'bing.com',
+    });
   });
 
   it('v6 无混淆 → 映射', () => {

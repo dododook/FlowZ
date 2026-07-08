@@ -1,27 +1,24 @@
 /**
- * 节点卡片视图项 —— 从 server-list.tsx 卡片网格抽出（审计 §1 Tier-1），JSX 字节级保留。
- * 选中态/批量选中态/国旗水印/各类角标/操作按钮组(ServerActions)均按原结构透传，无行为变化。
+ * 节点卡片视图项 —— Conduit `.nd-card` 形态（原型 1:1）。国旗 emoji 水印 + 状态点 + 名称 + 延迟徽标（首行），
+ * 协议/组网能力/登录态/当前/传输摘要角标（第二行），hover 操作条（ServerActions）。
+ * 选中态（.cur）/批量选中态（.pick + .nd-chk）/组网态（.mesh + pending）/各角标均逐字保留原判定与行为。
  */
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
+import { LogIn, LogOut } from 'lucide-react';
+import { isEndpointProtocol } from '../../../shared/endpoint-routes';
 import type { InvalidNodeInfo } from '../../../shared/types';
-import { iconProxySrc } from '../../../shared/icon-proxy';
 import { openTailscaleLogin } from '../../lib/tailscale-login';
 import { ServerActions } from './server-actions';
 import { SpeedBadge } from './speed-badge';
 import { MeshInfoPopover } from './mesh-info-popover';
 import {
-  getCountryCode,
-  getTransportLabel,
-  getProtocolBadgeVariant,
-  isWarpNode,
+  flagEmoji,
+  transferSummary,
+  nodeTypeLabel,
   tailscaleNeedsLogin,
   tailscaleLoggingIn,
   meshInternetOff,
   meshIsExitCapable,
-  endpointLabel,
   type ServerConfigWithId,
   type ServerActionsContext,
 } from './server-list-helpers';
@@ -54,176 +51,121 @@ export function ServerCard({
   actions,
 }: ServerCardProps) {
   const { t } = useTranslation();
-  const countryCode = getCountryCode(server.name);
+  const flag = flagEmoji(server.name);
+  const isMesh = isEndpointProtocol(server.protocol);
+  const isCurrent = selectedServerId === server.id;
+  const isPicked = selectedIds.has(server.id);
+  const invalid = invalidNodes[server.id];
+  const latency = actions.latencyMap[server.id];
+  const xfer = transferSummary(server);
+
+  const loggingIn = tailscaleLoggingIn(
+    server,
+    tailscaleAuthUrls[server.id] !== undefined,
+    tailscaleLoginStates[server.id]
+  );
+  const needsLogin = !loggingIn && tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]);
+
+  // 状态点：登录中→warn；当前出口→ok；超时→warn；其余→idle。
+  const dotTone = loggingIn ? 'warn' : isCurrent ? 'ok' : latency === -1 ? 'warn' : 'idle';
+
+  const cls = ['nd-card'];
+  if (isMesh) cls.push('mesh');
+  if (isSelecting) {
+    if (isPicked) cls.push('pick');
+  } else {
+    if (isCurrent) cls.push('cur');
+    if (loggingIn || needsLogin) cls.push('pending');
+  }
+
   return (
-    <Card
-      className={`cursor-pointer transition-colors relative overflow-hidden ${
-        selectedServerId === server.id ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'
-      } ${isSelecting && selectedIds.has(server.id) ? 'ring-2 ring-primary bg-primary/10' : ''}`}
-      onClick={() =>
-        isSelecting
-          ? onToggleSelect(server.id, { stopPropagation: () => {} } as any)
-          : onSelectServer(server.id)
-      }
+    <div
+      className={cls.join(' ')}
+      tabIndex={0}
+      onClick={(e) => {
+        if (isSelecting) {
+          onToggleSelect(server.id, e);
+        } else {
+          onSelectServer(server.id);
+        }
+      }}
     >
-      {countryCode && (
-        <div
-          className="absolute -end-4 -bottom-4 z-0 h-28 w-28 opacity-[0.08] select-none pointer-events-none rounded-full overflow-hidden dark:opacity-[0.15]"
-          style={{
-            backgroundImage: `url('${iconProxySrc(`https://flagcdn.com/w160/${countryCode}.png`)}')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            maskImage: 'radial-gradient(circle at 60% 60%, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 85%)',
-            WebkitMaskImage:
-              'radial-gradient(circle at 60% 60%, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 85%)',
-          }}
-        />
-      )}
-      {/* 批量选择 checkbox */}
-      {isSelecting && (
-        <div className="absolute top-2 start-2 z-10 pointer-events-none">
-          <Checkbox checked={selectedIds.has(server.id)} />
-        </div>
-      )}
-      <CardHeader className={`pb-2 ${isSelecting ? 'ps-8' : ''}`}>
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <CardTitle
-              className={`text-sm truncate ${invalidNodes[server.id] ? 'opacity-50' : ''}`}
-              title={
-                invalidNodes[server.id]
-                  ? `${t('servers.nodeInvalid')}: ${invalidNodes[server.id].reason}`
-                  : undefined
+      {flag && <span className="nd-flag">{flag}</span>}
+
+      <div className="nd-card-top">
+        {isSelecting ? (
+          <label className={`nd-chk${isPicked ? ' on' : ''}`} />
+        ) : (
+          <span className={`dot ${dotTone}`} />
+        )}
+        <span
+          className={`nd-name${invalid ? ' opacity-50' : ''}`}
+          title={invalid ? `${t('servers.nodeInvalid')}: ${invalid.reason}` : undefined}
+        >
+          {server.name}
+        </span>
+        <SpeedBadge server={server} latencyMap={actions.latencyMap} />
+      </div>
+
+      <div className="nd-tags">
+        {/* 类型角标用短标签（nodeTypeLabel：WARP/WG/TS/…）：WARP 不显底层 wireguard + 避免 TAILSCALE 等长名截断（用户反馈）。 */}
+        <span className="pill proto">{nodeTypeLabel(server)}</span>
+        {meshIsExitCapable(server) && (
+          <span className="nd-cap exit">
+            <LogOut />
+            {t('servers.exitCapableBadge', 'Exit')}
+          </span>
+        )}
+        {meshInternetOff(server) && (
+          <span className="nd-cap lan">{t('servers.noInternetBadge', 'LAN only')}</span>
+        )}
+        {loggingIn && (
+          <span className="nd-login ing">
+            <span className="nd-spin" />
+            {t('servers.tsLoggingIn', '登录中…')}
+          </span>
+        )}
+        {needsLogin && (
+          <span
+            className="nd-login wait"
+            role="button"
+            tabIndex={0}
+            title={t('servers.tsLoginClickHint', 'Click to log in')}
+            onClick={(e) => {
+              e.stopPropagation();
+              openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
               }
-            >
-              {server.name}
-            </CardTitle>
-            <CardDescription className="text-xs mt-0.5">{endpointLabel(server)}</CardDescription>
-          </div>
-          {!isSelecting && <ServerActions server={server} {...actions} />}
-        </div>
-        <div className="flex flex-wrap gap-1 mt-1">
-          <Badge
-            variant="outline"
-            className={`text-xs h-4 px-1 border ${getProtocolBadgeVariant(server.protocol)}`}
+            }}
           >
-            {server.protocol.toUpperCase()}
-          </Badge>
-          {isWarpNode(server) && (
-            <Badge
-              variant="outline"
-              className="text-xs h-4 px-1 bg-badge-sky/15 text-badge-sky border-badge-sky/30"
-            >
-              WARP
-            </Badge>
-          )}
-          {tailscaleLoggingIn(
-            server,
-            tailscaleAuthUrls[server.id] !== undefined,
-            tailscaleLoginStates[server.id]
-          ) && (
-            <Badge
-              variant="outline"
-              className="text-xs h-4 px-1 bg-badge-blue/15 text-badge-blue border-badge-blue/30"
-            >
-              {t('servers.tsLoggingIn', '登录中…')}
-            </Badge>
-          )}
-          {!tailscaleLoggingIn(
-            server,
-            tailscaleAuthUrls[server.id] !== undefined,
-            tailscaleLoginStates[server.id]
-          ) &&
-            tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]) && (
-              <Badge
-                variant="outline"
-                role="button"
-                tabIndex={0}
-                title={t('servers.tsLoginClickHint', 'Click to log in')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    openTailscaleLogin(server, tailscaleAuthUrls[server.id]);
-                  }
-                }}
-                className="text-xs h-4 px-1 cursor-pointer bg-badge-amber/15 text-badge-amber border-badge-amber/30 hover:bg-badge-amber/25"
-              >
-                {t('servers.tsLoginAction', 'Log in')}
-              </Badge>
+            <LogIn />
+            {t('servers.tsLoginAction', 'Log in')}
+          </span>
+        )}
+        {isCurrent && <span className="nd-cur">{t('servers.current')}</span>}
+        {xfer && <span className="nd-xfer mono">{xfer}</span>}
+        <MeshInfoPopover server={server} />
+        {shadowedCidrs.has(server.id) && (
+          <span
+            className="nd-badge warn"
+            title={t(
+              'servers.meshShadowedTip',
+              '以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。',
+              { cidrs: shadowedCidrs.get(server.id)!.join(', ') }
             )}
-          {meshInternetOff(server) && (
-            <Badge
-              variant="outline"
-              className="text-xs h-4 px-1 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
-            >
-              {t('servers.noInternetBadge', 'LAN only')}
-            </Badge>
-          )}
-          {meshIsExitCapable(server) && (
-            <Badge
-              variant="outline"
-              className="text-xs h-4 px-1 bg-badge-teal/15 text-badge-teal border-badge-teal/30"
-            >
-              {t('servers.exitCapableBadge', 'Exit')}
-            </Badge>
-          )}
-          {shadowedCidrs.has(server.id) && (
-            <Badge
-              variant="outline"
-              title={t(
-                'servers.meshShadowedTip',
-                '以下网段已被列表中靠前的组网节点占有、不会经此节点：{{cidrs}}。可去重 / 调整节点顺序 / 用自定义规则覆盖。',
-                { cidrs: shadowedCidrs.get(server.id)!.join(', ') }
-              )}
-              className="text-xs h-4 px-1 bg-badge-amber/15 text-badge-amber border-badge-amber/30"
-            >
-              {t('servers.meshShadowedBadge', '网段被覆盖')}
-            </Badge>
-          )}
-          {selectedServerId === server.id && (
-            <Badge variant="outline" className="text-xs h-4 px-1">
-              {t('servers.current')}
-            </Badge>
-          )}
-          {server.shadowTlsSettings && (
-            <Badge
-              variant="outline"
-              className="text-xs h-4 px-1 text-badge-teal border-badge-teal/50"
-            >
-              +ST
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0 pb-3">
-        {/* 传输/加密信息行（左）+ 测速结果（右下角，#59）。组网节点在「传输:」前加 ⓘ 弹内网IP/路由（#61）。 */}
-        <div className="flex items-end justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {server.protocol?.toLowerCase() === 'shadowsocks' ? (
-              <span>
-                {t('servers.encryption')}: {server.shadowsocksSettings?.method || 'N/A'}
-              </span>
-            ) : (
-              <>
-                <span className="inline-flex items-center gap-1">
-                  <MeshInfoPopover server={server} />
-                  {t('servers.transport')}: {getTransportLabel(server)}
-                </span>
-                <span>
-                  {t('servers.encryption')}: {server.security || 'none'}
-                </span>
-              </>
-            )}
-          </div>
-          <SpeedBadge server={server} latencyMap={actions.latencyMap} />
-        </div>
-      </CardContent>
-    </Card>
+          >
+            {t('servers.meshShadowedBadge', '网段被覆盖')}
+          </span>
+        )}
+        {server.shadowTlsSettings && <span className="nd-badge">+ST</span>}
+      </div>
+
+      {!isSelecting && <ServerActions server={server} {...actions} />}
+    </div>
   );
 }

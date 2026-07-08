@@ -1,9 +1,8 @@
 /**
- * 节点操作按钮组（测速/延迟徽标/复制分享/克隆/编辑/删除）—— 卡片视图与列表视图共用。
- * 从 server-list.tsx 的 renderActions 抽出（审计 §1 Tier-1），JSX 字节级保留；
- * 原闭包引用的 handler 经 props 注入，调用点逐字不变。
+ * 节点操作按钮组（测速 / 复制分享 / 克隆 / 编辑 / 删除）—— Conduit `.nd-acts` / `.nd-act` 形态，
+ * 卡片视图与列表视图共用，hover/focus 显现（CSS `.nd-card:hover .nd-acts`）。
+ * handler 经 props 注入，调用点逐字不变；删除仍走 radix AlertDialog 二次确认（行为保留）。
  */
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Edit, Trash2, Copy, CopyPlus, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { isSpeedTestable } from '../../../shared/endpoint-routes';
+import { isSpeedTestable, isEndpointProtocol } from '../../../shared/endpoint-routes';
 import {
   hasShareLink,
   type ServerConfigWithId,
@@ -42,84 +41,75 @@ export function ServerActions({
   onDelete,
 }: ServerActionsProps) {
   const { t } = useTranslation();
-  // 不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：**隐藏 ⚡**（不再 disabled 占位致歧义）+ 角标显
+  // 不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：**隐藏 ⚡**（不再 disabled 占位致歧义）+ 测速徽标显
   // 「不支持测速」，与后端 buildSpeedTestOutbound / 统一测速排除同口径（isSpeedTestable 单一真值）。
   const testable = isSpeedTestable(server);
   return (
-    <div className="flex items-center gap-1 flex-shrink-0">
+    <div className="nd-acts">
       {testable && (
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          type="button"
+          className="nd-act speed"
           title={t('servers.speedTest')}
-          className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
           disabled={testingServerIds.has(server.id) || isTestingSpeed}
           onClick={(e) => {
             if (stopPropagation) e.stopPropagation();
             onSingleSpeedTest(server.id, e);
           }}
         >
-          <Zap
-            className={`h-3.5 w-3.5 ${testingServerIds.has(server.id) ? 'animate-pulse text-primary fill-primary/20' : ''}`}
-          />
-        </Button>
+          <Zap className={testingServerIds.has(server.id) ? 'animate-pulse fill-primary/20' : ''} />
+        </button>
       )}
-      {/* 测速结果（延迟/超时/N/A）已移到卡片右下角传输行的 <SpeedBadge>（#59：避免内联在名称行挤折叠节点名）。 */}
       {/* 无分享链接的协议(ProtocolParser.generateUrl 无对应分支)隐藏复制按钮 */}
       {hasShareLink(server.protocol) && (
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          type="button"
+          className="nd-act"
           title={t('servers.copyShareUrl')}
-          className="h-7 w-7 p-0"
           onClick={(e) => onCopyShareUrl(server, e)}
         >
-          <Copy className="h-3.5 w-3.5" />
-        </Button>
+          <Copy />
+        </button>
       )}
-      {onCloneServer && (
-        <Button
-          variant="ghost"
-          size="sm"
+      {/* 组网节点（tailscale/warp/wg endpoint）不显克隆：由 mesh 登录管理、克隆到手动无意义（用户反馈）。 */}
+      {onCloneServer && !isEndpointProtocol(server.protocol) && (
+        <button
+          type="button"
+          className="nd-act"
           title={t('servers.cloneToManual', 'Clone to Manual Nodes')}
-          className="h-7 w-7 p-0"
           onClick={(e) => {
             if (stopPropagation) e.stopPropagation();
             onCloneServer(server);
           }}
         >
-          <CopyPlus className="h-3.5 w-3.5" />
-        </Button>
+          <CopyPlus />
+        </button>
       )}
-      <Button
-        variant="ghost"
-        size="sm"
+      <button
+        type="button"
+        className="nd-act"
         title={t('common.edit')}
-        className="h-7 w-7 p-0"
         onClick={(e) => {
           if (stopPropagation) e.stopPropagation();
           onEditServer(server);
         }}
       >
-        <Edit className="h-3.5 w-3.5" />
-      </Button>
-      {/* 订阅节点不可单独删除（随订阅更新/「删除订阅」统一管理）→ 直接隐藏删除按钮，而非置灰：
-          置灰按钮浅/深色对比都低易被误认为可点，且 disabled 的 pointer-events-none 还 hover 不出提示。
-          与「无分享链接隐藏复制按钮」同范式。 */}
+        <Edit />
+      </button>
+      {/* 订阅节点不可单独删除（随订阅更新/「删除订阅」统一管理）→ 直接隐藏删除按钮，而非置灰。 */}
       {!server.subscriptionId && (
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
+              type="button"
+              className="nd-act del"
               title={t('common.delete')}
-              className="h-7 w-7 p-0"
               onClick={(e) => {
                 if (stopPropagation) e.stopPropagation();
               }}
             >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+              <Trash2 />
+            </button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>

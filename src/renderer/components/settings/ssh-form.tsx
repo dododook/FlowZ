@@ -2,24 +2,14 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { FormButtons } from './shared/form-buttons';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
-import { useTranslation, Trans } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 
 const createSshSchema = (t: any) =>
   z.object({
@@ -158,123 +148,116 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <FormSection title={t('servers.basic', 'Basic')}>
-          <FieldGrid cols={2}>
-            <AddressField control={form.control} t={t} />
-            <PortField control={form.control} t={t} placeholder="22" />
-            <FieldSpan>
-              <FormField
-                control={form.control}
-                name="user"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('servers.ssh.user')}</FormLabel>
-                    <FormControl>
-                      <Input placeholder="root" {...field} />
-                    </FormControl>
-                    <FormDescription>{t('servers.ssh.userDesc')}</FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </FieldSpan>
-          </FieldGrid>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+        <FieldGrid cols={2}>
+          <AddressField control={form.control} t={t} />
+          <PortField control={form.control} t={t} placeholder="22" />
+          <FieldSpan>
+            <FormField
+              control={form.control}
+              name="user"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.user')}</span>
+                  <Input placeholder="root" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </FieldSpan>
+        </FieldGrid>
 
-          {/* 认证方式 Tabs */}
-          <div className="space-y-3">
-            <p className="text-sm font-medium">{t('servers.ssh.authMethod')}</p>
-            <Tabs
-              value={authMode}
-              onValueChange={(v) => setAuthMode(v as 'password' | 'privatekey')}
+        {/* 认证方式 */}
+        <div className="nd-fld">
+          <span className="nd-fld-lbl">{t('servers.ssh.authMethod')}</span>
+          <div className="seg2">
+            <button
+              type="button"
+              className={authMode === 'password' ? 'on' : ''}
+              onClick={() => setAuthMode('password')}
             >
-              <TabsList className="w-full">
-                <TabsTrigger value="password" className="flex-1">
-                  {t('servers.ssh.passwordAuth')}
-                </TabsTrigger>
-                <TabsTrigger value="privatekey" className="flex-1">
-                  {t('servers.ssh.privateKeyAuth')}
-                </TabsTrigger>
-              </TabsList>
-
-              {/* 密码认证 */}
-              <TabsContent value="password" className="mt-4 space-y-4">
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.ssh.password')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={t('servers.ssh.passwordPlaceholder')}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </TabsContent>
-
-              {/* 私钥认证 */}
-              <TabsContent value="privatekey" className="mt-4 space-y-4">
-                <FormField
-                  control={form.control}
-                  name="privateKeyPath"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.ssh.privateKeyPath')}</FormLabel>
-                      <FormControl>
-                        <Input placeholder="$HOME/.ssh/id_rsa" {...field} />
-                      </FormControl>
-                      <FormDescription>{t('servers.ssh.privateKeyPathDesc')}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="privateKey"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.ssh.privateKey')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
-                          className="font-mono text-xs min-h-[120px] resize-y"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>{t('servers.ssh.privateKeyDesc')}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="privateKeyPassphrase"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('servers.ssh.passphrase')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={t('servers.ssh.passphrasePlaceholder')}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </TabsContent>
-            </Tabs>
+              {t('servers.ssh.passwordAuth')}
+            </button>
+            <button
+              type="button"
+              className={authMode === 'privatekey' ? 'on' : ''}
+              onClick={() => setAuthMode('privatekey')}
+            >
+              {t('servers.ssh.privateKeyAuth')}
+            </button>
           </div>
-        </FormSection>
+        </div>
+
+        {/* 密码认证 */}
+        {authMode === 'password' && (
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.ssh.password')}</span>
+                <Input
+                  type="password"
+                  className="mono"
+                  placeholder={t('servers.ssh.passwordPlaceholder')}
+                  {...field}
+                />
+                <FormMessage className="fld-err" />
+              </div>
+            )}
+          />
+        )}
+
+        {/* 私钥认证 */}
+        {authMode === 'privatekey' && (
+          <div className="nd-fset">
+            <div className="nd-fset-h">{t('servers.ssh.privateKeyAuth')}</div>
+            <FormField
+              control={form.control}
+              name="privateKeyPath"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.privateKeyPath')}</span>
+                  <Input placeholder="$HOME/.ssh/id_rsa" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="privateKey"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.privateKey')}</span>
+                  <textarea
+                    className="nd-textarea"
+                    placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="privateKeyPassphrase"
+              render={({ field }) => (
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.passphrase')}</span>
+                  <Input
+                    type="password"
+                    className="mono"
+                    placeholder={t('servers.ssh.passphrasePlaceholder')}
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
+              )}
+            />
+          </div>
+        )}
 
         {/* 主机公钥（高级选项） */}
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
@@ -282,25 +265,15 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
             control={form.control}
             name="hostKey"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('servers.ssh.hostKey')}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    placeholder={t('servers.ssh.hostKeyPlaceholder')}
-                    className="font-mono text-xs min-h-[60px] resize-y"
-                    {...field}
-                  />
-                </FormControl>
-                <FormDescription>
-                  <Trans
-                    i18nKey="servers.ssh.hostKeyDesc"
-                    components={{
-                      code: <code className="rounded bg-muted px-1 py-0.5 text-xs" />,
-                    }}
-                  />
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
+              <div className="nd-fld">
+                <span className="nd-fld-lbl">{t('servers.ssh.hostKey')}</span>
+                <textarea
+                  className="nd-textarea"
+                  placeholder={t('servers.ssh.hostKeyPlaceholder')}
+                  {...field}
+                />
+                <FormMessage className="fld-err" />
+              </div>
             )}
           />
           <FieldGrid cols={2}>
@@ -308,76 +281,61 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
               control={form.control}
               name="hostKeyAlgorithms"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.ssh.hostKeyAlgorithms')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="ssh-ed25519, rsa-sha2-256" {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.ssh.hostKeyAlgorithmsDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.hostKeyAlgorithms')}</span>
+                  <Input placeholder="ssh-ed25519, rsa-sha2-256" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="clientVersion"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.ssh.clientVersion')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="SSH-2.0-OpenSSH_9.0" {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.ssh.clientVersionDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.clientVersion')}</span>
+                  <Input placeholder="SSH-2.0-OpenSSH_9.0" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="cipher"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.ssh.cipher')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="aes128-gcm@openssh.com, chacha20-poly1305@openssh.com"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>{t('servers.ssh.cipherDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.cipher')}</span>
+                  <Input
+                    placeholder="aes128-gcm@openssh.com, chacha20-poly1305@openssh.com"
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="mac"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.ssh.mac')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder="hmac-sha2-256, hmac-sha2-512" {...field} />
-                  </FormControl>
-                  <FormDescription>{t('servers.ssh.macDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.mac')}</span>
+                  <Input placeholder="hmac-sha2-256, hmac-sha2-512" {...field} />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
             <FormField
               control={form.control}
               name="kexAlgorithm"
               render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('servers.ssh.kexAlgorithm')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="curve25519-sha256, diffie-hellman-group14-sha256"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription>{t('servers.ssh.kexAlgorithmDesc')}</FormDescription>
-                  <FormMessage />
-                </FormItem>
+                <div className="nd-fld">
+                  <span className="nd-fld-lbl">{t('servers.ssh.kexAlgorithm')}</span>
+                  <Input
+                    placeholder="curve25519-sha256, diffie-hellman-group14-sha256"
+                    {...field}
+                  />
+                  <FormMessage className="fld-err" />
+                </div>
               )}
             />
           </FieldGrid>

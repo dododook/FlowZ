@@ -2,12 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { availableResourceTagSet, missingResourceRuleIds } from '../../shared/rule-resource-refs';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Plus, ListOrdered, Check, X, Search } from 'lucide-react';
+import { Plus, ListOrdered, Search } from 'lucide-react';
 import { RuleDialog } from '@/components/rules/rule-dialog';
 import { DeleteRuleDialog } from '@/components/rules/delete-rule-dialog';
 import { SortableRuleRow } from '@/components/rules/sortable-rule-row';
@@ -221,196 +216,240 @@ export function RulesPage() {
       const srv = servers.find((s) => s.id === rule.targetServerId);
       if (!srv) {
         return (
-          <Badge
-            variant="outline"
-            className="whitespace-nowrap border-transparent bg-destructive/15 text-xs text-destructive"
+          <span
+            className="rl-badge warn"
             title={t('rules.targetMissingTip', '指定节点已删除，运行时回退为跟随全局选中节点')}
           >
             {t('rules.targetMissing', '节点已失效')}
-          </Badge>
+          </span>
         );
       }
-      return (
-        <span
-          className="max-w-[140px] truncate whitespace-nowrap text-xs text-muted-foreground"
-          title={srv.name}
-        >
-          → {srv.name}
-        </span>
-      );
+      return <>→ {srv.name}</>;
     }
     return (
-      <span
-        className="max-w-[140px] truncate whitespace-nowrap text-xs text-muted-foreground/80"
-        title={selectedServer?.name}
-      >
+      <>
         → {selectedServer?.name || '—'} · {t('rules.followGlobal', '跟随全局')}
-      </span>
+      </>
     );
   };
 
+  // 底部「分流优先级」链：步骤 label 复用既有 key（自定义规则/应用分流/组网），其余用带默认值的新 key（待翻译补全）。
+  const chainSteps: { label: string; on?: boolean }[] = [
+    { label: t('rules.customRules'), on: true },
+    { label: t('rules.appRulesTitle') },
+    { label: t('servers.meshNodes', '组网') },
+    { label: t('rules.chainStepBypassLan', '绕过局域网') },
+    { label: t('rules.chainStepSmart', '智能分流') },
+    { label: t('rules.chainStepDefault', '默认出口') },
+  ];
+
+  const showSearchBox =
+    (customRules.length > SEARCH_THRESHOLD || search.trim() !== '') && !isOrderEditing;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">{t('rules.customRules')}</h2>
-          <p className="text-muted-foreground mt-1">{t('rules.customRulesDesc')}</p>
-          {!isSmartMode && (
-            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              {t('rules.smartOnlyHint', '当前模式下不生效，仅「智能分流」模式生效。')}
-            </p>
-          )}
-        </div>
-        <Button onClick={() => setIsAddDialogOpen(true)} disabled={isOrderEditing}>
-          <Plus className="me-2 h-4 w-4" />
+    <section className="flex flex-col gap-4" data-page="rules">
+      {/* 页头：标题 + 摘要 + 添加规则 */}
+      <div className="page-h">
+        <h1>{t('sidebar.rules')}</h1>
+        <span className="sub">{t('rules.customRulesDesc')}</span>
+        <button
+          type="button"
+          className="btn flow sm rl-add"
+          onClick={() => setIsAddDialogOpen(true)}
+          disabled={isOrderEditing}
+        >
+          <Plus size={15} />
           {t('rules.addRule')}
-        </Button>
+        </button>
       </div>
 
+      {/* 分流生效前提说明 */}
+      <p className="rl-lead">{t('rules.ruleListDesc')}</p>
+
+      {/* 非「智能」模式：自定义规则与地区分流暂不生效（琥珀提示） */}
+      {!isSmartMode && (
+        <div className="rl-notice">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+            <path d="M12 3l9 16H3z" strokeLinejoin="round" />
+            <path d="M12 10v4M12 16.5h.01" strokeLinecap="round" />
+          </svg>
+          <div>{t('rules.smartOnlyHint', '当前模式下不生效，仅「智能分流」模式生效。')}</div>
+        </div>
+      )}
+
+      {/* 地区分流卡 */}
       <RegionRoutingCard />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <CardTitle>{t('rules.ruleList')}</CardTitle>
-              <CardDescription className="mt-1.5 leading-relaxed">
-                {t('rules.ruleListDesc')}
-              </CardDescription>
-            </div>
-            {/* 排序编辑工具栏（≥2 条才显示） */}
-            {customRules.length >= 2 &&
-              (isOrderEditing ? (
-                <div className="flex shrink-0 gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={cancelOrderEdit}
-                    disabled={savingOrder}
-                  >
-                    <X className="me-1 h-4 w-4" />
-                    {t('common.cancel')}
-                  </Button>
-                  <Button size="sm" onClick={saveOrderEdit} disabled={savingOrder}>
-                    <Check className="me-1 h-4 w-4" />
-                    {t('rules.saveOrder', '保存顺序')}
-                  </Button>
+      {/* 规则表格卡 */}
+      <div className="card rl-tablecard">
+        <div className="rl-toolbar">
+          <div className="field-lbl" style={{ margin: 0 }}>
+            {t('rules.ruleList')}
+          </div>
+          <div className="rl-toolbar-r">
+            {showSearchBox && (
+              <label className="rl-search-box rl-search">
+                <Search size={15} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('rules.searchPlaceholder', '搜索规则（备注 / 值 / 类型 / 策略）')}
+                  aria-label={t('rules.searchPlaceholder', '搜索规则（备注 / 值 / 类型 / 策略）')}
+                />
+              </label>
+            )}
+            {/* 排序编辑入口（≥2 条才显示；编辑态下由底部草稿条提供保存/取消） */}
+            {customRules.length >= 2 && !isOrderEditing && (
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={enterOrderEdit}
+                disabled={searchActive}
+                title={
+                  searchActive ? t('rules.editOrderHintSearch', '清除搜索后可编辑顺序') : undefined
+                }
+              >
+                <ListOrdered size={15} />
+                {t('rules.editOrder', '编辑顺序')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {customRules.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+            <p className="text-[13px]" style={{ color: 'hsl(var(--fg-faint))' }}>
+              {t('rules.noRules')}
+            </p>
+            <button type="button" className="btn ghost sm" onClick={() => setIsAddDialogOpen(true)}>
+              <Plus size={15} />
+              {t('rules.addFirstRule')}
+            </button>
+          </div>
+        ) : rows.length === 0 ? (
+          <div
+            className="px-4 py-10 text-center text-[13px]"
+            style={{ color: 'hsl(var(--fg-faint))' }}
+          >
+            {t('rules.searchNoMatch', '无匹配规则')}
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
+              {isOrderEditing ? (
+                <div className="rl-sortcard">
+                  {rows.map((rule, index) => (
+                    <SortableRuleRow
+                      key={rule.id}
+                      rule={rule}
+                      index={index}
+                      rowsLength={rows.length}
+                      isOrderEditing
+                      savingOrder={savingOrder}
+                      onToggle={handleToggleRule}
+                      onEdit={handleEditRule}
+                      onDelete={handleDeleteRule}
+                      onMove={moveDraft}
+                      onMoveToEdge={moveDraftToEdge}
+                      renderExitNode={renderExitNode}
+                      hasMissingResource={missingResRuleIds.has(rule.id)}
+                      hasMeshOverlap={meshOverlapRuleIds.has(rule.id)}
+                    />
+                  ))}
+                  <div className="rl-draftbar">
+                    <span className="rl-draft-note">
+                      <span className="dot warn" />
+                      {t('rules.orderDraftUnsaved', '未保存的排序草稿')}
+                    </span>
+                    <div className="rl-draft-btns">
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        onClick={cancelOrderEdit}
+                        disabled={savingOrder}
+                      >
+                        {t('common.cancel', '取消')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn flow sm"
+                        onClick={saveOrderEdit}
+                        disabled={savingOrder}
+                      >
+                        {t('rules.saveOrder', '保存顺序')}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={enterOrderEdit}
-                  disabled={searchActive}
-                  title={
-                    searchActive
-                      ? t('rules.editOrderHintSearch', '清除搜索后可编辑顺序')
-                      : undefined
-                  }
-                >
-                  <ListOrdered className="me-1 h-4 w-4" />
-                  {t('rules.editOrder', '编辑顺序')}
-                </Button>
-              ))}
-          </div>
-          {/* 搜索框：>阈值 或 已有查询（删到 ≤阈值时仍显示，否则隐形过滤无法清除）；非排序编辑态 */}
-          {(customRules.length > SEARCH_THRESHOLD || search.trim() !== '') && !isOrderEditing && (
-            <div className="relative mt-3">
-              <Search className="absolute start-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('rules.searchPlaceholder', '搜索规则（备注 / 值 / 类型 / 策略）')}
-                className="ps-8"
-              />
-            </div>
-          )}
-        </CardHeader>
-        <CardContent>
-          {customRules.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">{t('rules.noRules')}</p>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                {t('rules.addFirstRule')}
-              </Button>
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              {t('rules.searchNoMatch', '无匹配规则')}
-            </div>
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[72px]">
-                      {isOrderEditing ? '#' : t('rules.enable')}
-                    </TableHead>
-                    <TableHead>{t('rules.ruleColumn', '规则')}</TableHead>
-                    <TableHead className="hidden w-[110px] lg:table-cell">
-                      {t('rules.typeColumn', '类型')}
-                    </TableHead>
-                    <TableHead className="w-[120px]">{t('rules.policy')}</TableHead>
-                    <TableHead className="w-[100px] text-end">{t('common.actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <SortableContext
-                    items={rows.map((r) => r.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {rows.map((rule, index) => (
-                      <SortableRuleRow
-                        key={rule.id}
-                        rule={rule}
-                        index={index}
-                        rowsLength={rows.length}
-                        isOrderEditing={isOrderEditing}
-                        savingOrder={savingOrder}
-                        onToggle={handleToggleRule}
-                        onEdit={handleEditRule}
-                        onDelete={handleDeleteRule}
-                        onMove={moveDraft}
-                        onMoveToEdge={moveDraftToEdge}
-                        renderExitNode={renderExitNode}
-                        hasMissingResource={missingResRuleIds.has(rule.id)}
-                        hasMeshOverlap={meshOverlapRuleIds.has(rule.id)}
-                      />
-                    ))}
-                  </SortableContext>
-                </TableBody>
-              </Table>
-            </DndContext>
-          )}
-        </CardContent>
-      </Card>
+                <div className="rl-table">
+                  <div className="rl-thead">
+                    <span>{t('rules.enable')}</span>
+                    <span>{t('rules.ruleColumn', '规则')}</span>
+                    <span>{t('rules.policy')}</span>
+                    <span className="rl-th-ops">{t('common.actions')}</span>
+                  </div>
+                  {rows.map((rule, index) => (
+                    <SortableRuleRow
+                      key={rule.id}
+                      rule={rule}
+                      index={index}
+                      rowsLength={rows.length}
+                      isOrderEditing={false}
+                      savingOrder={savingOrder}
+                      onToggle={handleToggleRule}
+                      onEdit={handleEditRule}
+                      onDelete={handleDeleteRule}
+                      onMove={moveDraft}
+                      onMoveToEdge={moveDraftToEdge}
+                      renderExitNode={renderExitNode}
+                      hasMissingResource={missingResRuleIds.has(rule.id)}
+                      hasMeshOverlap={meshOverlapRuleIds.has(rule.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </SortableContext>
+          </DndContext>
+        )}
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('rules.ruleInstructions')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 font-medium text-amber-700 dark:text-amber-400">
-            {t(
-              'rules.priorityFlow',
-              '优先级（从高到低）：自定义规则 → 应用分流 → 组网(WG/Tailscale) → 绕过局域网 → 智能分流 → 默认出口。靠前先匹配，你的自定义规则最高。'
-            )}
+      {/* 优先级链 + 规则说明 */}
+      <div className="card rl-chain">
+        <div className="field-lbl">{t('rules.ruleInstructions')}</div>
+        <div className="rl-chain-flow">
+          {chainSteps.map((s, i) => (
+            <span key={s.label} style={{ display: 'contents' }}>
+              <span className={s.on ? 'rl-step on' : 'rl-step'}>{s.label}</span>
+              {i < chainSteps.length - 1 && <span className="rl-arrow">›</span>}
+            </span>
+          ))}
+        </div>
+        <div className="cc-hair" style={{ margin: '13px 0 3px' }} />
+        <div className="flex flex-col gap-1.5">
+          {/* 优先级黄字说明已移除：与上方 .rl-chain-flow 视觉步骤重复（用户反馈）。 */}
+          <p className="rl-lead" style={{ marginTop: 0 }}>
+            {t('rules.instruction1')}
           </p>
-          <p>{t('rules.instruction1')}</p>
-          <p>{t('rules.instruction2')}</p>
-          <p>{t('rules.instruction3')}</p>
-          <p>{t('rules.instruction5')}</p>
-          <p>
+          <p className="rl-lead" style={{ marginTop: 0 }}>
+            {t('rules.instruction2')}
+          </p>
+          <p className="rl-lead" style={{ marginTop: 0 }}>
+            {t('rules.instruction3')}
+          </p>
+          <p className="rl-lead" style={{ marginTop: 0 }}>
+            {t('rules.instruction5')}
+          </p>
+          <p className="rl-lead" style={{ marginTop: 0 }}>
             <Trans i18nKey="rules.instruction6" components={{ strong: <strong /> }} />
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Add Rule Dialog */}
       <RuleDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} mode="add" />
@@ -433,6 +472,6 @@ export function RulesPage() {
           rule={deletingRule}
         />
       )}
-    </div>
+    </section>
   );
 }

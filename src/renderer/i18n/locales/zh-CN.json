@@ -57,16 +57,19 @@
     "restoreDefault": "恢复默认",
     "moreInfo": "更多信息",
     "search": "搜索",
-    "noResults": "无匹配"
+    "noResults": "无匹配",
+    "apply": "应用",
+    "remove": "移除",
+    "copy": "复制"
   },
   "sidebar": {
-    "home": "首页",
-    "logs": "实时日志",
-    "connections": "连接信息",
-    "server": "服务器",
+    "home": "主页",
+    "logs": "日志",
+    "connections": "连接",
+    "server": "节点",
     "appPolicy": "应用分流",
     "ruleResources": "规则资源",
-    "rules": "路由规则",
+    "rules": "规则",
     "settings": "设置",
     "collapse": "收起侧栏",
     "expand": "展开侧栏",
@@ -76,13 +79,13 @@
     }
   },
   "logs": {
-    "pageTitle": "实时日志",
+    "pageTitle": "日志",
     "pageDesc": "查看 sing-box 核心与应用运行日志",
     "settingsTitle": "日志与诊断",
     "currentLevel": "级别"
   },
   "connections": {
-    "pageTitle": "连接信息",
+    "pageTitle": "连接",
     "pageDesc": "实时查看活动连接及逐连接速率",
     "active": "活跃连接",
     "live": "实时",
@@ -228,9 +231,36 @@
       "placeholder": "选择规则集",
       "search": "搜索规则集",
       "noMatch": "无匹配规则集"
-    }
+    },
+    "accelHintCustom": "自填镜像域名",
+    "accelHintDirect": "官方源 · 可能较慢",
+    "accelHintPreset": "镜像加速",
+    "autoUpdateOffHint": "已关闭，资源需手动更新",
+    "autoUpdateOnHint": "已开启，按所选间隔在后台刷新已下载资源",
+    "catalogTruncatedNote": "清单较多，仅展示前 {{shown}} 项匹配（共 {{total}} 项）· 用搜索缩小范围",
+    "customDomainLabel": "自定义加速域名",
+    "dismiss": "忽略",
+    "downloadingBadge": "下载中",
+    "downloadMethod": "下载方式",
+    "failedBadge": "失败",
+    "ghProxyHint": "留空回退直连；下载失败自动回退直连兜底。",
+    "ghProxySmall": "资源经此处下载",
+    "libSelected": "已选 {{n}} 项",
+    "refGroupCount": "{{n}} 条",
+    "refKindApp": "应用",
+    "refKindRoute": "路由",
+    "refNone": "未引用",
+    "searchDownloaded": "搜索资源…",
+    "searchEmpty": "未找到匹配的资源",
+    "summaryCount": "共 {{n}} 项",
+    "summaryMissing": "{{n}} 项缺失",
+    "tableUsage": "占用",
+    "urlRequired": "必填"
   },
   "home": {
+    "takeoverHint": "怎么进",
+    "routingHint": "怎么分",
+    "topologyHint": "右键域名可一键加规则",
     "connectionStatus": "连接状态",
     "directGlobalHint": "全局直连：未命中规则的流量直连，仅按规则走代理",
     "selectServer": "选择服务器",
@@ -250,7 +280,7 @@
     "stopProxy": "关闭代理",
     "startProxy": "开启代理",
     "scrollToBottom": "滚动到底部",
-    "pageTitle": "首页",
+    "pageTitle": "主页",
     "pageDesc": "连接状态和快速操作",
     "statusError": "错误",
     "statusUnknown": "未知",
@@ -308,21 +338,10 @@
     "logLines": "{{count}} 行",
     "logLinesFiltered": "{{shown}} / {{total}}",
     "logLinesFilteredTitle": "命中 / 缓冲总行数",
-    "networkInfo": "网络信息",
-    "localExit": "本地出口",
-    "proxyExit": "代理出口",
-    "detecting": "检测中…",
-    "directLabel": "直连",
     "upload": "上行",
     "download": "下行",
-    "activeConnections": "活动连接",
-    "ipNotConnected": "未连接",
     "ipFetchFailed": "获取失败",
-    "ipProxyUnavailable": "代理出口暂不可用",
-    "ipLocalUnavailable": "本地出口暂不可用",
-    "refreshIp": "刷新",
-    "maskIp": "隐藏 IP",
-    "ipStale": "部分出口 IP 获取失败，显示为上次结果",
+    "exitInvalid": "出口无效",
     "loading": "加载中...",
     "noActiveConnections": "暂无活动连接",
     "addToRule": "加入自定义规则",
@@ -341,8 +360,10 @@
     "speedTestNoResult": "已测 {{count}} 个节点 · 均超时",
     "tsExitNoDeviceWarn": "已设为出口，但未选择出口设备，公网流量仍走直连。",
     "tsExitDeviceOfflineWarn": "出口设备当前离线，公网可能无法经 Tailscale 出网。",
+    "tsExitNotAdvertisedWarn": "所选出口设备未广告为出口节点，公网无法经其出网，请换一台已广告出口的设备。",
     "tsExitPickDevice": "选择出口设备",
-    "exitNode": "出口节点"
+    "exitNode": "出口节点",
+    "reprobeExit": "重新检测出口"
   },
   "settings": {
     "nav": {
@@ -377,7 +398,13 @@
       "privacyPasswordPlaceholder": "设置解锁密码(留空则全屏幕单击解锁)",
       "successUpdate": "设置已保存",
       "failUpdate": "保存设置失败",
-      "clearPassword": "清除密码"
+      "clearPassword": "清除密码",
+      "startupSub": "应用启动与托盘行为",
+      "autoStartDesc": "登录系统时自动运行 FlowZ",
+      "autoConnectDesc": "恢复上次的出口节点与接管方式并连接",
+      "behaviorSub": "更新提示、窗口与隐私遮罩",
+      "autoCheckUpdateDesc": "发现新版本时在关于页提示",
+      "rememberWindowSizeDesc": "下次打开时还原上次的窗口布局"
     },
     "coreVersion": {
       "changedTitle": "sing-box 内核已更新",
@@ -447,7 +474,22 @@
       "uninstallConfirmBtn": "完全卸载",
       "uninstallFail": "卸载失败",
       "restrictCoreUpdateDescFull": "关闭后「检查更新」可发现跨版本带新版，仍需手动确认安装；自动更新始终只在带内，不受此项影响。",
-      "autoUpdateDescFull": "仅在兼容版本带内自动更新；跨大版本需手动确认。运行中只下载暂存，不打断连接。"
+      "autoUpdateDescFull": "仅在兼容版本带内自动更新；跨大版本需手动确认。运行中只下载暂存，不打断连接。",
+      "sourceOfficial": "官方",
+      "sourceFork": "第三方",
+      "sourceUnknown": "未知",
+      "cardSub": "sing-box 版本、来源与更新",
+      "sourceDesc": "内核来源：官方 / 第三方 / 未知 自动识别",
+      "srcNoteOfficial": "GitHub 在线更新可用",
+      "srcNoteFork": "禁在线 / 自动更新",
+      "srcNoteUnknown": "无法确认，仅提示",
+      "backupVersionDesc": "升级失败或异常时可回滚至此版本",
+      "manualReplaceDesc": "导入本地 sing-box 可执行文件（同版本 / 覆盖基线需二次确认）",
+      "selectFile": "选择文件…",
+      "resetFactoryRowDesc": "恢复随 App 出厂的官方内核版本",
+      "resetShort": "重置",
+      "uninstallRowDesc": "移除内核、助手、配置与全部本地数据",
+      "uninstallShort": "完全卸载"
     },
     "appearance": {
       "title": "外观",
@@ -459,7 +501,11 @@
       "language": "语言",
       "languageAuto": "自动（跟随系统）",
       "themeUpdated": "主题已更新",
-      "languageUpdated": "已切换为简体中文"
+      "languageUpdated": "已切换为简体中文",
+      "themeSub": "跟随系统或手动锁定明暗",
+      "themeRowLabel": "配色主题",
+      "languageSub": "界面显示语言，切换即时生效",
+      "languageRowLabel": "显示语言"
     },
     "network": {
       "title": "网络",
@@ -485,7 +531,15 @@
       "webrtcLeakBlock": "阻断",
       "webrtcLeakTunOnlyHint": "WebRTC 防泄露仅在 TUN 模式生效，请切换到 TUN 模式后启用。",
       "meshLoginFallback": "组网登录期出口让位",
-      "meshLoginFallbackDesc": "所选 Tailscale 出口尚未连接时，登录/授权期间默认路由临时走直连（避免授权页被导向未连上的出口而卡死），连接成功后自动切回该出口。关闭则登录期不直连（宁可授权失败也不产生直连流量）。"
+      "meshLoginFallbackDesc": "所选 Tailscale 出口尚未连接时，登录/授权期间默认路由临时走直连（避免授权页被导向未连上的出口而卡死），连接成功后自动切回该出口。关闭则登录期不直连（宁可授权失败也不产生直连流量）。",
+      "dnsCardSub": "域名解析、FakeIP 与节点解析器",
+      "localProxyLanSub": "端口、LAN 共享与 TUN 排除",
+      "onlyTun": "仅 TUN",
+      "onlyTunLinuxMac": "仅 TUN · Linux / macOS",
+      "onlyLinux": "仅 Linux",
+      "tunModeSub": "虚拟网卡网络栈（仅 TUN 接管时显示）",
+      "connectionSub": "切换行为与 QUIC / TLS / IPv6 治理",
+      "updateAndSpeedTestSub": "订阅自动更新、更新流量走向与测速端点"
     },
     "proxyMode": {
       "systemProxyMode": "系统代理模式",
@@ -580,7 +634,7 @@
       "subProxyPolicyFollow": "跟随订阅设置",
       "subProxyPolicyProxy": "全部经代理",
       "subProxyPolicyDirect": "全部直连",
-      "singboxDashboard": "sing-box 官方面板",
+      "singboxDashboard": "面板",
       "singboxDashboardDesc": "可选：本地 serve sing-box 官方面板，作为高级用户/调试的全功能逃生舱。默认关闭。",
       "openDashboard": "打开面板",
       "dashboardNeedsNetwork": "面板随包内置、打开即时离线可用；点「打开面板」在应用内窗口直连，无需手填后端。secret 与 API Secret 相同。",
@@ -718,7 +772,11 @@
       "nodeResolverErrDomain": "仅支持纯 IP，不支持域名",
       "nodeResolverErrDuplicate": "该上游已存在",
       "nodeResolverSingleLabel": "解析上游",
-      "nodeResolverSingleHint": "单上游，无并发容错（退回单点 DNS）。"
+      "nodeResolverSingleHint": "单上游，无并发容错（退回单点 DNS）。",
+      "nodeResolverRaceGroup": "竞速组",
+      "nodeResolverRaceGroupCap": "加密 · 上限 3",
+      "singboxDashboardCardSub": "sing-box 原生控制 API",
+      "singboxDashboardEnable": "启用外部控制"
     },
     "about": {
       "title": "关于",
@@ -761,7 +819,8 @@
       "checking": "检查中...",
       "updating": "更新中...",
       "checkUpdate": "检查更新",
-      "downloading": "正在下载更新..."
+      "downloading": "正在下载更新...",
+      "updateAvailable": "可更新 {{version}}"
     }
   },
   "servers": {
@@ -1242,7 +1301,20 @@
     "meshLoginFallbackTitle": "组网登录期已临时直连",
     "meshLoginFallbackDesc": "所选 Tailscale 出口尚未连接，登录/授权期间流量暂走直连；连接成功后自动切回该出口。",
     "meshLoginFallbackRestored": "已连接「{{name}}」，已切回该出口",
-    "tsConnCardOpenLogin": "打开登录页"
+    "tsConnCardOpenLogin": "打开登录页",
+    "nodeCountSummary": "共 {{total}} · 自建 {{manual}} · 组网 {{mesh}} · 订阅 {{sub}}",
+    "expireAt": "到期 {{date}}",
+    "realityRequiredWhen": "security=Reality",
+    "meshAccessEntryHint": "Tailscale / WARP 已接入可在此管理，WireGuard 可继续新增",
+    "meshWgAddSub": ".conf 导入 / 手动填写",
+    "meshWarpManageTitle": "WARP 账户管理",
+    "meshJoinedTag": "已接入",
+    "meshWarpManageSub": "重新注册 / 注销设备",
+    "meshWarpAddSub": "注册匿名设备接入",
+    "meshTsManageSub": "设置 · 登出 / 切换账户",
+    "meshTsKeyReadySub": "设置 · 删除",
+    "meshTsAddSub": "交互登录 / AuthKey",
+    "meshTsEntryTitle": "Tailscale 组网接入与账户管理"
   },
   "rules": {
     "ruleColumn": "规则",
@@ -1257,7 +1329,7 @@
     "ruleDeleted": "规则已删除",
     "delete": "删除",
     "valueLabel": "匹配值",
-    "processHint": "仅本机发起的连接可识别进程",
+    "processHint": "仅本机发起的连接可识别进程，区分大小写",
     "invalidInline": "格式不正确：{{values}}",
     "commonTags": "常用标签",
     "typeHints": {
@@ -1435,7 +1507,8 @@
       "nodeLocked": "已锁定出口",
       "ruleSetLabel": "规则集",
       "ruleSetSub": "geosite / geoip / 进程名",
-      "download": "下载"
+      "download": "下载",
+      "policyClickHint": "点击切换"
     },
     "apps": {
       "youtube": "YouTube",
@@ -1538,14 +1611,33 @@
       "goToResources": "规则集没有？前往「规则资源」下载更多",
       "processLabel": "进程名",
       "processPlaceholder": "App.exe, appname",
-      "processHint": "可选 · 逗号分隔，比 geo 域名匹配更精准",
+      "processHint": "可选 · 逗号分隔，比 geo 域名匹配更精准。区分大小写，建议用「从进程选择」获取准确名称。",
       "geoAutoDownloadNote": "选中的 geosite / geoip 规则集若本地缺失，添加时将自动下载（fail-closed：下载完成前该应用的 geo 匹配不生效，进程名匹配不受影响）。",
-      "save": "保存应用"
+      "save": "保存应用",
+      "categoryFieldHint": "归入对应分类组，选「自定义…」新建分类组",
+      "geoipFieldHint": "IP 段匹配 · 多选",
+      "geositeFieldHint": "域名匹配 · 多选",
+      "iconEmojiGroup": "emoji 兜底",
+      "iconFallbackHint": "远端图标加载失败时，自动回退为应用名首字母。",
+      "iconFieldHint": "远端图标 / emoji / URL，加载失败回退首字母",
+      "iconLetterFallback": "首字母图标",
+      "iconRemoteGroup": "远端图标",
+      "iconUrlGroup": "或粘贴图标 URL",
+      "nameReq": "必填",
+      "processFieldHint": "可选 · 逗号分隔"
     },
     "errorRemarksRequired": "请填写备注名",
     "multiCondition": "多条件",
     "policyLabel": "策略",
-    "unnamedRule": "未命名规则"
+    "unnamedRule": "未命名规则",
+    "appRoutingReenable": "重新启用",
+    "chainStepBypassLan": "绕过局域网",
+    "chainStepDefault": "默认出口",
+    "chainStepSmart": "智能分流",
+    "conditionCount": "{{count}} 条",
+    "disabledBadge": "已禁用",
+    "orderDraftUnsaved": "未保存的排序草稿",
+    "viewDensity": "视图密度"
   },
   "sub": {
     "requireName": "请输入订阅名称",

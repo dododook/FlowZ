@@ -57,7 +57,7 @@ export function useServerActions() {
     if (!config) return;
     try {
       await saveConfig({ ...config, selectedServerId: serverId });
-      toast.success(t('servers.selectSuccess'));
+      // 选节点不弹「已选择」成功 toast（用户反馈：卡片即时高亮「当前」ring 即为反馈、无需提醒；同首页选节点/接管方式 toast 移除理由）。
     } catch (error) {
       toast.error(t('servers.selectFail'), {
         description: error instanceof Error ? error.message : t('servers.selectFailDesc'),

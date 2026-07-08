@@ -1,11 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { SegmentedControl } from '@/components/ui/segmented-control';
+import { cn } from '@/lib/utils';
 import { buildServerPickerModel } from '@/components/ui/server-picker-items';
+import { FOLLOW_GLOBAL_NODE_ID } from './rule-dialog-logic';
 import { APP_PRESETS } from '../../../shared/app-rules-preset';
 import type {
   AppRule,
@@ -23,7 +21,7 @@ import {
   matchesAppSearch,
   type DisplayAppPreset,
 } from './app-rules-logic';
-import { Plus, Search, LayoutGrid, List } from 'lucide-react';
+import { Search, LayoutGrid, List } from 'lucide-react';
 import { availableResourceTagSet, missingResourceAppIds } from '../../../shared/rule-resource-refs';
 import { toast } from 'sonner';
 
@@ -31,6 +29,11 @@ import { toast } from 'sonner';
 // 不会重置，避免图标在「显示 img」→「加载失败」→「显示 emoji」之间反复闪变。
 const _failedIconsCache = new Set<string>();
 
+/**
+ * 应用分流主体（Conduit `.ap-toolbar` + `.ap-body`）：搜索 + 策略计数摘要 + 双视图切换（舒适/紧凑，紧凑由
+ * `:has(.ap-viewseg button[data-view="compact"].on)` CSS 反应式排版）+ 按分类分组的应用卡网格 + 新增自定义应用虚线卡。
+ * 无 `<Card>` 包裹（prototype 直挂页根）。`.ap-body` 在总开关关时经 CSS dim + 本组件加 React 原生 `inert` 阻断交互。
+ */
 export function AppRulesCard() {
   const { t } = useTranslation();
   const config = useAppStore((state) => state.config);
@@ -44,6 +47,7 @@ export function AppRulesCard() {
   const [geoLocalList, setGeoLocalList] = useState<RuleResourceListItem[]>([]);
 
   const [appSearchQuery, setAppSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all'); // 分类筛选（用户反馈）：'all' 或某 category
   const [viewMode, setViewMode] = useState<'comfortable' | 'compact'>(
     () => (localStorage.getItem('flowz_app_view_mode') as 'comfortable' | 'compact') || 'compact'
   );
@@ -81,7 +85,8 @@ export function AppRulesCard() {
   // 指定节点 `.npick` 数据（按订阅/自建分组 + 延迟徽标）。应用分流「指定节点」= 具体节点，故不含「跟随全局」哨兵
   // （跟随全局由「代理」瓦片承担）。父级算一次，各卡共用（value 由各卡自身 targetServerId 决定）。
   const servers = config?.servers || [];
-  // 无哨兵：应用分流「指定节点」= 具体节点（跟随全局由「代理」瓦片承担）。共享映射与首页/规则/detour 口径统一。
+  // 对齐路由规则：跟随全局哨兵置顶（= proxy-default）+ 具体节点（= node-<id>），由「代理」瓦片下方 picker 统一承接。
+  // 共享映射与首页/规则/detour 口径统一。
   const { items: targetItems, groups: targetGroups } = useMemo(
     () =>
       buildServerPickerModel({
@@ -90,12 +95,14 @@ export function AppRulesCard() {
         latencyMap,
         meshLabel: t('servers.meshNodes', '组网'),
         manualLabel: t('servers.manualNodes', '自建节点'),
+        sentinel: { id: FOLLOW_GLOBAL_NODE_ID, name: t('rules.defaultNodeTip'), role: 'follow' },
       }),
     [servers, subscriptions, latencyMap, t]
   );
 
   if (!config) return null;
 
+  const enabled = config.appRoutingEnabled === true;
   const appRules: AppRule[] = config.appRules || [];
   const customPresets: CustomAppPreset[] = config.customAppPresets || [];
   const isSmartMode = (config.proxyMode || 'smart').toLowerCase() === 'smart';
@@ -134,6 +141,16 @@ export function AppRulesCard() {
   // 搜索过滤（应用名 / geosite / geoip / 进程名）→ 按分类分组（空组隐）。
   const filteredPresets = allPresets.filter((p) => matchesAppSearch(p, labelOf(p), appSearchQuery));
   const groups = groupPresetsByCategory(filteredPresets);
+  // 分类筛选：chip 列表取全量分类（不随搜索消失，顺序稳定）；选中某类只显该组。
+  // 纯计算（非 useMemo）：早退 `if (!config) return null` 之后加 hook 会违反 Rules-of-Hooks（config null→载入时
+  // hook 数变化崩溃）；且 allPresets 每渲染是新数组、memo 依赖恒变本就失效。groupPresetsByCategory 廉价，直接算。
+  const allCategories = groupPresetsByCategory(allPresets).map((g) => g.category);
+  // 生效分类：categoryFilter 指向的类若已不在（删完该类最后一个自定义应用 / 越界）→ 回落 'all'，
+  // 避免死角（chip 消失却仍按它过滤 → 永久空 body 无高亮 chip）。
+  const effectiveCategory =
+    categoryFilter !== 'all' && allCategories.includes(categoryFilter) ? categoryFilter : 'all';
+  const shownGroups =
+    effectiveCategory === 'all' ? groups : groups.filter((g) => g.category === effectiveCategory);
 
   const handlePolicyChange = async (presetId: string, value: string) => {
     const existing = getAppRule(presetId);
@@ -193,82 +210,113 @@ export function AppRulesCard() {
   const goToResources = () => setCurrentView('ruleResources');
 
   return (
-    <Card>
-      <CardContent className="space-y-5 pt-6">
-        {/* 顶部工具栏：搜索 + 策略计数 + 视图切换 */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="group relative min-w-[12rem] flex-1">
-            <Search className="absolute start-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50 transition-colors group-focus-within:text-primary" />
-            <Input
-              placeholder={t('rules.searchAppsFull', '搜索应用 / geosite / 进程名…')}
-              value={appSearchQuery}
-              onChange={(e) => setAppSearchQuery(e.target.value)}
-              className="h-11 rounded-xl border-muted-foreground/10 bg-muted/40 ps-10 text-sm transition-all focus:border-primary/30"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-xs tabular-nums text-muted-foreground">
-            <span className="font-bold text-foreground">{counts.total}</span>
-            <span>{t('rules.appCountUnit', '应用')}</span>
-            <span className="opacity-40">·</span>
-            <span className="text-primary">
-              {t('rules.proxy')} {counts.proxy}
-            </span>
-            <span className="text-primary">
-              {t('rules.appTile.nodeTitle', '指定')} {counts.node}
-            </span>
-            <span className="text-success">
-              {t('rules.direct')} {counts.direct}
-            </span>
-            <span className="text-destructive">
-              {t('rules.block')} {counts.block}
-            </span>
-          </div>
-
-          <SegmentedControl<'comfortable' | 'compact'>
-            className="w-auto shrink-0"
-            value={viewMode}
-            onChange={setViewMode}
-            options={[
-              {
-                value: 'comfortable',
-                label: <LayoutGrid className="h-4 w-4" />,
-                title: t('rules.viewComfortable'),
-              },
-              {
-                value: 'compact',
-                label: <List className="h-4 w-4" />,
-                title: t('rules.viewCompact'),
-              },
-            ]}
+    <>
+      {/* 工具条：搜索 + 策略计数摘要 + 双视图切换 */}
+      <div className="ap-toolbar">
+        <label className="ap-search">
+          <Search />
+          <input
+            type="text"
+            placeholder={t('rules.searchAppsFull', '搜索应用 / geosite / 进程名…')}
+            value={appSearchQuery}
+            onChange={(e) => setAppSearchQuery(e.target.value)}
           />
+        </label>
+
+        <div className="ap-summary mono">
+          <b>{counts.total}</b> {t('rules.appCountUnit', '应用')}
+          {' · '}
+          <span className="s-proxy">
+            {t('rules.proxy')} {counts.proxy}
+          </span>
+          {' · '}
+          <span className="s-proxy">
+            {t('rules.appTile.nodeTitle', '指定')} {counts.node}
+          </span>
+          {' · '}
+          <span className="s-direct">
+            {t('rules.direct')} {counts.direct}
+          </span>
+          {' · '}
+          <span className="s-block">
+            {t('rules.block')} {counts.block}
+          </span>
         </div>
 
-        {/* 分类分组（空组隐）：组内无卡则整组不渲染。 */}
-        {groups.length === 0 ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
+        <div
+          className="seg2 ap-viewseg"
+          role="group"
+          aria-label={t('rules.viewDensity', '视图密度')}
+        >
+          <button
+            type="button"
+            data-view="comfort"
+            className={cn(viewMode === 'comfortable' && 'on')}
+            title={t('rules.viewComfortable')}
+            aria-label={t('rules.viewComfortable')}
+            aria-pressed={viewMode === 'comfortable'}
+            onClick={() => setViewMode('comfortable')}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            data-view="compact"
+            className={cn(viewMode === 'compact' && 'on')}
+            title={t('rules.viewCompact')}
+            aria-label={t('rules.viewCompact')}
+            aria-pressed={viewMode === 'compact'}
+            onClick={() => setViewMode('compact')}
+          >
+            <List className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 分类筛选 chips（用户反馈）：全部 + 各分类，选中只显该组。≥2 分类才显。 */}
+      {allCategories.length > 1 && (
+        <div
+          className="ap-catfilter"
+          role="group"
+          aria-label={t('rules.categoryFilter', '分类筛选')}
+        >
+          <button
+            type="button"
+            className={cn('ap-cat-chip', effectiveCategory === 'all' && 'on')}
+            onClick={() => setCategoryFilter('all')}
+          >
+            {t('common.all', '全部')}
+          </button>
+          {allCategories.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={cn('ap-cat-chip', effectiveCategory === c && 'on')}
+              onClick={() => setCategoryFilter(c)}
+            >
+              {t(`rules.categories.${c}` as any, c)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 应用卡网格（总开关关时经 CSS dim + React `inert` 阻断交互）。空组由 CSS `.ap-group:not(:has(.app-card))` 隐。 */}
+      <div className="ap-body" inert={!enabled}>
+        {shownGroups.length === 0 ? (
+          <div className="py-10 text-center text-[13px] text-fg-faint">
             {t('rules.searchNoMatch', '无匹配规则')}
           </div>
         ) : (
-          <div className="space-y-5">
-            {groups.map((grp) => (
-              <section key={grp.category} className="space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-muted-foreground">
+          <div className="ap-groups">
+            {shownGroups.map((grp) => (
+              <section key={grp.category} className="ap-group">
+                <div className="ap-cat">
+                  <span className="nm">
                     {t(`rules.categories.${grp.category}` as any, grp.category)}
                   </span>
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
-                    {grp.presets.length}
-                  </span>
-                  <span className="h-px flex-1 bg-muted-foreground/10" />
+                  <span className="n mono">{grp.presets.length}</span>
                 </div>
-                <div
-                  className={
-                    viewMode === 'comfortable'
-                      ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3'
-                      : 'grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3'
-                  }
-                >
+                <div className="ap-cards">
                   {grp.presets.map((preset) => {
                     const rule = getAppRule(preset.id);
                     const kind = deriveAppPolicy(rule);
@@ -288,7 +336,6 @@ export function AppRulesCard() {
                         nodeLabel={nodeLabel}
                         targetItems={targetItems}
                         targetGroups={targetGroups}
-                        viewMode={viewMode}
                         iconFailed={failedIcons.has(preset.id)}
                         onIconError={() => handleIconError(preset.id)}
                         onPolicyChange={(v) => handlePolicyChange(preset.id, v)}
@@ -305,20 +352,19 @@ export function AppRulesCard() {
           </div>
         )}
 
-        {/* 新增自定义应用 */}
+        {/* 新增自定义应用虚线卡（搜索时隐）。 */}
         {!appSearchQuery && (
-          <Button
-            variant="outline"
-            onClick={() => setIsAddDialogOpen(true)}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-muted-foreground/10 bg-transparent transition-all hover:border-primary/30 hover:bg-muted/30"
-          >
-            <Plus className="h-5 w-5 text-muted-foreground/60" />
-            <span className="text-sm font-medium text-muted-foreground/80">
-              {t('rules.createCustom')}
-            </span>
-          </Button>
+          <div className="ap-add-zone">
+            <button type="button" className="add-card" onClick={() => setIsAddDialogOpen(true)}>
+              <span className="ic">＋</span>
+              <span className="add-tx">
+                <span className="t">{t('rules.createCustom')}</span>
+                <small>{t('rules.customApp.addDesc')}</small>
+              </span>
+            </button>
+          </div>
         )}
-      </CardContent>
+      </div>
 
       <AddCustomAppDialog
         open={isAddDialogOpen}
@@ -328,6 +374,6 @@ export function AppRulesCard() {
         geoLocalList={geoLocalList}
         onGoToResources={goToResources}
       />
-    </Card>
+    </>
   );
 }
