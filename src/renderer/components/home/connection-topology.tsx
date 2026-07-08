@@ -294,7 +294,7 @@ export function ConnectionTopology() {
           ref={containerRef}
           // hero flex-1 填满 topo-card（conduit .topo-card{flex:1} flex-col）；下限 300px 防挤扁。
           // 用 flex-1 而非 h-full：h-full(height:100%) 在 flex 父级下不稳解析、会塌成内容高（同 logs 修复根因）。
-          className="relative min-h-[300px] w-full flex-1 cursor-default"
+          className="relative min-h-[300px] w-full min-w-0 flex-1 cursor-default overflow-hidden"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >

@@ -86,7 +86,6 @@ export function SingboxDashboardSection() {
             <InfoTooltip content={t('settings.advanced.dashboardNeedsNetwork')} />
           </>
         }
-        desc={t('settings.advanced.singboxDashboardDesc')}
       >
         <Swt checked={enabled} onChange={handleToggle} />
       </Srow>

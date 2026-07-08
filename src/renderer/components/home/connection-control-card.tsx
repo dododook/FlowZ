@@ -389,9 +389,7 @@ export function ConnectionControlCard() {
         {/* 接管方式 + 分流策略：两列等宽 seg2 */}
         <div className="mode-grid">
           <div className="field">
-            <div className="field-lbl">
-              {t('home.takeoverMethod')} <small>{t('home.takeoverHint')}</small>
-            </div>
+            <div className="field-lbl">{t('home.takeoverMethod')}</div>
             <div className="seg2">
               {takeoverOptions.map((o) => (
                 <button
@@ -411,9 +409,7 @@ export function ConnectionControlCard() {
             </div>
           </div>
           <div className="field">
-            <div className="field-lbl">
-              {t('home.routingStrategy')} <small>{t('home.routingHint')}</small>
-            </div>
+            <div className="field-lbl">{t('home.routingStrategy')}</div>
             <div className="seg2">
               {routingOptions.map((o) => (
                 <button

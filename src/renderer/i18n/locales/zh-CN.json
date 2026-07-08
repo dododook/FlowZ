@@ -165,7 +165,6 @@
     "filterAll": "全部",
     "filterLite": "精简",
     "autoUpdate": "自动更新",
-    "autoUpdateDesc": "按设定间隔自动重新下载已下载的规则资源",
     "autoUpdateDescFull": "sing-box 不会自动更新本地规则集，需依赖此处定时重新下载。",
     "updateInterval": "更新间隔",
     "updateAll": "全部更新",
@@ -244,7 +243,6 @@
     "downloadMethod": "下载方式",
     "failedBadge": "失败",
     "ghProxyHint": "留空回退直连；下载失败自动回退直连兜底。",
-    "ghProxySmall": "资源经此处下载",
     "libSelected": "已选 {{n}} 项",
     "refGroupCount": "{{n}} 条",
     "refKindApp": "应用",
@@ -258,8 +256,6 @@
     "urlRequired": "必填"
   },
   "home": {
-    "takeoverHint": "怎么进",
-    "routingHint": "怎么分",
     "topologyHint": "右键域名可一键加规则",
     "connectionStatus": "连接状态",
     "directGlobalHint": "全局直连：未命中规则的流量直连，仅按规则走代理",
@@ -635,7 +631,6 @@
       "subProxyPolicyProxy": "全部经代理",
       "subProxyPolicyDirect": "全部直连",
       "singboxDashboard": "面板",
-      "singboxDashboardDesc": "可选：本地 serve sing-box 官方面板，作为高级用户/调试的全功能逃生舱。默认关闭。",
       "openDashboard": "打开面板",
       "dashboardNeedsNetwork": "面板随包内置、打开即时离线可用；点「打开面板」在应用内窗口直连，无需手填后端。secret 与 API Secret 相同。",
       "dashboardUrl": "面板下载地址",

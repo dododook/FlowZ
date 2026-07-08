@@ -399,10 +399,8 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             <DialogTitle className="rl-dlg-title">
               {mode === 'add' ? t('rules.addRule') : t('rules.editRule')}
             </DialogTitle>
-            <DialogDescription className="rl-dlg-desc">
-              {/* 恒显用途描述，不回显规则名——名称由下方「备注名」字段承载，副标题回显=重复（用户反馈）。 */}
-              {t('rules.ruleDialogDesc')}
-            </DialogDescription>
+            {/* 副标题去可见（用户反馈：与「备注名」字段重复）；保 sr-only 供 radix a11y（DialogDescription 必需）。 */}
+            <DialogDescription className="sr-only">{t('rules.ruleDialogDesc')}</DialogDescription>
           </div>
         </div>
 

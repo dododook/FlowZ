@@ -354,10 +354,7 @@ export function RuleResourcesPage() {
       <div className="rsc-settings">
         {/* GitHub 加速 */}
         <div className="card rsc-card">
-          <div className="field-lbl">
-            {t('ruleResources.ghProxy', 'GitHub 加速')}{' '}
-            <small>{t('ruleResources.ghProxySmall', '资源经此处下载')}</small>
-          </div>
+          <div className="field-lbl">{t('ruleResources.ghProxy', 'GitHub 加速')}</div>
           <div className="cc-hair" />
           <div className="rsc-body">
             <div className="rsc-field-row">
@@ -408,10 +405,7 @@ export function RuleResourcesPage() {
         <div className="card rsc-card">
           <div className="rsc-card-head">
             <div className="field-lbl">
-              {t('ruleResources.autoUpdate', '自动更新')}{' '}
-              <small>
-                {t('ruleResources.autoUpdateDesc', '按设定间隔自动重新下载已下载的规则资源')}
-              </small>
+              {t('ruleResources.autoUpdate', '自动更新')}
               <InfoTooltip content={t('ruleResources.autoUpdateDescFull')} />
             </div>
             <button

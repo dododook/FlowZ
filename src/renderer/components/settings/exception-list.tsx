@@ -48,13 +48,13 @@ export function ExceptionList({
       />
       <div className="excl-foot">
         {hint ? (
-          <span className={cn('ng-hint', hintTone === 'warning' && 'ng-warn')}>{hint}</span>
+          <span className={cn('ng-hint min-w-0', hintTone === 'warning' && 'ng-warn')}>{hint}</span>
         ) : (
           <span />
         )}
         <button
           type="button"
-          className="btn ghost sm"
+          className="btn ghost sm shrink-0 whitespace-nowrap"
           disabled={!isModified}
           style={!isModified ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
           onClick={() => onChange?.([...defaults])}

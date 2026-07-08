@@ -165,7 +165,6 @@
     "filterAll": "All",
     "filterLite": "Lite",
     "autoUpdate": "Auto-update",
-    "autoUpdateDesc": "Periodically re-download saved rule resources",
     "autoUpdateDescFull": "sing-box does not auto-update local rule-sets — this scheduled re-download keeps them fresh.",
     "updateInterval": "Interval",
     "updateAll": "Update all",
@@ -244,7 +243,6 @@
     "downloadMethod": "Download method",
     "failedBadge": "Failed",
     "ghProxyHint": "Leave empty to fall back to direct; on download failure it auto-falls back to direct.",
-    "ghProxySmall": "Resources download through this",
     "libSelected": "{{n}} selected",
     "refGroupCount": "{{n}} items",
     "refKindApp": "App",
@@ -258,8 +256,6 @@
     "urlRequired": "Required"
   },
   "home": {
-    "takeoverHint": "Capture",
-    "routingHint": "Route",
     "topologyHint": "Right-click a domain to add a rule",
     "connectionStatus": "Connection Status",
     "directGlobalHint": "Global Direct: unmatched traffic goes direct; only rule-matched traffic uses proxy",
@@ -635,7 +631,6 @@
       "subProxyPolicyProxy": "All via proxy",
       "subProxyPolicyDirect": "All direct",
       "singboxDashboard": "Official sing-box Dashboard",
-      "singboxDashboardDesc": "Opt-in: serve the official sing-box dashboard locally as a full-featured escape hatch for power users and debugging. Off by default.",
       "openDashboard": "Open Dashboard",
       "dashboardNeedsNetwork": "The dashboard is bundled — opens instantly and works offline. Click Open Dashboard to connect in an in-app window without entering a backend. The secret is the same as the API Secret.",
       "dashboardUrl": "Dashboard download URL",
