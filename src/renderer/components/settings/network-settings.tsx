@@ -492,10 +492,7 @@ export function NetworkSettings() {
                     'settings.advanced.bypassLANEditHintWinTun',
                     'Windows TUN 下此清单为内核级排除：自定义规则无法覆盖。需让某段走代理请从此清单移除该段（组网路由段已自动放行进 TUN）。'
                   )
-                : t(
-                    'settings.advanced.bypassLANEditHint',
-                    '路由规则优先级高于此：需让某段走代理，可以从列表删除或者去「路由规则」加自定义规则即可覆盖。'
-                  )
+                : undefined
             }
             hintTone="warning"
           />

@@ -25,11 +25,7 @@ export function LogSettingsSection() {
         {/* full 说明保留在原生 title（对齐旧 InfoTooltip 的 …DescFull key，无 ⓘ 图标以贴合原型） */}
         <div className="field-lbl" title={t('settings.advanced.logLevelDescFull') as string}>
           {t('settings.advanced.logLevel')}
-          <small>
-            {captureLocked
-              ? t('settings.advanced.logLevelCaptureLocked')
-              : t('settings.advanced.logLevelDesc')}
-          </small>
+          {captureLocked && <small>{t('settings.advanced.logLevelCaptureLocked')}</small>}
         </div>
         <div className="select">
           <select
@@ -65,7 +61,6 @@ export function LogSettingsSection() {
       <div className="field">
         <div className="field-lbl" title={t('settings.advanced.disableLogFileDescFull') as string}>
           {t('settings.advanced.disableLogFile')}
-          <small>{t('settings.advanced.disableLogFileDesc')}</small>
         </div>
         {/* .swt-row：开关语义与旧 Switch 一致（on = disableLogFile 真 = 关闭写盘）。 */}
         <label className="swt-row">

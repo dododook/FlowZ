@@ -30,19 +30,23 @@ export function ConnectionTopology() {
   const [height, setHeight] = useState(FIXED_HEIGHT);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentBoxSize) {
-          setWidth(entry.contentRect.width);
-          if (entry.contentRect.height > 0) setHeight(entry.contentRect.height);
-        }
-      }
-    });
-
-    resizeObserver.observe(containerRef.current);
-    return () => resizeObserver.disconnect();
+    const el = containerRef.current;
+    if (!el) return;
+    // 直接量 getBoundingClientRect（比 RO entry.contentRect 稳）；RO 观容器 + window resize 双兜底。
+    // 修真机「拖窗放大跟涨、缩小不回缩」：单靠 RO 在某些缩小路径未回调，viewBox 卡死旧宽 → 图不随窗回缩。
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0) setWidth(r.width);
+      if (r.height > 0) setHeight(r.height);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   // batch3 §3.7：拓扑订阅 'aggregate' topic——挂载即拿初始帧（= 原 CONNECTIONS_AGGREGATE_GET 回填），之后增量 push
