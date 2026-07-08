@@ -1,22 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/app-store';
 import { openExternal } from '@/bridge/api-wrapper';
 import { toast } from 'sonner';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 import { InfoTooltip } from './shared/info-tooltip';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../../shared/constants';
 
 /**
- * 提权助手管理卡（macOS / Windows）：展示安装/就绪状态，提供安装/修复/卸载入口。
+ * 提权助手管理卡（Conduit `.card.set-card` + `.helper-top` 单活态呈现，macOS / Windows）。
+ * 状态机（检查中/未安装/后台被禁/路径不符/需修复/可升级/已安装就绪）以徽章 pill + 图标色 + 单条说明 + 动作按钮呈现；
+ * 原型「7 态图例」为设计展示，真实组件只渲染当前活跃态。
  * 与首页启动提示共享同一安装逻辑（store.installHelper / uninstallHelper）。
- * backgroundDisabled / pathMismatch / upgradeable 相关 UI 仅 macOS 渲染（Windows 这些 flag 恒 false，分支自然不显示）；
- * Windows 走「安装服务=一次 UAC、之后零提权」语义，文案（管理员授权框）平台通用。
- * macOS「允许在后台」被关时：检测到 backgroundDisabled → 提示 + 一键打开系统设置引导用户手动开启（程序无法翻动
- * 用户关掉的 BTM allowed 位，Apple SMAppService 无此 API）。开关恢复后状态会在几秒内自动刷新（focus / 轮询触发）。
+ * backgroundDisabled / pathMismatch / upgradeable 相关 UI 仅 macOS 出现（Windows 这些 flag 恒 false）。
+ * macOS「允许在后台」被关时：检测到 backgroundDisabled → 提示 + 一键打开系统设置引导用户手动开启。
  */
 export function HelperManagementCard() {
   const { t } = useTranslation();
@@ -84,101 +82,120 @@ export function HelperManagementCard() {
     }
   };
 
-  // 状态徽章
-  const statusBadge = () => {
-    if (!helperStatus) return <Badge variant="secondary">{t('helper.statusChecking')}</Badge>;
-    if (!helperStatus.installed)
-      return <Badge variant="outline">{t('helper.statusNotInstalled')}</Badge>;
-    if (helperStatus.backgroundDisabled)
-      return (
-        <Badge variant="destructive">
-          {t('helper.statusBackgroundDisabled', '后台运行被禁用')}
-        </Badge>
-      );
-    if (helperStatus.pathMismatch)
-      return (
-        <Badge variant="destructive">{t('helper.statusPathMismatch', '应用已移动，需修复')}</Badge>
-      );
-    if (helperStatus.needsRepair)
-      return <Badge variant="destructive">{t('helper.statusNeedsRepair')}</Badge>;
-    if (helperStatus.upgradeable)
-      return <Badge variant="secondary">{t('helper.statusUpgradeable', '可升级')}</Badge>;
-    return <Badge variant="default">{t('helper.statusInstalled')}</Badge>;
-  };
+  // 活跃态 → 图标色 / 徽章 pill / 单条说明（保留全部状态文案 key，收敛到当前活跃态）。
+  const state: { ico: string; pill: string; label: string; desc: string } = !helperStatus
+    ? { ico: 'warn', pill: 'info', label: t('helper.statusChecking'), desc: t('helper.desc') }
+    : !helperStatus.installed
+      ? { ico: 'err', pill: 'err', label: t('helper.statusNotInstalled'), desc: t('helper.desc') }
+      : helperStatus.backgroundDisabled
+        ? {
+            ico: 'warn',
+            pill: 'warn',
+            label: t('helper.statusBackgroundDisabled', '后台运行被禁用'),
+            desc: t('helper.backgroundDisabledDesc'),
+          }
+        : helperStatus.pathMismatch
+          ? {
+              ico: 'warn',
+              pill: 'warn',
+              label: t('helper.statusPathMismatch', '应用已移动，需修复'),
+              desc: t('helper.pathMismatchDesc'),
+            }
+          : helperStatus.needsRepair
+            ? {
+                ico: 'err',
+                pill: 'err',
+                label: t('helper.statusNeedsRepair'),
+                desc: t('helper.desc'),
+              }
+            : helperStatus.upgradeable
+              ? {
+                  ico: 'warn',
+                  pill: 'warn',
+                  label: t('helper.statusUpgradeable', '可升级'),
+                  desc: t('helper.upgradeableDesc'),
+                }
+              : {
+                  ico: 'ok',
+                  pill: 'ok',
+                  label: t('helper.statusInstalled'),
+                  desc: t('helper.desc'),
+                };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4" />
-          {t('helper.title')}
-          <InfoTooltip content={t('helper.descFull')} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">{t('helper.desc')}</p>
-        {helperStatus?.backgroundDisabled && (
-          <p className="text-sm text-destructive">
-            {t(
-              'helper.backgroundDisabledDesc',
-              '系统设置中本应用的「允许在后台」已被关闭，提权助手无法运行，TUN 启停将退回每次弹管理员授权框。请点击下方「打开系统设置」，在「登录项与扩展」中重新开启 FlowZ 的「允许在后台」。开启后本页状态会在几秒内自动恢复。'
-            )}
-          </p>
-        )}
-        {helperStatus?.pathMismatch && !helperStatus?.backgroundDisabled && (
-          <p className="text-sm text-destructive">
-            {t(
-              'helper.pathMismatchDesc',
-              '提权助手登记的核心路径与当前应用不一致（应用可能被移动过），TUN 免授权启动将失效，请点击修复。'
-            )}
-          </p>
-        )}
-        {upgradeable && !needsRepair && !backgroundDisabled && (
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'helper.upgradeableDesc',
-              '提权助手有新版本。当前版本 TUN 启停照常可用；升级后内核更新也将免授权（写入受保护目录）。可按需点击下方「升级」。'
-            )}
-          </p>
-        )}
-
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">{t('helper.statusLabel')}</span>
-          {statusBadge()}
+    <div className="card set-card">
+      <div className="helper-top">
+        <div className={cn('helper-ico', state.ico)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+            <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" strokeLinejoin="round" />
+            <path d="M12 15V9M9 12l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </div>
-
-        <div className="flex gap-2 pt-1">
+        <div className="helper-info">
+          <div className="helper-title">
+            {t('helper.title')}
+            <span className={cn('pill', state.pill)}>{state.label}</span>
+            <InfoTooltip content={t('helper.descFull')} />
+          </div>
+          <div className="helper-desc">{state.desc}</div>
+        </div>
+        <div className="helper-act" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {!installed && (
-            <Button onClick={handleInstall} disabled={busy !== null}>
-              {busy === 'install' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            <button
+              type="button"
+              className="btn flow sm"
+              onClick={handleInstall}
+              disabled={busy !== null}
+            >
+              {busy === 'install' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t('helper.install')}
-            </Button>
+            </button>
           )}
           {installed && backgroundDisabled && (
-            <Button onClick={() => openExternal(LOGIN_ITEMS_SETTINGS_URL)} disabled={busy !== null}>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => openExternal(LOGIN_ITEMS_SETTINGS_URL)}
+              disabled={busy !== null}
+            >
               {t('helper.disabledOpenSettings', '打开系统设置')}
-            </Button>
+            </button>
           )}
           {installed && needsRepair && !backgroundDisabled && (
-            <Button onClick={handleInstall} disabled={busy !== null}>
-              {busy === 'install' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            <button
+              type="button"
+              className="btn flow sm"
+              onClick={handleInstall}
+              disabled={busy !== null}
+            >
+              {busy === 'install' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t('helper.repair')}
-            </Button>
+            </button>
           )}
           {installed && upgradeable && !needsRepair && !backgroundDisabled && (
-            <Button onClick={handleInstall} disabled={busy !== null}>
-              {busy === 'install' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            <button
+              type="button"
+              className="btn flow sm"
+              onClick={handleInstall}
+              disabled={busy !== null}
+            >
+              {busy === 'install' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t('helper.upgrade', '升级')}
-            </Button>
+            </button>
           )}
           {installed && (
-            <Button variant="destructive" onClick={handleUninstall} disabled={busy !== null}>
-              {busy === 'uninstall' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+            <button
+              type="button"
+              className="btn danger sm"
+              onClick={handleUninstall}
+              disabled={busy !== null}
+            >
+              {busy === 'uninstall' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t('helper.uninstall')}
-            </Button>
+            </button>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

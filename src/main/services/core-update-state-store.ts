@@ -14,6 +14,12 @@ export interface CoreAutoUpdateState {
   lastCheckAt?: number;
   staged?: StagedCoreInfo;
   crossBandNotifiedVersion?: string; // 已就此跨带版本提示过，避免每轮重复弹
+  // 启动期已就此随包版本弹过 macOS 孤儿态 osascript 授权（授权成功 → 下次 decideCoreOverride 判 keep 本不进；
+  // 用户取消 → 本版本不再自动弹，防每启弹）。随包版本升级后清零重弹。同 crossBandNotifiedVersion 的一次性防重弹语义。
+  startupReseedDeclinedVersion?: string;
+  // 内核版本变更「待展示通知」（push 型）：由产生通知的动作（staged 落位 / 立即应用）显式创建，banner 展示即 ack 清除。
+  // 取代旧「lastKnownVersion !== currentVersion 推断式比对」——静默 reseed/基线对齐不创建通知即不弹（根治每启误报）。
+  pendingChangeNotice?: { previousVersion: string; currentVersion: string };
   // B0：已成功稳定运行、实证兼容过的最高版本带（编码）。棘轮：成功运行抬高、回滚重置到回滚后带。参与有效兼容上限。
   verifiedCeiling?: number;
 }

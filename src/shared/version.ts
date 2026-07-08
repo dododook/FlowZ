@@ -29,8 +29,9 @@ export function sameMajorMinor(a: string, b: string): boolean {
 
 /**
  * 判断核心版本是否 ≥ major.minor。
- * @param fallback 无法解析时的返回值。默认 true —— 打包核心恒 ≥1.14（出厂 1.14.0-alpha.32）、
- *   且 getCoreVersion 解析失败也兜底返回现代版本，故"未知"按现代版本处理最安全。
+ * @param fallback 无法解析时的返回值。默认 true —— 打包核心恒 ≥1.14（出厂版本见 core-manifest.json
+ *   bundledCoreVersion，随打包升级；勿在此硬编码具体 alpha 号以免漂移），且 getCoreVersion 解析失败也兜底
+ *   返回现代版本，故"未知"按现代版本处理最安全。
  */
 export function coreVersionAtLeast(
   version: string,

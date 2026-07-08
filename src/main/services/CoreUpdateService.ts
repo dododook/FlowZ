@@ -17,6 +17,7 @@ import type { UserConfig } from '../../shared/types';
 import { encodeMajorMinor, sameMajorMinor, compareSemver } from '../../shared/version';
 import {
   classifyCoreBuild,
+  classifyReseedResult,
   comparableCoreVersion,
   decideCoreOverride,
   parseUploadedCoreVersion,
@@ -44,9 +45,11 @@ export interface CoreVersionInfo {
   currentVersion: string;
   backupVersion: string | null;
   hasBackup: boolean;
-  lastKnownVersion: string | null;
   // 内核来源：official=官方 / fork=第三方（禁在线·自动更新）/ unknown=无法确认（仅提示）。
   build: CoreBuildKind;
+  // 内核版本变更「待展示通知」（push 型持久位）：非空 = 有一条由更新动作创建、尚未展示 ack 的变更提示。
+  // banner 读它决定是否弹（取代旧推断式比对）；静默 reseed 不创建 → 不弹。
+  pendingChangeNotice?: { previousVersion: string; currentVersion: string } | null;
 }
 
 // StagedCoreInfo / CoreAutoUpdateState 迁至 core-update-state-store（与 CoreUpdateStateStore 同处）；re-export 保对外兼容。
@@ -573,6 +576,50 @@ export class CoreUpdateService {
     this.stateStore.saveAutoState(patch);
   }
 
+  /**
+   * macOS 孤儿受保护核（helper 已卸/坏、helper reseed 写不动 root 目录）启动期一次性 osascript-admin 兜底（用户已定
+   * 「首启一次性弹」）：借鉴 app 更新，一次授权把随包核装进受保护核（root 属主、消除「root 跑用户可写二进制」、无 privesc）。
+   * 一次性：startupReseedDeclinedVersion 记本随包版本已弹过（授权成功下次 decideCoreOverride 判 keep 不进 / 取消则本版本不再自动弹），
+   * 防每启弹。由 startup-tasks 在 proxyManager.reseedBundledCoreOnStartup() 返回 needsMacElevatedReseed 时调。取消授权=正常、吞错。
+   */
+  async tryElevatedReseedProtectedCoreOnStartup(bundledVersion: string): Promise<void> {
+    const pm = this.proxyManager;
+    if (process.platform !== 'darwin' || !this.privilegeService || !pm) return;
+    // 一次性 gate：本随包版本已弹过 → 跳，防每启弹。
+    if (this.loadAutoState().startupReseedDeclinedVersion === bundledVersion) return;
+    this.saveAutoState({ startupReseedDeclinedVersion: bundledVersion });
+    const src = resourceManager.getBundledSingBoxPath();
+    const dest = path.join(resourceManager.getProtectedCoreDir(), 'sing-box');
+    const before = await pm.getCoreVersion(false).catch(() => 'unknown');
+    this.logManager.addLog(
+      'info',
+      `macOS 无 helper：一次性授权安装随包核 ${bundledVersion} 到受保护目录...`,
+      'CoreUpdateService'
+    );
+    try {
+      await this.privilegeService.installCoreElevatedMac(src, dest);
+    } catch (e) {
+      // 用户取消授权 / 写失败 = 正常路径（非错误）：info 记录、延后（已记 declinedVersion 本版本不再自动弹）。
+      this.logManager.addLog(
+        'info',
+        `随包核 elevated 安装未完成（${(e as Error)?.message ?? e}），延后；可在「设置·内核·重置到出厂」手动切回随包核`,
+        'CoreUpdateService'
+      );
+      return;
+    }
+    // 写后 ProxyManager 重解析核路径 + 刷版本缓存；诚实校验（getCoreVersionLine 探测失败返 ''、不回落随包基线）。
+    await pm.refreshCoreVersionAfterExternalReseed();
+    const lineAfter = await pm.getCoreVersionLine(true);
+    const { version, applied } = classifyReseedResult(lineAfter, before, bundledVersion);
+    this.logManager.addLog(
+      'info',
+      applied
+        ? `随包核已 elevated 安装至受保护目录: ${version}`
+        : `随包核 elevated 安装后仍为 ${version}（期望 ≥ ${bundledVersion}）`,
+      'CoreUpdateService'
+    );
+  }
+
   /** 清除 staged 暂存（落位成功/作废后调用）：删元数据 + 删暂存目录。 */
   private clearStaged(): void {
     const st = this.loadAutoState();
@@ -901,7 +948,11 @@ export class CoreUpdateService {
         `内核已自动更新落位至 ${staged.version}（${trigger}）`,
         'CoreUpdateService'
       );
-      // 复用 banner 作成功提示 + 回滚入口
+      // 复用 banner 作成功提示 + 回滚入口。push 型持久通知：先记 pendingChangeNotice（供 banner mount 兜 listener
+      // 注册竞态、且展示前重启也不丢），再发即时事件。banner 展示即 ack 清除 → 弹一次非每启（根治旧推断式比对每启误报）。
+      this.saveAutoState({
+        pendingChangeNotice: { previousVersion: current, currentVersion: staged.version },
+      });
       this.eventSender?.(IPC_CHANNELS.EVENT_CORE_VERSION_CHANGED, {
         previousVersion: current,
         currentVersion: staged.version,
@@ -1042,10 +1093,9 @@ export class CoreUpdateService {
       if (!version || version === '未知') {
         return;
       }
-      const versionFilePath = this.getVersionFilePath();
-      const data = { version, recordedAt: new Date().toISOString() };
-      fs.writeFileSync(versionFilePath, JSON.stringify(data, null, 2), 'utf-8');
-      this.logManager.addLog('info', `已记录成功版本: ${version}`, 'CoreUpdateService');
+      // core-version.json 持久位已废除（曾仅供内核版本变更横幅推断式比对；已改 push 型 pendingChangeNotice 根治每启误报）。
+      // 本方法保留：成功运行 → clearKnownBad + verifiedCeiling 棘轮（回滚安全网走 .bak / known-bad，不依赖此文件）。
+      this.logManager.addLog('info', `内核版本 ${version} 成功运行`, 'CoreUpdateService');
 
       // 该版本成功运行 → 从问题版本名单移除（曾因瞬时原因误标记的版本恢复自动更新资格）
       this.clearKnownBad(version);
@@ -1064,20 +1114,6 @@ export class CoreUpdateService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logManager.addLog('warn', `记录版本失败: ${msg}`, 'CoreUpdateService');
-    }
-  }
-
-  /**
-   * 获取上次记录的可用版本
-   */
-  getLastKnownGoodVersion(): string | null {
-    try {
-      const versionFilePath = this.getVersionFilePath();
-      if (!fs.existsSync(versionFilePath)) return null;
-      const data = JSON.parse(fs.readFileSync(versionFilePath, 'utf-8'));
-      return data.version || null;
-    } catch {
-      return null;
     }
   }
 
@@ -1113,10 +1149,24 @@ export class CoreUpdateService {
     const currentVersion = await this.getCurrentVersion();
     const hasBackup = this.hasBackup();
     const backupVersion = hasBackup ? await this.getBackupVersion() : null;
-    const lastKnownVersion = this.getLastKnownGoodVersion();
     // getCurrentVersion(force) 已刷新版本行 → getCoreBuild 跟随当前实跑内核。
     const build = await this.getCoreBuild();
-    return { currentVersion, backupVersion, hasBackup, lastKnownVersion, build };
+    // push 型：banner 读 pendingChangeNotice 决定是否弹（取代旧「持久历史 vs 运行时实际」推断比对；lastKnownVersion 死字段已删）。
+    const pendingChangeNotice = this.loadAutoState().pendingChangeNotice ?? null;
+    return {
+      currentVersion,
+      backupVersion,
+      hasBackup,
+      build,
+      pendingChangeNotice,
+    };
+  }
+
+  /** banner 展示版本变更通知后 ack 清除 pendingChangeNotice（show→ack：弹一次非每启）。无通知则 no-op。 */
+  ackPendingChangeNotice(): void {
+    if (this.loadAutoState().pendingChangeNotice) {
+      this.saveAutoState({ pendingChangeNotice: undefined });
+    }
   }
 
   /**
@@ -1126,6 +1176,9 @@ export class CoreUpdateService {
     if (!this.hasBackup()) {
       throw new Error('没有可用的备份版本');
     }
+    // 回滚（手动 / autoRollbackIfPendingUpdate 自动）使旧「版本已变更」通知作废：清 pendingChangeNotice 防陈旧误弹
+    // （核已回退，通知的 A→B 不再成立；回滚本身即反馈，无需再弹。复审 LOW：自动回滚不经 banner show→ack 之补口）。
+    this.ackPendingChangeNotice();
 
     if (this.proxyManager) {
       const status = this.proxyManager.getStatus();
@@ -1599,13 +1652,6 @@ export class CoreUpdateService {
       this.logManager.addLog('error', `自动回滚失败: ${e}`, 'CoreUpdateService');
       return false;
     }
-  }
-
-  /**
-   * 版本记录文件路径
-   */
-  private getVersionFilePath(): string {
-    return path.join(app.getPath('userData'), 'core-version.json');
   }
 
   // --- 私有辅助方法 ---

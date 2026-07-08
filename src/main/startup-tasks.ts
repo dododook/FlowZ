@@ -51,6 +51,17 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
         logManager.addLog('warn', `启动期落位 staged 内核异常: ${stagedErr}`, 'Main');
       }
 
+      // 启动期随包核对齐（用户反馈：部署/自更新新随包核后运行时受保护核不自愈、须连接才刷新）：helper 在位=静默 reseed；
+      // 无 helper 孤儿态 = 一次性 osascript 授权兜底（首启弹一次，防每启弹）。安全窗口 = 代理未连（此刻必然未连）。
+      try {
+        const r = await proxyManager?.reseedBundledCoreOnStartup();
+        if (r?.needsMacElevatedReseed) {
+          await coreUpdateService.tryElevatedReseedProtectedCoreOnStartup(r.bundledVersion);
+        }
+      } catch (reseedErr) {
+        logManager.addLog('warn', `启动期随包核对齐异常: ${reseedErr}`, 'Main');
+      }
+
       // 启动期「内核版本变更」横幅已移除：基线对齐缺收口 → 每次启动重复弹扰民（基线 core-version.json 与实际核不一致
       // 时反复触发）。更新当下已有一次性反馈（applyStagedNow 的 EVENT_CORE_VERSION_CHANGED），回滚入口常驻内核管理设置，
       // 故启动期不再主动弹。

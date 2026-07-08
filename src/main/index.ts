@@ -691,8 +691,9 @@ async function createWindow(forceShow = false) {
 
   // 单次 loadConfig 读取窗口尺寸 + 主题（loadConfig 内部 catch 兜默认配置、绝不抛，无需 try/catch）。
   // 注意：transparent 仅 macOS 启用，Win/Linux 启用会侧边栏透明 + 鼠标事件穿透（Electron 已知问题）。
-  let windowWidth = 960;
-  let windowHeight = 800;
+  // 默认窗口大小 = 最小窗口大小（800×720，用户指定）；有保存的 bounds 时覆盖。
+  let windowWidth = 800;
+  let windowHeight = 720;
   const cfg = await configManager.loadConfig();
   if (cfg.rememberWindowSize && cfg.windowBounds) {
     windowWidth = cfg.windowBounds.width;
@@ -711,7 +712,7 @@ async function createWindow(forceShow = false) {
     width: windowWidth,
     height: windowHeight,
     minWidth: 800,
-    minHeight: 600,
+    minHeight: 720,
     title: 'FlowZ',
     icon: resourceManager.getAppIconPath(),
     show: false, // 先不显示，等待加载完成
@@ -1479,8 +1480,13 @@ if (gotTheLock) {
     ipInfoService = new IpInfoService(
       () => proxyManager?.getProbePorts() ?? null,
       () => proxyManager?.getStatus().running ?? false,
-      (snap) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_IP_INFO_UPDATED, snap)
+      (snap) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_IP_INFO_UPDATED, snap),
+      undefined,
+      // TS 出口 API 直判无效（选中 TS 出口未广告出口设备 / exit peer 离线）→ 出口探测前置 gate 短路，不空转退避。
+      () => proxyManager?.selectedTsExitBlock() ?? null
     );
+    // ProxyManager 翻转对账（STATUS 帧上 none↔blocked 跨态）时即时通知出口探测层落终态/重探。
+    proxyManager.setIpInfoService(ipInfoService);
     // 启动后拉一次本地直连出口 IP 初值
     setTimeout(() => void ipInfoService?.refresh(true), 2000);
 
@@ -1675,7 +1681,7 @@ if (gotTheLock) {
     registerPrivacyHandlers();
     registerServerHandlers(protocolParser, configManager, logManager);
     registerLogHandlers(logManager, proxyManager, isUiBroadcastActive);
-    registerProxyHandlers(proxyManager, statsService);
+    registerProxyHandlers(proxyManager);
     // batch3 §3.7：STATS_SUBSCRIBE/STATS_UNSUBSCRIBE（渲染端 useStatsTopic 声明/撤销 topic 订阅）。
     registerStatsSubscriptionHandlers(statsSubscriptionRegistry);
     registerIpInfoHandlers(ipInfoService);

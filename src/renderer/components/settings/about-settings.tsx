@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { ExternalLink, Loader2, Download, Bug } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   getVersionInfo,
   checkForUpdates,
@@ -12,6 +8,7 @@ import {
   installUpdate,
   openExternal,
 } from '@/bridge/api-wrapper';
+import flowzIcon from '@/assets/flowz-icon.svg';
 import { api } from '@/ipc/api-client';
 import type { UpdateProgress } from '@/ipc/api-client';
 import { useTranslation } from 'react-i18next';
@@ -199,16 +196,18 @@ export function AboutSettings() {
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <div className="set-panel">
+        <div className="card set-card">
+          <div className="set-pad" style={{ alignItems: 'center', padding: '32px 15px' }}>
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: 'hsl(var(--fg-faint))' }} />
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="set-panel">
       {availableAppUpdate && (
         <AppUpdateBanner
           updateInfo={availableAppUpdate}
@@ -217,105 +216,120 @@ export function AboutSettings() {
           onDismiss={() => setAvailableAppUpdate(null)}
         />
       )}
-      <Card>
-        <CardContent className="space-y-6 pt-6">
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-sm font-medium text-muted-foreground">
-                {t('settings.about.appVersion')}
-              </h4>
-              <p className="text-lg font-semibold">
-                {versionInfo?.appName || 'FlowZ'} v{versionInfo?.appVersion || '—'}
-              </p>
-            </div>
-
-            <Separator />
-
-            <div className="space-y-2">
-              {downloading ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Download className="h-4 w-4 animate-bounce text-primary" />
-                    <span className="text-sm font-medium">
-                      {t('settings.about.downloading')} {downloadProgress}%
-                    </span>
-                  </div>
-                  <Progress value={downloadProgress} />
-                </div>
-              ) : (
-                <Button
-                  onClick={handleCheckUpdate}
-                  disabled={checkingUpdate}
-                  className="w-full sm:w-auto"
-                >
-                  {checkingUpdate && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                  {checkingUpdate ? t('settings.about.checking') : t('settings.about.checkUpdate')}
-                </Button>
+      <div className="card set-card">
+        {/* 品牌 · 版本 · 检查更新 */}
+        <div className="about-brand">
+          {/* FlowZ 自有应用图标（ui/icon.svg，F/Z 导流单色渐变）——替换原通用占位 SVG（用户反馈）。 */}
+          <div className="about-logo overflow-hidden !bg-transparent !p-0">
+            <img src={flowzIcon} alt="FlowZ" className="h-full w-full object-cover" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="about-name">{versionInfo?.appName || 'FlowZ'}</div>
+            <div className="about-ver">
+              {t('settings.about.version', '版本')}{' '}
+              <span className="mono tnum">{versionInfo?.appVersion || '—'}</span>
+              {availableAppUpdate && (
+                <>
+                  {' · '}
+                  <span className="pill warn" style={{ verticalAlign: 'middle' }}>
+                    {t('settings.about.updateAvailable', '可更新 {{version}}', {
+                      version: availableAppUpdate.version,
+                    })}
+                  </span>
+                </>
               )}
             </div>
+          </div>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={handleCheckUpdate}
+            disabled={checkingUpdate || downloading}
+          >
+            {checkingUpdate && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {checkingUpdate ? t('settings.about.checking') : t('settings.about.checkUpdate')}
+          </button>
+        </div>
 
-            <Separator />
-
-            <div className="space-y-4">
-              <h4 className="text-sm font-medium text-muted-foreground">
-                {t('settings.about.openSource')} & {t('settings.about.community', '社区')}
-              </h4>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button variant="outline" onClick={handleReportIssue} className="w-full sm:w-auto">
-                  <Bug className="me-2 h-4 w-4 shrink-0" />
-                  <span className="flex-1 text-start">
-                    {t('settings.about.reportIssue', '报告问题')}
-                  </span>
-                  <ExternalLink className="ms-2 h-3.5 w-3.5 opacity-50 shrink-0" />
-                </Button>
-                <Button variant="outline" onClick={handleOpenGitHub} className="w-full sm:w-auto">
-                  <svg
-                    className="me-2 h-4 w-4 shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <span className="flex-1 text-start">GitHub</span>
-                  <ExternalLink className="ms-2 h-3.5 w-3.5 opacity-50 shrink-0" />
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => openExternal('https://t.me/flowz1234')}
-                  className="w-full sm:w-auto text-[#2AABEE] hover:text-[#229ED9]"
-                >
-                  <svg
-                    className="me-2 h-5 w-5 shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.892-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                  <span className="flex-1 text-start">
-                    {t('settings.about.tgChannel', 'FLOWZ频道')}
-                  </span>
-                  <ExternalLink className="ms-2 h-3.5 w-3.5 opacity-50 shrink-0" />
-                </Button>
+        {/* 下载进度（仅下载中） */}
+        {downloading && (
+          <>
+            <div className="set-hair" />
+            <div className="set-pad">
+              <div className="srow-desc" style={{ fontSize: 12 }}>
+                {t('settings.about.downloading')}{' '}
+                <span className="mono tnum">{downloadProgress}%</span>
+              </div>
+              <div className="bar">
+                <i style={{ width: `${downloadProgress}%` }} />
               </div>
             </div>
+          </>
+        )}
 
-            <Separator />
+        <div className="set-hair" />
 
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p>{versionInfo?.copyright || '© 2025 FlowZ. All rights reserved.'}</p>
-              <p>{t('settings.about.builtWith')}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        {/* 开源 · 社区外链 */}
+        <div className="ext-links">
+          <button type="button" className="btn ghost sm" onClick={handleReportIssue}>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+            >
+              <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z" strokeLinejoin="round" />
+              <path d="M12 8v5M12 16h.01" strokeLinecap="round" />
+            </svg>
+            {t('settings.about.reportIssue', '报告问题')}
+          </button>
+          <button type="button" className="btn ghost sm" onClick={handleOpenGitHub}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+            </svg>
+            GitHub
+          </button>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => openExternal('https://t.me/flowz1234')}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+            >
+              <path
+                d="M22 3L2 10.5l6 2.2M22 3l-3 16-6.5-5.3M22 3L8 12.7M8 12.7V18l3.5-3.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {t('settings.about.tgChannel', 'FLOWZ频道')}
+          </button>
+        </div>
+
+        {/* 版本细节 · 版权 */}
+        <div className="about-foot">
+          {t('settings.about.builtWith')}
+          <br />
+          {versionInfo && (
+            <>
+              <span className="mono">
+                sing-box <span className="tnum">{versionInfo.singBoxVersion}</span> ·{' '}
+                {versionInfo.platform} {versionInfo.arch}
+              </span>
+              <br />
+            </>
+          )}
+          {versionInfo?.copyright || '© 2025 FlowZ. All rights reserved.'}
+        </div>
+      </div>
     </div>
   );
 }

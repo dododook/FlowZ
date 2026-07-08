@@ -1,6 +1,6 @@
 /**
- * 内核管理卡片（sing-box 核心版本 / 检查更新 / 回滚 / 手动替换 / 自动更新开关 / staged 待生效 / 跨带提示）。
- * 从 about-settings 的「sing-box 版本」区块迁入，与「应用更新」（App，仍在 about）视觉分开。
+ * 内核管理卡片（Conduit 高级面板 `.card.set-card`；sing-box 核心版本 / 检查更新 / 回滚 / 手动替换 /
+ * 自动更新开关 / staged 待生效 / 跨带提示 / 危险区）。从 about-settings 的「sing-box 版本」区块迁入。
  * 自动更新仅在兼容版本带内（如 1.13.x→1.13.y）；跨大版本（1.13→1.14）需手动确认。
  *
  * 更新呈现 = 常驻状态 + 可选弹窗：检查到新内核后在卡内常驻显示「发现新内核 vX.Y.Z + 更新按钮」（数据放
@@ -9,10 +9,6 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,22 +19,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { SettingsRow } from './settings-row';
 import { toast } from 'sonner';
-import {
-  Loader2,
-  FolderUp,
-  RotateCcw,
-  ArrowUpCircle,
-  AlertTriangle,
-  Undo2,
-  Trash2,
-} from 'lucide-react';
+import { Loader2, ArrowUpCircle, AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { checkCoreUpdate, updateCore } from '@/bridge/api-wrapper';
 import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import { useTranslation } from 'react-i18next';
 import type { CoreBuildKind } from '../../../shared/core-build';
+import { Srow, Swt } from './conduit-controls';
 
 interface AutoStatus {
   // autoUpdateEnabled 不在此快照消费（开关 UI 直接读 config.autoUpdateCore）；事件也不再推送该字段。
@@ -416,49 +405,85 @@ export function CoreManagementCard() {
   const isForkCore = coreBuild === 'fork';
   const isUnknownCore = coreBuild === 'unknown';
 
+  // 来源徽章（官方=ok / 第三方=warn / 未知=idle），与 src-legend 图例同源。
+  const buildPill =
+    coreBuild === 'official'
+      ? { cls: 'ok', label: t('settings.coreManagement.sourceOfficial', '官方') }
+      : coreBuild === 'fork'
+        ? { cls: 'warn', label: t('settings.coreManagement.sourceFork', '第三方') }
+        : { cls: 'idle', label: t('settings.coreManagement.sourceUnknown', '未知') };
+
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <h4 className="text-sm font-semibold">{t('settings.coreManagement.title')}</h4>
+    <div className="card set-card">
+      <div className="set-h">
+        <b>{t('settings.coreManagement.title')}</b>
+        <small>{t('settings.coreManagement.cardSub', 'sing-box 版本、来源与更新')}</small>
+      </div>
 
-        <div className="mt-3 space-y-1 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">
-              {t('settings.coreManagement.currentVersion')}
-            </span>
-            <span className="font-medium">{currentVersion}</span>
-          </div>
-          {hasBackup && (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                {t('settings.coreManagement.backupVersion')}
-              </span>
-              <span className="font-medium">{backupVersion || '—'}</span>
-            </div>
-          )}
-        </div>
+      {/* 当前版本 + 来源徽章 + 检查更新 */}
+      <Srow
+        label={
+          <>
+            {t('settings.coreManagement.currentVersion')}
+            <span className={cn('pill', buildPill.cls)}>{buildPill.label}</span>
+          </>
+        }
+        desc={t('settings.coreManagement.sourceDesc', '内核来源：官方 / 第三方 / 未知 自动识别')}
+      >
+        <span className="mono tnum" style={{ fontSize: 13, fontWeight: 640 }}>
+          {currentVersion}
+        </span>
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={handleCheckCoreUpdate}
+          disabled={busy || isForkCore}
+        >
+          {checkingCoreUpdate && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t('settings.coreManagement.checkUpdate')}
+        </button>
+      </Srow>
 
-        {/* 第三方（非官方）内核：警告卡 + 已禁用在线/自动更新的说明 + 恢复官方的指引。 */}
-        {isForkCore && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <div className="space-y-0.5">
-              <p className="font-medium text-warning">
+      {/* 来源图例 */}
+      <div className="src-legend">
+        <span className="pill ok">{t('settings.coreManagement.sourceOfficial', '官方')}</span>
+        <span className="src-note">
+          {t('settings.coreManagement.srcNoteOfficial', 'GitHub 在线更新可用')}
+        </span>
+        <span className="pill warn">{t('settings.coreManagement.sourceFork', '第三方')}</span>
+        <span className="src-note">
+          {t('settings.coreManagement.srcNoteFork', '禁在线 / 自动更新')}
+        </span>
+        <span className="pill idle">{t('settings.coreManagement.sourceUnknown', '未知')}</span>
+        <span className="src-note">
+          {t('settings.coreManagement.srcNoteUnknown', '无法确认，仅提示')}
+        </span>
+      </div>
+
+      {/* 第三方（非官方）内核：警告 + 已禁用在线/自动更新的说明 + 恢复官方的指引。 */}
+      {isForkCore && (
+        <div className="set-pad" style={{ paddingTop: 0 }}>
+          <div className="set-note warn">
+            <AlertTriangle />
+            <div>
+              <div style={{ fontWeight: 600 }}>
                 {t('settings.coreManagement.nonOfficialTitle', '检测到第三方（非官方）内核')}
-              </p>
-              <p className="text-muted-foreground">
-                {t(
-                  'settings.coreManagement.nonOfficialDesc',
-                  '已禁用在线更新与自动更新，以避免覆盖你手动安装的内核。如需恢复官方更新，请使用下方「回滚」或「重置到出厂内核」。'
-                )}
-              </p>
+              </div>
+              <div className="ng-hint" style={{ marginTop: 2 }}>
+                {t('settings.coreManagement.nonOfficialDesc')}
+              </div>
             </div>
           </div>
-        )}
-        {/* 无法确认来源（源码自建/go install）：中性提示，不禁更新。 */}
-        {isUnknownCore && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-xs text-muted-foreground">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        </div>
+      )}
+      {/* 无法确认来源（源码自建/go install）：中性提示，不禁更新。 */}
+      {isUnknownCore && (
+        <div className="set-pad" style={{ paddingTop: 0 }}>
+          <div
+            className="set-note"
+            style={{ background: 'hsl(var(--surface-2))', color: 'hsl(var(--fg-dim))' }}
+          >
+            <AlertTriangle />
             <span>
               {t(
                 'settings.coreManagement.unknownBuildNote',
@@ -466,200 +491,182 @@ export function CoreManagementCard() {
               )}
             </span>
           </div>
-        )}
-
-        {/* 常驻「发现新内核」入口（数据源 = store.availableCoreUpdate）。crossBand 时警告色 + 风险文案。 */}
-        {availableCoreUpdate && (
-          <div
-            ref={updateEntryRef}
-            className={[
-              'mt-3 rounded-lg border p-4 transition-shadow',
-              availableCoreUpdate.crossBand
-                ? 'border-warning/40 bg-warning/10'
-                : 'border-primary/40 bg-primary/10',
-              entryHighlight ? 'ring-2 ring-primary/60' : '',
-            ].join(' ')}
-          >
-            <div className="flex items-start gap-3">
-              {availableCoreUpdate.crossBand ? (
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-              ) : (
-                <ArrowUpCircle className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p
-                  className={[
-                    'text-sm font-semibold',
-                    availableCoreUpdate.crossBand ? 'text-warning' : 'text-primary',
-                  ].join(' ')}
-                >
-                  {t('settings.coreManagement.updateAvailable', {
-                    version: availableCoreUpdate.latestVersion,
-                  })}
-                </p>
-                {availableCoreUpdate.crossBand && (
-                  <p className="mt-1 text-xs text-warning">
-                    {t('settings.coreManagement.crossBandRisk')}
-                  </p>
-                )}
-                <div className="mt-3">
-                  {/* 风格对齐「应用更新」按钮基准（主色默认 + w-full sm:w-auto） */}
-                  <Button
-                    onClick={() =>
-                      handleUpdateCore(
-                        availableCoreUpdate.downloadUrl,
-                        availableCoreUpdate.latestVersion
-                      )
-                    }
-                    disabled={busy || isForkCore}
-                    className="w-full sm:w-auto"
-                  >
-                    {updatingCore && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                    {t('settings.coreManagement.updateNow')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-3 flex flex-col sm:flex-row flex-wrap gap-3">
-          <Button
-            onClick={handleCheckCoreUpdate}
-            disabled={busy || isForkCore}
-            className="w-full sm:w-auto"
-          >
-            {checkingCoreUpdate && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            {t('settings.coreManagement.checkUpdate')}
-          </Button>
-          {hasBackup && (
-            <Button
-              variant="outline"
-              onClick={() => setShowRollbackConfirm(true)}
-              disabled={busy}
-              className="w-full sm:w-auto"
-            >
-              {rollingBack ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <RotateCcw className="me-2 h-4 w-4" />
-              )}
-              {t('settings.coreManagement.rollback')}
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={handleReplaceManual}
-            disabled={busy}
-            className="w-full sm:w-auto"
-          >
-            {replacingManual ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <FolderUp className="me-2 h-4 w-4" />
-            )}
-            {t('settings.coreManagement.manualReplace')}
-          </Button>
         </div>
+      )}
 
-        <Separator className="my-4" />
-
-        <SettingsRow
-          label={t('settings.coreManagement.autoUpdate')}
-          description={t('settings.coreManagement.autoUpdateDesc')}
-          tooltip={t('settings.coreManagement.autoUpdateDescFull')}
+      {/* 备份版本 + 回滚 */}
+      {hasBackup && (
+        <Srow
+          label={t('settings.coreManagement.backupVersion')}
+          desc={t('settings.coreManagement.backupVersionDesc', '升级失败或异常时可回滚至此版本')}
         >
-          <Switch
-            checked={config?.autoUpdateCore === true && !isForkCore}
-            onCheckedChange={handleToggleAutoUpdate}
-            disabled={isForkCore}
-          />
-        </SettingsRow>
+          <span className="mono tnum" style={{ fontSize: 13, color: 'hsl(var(--fg-dim))' }}>
+            {backupVersion || '—'}
+          </span>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => setShowRollbackConfirm(true)}
+            disabled={busy}
+          >
+            {rollingBack && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {t('settings.coreManagement.rollback')}
+          </button>
+        </Srow>
+      )}
 
-        {/* 次级行：检查更新的跨带发现限制（从「高级」迁入；自动更新始终带内，不受此项影响） */}
-        <SettingsRow
-          label={t('settings.coreManagement.restrictCoreUpdate')}
-          description={t('settings.coreManagement.restrictCoreUpdateDesc')}
-          tooltip={t('settings.coreManagement.restrictCoreUpdateDescFull')}
-        >
-          <Switch
-            checked={config?.restrictCoreUpdateToCompatibleMinor !== false}
-            onCheckedChange={handleToggleRestrictCoreUpdate}
-            disabled={isForkCore}
-          />
-        </SettingsRow>
-
-        {autoStatus?.staged && (
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
-            <div className="flex items-center gap-2 text-sm">
-              <ArrowUpCircle className="h-4 w-4 shrink-0 text-primary" />
-              <span>
-                {t('settings.coreManagement.stagedPending', { version: autoStatus.staged.version })}
-              </span>
+      {/* 常驻「发现新内核」入口（数据源 = store.availableCoreUpdate）。crossBand 时警告色 + 风险文案。 */}
+      {availableCoreUpdate && (
+        <div className="set-pad" style={{ paddingTop: 0 }} ref={updateEntryRef}>
+          <div
+            className={cn('set-note', availableCoreUpdate.crossBand ? 'warn' : 'info')}
+            style={entryHighlight ? { boxShadow: '0 0 0 2px hsl(var(--flow) / 0.6)' } : undefined}
+          >
+            {availableCoreUpdate.crossBand ? <AlertTriangle /> : <ArrowUpCircle />}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>
+                {t('settings.coreManagement.updateAvailable', {
+                  version: availableCoreUpdate.latestVersion,
+                })}
+              </div>
+              {availableCoreUpdate.crossBand && (
+                <div className="ng-hint ng-warn" style={{ marginTop: 2 }}>
+                  {t('settings.coreManagement.crossBandRisk')}
+                </div>
+              )}
             </div>
-            <Button
-              size="sm"
+            <button
+              type="button"
+              className="btn flow sm"
+              onClick={() =>
+                handleUpdateCore(availableCoreUpdate.downloadUrl, availableCoreUpdate.latestVersion)
+              }
+              disabled={busy || isForkCore}
+            >
+              {updatingCore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {t('settings.coreManagement.updateNow')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 暂存待生效（自动更新下载后待落位） */}
+      {autoStatus?.staged && (
+        <div className="set-pad" style={{ paddingTop: 0 }}>
+          <div className="set-note info">
+            <ArrowUpCircle />
+            <span>
+              {t('settings.coreManagement.stagedPending', { version: autoStatus.staged.version })}
+            </span>
+            <button
+              type="button"
+              className="btn flow sm"
               onClick={handleApplyStaged}
               disabled={busy || isForkCore}
               title={t('settings.coreManagement.applyNowWarn')}
             >
-              {applyingStaged && <Loader2 className="me-2 h-3.5 w-3.5 animate-spin" />}
+              {applyingStaged && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {t('settings.coreManagement.applyNow')}
-            </Button>
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {autoStatus?.crossBandLatest && (
-          <div className="mt-2 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-muted-foreground">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+      {/* 跨版本带新版提示（不自动更新） */}
+      {autoStatus?.crossBandLatest && (
+        <div className="set-pad" style={{ paddingTop: 0 }}>
+          <div className="set-note warn">
+            <AlertTriangle />
             <span>
               {t('settings.coreManagement.crossBandFound', {
                 version: autoStatus.crossBandLatest,
               })}
             </span>
           </div>
-        )}
-
-        <Separator className="my-4" />
-
-        {/* B6：危险区（重置出厂 / 完全卸载） */}
-        <div className="space-y-1">
-          <h5 className="text-xs font-medium text-muted-foreground">
-            {t('settings.coreManagement.dangerZone')}
-          </h5>
-          <p className="text-xs text-muted-foreground">
-            {t('settings.coreManagement.dangerZoneDesc')}
-          </p>
         </div>
-        <div className="mt-3 flex flex-col sm:flex-row flex-wrap gap-3">
-          <Button
-            variant="outline"
+      )}
+
+      {/* 内核自动更新 */}
+      <Srow
+        label={t('settings.coreManagement.autoUpdate')}
+        desc={t('settings.coreManagement.autoUpdateDesc')}
+      >
+        <Swt
+          checked={config?.autoUpdateCore === true && !isForkCore}
+          onChange={handleToggleAutoUpdate}
+          disabled={isForkCore}
+        />
+      </Srow>
+
+      {/* 次级：检查更新的跨带发现限制（自动更新始终带内，不受此项影响） */}
+      <Srow
+        label={t('settings.coreManagement.restrictCoreUpdate')}
+        desc={t('settings.coreManagement.restrictCoreUpdateDesc')}
+      >
+        <Swt
+          checked={config?.restrictCoreUpdateToCompatibleMinor !== false}
+          onChange={handleToggleRestrictCoreUpdate}
+          disabled={isForkCore}
+        />
+      </Srow>
+
+      {/* 手动替换内核 */}
+      <Srow
+        label={t('settings.coreManagement.manualReplace')}
+        desc={t(
+          'settings.coreManagement.manualReplaceDesc',
+          '导入本地 sing-box 可执行文件（同版本 / 覆盖基线需二次确认）'
+        )}
+      >
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={handleReplaceManual}
+          disabled={busy}
+        >
+          {replacingManual && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t('settings.coreManagement.selectFile', '选择文件…')}
+        </button>
+      </Srow>
+
+      {/* B6：危险区（重置出厂 / 完全卸载） */}
+      <div className="danger-zone">
+        <div className="set-sub-h">{t('settings.coreManagement.dangerZone')} · DANGER ZONE</div>
+        <div className="danger-row">
+          <div className="srow-main">
+            <div className="srow-lbl">{t('settings.coreManagement.resetFactory')}</div>
+            <div className="srow-desc">
+              {t('settings.coreManagement.resetFactoryRowDesc', '恢复随 App 出厂的官方内核版本')}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn danger sm"
             onClick={() => setShowResetConfirm(true)}
             disabled={busy}
-            className="w-full sm:w-auto"
           >
-            {resettingFactory ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Undo2 className="me-2 h-4 w-4" />
-            )}
-            {t('settings.coreManagement.resetFactory')}
-          </Button>
-          <Button
-            variant="destructive"
+            {resettingFactory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {t('settings.coreManagement.resetShort', '重置')}
+          </button>
+        </div>
+        <div className="danger-row">
+          <div className="srow-main">
+            <div className="srow-lbl">{t('settings.coreManagement.uninstallAll')}</div>
+            <div className="srow-desc">
+              {t('settings.coreManagement.uninstallRowDesc', '移除内核、助手、配置与全部本地数据')}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn danger sm"
             onClick={() => setShowUninstallConfirm(true)}
             disabled={busy}
-            className="w-full sm:w-auto"
           >
-            {uninstalling ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="me-2 h-4 w-4" />
-            )}
-            {t('settings.coreManagement.uninstallAll')}
-          </Button>
+            {uninstalling && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {t('settings.coreManagement.uninstallShort', '完全卸载')}
+          </button>
         </div>
-      </CardContent>
+      </div>
 
       {/* 回滚内核单层轻确认（回滚是可逆逃生通道，不加「不可撤销」红字，仅危险色确认动词） */}
       <AlertDialog open={showRollbackConfirm} onOpenChange={setShowRollbackConfirm}>
@@ -794,6 +801,6 @@ export function CoreManagementCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 }

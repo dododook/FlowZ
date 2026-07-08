@@ -5,7 +5,6 @@
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, RotateCcw, X, FolderUp, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,16 +38,15 @@ export function CoreVersionBanner() {
     const fetchStatus = async () => {
       try {
         const info = await api.coreUpdate.getVersionInfo();
-        if (
-          info.lastKnownVersion &&
-          info.currentVersion !== '未知' &&
-          info.lastKnownVersion !== info.currentVersion
-        ) {
+        // push 型：读 pendingChangeNotice（由更新动作显式创建），取代旧「lastKnownVersion!==currentVersion」推断式比对
+        // ——后者对静默 reseed/基线对齐制造的持久不一致会每启误报（已根治）。展示即 ack 清除持久通知 → 弹一次非每启。
+        if (info.pendingChangeNotice) {
           setChangeInfo({
-            previousVersion: info.lastKnownVersion,
-            currentVersion: info.currentVersion,
+            previousVersion: info.pendingChangeNotice.previousVersion,
+            currentVersion: info.pendingChangeNotice.currentVersion,
             hasBackup: info.hasBackup,
           });
+          void api.coreUpdate.ackVersionChange();
         }
       } catch (error) {
         console.error('Failed to fetch core version info:', error);
@@ -56,10 +54,11 @@ export function CoreVersionBanner() {
     };
     fetchStatus();
 
-    // 2. 监听主进程推送的版本变更事件
+    // 2. 监听主进程推送的版本变更事件（即时展示）；展示后同样 ack，防重启后 mount 复现。
     const unsubscribe = api.coreUpdate.onVersionChanged((data) => {
       setChangeInfo(data);
       setDismissed(false);
+      void api.coreUpdate.ackVersionChange();
     });
 
     return () => {
@@ -128,71 +127,71 @@ export function CoreVersionBanner() {
   const descriptionKey = changeInfo.hasBackup ? 'changedDesc' : 'noBackupDesc';
 
   return (
-    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 mb-4">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">
-            {t('settings.coreVersion.changedTitle')}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
+    <>
+      {/* Conduit .app-update-banner 布局 + warn 色覆盖（内核版本变更 = 警示语义）。 */}
+      <div
+        className="app-update-banner"
+        style={{ background: 'hsl(var(--warn-weak))', borderColor: 'hsl(var(--warn) / 0.3)' }}
+      >
+        <span className="aub-ic" style={{ background: 'hsl(var(--warn))' }}>
+          <AlertTriangle />
+        </span>
+        <div className="aub-tx">
+          <b style={{ color: 'hsl(var(--warn))' }}>{t('settings.coreVersion.changedTitle')}</b>
+          <span>
             {t(`settings.coreVersion.${descriptionKey}`, {
               previousVersion: changeInfo.previousVersion,
               currentVersion: changeInfo.currentVersion,
             })}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {changeInfo.hasBackup && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 hover:text-amber-700 dark:hover:text-amber-300"
-                onClick={() => setShowRollbackConfirm(true)}
-                disabled={isRollingBack || isReplacing}
-              >
-                {isRollingBack ? (
-                  <>
-                    <Loader2 className="me-1.5 h-3 w-3 animate-spin" />
-                    {t('settings.coreVersion.rollingBack')}
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="me-1.5 h-3 w-3" />
-                    {t('settings.coreVersion.rollback')}
-                  </>
-                )}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 hover:text-amber-700 dark:hover:text-amber-300"
-              onClick={handleReplaceManualCore}
-              disabled={isRollingBack || isReplacing}
-            >
-              {isReplacing ? (
-                <>
-                  <Loader2 className="me-1.5 h-3 w-3 animate-spin" />
-                  {t('settings.about.updating')}
-                </>
-              ) : (
-                <>
-                  <FolderUp className="me-1.5 h-3 w-3" />
-                  {t('settings.about.manualReplace')}
-                </>
-              )}
-            </Button>
-          </div>
+          </span>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+        {changeInfo.hasBackup && (
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={() => setShowRollbackConfirm(true)}
+            disabled={isRollingBack || isReplacing}
+          >
+            {isRollingBack ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t('settings.coreVersion.rollingBack')}
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-3 w-3" />
+                {t('settings.coreVersion.rollback')}
+              </>
+            )}
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={handleReplaceManualCore}
+          disabled={isRollingBack || isReplacing}
+        >
+          {isReplacing ? (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t('settings.about.updating')}
+            </>
+          ) : (
+            <>
+              <FolderUp className="h-3 w-3" />
+              {t('settings.about.manualReplace')}
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          className="btn ghost sm"
           onClick={() => setDismissed(true)}
           title={t('settings.coreVersion.dismiss')}
+          aria-label={t('settings.coreVersion.dismiss')}
         >
           <X className="h-3.5 w-3.5" />
-        </Button>
+        </button>
       </div>
 
       {/* 回滚内核单层轻确认（回滚是可逆逃生通道，不加「不可撤销」红字，仅危险色确认动词） */}
@@ -223,6 +222,6 @@ export function CoreVersionBanner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

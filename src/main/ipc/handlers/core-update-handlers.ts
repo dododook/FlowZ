@@ -39,6 +39,14 @@ export function registerCoreUpdateHandlers() {
     return true;
   });
 
+  registerIpcHandler(IPC_CHANNELS.CORE_UPDATE_ACK_VERSION_CHANGE, async () => {
+    if (!coreUpdateService) {
+      throw new Error('CoreUpdateService not initialized');
+    }
+    coreUpdateService.ackPendingChangeNotice();
+    return true;
+  });
+
   registerIpcHandler(
     IPC_CHANNELS.CORE_REPLACE_MANUAL,
     async (_, opts?: { filePath?: string; force?: boolean }) => {

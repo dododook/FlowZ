@@ -478,6 +478,54 @@ exit 0
     }
   }
 
+  /**
+   * macOS 无 helper 时一次性提权安装内核到受保护目录（借鉴 buildMacUpdateScript / HelperManager.runRootScript 的
+   * osascript-admin 范式）：先试免提权 direct copy（受保护核 EPERM 失败）→ 落盘 root 脚本 → osascript「with administrator
+   * privileges」一次弹密码跑 mkdir+cp+chmod。root 跑 → dest 恒 root:wheel，消除「root 跑用户可写二进制」、无 privesc。
+   * 用户取消授权 → 抛「已取消管理员授权」。补齐 copyFileElevated 的 macOS 腿（该方法注释「fallback 留后续平台扩展」）。
+   */
+  async installCoreElevatedMac(src: string, dest: string): Promise<void> {
+    if (process.platform !== 'darwin') throw new Error('installCoreElevatedMac 仅 macOS');
+    const destDir = path.dirname(dest);
+    // 受保护核目录恒 root:wheel、普通用户写不动 → 不试免提权 direct copy：①避免非 EPERM 错（ENOSPC/ENOENT）在弹窗前抛、
+    // 致调用方 declinedVersion 已记却从未弹；②杜绝「万一目录松权时植入用户属主二进制」的 TOCTOU（复审硬化）。mkdir 由
+    // 下方 root 脚本做。落盘 root 脚本（shq 转义路径），osascript 一次性 admin 跑（mirror runRootScript）。启动期代理未连，pkill 防御性。
+    const script = [
+      '#!/bin/bash',
+      'set -e',
+      `mkdir -p ${shq(destDir)}`,
+      'pkill -x sing-box 2>/dev/null || true',
+      `cp -f ${shq(src)} ${shq(dest)}`,
+      `chmod 755 ${shq(dest)}`,
+      '',
+    ].join('\n');
+    const scriptPath = path.join(app.getPath('temp'), `flowz-core-install-${process.pid}.sh`);
+    fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        // 路径单引号包裹容忍空格；FlowZ 路径不含单/双引号（同 runRootScript 约束）。
+        const proc = spawn('/usr/bin/osascript', [
+          '-e',
+          `do shell script "/bin/bash '${scriptPath}'" with administrator privileges`,
+        ]);
+        let stderr = '';
+        proc.stderr?.on('data', (d) => (stderr += d.toString()));
+        proc.on('exit', (code) => {
+          if (code === 0) resolve();
+          else if (/-128|User canceled/i.test(stderr)) reject(new Error('已取消管理员授权'));
+          else reject(new Error(stderr.trim() || `osascript 退出码 ${code}`));
+        });
+        proc.on('error', (err) => reject(err));
+      });
+    } finally {
+      try {
+        fs.unlinkSync(scriptPath);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   // ─── 提权停止（迁自 ProxyManager.stopSingBoxWithSudo / stopSingBoxOnWindows，子 commit 3）──────
   //
   // 入口 stopElevated(pid, opts) 平台分发：
