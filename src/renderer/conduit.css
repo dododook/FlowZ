@@ -1190,9 +1190,7 @@
 
 /* 表卡：flex 列 → 滚动区 flex:1 自身滚动 + 截断脚注常驻底部 */
 .conns-card { flex: 1; min-height: 400px; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
-/* contain:size 断「高度棘轮」：否则表格内容 intrinsic 高经 flex-basis:0 链传进 main-layout .container(min-h-full auto)
-   使卡片长到全内容高、缩窗不回缩、overflow-y 因卡高非 definite 而失效（低行数掩盖，高行数暴露，同拓扑）。 */
-.conns-scroll { flex: 1; overflow-x: auto; overflow-y: auto; contain: size; }
+.conns-scroll { flex: 1; overflow-x: auto; overflow-y: auto; }
 .ctbl { width: 100%; min-width: 1000px; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
 /* 表头：hairline 下衬 · sticky · 排序 active 用 teal(唯一) */
 .ctbl thead th { position: sticky; top: 0; z-index: 2; text-align: left; background: hsl(var(--surface)); color: hsl(var(--fg-faint)); font-size: 10.5px; font-weight: 640; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; padding: 9px 12px; border-bottom: 1px solid hsl(var(--hair)); user-select: none; }
@@ -1316,14 +1314,14 @@
   .ld-diag-act { display: flex; gap: 8px; flex: none; }
 
   /* 实时日志查看器：bar/foot hairline 分区，stream 自身滚动 */
-  .log-viewer { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  /* min-height 地板（对齐 .conns-card 400px 语义）：诊断卡展开+矮窗时 viewer 止步 280px、超出走页级滚动，而非把日志流挤成窄条塌缩。 */
+  .log-viewer { flex: 1; min-height: 280px; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
   .lv-bar { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid hsl(var(--hair)); }
   .lv-search { position: relative; flex: 1; }
   .lv-search .input { padding-left: 32px; }
   .lv-search-ic { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: hsl(var(--fg-faint)); pointer-events: none; }
 
-  /* contain:size 断高度棘轮（同 .conns-scroll）：日志多时否则卡片长到全内容高、缩窗不回缩。 */
-  .lv-stream { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; contain: size; padding: 8px 6px; font-size: 12px; line-height: 1.5; scrollbar-width: thin; }
+  .lv-stream { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px 6px; font-size: 12px; line-height: 1.5; scrollbar-width: thin; }
   .lv-stream:focus-visible { outline: none; box-shadow: inset 0 0 0 2px hsl(var(--ring) / 0.5); }
   .lg { display: grid; grid-template-columns: 104px 58px 1fr; gap: 0 10px; align-items: baseline; padding: 2px 8px; border-radius: 5px; }
   .lg:hover { background: hsl(var(--surface-2) / 0.7); }

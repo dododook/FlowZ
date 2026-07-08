@@ -17,6 +17,11 @@ const isMac = window.electron?.platform === 'darwin';
 const isWindows = window.electron?.platform === 'win32';
 const isLinux = !isMac && !isWindows; // Linux frameless → 右上自绘窗口控制按钮（替代系统 titleBarOverlay）
 
+// hero 页（单卡填满 + 卡内滚动）：.container 用 h-full（height:100%，对定高 scroller 解析）而非 min-h-full。
+// min-h-full 是 height:auto，内容 intrinsic 高经 flex-basis:0 链成为地板 → 卡片缩不回、卡内 overflow-y 失效（高度棘轮）。
+// h-full 让 .container 高与内容解耦、纯视口驱动、双向跟窗；卡 min-height 地板超视口时溢出并入页级 scroller 兜底滚动。
+const HERO_VIEWS = new Set(['connections', 'logs']);
+
 export function MainLayout({
   currentView,
   onViewChange,
@@ -53,8 +58,13 @@ export function MainLayout({
         )}
         {/* 内容区滚动，状态栏固定在卡片底部（flex-none）——全页常驻实心底栏。 */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto app-region-no-drag">
-          {/* min-h-full + flex-col：hero 页（home/conns/logs）flex-fill 填满至底栏（保 pb-6 等距）；滚动页自然增长。 */}
-          <div className="container mx-auto flex min-h-full max-w-[1400px] flex-col px-6 pb-6">
+          {/* hero 页（conns/logs）用 h-full 断高度棘轮（见上 HERO_VIEWS 注）；其余页 min-h-full 自然增长。
+              home 保 min-h-full：拓扑卡已由 connection-topology 的 [contain:size] 单独定高，不进 hero 集合（最小 blast radius）。 */}
+          <div
+            className={`container mx-auto flex ${
+              HERO_VIEWS.has(currentView) ? 'h-full' : 'min-h-full'
+            } max-w-[1400px] flex-col px-6 pb-6`}
+          >
             {children}
           </div>
         </div>
