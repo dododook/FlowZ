@@ -185,8 +185,11 @@ export function NodePicker({
                 {current.address}
               </span>
             )}
-            <LatencyLabel item={current} className="ms-auto" />
-            <ChevronDown className="ms-1 h-4 w-4 shrink-0 opacity-50" />
+            {/* 延迟+角标包进恒渲染的 ms-auto 组：无延迟值时 LatencyLabel 返 null 也不丢右锚，角标恒贴最右。 */}
+            <span className="ms-auto flex shrink-0 items-center gap-1">
+              <LatencyLabel item={current} />
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </span>
           </>
         ) : (
           <>
@@ -203,8 +206,7 @@ export function NodePicker({
         // 组头可折叠：仅在多段 + 有 group 时渲染；搜索态强制展开。
         // 默认：仅展开所选节点所属组，其余折叠；选中「默认节点/跟随全局」哨兵（无 group）或未选 → 全组折叠保持整洁。
         // collapsed[gid] 有值（用户点过）则覆盖默认。搜索态强制全展。
-        const isCollapsed =
-          !!gid && !searching && (collapsed[gid] ?? gid !== selectedGroupId);
+        const isCollapsed = !!gid && !searching && (collapsed[gid] ?? gid !== selectedGroupId);
         return (
           <Fragment key={gid ?? '__ungrouped'}>
             {sec.group && multiSection && (

@@ -345,9 +345,14 @@ export function ServerList({
 
         {/* 排序（CSS-only :focus-within 弹出） */}
         <div className="nd-dd">
-          <button type="button" className="btn ghost sm nd-dd-btn">
+          {/* 非默认排序（名称升序以外）→ .on 激活态（复用 .btn.ghost.on 边框亮起）；方向角标常显，合上也可辨识。 */}
+          <button
+            type="button"
+            className={`btn ghost sm nd-dd-btn${sortKey !== 'name' || sortOrder !== 'asc' ? ' on' : ''}`}
+          >
             <ArrowUpDown />
             {sortLabel[sortKey]}
+            <span className="nd-dd-dir">{sortOrder === 'asc' ? '↑' : '↓'}</span>
             <ChevronDown className="nd-chev" />
           </button>
           <div className="nd-menu">

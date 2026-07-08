@@ -30,8 +30,12 @@
   .card { border: 1px solid hsl(var(--line)); border-radius: 12px; background: hsl(var(--surface)); }
   .btn { font: inherit; font-size: 13px; font-weight: 560; cursor: pointer; padding: 8px 15px; border-radius: 8px; border: 1px solid transparent; display: inline-flex; align-items: center; gap: 7px; }
   .btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-  .btn.flow { background: hsl(var(--flow)); color: #fff; } .btn.flow:hover { background: hsl(var(--flow-hi)); }
+  .btn.flow { background: hsl(var(--flow-solid)); color: #fff; } .btn.flow:hover { background: hsl(var(--flow-solid-hi)); }
   .btn.ghost { background: transparent; border-color: hsl(var(--hair)); color: hsl(var(--fg-dim)); } .btn.ghost:hover { background: hsl(var(--surface-2)); border-color: hsl(var(--line)); }
+  /* 空心按钮激活态（系统级）：作 toggle/选中时边框亮起 + 弱底 + 高亮字，供排序触发钮等复用。走 .on 或 aria-pressed。 */
+  .btn.ghost.on, .btn.ghost[aria-pressed="true"] { background: hsl(var(--flow-weak)); border-color: hsl(var(--flow)); color: hsl(var(--flow-hi)); font-weight: 620; }
+  .btn.ghost.on:hover, .btn.ghost[aria-pressed="true"]:hover { background: hsl(var(--flow-weak)); border-color: hsl(var(--flow-hi)); }
+  .nd-dd-dir { font-weight: 700; font-size: 12px; line-height: 1; }
   .btn.danger { background: hsl(var(--err-weak)); border-color: hsl(var(--err) / 0.32); color: hsl(var(--err)); } .btn.danger:hover { background: hsl(var(--err) / 0.16); border-color: hsl(var(--err) / 0.5); }
   .btn.sm { padding: 5px 11px; font-size: 12px; } .btn.icon { padding: 0; width: 33px; height: 33px; justify-content: center; }
   .pill { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.01em; white-space: nowrap; }
@@ -355,7 +359,7 @@
   /* 角标行：协议 pill(复用) + 地区 pill(复用) + 当前 + 传输标签 */
   .nd-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; position: relative; }
   .nd-cur { font-size: 10.5px; font-weight: 640; letter-spacing: 0.01em; padding: 2px 8px; border-radius: 6px;
-    background: hsl(var(--flow)); color: #fff; display: inline-flex; align-items: center; }
+    background: hsl(var(--flow-solid)); color: #fff; display: inline-flex; align-items: center; }
   .nd-xfer { font-size: 10.5px; font-weight: 500; color: hsl(var(--fg-faint)); margin-left: 2px; }
 
   /* hover 操作条 */
@@ -371,7 +375,7 @@
   /* 多选复选框 */
   .nd-chk { flex: none; width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid hsl(var(--hair));
     background: hsl(var(--surface)); position: relative; cursor: pointer; }
-  .nd-chk.on { background: hsl(var(--flow)); border-color: hsl(var(--flow)); }
+  .nd-chk.on { background: hsl(var(--flow-solid)); border-color: hsl(var(--flow)); }
   .nd-chk.on::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px;
     border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(43deg); }
 
@@ -791,7 +795,7 @@
 .rl-res-row.rl-hidden { display: none; }
 .rl-cbx { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid hsl(var(--hair)); flex: none; display: grid; place-items: center; color: #fff; }
 .rl-cbx svg { width: 11px; height: 11px; opacity: 0; }
-.rl-res-row.sel .rl-cbx { background: hsl(var(--flow)); border-color: hsl(var(--flow)); }
+.rl-res-row.sel .rl-cbx { background: hsl(var(--flow-solid)); border-color: hsl(var(--flow)); }
 .rl-res-row.sel .rl-cbx svg { opacity: 1; }
 .rl-res-nm { flex: 1; min-width: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: hsl(var(--fg)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rl-res-kind { background: hsl(var(--surface-3)); color: hsl(var(--fg-dim)); flex: none; }
