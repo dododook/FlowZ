@@ -298,7 +298,9 @@ export function ConnectionTopology() {
           ref={containerRef}
           // hero flex-1 填满 topo-card（conduit .topo-card{flex:1} flex-col）；下限 300px 防挤扁。
           // 用 flex-1 而非 h-full：h-full(height:100%) 在 flex 父级下不稳解析、会塌成内容高（同 logs 修复根因）。
-          className="relative min-h-[300px] w-full min-w-0 flex-1 cursor-default overflow-hidden"
+          // [contain:size]：内容不参与自身尺寸——否则 svg viewBox 纵横比把上次高度变成内容地板，intrinsic 经
+          // flex-basis:0 链传进 .container(min-h-full auto 高)，缩窗时 RO 永远量不到更小值（高度棘轮，Fable 定位）。
+          className="relative min-h-[300px] w-full min-w-0 flex-1 cursor-default overflow-hidden [contain:size]"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
