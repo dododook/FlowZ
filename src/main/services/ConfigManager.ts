@@ -235,10 +235,12 @@ export class ConfigManager implements IConfigManager {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.log('error', `配置文件加载失败，使用默认配置: ${errorMessage}`);
 
+      const isMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+
       // 记录详细错误信息
       if (error instanceof SyntaxError) {
         this.log('error', `配置文件 JSON 格式错误: ${errorMessage}`);
-      } else if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      } else if (isMissing) {
         this.log('info', '配置文件不存在，将创建默认配置');
       } else if ((error as NodeJS.ErrnoException).code === 'EACCES') {
         this.log('error', '配置文件权限不足，无法读取');
@@ -249,13 +251,32 @@ export class ConfigManager implements IConfigManager {
       const defaultConfig = this.createDefaultConfig();
       this.currentConfig = defaultConfig;
 
-      // 尝试保存默认配置
-      try {
-        await this.saveConfig(defaultConfig);
-        this.log('info', `默认配置已保存到: ${this.configPath}`);
-      } catch (saveError) {
-        this.log('error', `保存默认配置失败: ${saveError}`);
-        // 即使保存失败，也返回默认配置，让应用继续运行
+      // P0 数据丢失防护：仅当磁盘上【本就没有】配置文件（ENOENT，新装/首次运行）时才落盘默认配置。
+      // 若文件存在但读取/解析/校验失败（JSON 损坏、校验 throw 等），绝不用默认配置覆盖真实文件——
+      // 否则用户的 servers/subscriptions/customRules 会被一次静默覆盖、永久丢失且无从恢复。
+      // 此时先把损坏的原文件备份为 config.corrupt-<ts>.json（保留人工/后续恢复的机会），
+      // 内存返回默认配置让应用能启动，但磁盘真实文件原样保留、下次修复后即可恢复。
+      if (isMissing) {
+        try {
+          await this.saveConfig(defaultConfig);
+          this.log('info', `默认配置已保存到: ${this.configPath}`);
+        } catch (saveError) {
+          this.log('error', `保存默认配置失败: ${saveError}`);
+        }
+      } else {
+        // 存在但损坏：备份，不覆盖。
+        try {
+          const ts = this.corruptBackupStamp();
+          const backupPath = path.join(path.dirname(this.configPath), `config.corrupt-${ts}.json`);
+          await fs.copyFile(this.configPath, backupPath).catch(() => {});
+          await this.pruneCorruptBackups();
+          this.log(
+            'error',
+            `配置文件损坏或校验失败，已备份到 ${backupPath}，未覆盖原文件；本次以默认配置启动`
+          );
+        } catch (backupError) {
+          this.log('error', `备份损坏配置失败（不阻断启动）: ${backupError}`);
+        }
       }
 
       return defaultConfig;
@@ -302,6 +323,13 @@ export class ConfigManager implements IConfigManager {
    * 设置配置项
    */
   async set(key: keyof UserConfig, value: any): Promise<void> {
+    // 未加载守卫：currentConfig===null（loadConfig 从未成功跑过）时，绝不能用 createDefaultConfig 兜底后
+    // 直接 saveConfig——那会用默认配置整份覆盖磁盘上真实的 config.json，静默清空用户 servers/订阅/规则。
+    // 改为先 loadConfig 加载磁盘真实配置（文件不存在才回落默认，见 loadConfig catch），再改单键落盘。
+    if (!this.currentConfig) {
+      await this.loadConfig();
+    }
+    // loadConfig 必置 currentConfig（成功→磁盘配置；失败→内存默认）；防御性再兜底一层，杜绝 null 解引用。
     if (!this.currentConfig) {
       this.currentConfig = this.createDefaultConfig();
     }
@@ -311,6 +339,32 @@ export class ConfigManager implements IConfigManager {
 
     // 保存配置
     await this.saveConfig(this.currentConfig);
+  }
+
+  /** 损坏配置备份用的文件系统安全时间戳（ISO 去掉冒号/点，避免 Windows 非法文件名）。 */
+  private corruptBackupStamp(): string {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+
+  /**
+   * 清理 config.corrupt-*.json 备份，仅保留最近 2 份（本次写入新备份后总数 ≤3），
+   * 防反复启动失败时备份文件在 userData 无限堆积。best-effort：任何失败仅忽略，不阻断启动。
+   */
+  private async pruneCorruptBackups(): Promise<void> {
+    try {
+      const dir = path.dirname(this.configPath);
+      const entries = await fs.readdir(dir);
+      const backups = entries
+        .filter((n) => /^config\.corrupt-.*\.json$/.test(n))
+        .sort(); // 时间戳前缀命名 → 字典序即时间序，升序（旧在前）
+      const keep = 2;
+      const toDelete = backups.slice(0, Math.max(0, backups.length - keep));
+      for (const name of toDelete) {
+        await fs.unlink(path.join(dir, name)).catch(() => {});
+      }
+    } catch {
+      /* 清理失败不阻断加载 */
+    }
   }
 
   /**
@@ -393,18 +447,30 @@ export class ConfigManager implements IConfigManager {
     // 验证 subscriptions 数组 (兼容旧配置)
     if (config.subscriptions) {
       if (!Array.isArray(config.subscriptions)) {
+        // 非数组是不可逐项 sanitize 的结构错误 → 交 loadConfig catch（已备份不覆盖），不静默改类型。
         throw new Error('subscriptions must be an array');
       }
-      for (const sub of config.subscriptions) {
-        if (!sub.id || typeof sub.id !== 'string') {
-          throw new Error('Subscription id is required and must be a string');
+      // 逐订阅校验：缺 id/name/url 的坏订阅一律【剔除该条】而非 throw。原 throw 会走 loadConfig catch → 默认
+      // 配置覆盖落盘 → 用户全部 servers/订阅/规则丢失；坏订阅本就无法拉取更新，剔除它无功能损失且保住其余
+      // 合法订阅/节点/规则（与 servers/customRules/CIDR 同 sanitize 标准）。
+      let droppedSubs = 0;
+      config.subscriptions = config.subscriptions.filter((sub) => {
+        if (
+          !sub ||
+          !sub.id ||
+          typeof sub.id !== 'string' ||
+          !sub.name ||
+          typeof sub.name !== 'string' ||
+          !sub.url ||
+          typeof sub.url !== 'string'
+        ) {
+          droppedSubs++;
+          return false;
         }
-        if (!sub.name || typeof sub.name !== 'string') {
-          throw new Error('Subscription name is required and must be a string');
-        }
-        if (!sub.url || typeof sub.url !== 'string') {
-          throw new Error('Subscription url is required and must be a string');
-        }
+        return true;
+      });
+      if (droppedSubs > 0) {
+        this.log('warn', `[ConfigManager] 丢弃 ${droppedSubs} 条非法订阅（缺 id/name/url）`);
       }
     } else {
       config.subscriptions = [];
@@ -412,26 +478,35 @@ export class ConfigManager implements IConfigManager {
 
     // 验证 servers 数组
     if (!Array.isArray(config.servers)) {
+      // 非数组是不可逐项 sanitize 的结构错误 → 交 loadConfig catch（已备份不覆盖）。
       throw new Error('servers must be an array');
     }
 
-    // 验证每个服务器配置
+    // 逐节点校验：结构性非法节点（无 id/name、未知协议、非账号制却缺 address/port、协议必填字段缺失如 anytls
+    // 无密码）一律【剔除该节点】而非 throw。原 throw 会走 loadConfig catch → 默认配置覆盖落盘 → 用户全部
+    // servers/订阅/规则丢失且无备份；坏节点本就连不通，剔除它无功能损失，且保住其余合法节点（与 CIDR/
+    // customRules/订阅同 sanitize 标准）。合法节点仍走下方 CIDR/allowInternet 就地清洗。
+    let droppedServers = 0;
     let droppedCidrs = 0; // endpoint 节点的非法 CIDR（allowedIPs/routes）一律丢弃而非 throw（见循环内说明）
-    for (const server of config.servers) {
-      if (!server.id || typeof server.id !== 'string') {
-        throw new Error('Server id is required and must be a string');
+    config.servers = config.servers.filter((server) => {
+      if (!server || !server.id || typeof server.id !== 'string') {
+        droppedServers++;
+        return false;
       }
       if (!server.name || typeof server.name !== 'string') {
-        throw new Error('Server name is required and must be a string');
+        droppedServers++;
+        return false;
       }
       const protocolLower = server.protocol?.toLowerCase();
       if (!protocolLower || !ALLOWED_PROTOCOLS.includes(protocolLower as Protocol)) {
-        throw new Error(`Server protocol must be one of: ${ALLOWED_PROTOCOLS.join(', ')}`);
+        droppedServers++;
+        return false;
       }
       // 账号制协议（Tailscale，连控制面）/ custom（raw-JSON 自带 server/port）→ 豁免 address/port；其余必须有。
       if (!isAccountBasedProtocol(protocolLower) && protocolLower !== 'custom') {
         if (!server.address || typeof server.address !== 'string') {
-          throw new Error('Server address is required and must be a string');
+          droppedServers++;
+          return false;
         }
         if (
           !server.port ||
@@ -439,16 +514,18 @@ export class ConfigManager implements IConfigManager {
           server.port < 1 ||
           server.port > 65535
         ) {
-          throw new Error('Server port must be a number between 1 and 65535');
+          droppedServers++;
+          return false;
         }
       }
 
-      // 协议特有必填校验（单一真值 shared/server-completeness.protocolRequirementError，与渲染侧
-      // 首页连接闸门 isServerComplete 共用）。fail-fast：缺字段 throw（与原逐协议 throw 等价；额外补齐
-      // 了原先漏校验的 anytls 密码——与 isServerComplete 一致，且 anytls 无密码本就连不通）。
+      // 协议特有必填校验（单一真值 shared/server-completeness.protocolRequirementError，与渲染侧首页连接
+      // 闸门 isServerComplete 共用）。缺必填字段（如 anytls 无密码、其余协议漏字段）→ 剔除该节点（改 sanitize：
+      // 原 throw 会致整配置回落默认丢全量；无必填字段的节点本就连不通，剔除无功能损失，与 isServerComplete 判废一致）。
       const protocolError = protocolRequirementError(server);
       if (protocolError) {
-        throw new Error(protocolError);
+        droppedServers++;
+        return false;
       }
 
       // endpoint 节点的 CIDR/地址一律 sanitize 而非 throw：WG localAddress→endpoint.address、allowedIPs→
@@ -485,6 +562,13 @@ export class ConfigManager implements IConfigManager {
         );
         sanitizeAllowInternet(server.tailscaleSettings);
       }
+      return true;
+    });
+    if (droppedServers > 0) {
+      this.log(
+        'warn',
+        `[ConfigManager] 丢弃 ${droppedServers} 个结构非法节点（无 id/name、未知协议、缺 address/port 或协议必填缺失）`
+      );
     }
     if (droppedCidrs > 0) {
       this.log(
@@ -515,15 +599,20 @@ export class ConfigManager implements IConfigManager {
       );
     }
 
-    // 验证 selectedServerId（'__direct__' 哨兵=全局直连，非真实节点，豁免存在性校验，见 shared/direct-selection）
+    // selectedServerId 校验 + sanitize（'__direct__' 哨兵=全局直连，非真实节点，豁免存在性校验，见 shared/direct-selection）。
+    // 悬空/类型非法一律【归 null】而非 throw：上方 sanitize 可能已剔除 selectedServerId 指向的节点（结构非法坏节点 /
+    // Tailscale 单节点硬限去重丢弃多余 TS 节点），此时 throw 会走 loadConfig catch → 整配置回落默认致 servers/订阅/
+    // 规则全丢。归 null（回落「未选节点」，用户重选即可）零功能损失，与本文件 sanitize-不-throw 惯例一致。
     if (config.selectedServerId !== null && !isDirectSelection(config.selectedServerId)) {
       if (typeof config.selectedServerId !== 'string') {
-        throw new Error('selectedServerId must be a string or null');
-      }
-      // 检查服务器是否存在
-      const serverExists = config.servers.some((s) => s.id === config.selectedServerId);
-      if (!serverExists) {
-        throw new Error('selectedServerId references a non-existent server');
+        this.log('warn', '[ConfigManager] selectedServerId 类型非法，归零为未选节点');
+        config.selectedServerId = null;
+      } else if (!config.servers.some((s) => s.id === config.selectedServerId)) {
+        this.log(
+          'warn',
+          '[ConfigManager] selectedServerId 指向已不存在的节点（坏节点已剔除 / Tailscale 去重），归零为未选节点'
+        );
+        config.selectedServerId = null;
       }
     }
 

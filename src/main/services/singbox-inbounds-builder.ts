@@ -32,6 +32,7 @@ import {
   collectRuleTargetedServerIds,
 } from '../../shared/endpoint-routes';
 import { dedupe } from '../../shared/collections';
+import { BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP } from '../../shared/dns';
 import * as os from 'os';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
@@ -222,17 +223,18 @@ export function buildInbounds(
       excludeAddr = ['127.0.0.0/8', '::1/128'];
     }
 
-    // Windows 下额外排除核心 DNS IP，防止 WFP 进程匹配失效时产生回流死循环
+    // Windows 下额外排除核心 DNS IP，防止 WFP 进程匹配失效时产生回流死循环。
+    // 从单一真值派生（不再硬编码 IP 字面量绕过 SoT）：
+    //   · BOOTSTRAP_DIRECT_DNS_IPS —— route-builder 引导直连放行的国内 DNS（含内置 DoH 上游 223.5.5.5/1.12.12.12）。
+    //     与 singbox-route-builder.ts:237 的 `.map(ip => `${ip}/32`)` 同源，故【新增/更换 DoH 上游只改 shared/dns】，
+    //     本排除表随之自动同步，杜绝「漏同步 → 该上游 :443 命中 TUN CIDR 回流死循环」（#57 类回环）。
+    //   · CONTROLLED_TUN_DNS_IP —— TUN 接管时系统 DNS 被强制改成的受控 IP（8.8.8.8），刻意排除出 BOOTSTRAP_DIRECT_DNS_IPS
+    //     （否则被直连规则放行、逃逸 hijack），故须【单独并入】此排除表防其回流死循环。
+    // 原硬编码里的 1.1.1.1 是 SoT 外杂项：核心从不据此直连（route-builder 已移除 8.8.8.8/1.1.1.1 的强制直连，见其 line ~316），
+    // 无排除依据，故删除。dedupe 兜受控 IP 与 BOOTSTRAP 意外重叠（当前不变量保证不重叠，仍防御性去重）。
     if (process.platform === 'win32') {
       excludeAddr.push(
-        '223.5.5.5/32',
-        '223.6.6.6/32',
-        '1.12.12.12/32', // #57 DNSPod IP-DoH（节点域名解析器 DNSPod 档）：同 223.5.5.5 须排除防回流死循环
-        '119.29.29.29/32',
-        '119.28.28.28/32',
-        '114.114.114.114/32',
-        '8.8.8.8/32',
-        '1.1.1.1/32'
+        ...dedupe([...BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP]).map((ip) => `${ip}/32`)
       );
       // 用户自定义的国内 DNS（IP 型）一并排除，防 WFP 进程匹配失效时回流死循环
       const customDns = getCustomDomesticDnsEndpoint(config);

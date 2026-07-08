@@ -7,7 +7,8 @@ import { ApiResponse } from '../../shared/types';
 
 interface ElectronIpcRenderer {
   invoke: <T = any>(channel: string, args?: any) => Promise<T>;
-  on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
+  // on 返回身份守恒的退订闭包（在 preload/Node 侧 removeListener 同一引用）；退订不再跨界传 listener。
+  on: (channel: string, listener: (event: any, ...args: any[]) => void) => () => void;
   once: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
   off: (channel: string, listener: (...args: any[]) => void) => void;
   removeAllListeners: (channel: string) => void;
@@ -21,7 +22,7 @@ function getIpcRenderer(): ElectronIpcRenderer {
     console.warn('IPC Renderer is not available. Using mock for browser preview.');
     return {
       invoke: async <T>() => ({ success: true, data: [] }) as unknown as T,
-      on: () => {},
+      on: () => () => {},
       once: () => {},
       off: () => {},
       removeAllListeners: () => {},
@@ -79,18 +80,27 @@ export class IpcClient {
       listener(data);
     };
 
-    // 注册监听器
-    this.ipcRenderer.on(channel, wrappedListener);
+    // 注册监听器；preload.on 返回身份守恒的退订闭包（在 Node 侧 removeListener 同一 wrappedListener）。
+    // 退订走此闭包，而非把 wrappedListener 再传回 preload.off——跨 contextBridge 会生成新 proxy，
+    // 身份不匹配导致 removeListener 静默 no-op、监听器泄漏（#242）。
+    const unsubscribe = this.ipcRenderer.on(channel, wrappedListener);
 
-    // 记录监听器以便管理
+    // 记录监听器以便 removeAllListeners 兜底 / getListenerCount 自检
     if (!this.eventListeners.has(channel)) {
       this.eventListeners.set(channel, new Set());
     }
     this.eventListeners.get(channel)!.add(wrappedListener);
 
-    // 返回取消监听函数
+    // 返回取消监听函数：调身份守恒的退订闭包 + 清理本地账本
     return () => {
-      this.off(channel, wrappedListener);
+      unsubscribe();
+      const listeners = this.eventListeners.get(channel);
+      if (listeners) {
+        listeners.delete(wrappedListener);
+        if (listeners.size === 0) {
+          this.eventListeners.delete(channel);
+        }
+      }
     };
   }
 

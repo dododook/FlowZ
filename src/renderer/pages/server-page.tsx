@@ -49,7 +49,7 @@ export function ServerPage() {
   const setTailscaleLoginState = useAppStore((state) => state.setTailscaleLoginState);
 
   const {
-    updatingSubId,
+    updatingSubIds,
     deleteServer: handleDeleteServer,
     deleteServers: handleDeleteServers,
     selectServer: handleSelectServer,
@@ -215,8 +215,12 @@ export function ServerPage() {
     setIsSubDialogOpen(true);
   };
 
-  const handleSaveSubscription = (subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>) =>
-    saveSubscription(subData, editingSub);
+  const handleSaveSubscription = async (subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>) => {
+    const res = await saveSubscription(subData, editingSub);
+    // 新增成功：把激活 tab 切到新订阅分组；ok 透传给对话框（失败不关窗、留住用户输入）。
+    if (!editingSub && res.ok && res.sub) setTabOverride(res.sub.id);
+    return res;
+  };
 
   // 页头摘要计数：共 / 自建 / 组网 / 订阅（订阅=各订阅组节点数之和）。
   const subTotal = subscriptions.reduce((n, sub) => n + serversOfGroup(sub.id).length, 0);
@@ -301,7 +305,7 @@ export function ServerPage() {
           {/* 每个订阅一个 Tab */}
           {subscriptions.map((sub) => {
             const n = serversOfGroup(sub.id).length;
-            const isUpdating = updatingSubId === sub.id;
+            const isUpdating = updatingSubIds.has(sub.id);
             return (
               <button
                 type="button"
@@ -360,7 +364,7 @@ export function ServerPage() {
       {subscriptions.map((sub) => {
         if (activeTab !== sub.id) return null;
         const subServers = serversOfGroup(sub.id);
-        const isUpdating = updatingSubId === sub.id;
+        const isUpdating = updatingSubIds.has(sub.id);
         const ui = sub.userInfo;
         const used = ui ? (ui.upload ?? 0) + (ui.download ?? 0) : 0;
         const total = ui?.total;

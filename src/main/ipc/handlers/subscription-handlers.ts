@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { SubscriptionConfig, ImportParseResult } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { SubscriptionService, SubscriptionUpdateResult } from '../../services/SubscriptionService';
+import type { SubscriptionPreviewResult } from '../../../shared/subscription-preview';
 import { ConfigManager } from '../../services/ConfigManager';
 import { resolveSubscriptionViaProxy } from '../../../shared/subscription-proxy';
 import { mt } from '../../i18n';
@@ -178,6 +179,23 @@ export function registerSubscriptionHandlers(
           error: error.message,
         };
       }
+    }
+  );
+
+  // 订阅预检（新增订阅前先行，不写 config）：拉取+解析 URL 返回节点数或分类错误，成功才建记录（避免先加后删闪现）。
+  registerIpcHandler<
+    { url: string; viaProxy?: boolean; userAgent?: string },
+    SubscriptionPreviewResult
+  >(
+    IPC_CHANNELS.SUBSCRIPTION_PREVIEW,
+    async (
+      _event: IpcMainInvokeEvent,
+      args: { url: string; viaProxy?: boolean; userAgent?: string }
+    ) => {
+      return subscriptionService.previewSubscription(args.url, {
+        viaProxy: args.viaProxy,
+        userAgent: args.userAgent,
+      });
     }
   );
 

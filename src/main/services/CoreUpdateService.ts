@@ -13,7 +13,7 @@ import type { HelperManager } from './HelperManager';
 import { PlatformPrivilegeService } from './PlatformPrivilegeService';
 import { resourceManager } from './ResourceManager';
 
-import type { UserConfig } from '../../shared/types';
+import type { UserConfig, HelperStatus } from '../../shared/types';
 import { encodeMajorMinor, sameMajorMinor, compareSemver } from '../../shared/version';
 import {
   classifyCoreBuild,
@@ -386,6 +386,25 @@ export class CoreUpdateService {
    * 不变量：**调用方须保证此刻代理进程不存在**（updateCore 已停代理、tryApplyStaged 仅在 !running 时进入）。
    * @param onBackupDone backupCurrentCore() 成功后立即回调（让调用方在同一时点置 backupMade，保留原失败恢复语义）。
    */
+  /**
+   * helper 是否支持 install-core（受保护/受管核目录持久化写入）——命令级能力门，取代旧的 `ready && !upgradeable`。
+   * 为什么不能用 `!upgradeable`：upgradeable 的门槛是 helper 的 EXPECTED_PROTO（macOS=9），远高于 install-core 的
+   * 真实契约。install-core 各平台起始 proto 不同（见 HelperManager.installCore / LinuxServiceHelper 注释）：
+   *  - macOS：proto ≥ 5（v5 引入受保护目录持久化，proto<5 回 ERR unknown）；
+   *  - Linux：proto ≥ 1（v1 起即支持，ready 已含此下限）。
+   * 旧门 `ready && !upgradeable` 让 macOS proto 5-8 的旧 helper 用户被判「无 install-core」→ 内核更新走 bundle
+   * 写入却仍跑受保护目录旧核，更新静默失效。故改按 ready + 平台最低 proto 判定。version 即 ping 返回的 proto 串。
+   */
+  private helperSupportsInstallCore(st: HelperStatus): boolean {
+    if (!st.ready) return false;
+    const minProto = process.platform === 'darwin' ? 5 : 1;
+    const proto = Number.parseInt(st.version ?? '', 10);
+    // version 非数字串（异常 ping 应答/未来格式变体）→ NaN 比较恒 false 会把有能力 helper 误判无能力、
+    // 静默走 bundle 分支复现本 bug；回退旧布尔语义（ready && !upgradeable）而非一票否决。
+    if (Number.isNaN(proto)) return !st.upgradeable;
+    return proto >= minProto;
+  }
+
   private async installCoreFromDir(
     sourceDir: string,
     version: string | null,
@@ -395,7 +414,7 @@ export class CoreUpdateService {
     // 把配套放进 sourceDir，再整目录交 helper）。不经普通用户 fs.copy（受保护目录 root-only）。受保护目录回滚靠 B5。
     if ((process.platform === 'darwin' || process.platform === 'linux') && this.helperManager) {
       const st = await this.helperManager.getStatus();
-      if (st.ready && !st.upgradeable) {
+      if (this.helperSupportsInstallCore(st)) {
         await this.backupCurrentCore(); // 备份现役(受保护/受管核可读)→userData，供首启失败回滚（[HIGH-1]）
         onBackupDone?.();
         await resourceManager.ensureCronetBeside(sourceDir);
@@ -537,7 +556,7 @@ export class CoreUpdateService {
   }
 
   /** B 块 macOS：把单个 sing-box 二进制 src 经 helper install-core 持久化写入受保护目录（连带打包的 libcronet）。
-   *  调用方须先确认 darwin + helper v5（ready && !upgradeable）。replaceManualCore / rollbackCore / restoreBackup 共用。 */
+   *  调用方须先经 helperSupportsInstallCore(st) 确认 helper 支持 install-core。replaceManualCore / rollbackCore / restoreBackup 共用。 */
   private async installSingleCoreViaHelper(src: string): Promise<void> {
     if (!this.helperManager) throw new Error('helper 不可用');
     const tmpDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'flowz-core-'));
@@ -561,7 +580,7 @@ export class CoreUpdateService {
     if ((process.platform !== 'darwin' && process.platform !== 'linux') || !this.helperManager)
       return false;
     const st = await this.helperManager.getStatus();
-    return st.ready && !st.upgradeable;
+    return this.helperSupportsInstallCore(st);
   }
 
   // === 内核自动更新（仅兼容版本带内）：持久状态 / staged 落位 / 周期检查 ===
@@ -1372,7 +1391,7 @@ export class CoreUpdateService {
         // 源已 preSrc 预检过；install-core 内 sha256 校验保证落位字节 == 预检源，无需二次预检。
         if ((process.platform === 'darwin' || process.platform === 'linux') && this.helperManager) {
           const st = await this.helperManager.getStatus();
-          if (st.ready && !st.upgradeable) {
+          if (this.helperSupportsInstallCore(st)) {
             await this.installSingleCoreViaHelper(sourcePath);
             this.logManager.addLog(
               'info',

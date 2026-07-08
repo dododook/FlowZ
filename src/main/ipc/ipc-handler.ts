@@ -92,6 +92,11 @@ export class IpcHandlerRegistry {
     };
 
     this.handlers.set(channel, wrappedHandler);
+    // 覆盖注册前必须先摘除旧 handler：Electron 的 ipcMain.handle 对同名 channel 二次调用会直接
+    // throw "Attempted to register a second handler"。生产分支已选择「不崩、记 warn 后覆盖」，若不先
+    // removeHandler，紧随的 handle 仍会抛崩主进程，与「生产不崩」意图相悖。removeHandler 对未注册
+    // channel 是安全 no-op（首次注册无副作用），与 unregister() 的用法一致。
+    ipcMain.removeHandler(channel);
     ipcMain.handle(channel, wrappedHandler);
   }
 

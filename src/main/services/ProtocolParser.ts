@@ -21,6 +21,7 @@ import type {
   LogLevel,
 } from '../../shared/types';
 import { normalizeDuration } from '../../shared/duration';
+import { dedupeTrim } from '../../shared/collections';
 import { isSupportedShareUrl } from '../../shared/protocol-url-schemes';
 import type { LogManager } from './LogManager';
 
@@ -420,9 +421,10 @@ export class ProtocolParser implements IProtocolParser {
     }
 
     // Alpn (typically 'h3' for TUIC v5)
+    // 逗号串拆分后统一 dedupeTrim：与 VMess/parseTlsSettings 口径一致，保序去重，空值产出空数组。
     const alpnParam = params.get('alpn');
     if (alpnParam) {
-      config.tlsSettings!.alpn = alpnParam.split(',').map((s) => s.trim());
+      config.tlsSettings!.alpn = dedupeTrim(alpnParam.split(','));
     }
 
     // Congestion control
@@ -851,8 +853,12 @@ export class ProtocolParser implements IProtocolParser {
           fingerprint: vmessData.fp || 'chrome',
         };
         if (vmessData.alpn) {
-          config.tlsSettings.alpn =
-            typeof vmessData.alpn === 'string' ? vmessData.alpn.split(',') : vmessData.alpn;
+          // alpn 可能是逗号串或已是数组；两路都过 dedupeTrim 统一口径（保序去重 + 丢弃空白项），
+          // 与 TUIC/parseTlsSettings 保持一致，杜绝带前导空格的 ALPN 原样进 sing-box 致协商失败。
+          const rawAlpn: string[] = Array.isArray(vmessData.alpn)
+            ? vmessData.alpn.map((x: unknown) => String(x))
+            : String(vmessData.alpn).split(',');
+          config.tlsSettings.alpn = dedupeTrim(rawAlpn);
         }
       } else {
         config.security = 'none';
@@ -1069,9 +1075,11 @@ export class ProtocolParser implements IProtocolParser {
     }
 
     // ALPN
+    // dedupeTrim：逗号串拆分后修剪空白 + 保序去重，空值/纯空白产出空数组而非 ['']，
+    // 避免带前导空格的 ALPN（如 'h2, http/1.1'）原样进 sing-box tls.alpn 致按字面匹配失败。
     const alpn = params.get('alpn');
     if (alpn) {
-      settings.alpn = alpn.split(',');
+      settings.alpn = dedupeTrim(alpn.split(','));
     }
 
     // Fingerprint

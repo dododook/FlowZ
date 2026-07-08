@@ -3,7 +3,7 @@
  *
  * 背景：#242 renderer RSS 数天涨到 2GB，但泄漏机制在应用层之下、本机不一定能稳定复现。本模块**制造**复现：
  * 构造一个假连接池，用**真实的** aggregateConnections 聚合后，经与 StatsWorkerHost 相同的 isUiActive 门控把
- * aggregate/stats 灌给渲染端——绕过内核/流量/TUN，以可调速率把 reporter 数天暴露压缩到小时级，供 CDP heap
+ * stats/aggregate/detail 三通道灌给渲染端——绕过内核/流量/TUN，以可调速率把 reporter 数天暴露压缩到小时级，供 CDP heap
  * 三连拍定位滞留层。**dev-only 工具、零业务行为变更**：仅 FLOWZ_STATS_SIM 存在时替换真实 stats worker。
  *
  * 语义刻意与代理生命周期解耦（dev 工具）：构造即启动 ticker；stop()/resubscribe() 只记日志、不停 ticker
@@ -111,6 +111,9 @@ export class StatsSimulator implements StatsHost {
   private readonly config: StatsSimConfig;
   private readonly onStats: (s: TrafficStats) => void;
   private readonly onAggregate: (agg: ConnectionsAggregate) => void;
+  // batch3：detail 亦为 push topic。作为 StatsHost drop-in 必须转发 detail，否则连接页在定证模式下永远收不到明细帧
+  // （registry 有 detail 订阅者但 host 从不 broadcast）。
+  private readonly onDetail: (conns: ConnectionsSnapshot) => void;
   private readonly isUiActive: () => boolean;
   private readonly log?: (level: 'info' | 'warn' | 'error', message: string) => void;
 
@@ -123,13 +126,14 @@ export class StatsSimulator implements StatsHost {
   private aggregate: ConnectionsAggregate;
 
   /**
-   * @param opts 与 StatsWorkerHost 同形（复用 index.ts 装配的 onStats/onAggregate/isUiActive/log）；workerPath/
+   * @param opts 与 StatsWorkerHost 同形（复用 index.ts 装配的 onStats/onAggregate/onDetail/isUiActive/log）；workerPath/
    *   getEndpoint 对合成器无意义，刻意忽略。
    * @param rawConfig FLOWZ_STATS_SIM 原始串（构造内解析 + 打激活/防御 banner）。
    */
   constructor(opts: StatsWorkerHostOptions, rawConfig: string | undefined) {
     this.onStats = opts.onStats;
     this.onAggregate = opts.onAggregate;
+    this.onDetail = opts.onDetail;
     this.isUiActive = opts.isUiActive;
     this.log = opts.log;
     this.config = parseStatsSimConfig(rawConfig, (m) => this.log?.('warn', m));
@@ -196,7 +200,12 @@ export class StatsSimulator implements StatsHost {
 
     const now = Date.now();
     this.aggregate = aggregateConnections(this.pool, now);
-    if (this.isUiActive()) this.onAggregate(this.aggregate);
+    if (this.isUiActive()) {
+      this.onAggregate(this.aggregate);
+      // detail 与 aggregate 同源于 pool（连接页明细订阅者）：像 StatsWorkerHost 三通道那样对称推 detail 帧。快照
+      // at 用采样时刻 now（非读取时刻），使消费端速率差分分母 = tick 间隔；条目已被上面不可变替换，slice 即引用隔离。
+      this.onDetail({ connections: this.pool.slice(), at: now });
+    }
 
     // 2) 速率随机游走，clamp 到 [50KB/s, 500KB/s]；totals 累加；activeConnections = 池大小。
     const walk = (v: number): number => {
@@ -232,11 +241,12 @@ export class StatsSimulator implements StatsHost {
     /* 无 worker demand：合成 aggregate/stats 经 opts.onStats/onAggregate → registry.broadcast 已按订阅落地 */
   }
 
-  /** 拖动结束补推缓存最新（活跃才推），与 StatsWorkerHost.resume 语义一致。 */
+  /** 拖动结束补推缓存最新（活跃才推），与 StatsWorkerHost.resume 三通道语义一致（onStats/onAggregate/onDetail）。 */
   resume(): void {
     if (!this.isUiActive()) return;
     this.onStats(this.snapshot);
     this.onAggregate(this.aggregate);
+    this.onDetail(this.getConnectionsSnapshot());
   }
 
   getSnapshot(): TrafficStats {

@@ -20,6 +20,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"flag"
@@ -93,6 +94,36 @@ func readLine(r *bufio.Reader) string {
 	return strings.TrimRight(s, "\r\n")
 }
 
+// exec 超时上限：所有阻塞式 root 命令一律经下面三个包装执行，绝不裸调 exec.Command().Run/Output。
+// 根因：handle 持全局 mu 同步跑这些命令，任一命令无限挂起（stale NFS 下 lsof、异常 route 等）会持锁不放 →
+// 并发 ping/status/start/stop 全阻塞在 mu.Lock() → 整个 helper 冻死。用 CommandContext+超时把「无限挂起」
+// 降级为「有界失败」：超时即 kill 子进程、返回非 nil error（各调用方沿用原有「忽略 / 上报」错误路径不变）。
+const (
+	execTimeout     = 8 * time.Second  // 常规系统命令（route/lsof/ps/sysctl/dscacheutil/killall/pkill/kill/xattr）：够慢盘完成、又防 stale 挂载无限阻塞
+	codesignTimeout = 30 * time.Second // codesign --deep 对大二进制签名较慢，给更长窗口
+)
+
+// execRun：带超时执行并等待完成（等价 cmd.Run()）。超时 → context 取消 → 子进程被 kill，返回非 nil error。
+func execRun(d time.Duration, name string, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Run()
+}
+
+// execOutput：带超时执行并捕获 stdout（等价 cmd.Output()）。
+func execOutput(d time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
+// execCombined：带超时执行并捕获合并输出（等价 cmd.CombinedOutput()）。
+func execCombined(d time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
 // installCore（proto v5）：把 app 下载+预检的临时内核 src，校验 sha256(实际读到的字节)==wantHash 后，root 写入
 // 锁定的受保护目录 coreDir（整个源目录复制 + 主二进制签名 + 清 quarantine）。
 //   - 只写锁定的 coreDir（filepath.Join，不接受任意路径）→ 防「持 token 写任意 root 路径」。
@@ -161,8 +192,8 @@ func installCore(srcDir, wantHash string) string {
 	}
 	// macOS：清整个受保护目录 quarantine + 对主二进制 adhoc 签名（否则 Gatekeeper 对新放入未签名二进制 SIGKILL）
 	sb := filepath.Join(coreDir, "sing-box")
-	_ = exec.Command("/usr/bin/xattr", "-cr", coreDir).Run()
-	_ = exec.Command("/usr/bin/codesign", "--force", "--deep", "-s", "-", sb).Run()
+	_ = execRun(execTimeout, "/usr/bin/xattr", "-cr", coreDir)
+	_ = execRun(codesignTimeout, "/usr/bin/codesign", "--force", "--deep", "-s", "-", sb)
 	return "OK installed"
 }
 
@@ -255,10 +286,34 @@ func terminateChild(c *exec.Cmd, done <-chan struct{}) {
 	}
 }
 
+// startTimeViaSysctl 启动时对自身 PID 探测一次，终身锁定取启动时间的机制（sysctl 或 ps lstart）。
+// 机制绝不中途切换：若 sysctl 快照后某次 tick 转用 ps，两种格式必不等 → watchParent 误判「父已死」
+// → 错杀存活父进程的 root sing-box。锁定后 sysctl 偶发失败只会返 ""（跳过本轮比对，保守安全）。
+var startTimeViaSysctl = sync.OnceValue(func() bool {
+	return procStartTimeOS(os.Getpid()) != ""
+})
+
+// procStartTime 取 pid 进程的启动时间字符串，用作进程唯一身份：同一 PID 若被复用，新进程的启动时间必不同。
+// darwin 用 sysctl kern.proc.pid（微秒精度，见 proc_starttime_darwin.go）——消除 `ps lstart` 秒级精度下
+// 「同秒 PID 复用」的假阴性窗口；非 darwin（或 sysctl 不可用的异常环境）用 `ps -o lstart=`（秒级兜底）。
+// watchParent 据此识破「父 kill -9 后 PID 被复用 → kill(ppid,0) 返回 nil」的假阴性，避免把 root sing-box 漏成孤儿。
+// 取不到（进程已退出/取数失败/超时）返回 ""，调用方按「空则不比对」保守处理，绝不据此误杀真父。exec 已带超时。
+func procStartTime(pid int) string {
+	if startTimeViaSysctl() {
+		return procStartTimeOS(pid)
+	}
+	out, err := execOutput(execTimeout, "/bin/ps", "-o", "lstart=", "-p", strconv.Itoa(pid))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 // 父死看护：托管 child 期间每秒探测父 app 进程，父消失（GUI 崩溃/kill -9/强退 —— socket stop 够不到的场景）
 // → TERM→KILL 收割 child。对齐旧 osascript 看护脚本「父进程死亡→不留孤儿」不变量（修复设计根因 B）。
+// ppidStart=启动时快照的父进程启动时间（唯一身份），用于识破 PID 复用假阴性（见下 dead 判定）。
 // 退出条件（防 goroutine 泄漏）：child 正常退出（done 关闭）/ 被 stop·cleanup·新 start 摘除（child != c）/ 父死收割完成。
-func watchParent(ppid int, c *exec.Cmd, done <-chan struct{}) {
+func watchParent(ppid int, ppidStart string, c *exec.Cmd, done <-chan struct{}) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
 	for {
@@ -273,8 +328,20 @@ func watchParent(ppid int, c *exec.Cmd, done <-chan struct{}) {
 		if !current {
 			return // 已被 stop/cleanup 摘除或被新 start 替换，收割责任已转移
 		}
-		// kill(ppid,0) 只判存活不发信号：ESRCH=父已死。其余错误（root 不应见 EPERM）按存活处理，宁漏勿误。
+		// 父死判定两路：
+		//  1) kill(ppid,0)==ESRCH：该 PID 当前无进程 = 父已死。其余错误（root 不应见 EPERM）按存活处理，宁漏勿误。
+		//  2) kill(ppid,0)==nil 但启动时间变了：父 kill -9 后 PID 在 tick 间隙被别的进程复用 → kill(ppid,0) 假阴性
+		//     （误判父存活 → 永不收割 root sing-box → 孤儿）。比对启动时间与启动快照，不符 = 原父已死。
+		//     取不到当前启动时间（ps 失败/超时，cur=="")或未记录快照（ppidStart=="")则不据此判死，保守维持存活，不误杀真父。
+		dead := false
 		if err := syscall.Kill(ppid, 0); err == syscall.ESRCH {
+			dead = true
+		} else if err == nil && ppidStart != "" {
+			if cur := procStartTime(ppid); cur != "" && cur != ppidStart {
+				dead = true
+			}
+		}
+		if dead {
 			mu.Lock()
 			if child != c { // 与 stop 竞态：他人已摘除则由他收割
 				mu.Unlock()
@@ -288,6 +355,45 @@ func watchParent(ppid int, c *exec.Cmd, done <-chan struct{}) {
 	}
 }
 
+// handleFreeport（proto v4）：按端口（root lsof）定位 LISTEN 持有者——是 sing-box 才 kill -9，否则回报占用者名字
+// （不杀）。彻底摆脱 app 侧 cmdline 匹配，覆盖「外部 / 旧 app 路径 / 改过 singboxBin 路径」的 9090 占用者（L2）。
+// 不碰 child/childDone → 无需持 mu，由 handle 在加锁前调用（避免 stale 挂载下 lsof 阻塞拖住并发命令）。各 exec 带超时。
+func handleFreeport(conn net.Conn, r *bufio.Reader) {
+	port := strings.TrimSpace(readLine(r))
+	if port == "" || strings.IndexFunc(port, func(c rune) bool { return c < '0' || c > '9' }) >= 0 {
+		fmt.Fprintln(conn, "ERR bad-port")
+		return
+	}
+	out, _ := execOutput(execTimeout, "/usr/sbin/lsof", "-ti", "tcp:"+port, "-sTCP:LISTEN")
+	pids := strings.Fields(strings.TrimSpace(string(out)))
+	if len(pids) == 0 {
+		fmt.Fprintln(conn, "OK free")
+		return
+	}
+	var killed, foreign []string
+	for _, p := range pids {
+		// ps -o comm=（仅可执行名，不含参数）：避免「参数里碰巧含 sing-box」的进程被 root 误杀（M2）。
+		commOut, _ := execOutput(execTimeout, "/bin/ps", "-o", "comm=", "-p", p)
+		comm := strings.TrimSpace(string(commOut))
+		if strings.Contains(comm, "sing-box") {
+			_ = execRun(execTimeout, "/bin/kill", "-9", p)
+			killed = append(killed, p)
+		} else {
+			name := comm
+			if name == "" {
+				name = "pid:" + p
+			}
+			foreign = append(foreign, name)
+		}
+	}
+	if len(foreign) > 0 {
+		// 占用者非 sing-box → 不杀、回报名字（app 据此给「9090 被 X 占用」的诚实终态）
+		fmt.Fprintf(conn, "OK foreign %s\n", strings.Join(foreign, " | "))
+	} else {
+		fmt.Fprintf(conn, "OK killed %s\n", strings.Join(killed, ","))
+	}
+}
+
 func handle(conn net.Conn) {
 	defer conn.Close()
 	// 读超时：防止无 token 进程连上后不发数据耗尽 fd/goroutine，或持 token 客户端发一半卡死、
@@ -298,6 +404,14 @@ func handle(conn net.Conn) {
 	cmd := readLine(r)
 	if tok == "" || tok != tokenValue() {
 		fmt.Fprintln(conn, "ERR auth")
+		return
+	}
+
+	// freeport 只做 lsof/ps 只读探测 + kill 端口占用者，完全不碰 child/childDone（mu 只护这两者）→ 先于加锁
+	// 独立处理、移出临界区，避免其 exec（stale 挂载下 lsof 可能阻塞到超时上限）在临界区内拖住并发的
+	// ping/status/start/stop（参照 stop 后台化的去饿死思路）。自身各 exec 已带超时兜底。
+	if cmd == "freeport" {
+		handleFreeport(conn, r)
 		return
 	}
 
@@ -330,7 +444,7 @@ func handle(conn net.Conn) {
 	case "cleanup":
 		// 以 root 杀掉所有「<锁定的 singbox> run …」进程，含外部 osascript 路径遗留的孤儿，让 app 免 osascript 清理。
 		// pattern 含 " run"：只匹配真正运行的 sing-box，不会误杀 argv 为「--singbox <path>」的本 daemon。
-		_ = exec.Command("/usr/bin/pkill", "-9", "-f", singboxBin+" run").Run()
+		_ = execRun(execTimeout, "/usr/bin/pkill", "-9", "-f", singboxBin+" run")
 		child, childDone = nil, nil
 		fmt.Fprintln(conn, "OK cleaned")
 	case "route-add", "route-del":
@@ -361,7 +475,7 @@ func handle(conn net.Conn) {
 				args = append(args, "-inet6")
 			}
 			args = append(args, "-ifscope", iface, "-net", c, "-interface", iface)
-			_ = exec.Command("/sbin/route", args...).Run()
+			_ = execRun(execTimeout, "/sbin/route", args...)
 		}
 		fmt.Fprintln(conn, "OK route")
 	case "default-restore":
@@ -373,7 +487,7 @@ func handle(conn net.Conn) {
 			fmt.Fprintln(conn, "ERR bad-gateway")
 			break
 		}
-		_ = exec.Command("/sbin/route", "-n", "add", "-inet", "default", gw).Run()
+		_ = execRun(execTimeout, "/sbin/route", "-n", "add", "-inet", "default", gw)
 		fmt.Fprintln(conn, "OK default-restore")
 	case "flush-dns":
 		// proto v9：root 刷系统 DNS 缓存——dscacheutil 清 Directory Services 缓存 + HUP mDNSResponder 清 unicast
@@ -381,51 +495,15 @@ func handle(conn net.Conn) {
 		// 清掉「系统解析器受控/还原」边界另一侧的陈旧记录（如 TUN+FakeIP 会话缓存的假 IP 骑跨到直连态）。
 		// 两命令均瞬时完成、无参数注入面。dscacheutil 失败回 ERR（app 降级用户级 dscacheutil 有意义）；
 		// dscacheutil 成功而 HUP 失败回 OK flushed-partial（app 不降级——用户级同样无权 HUP，重复无益）。
-		if out, err := exec.Command("/usr/bin/dscacheutil", "-flushcache").CombinedOutput(); err != nil {
+		if out, err := execCombined(execTimeout, "/usr/bin/dscacheutil", "-flushcache"); err != nil {
 			fmt.Fprintf(conn, "ERR dscacheutil %v %s\n", err, strings.TrimSpace(string(out)))
 			break
 		}
-		if out, err := exec.Command("/usr/bin/killall", "-HUP", "mDNSResponder").CombinedOutput(); err != nil {
+		if out, err := execCombined(execTimeout, "/usr/bin/killall", "-HUP", "mDNSResponder"); err != nil {
 			fmt.Fprintf(conn, "OK flushed-partial killall-hup %v %s\n", err, strings.TrimSpace(string(out)))
 			break
 		}
 		fmt.Fprintln(conn, "OK flushed")
-	case "freeport":
-		// 按端口（root lsof）定位 LISTEN 持有者：是 sing-box 才 kill -9，否则回报占用者名字（不杀）。
-		// 彻底摆脱 app 侧 cmdline 匹配，覆盖「外部 / 旧 app 路径 / 改过 singboxBin 路径」的 9090 占用者（L2）。
-		port := strings.TrimSpace(readLine(r))
-		if port == "" || strings.IndexFunc(port, func(c rune) bool { return c < '0' || c > '9' }) >= 0 {
-			fmt.Fprintln(conn, "ERR bad-port")
-			return
-		}
-		out, _ := exec.Command("/usr/sbin/lsof", "-ti", "tcp:"+port, "-sTCP:LISTEN").Output()
-		pids := strings.Fields(strings.TrimSpace(string(out)))
-		if len(pids) == 0 {
-			fmt.Fprintln(conn, "OK free")
-			return
-		}
-		var killed, foreign []string
-		for _, p := range pids {
-			// ps -o comm=（仅可执行名，不含参数）：避免「参数里碰巧含 sing-box」的进程被 root 误杀（M2）。
-			commOut, _ := exec.Command("/bin/ps", "-o", "comm=", "-p", p).Output()
-			comm := strings.TrimSpace(string(commOut))
-			if strings.Contains(comm, "sing-box") {
-				_ = exec.Command("/bin/kill", "-9", p).Run()
-				killed = append(killed, p)
-			} else {
-				name := comm
-				if name == "" {
-					name = "pid:" + p
-				}
-				foreign = append(foreign, name)
-			}
-		}
-		if len(foreign) > 0 {
-			// 占用者非 sing-box → 不杀、回报名字（app 据此给「9090 被 X 占用」的诚实终态）
-			fmt.Fprintf(conn, "OK foreign %s\n", strings.Join(foreign, " | "))
-		} else {
-			fmt.Fprintf(conn, "OK killed %s\n", strings.Join(killed, ","))
-		}
 	case "start":
 		cfg := readLine(r)
 		logPath := readLine(r)
@@ -433,6 +511,13 @@ func handle(conn net.Conn) {
 		// 行6（可选）：父 app PID。旧客户端只发 5 行后即 FIN，此处读到 ""（EOF 不阻塞）→ ppid=0 → 不启看护。
 		// 恶意 ppid 无安全增量：看护只会提前杀自家 child，与持 token 者本就有的 stop 权能等价。
 		ppid, _ := strconv.Atoi(readLine(r))
+		// 启动时快照父进程启动时间（唯一身份）：watchParent 每轮除 kill(ppid,0) 存活探测外再比对它，
+		// 识破「父 kill -9 后 PID 被复用 → kill(ppid,0) 假阴性」→ 防 root sing-box 漏成孤儿（修复 2）。
+		// 取不到（快照失败）为空 → watchParent 退化为仅 kill(ppid,0) 探测（原语义），不误杀真父。
+		var ppidStart string
+		if ppid > 0 {
+			ppidStart = procStartTime(ppid)
+		}
 		if child != nil && child.Process != nil {
 			fmt.Fprintf(conn, "OK already %d\n", child.Process.Pid)
 			return
@@ -447,8 +532,8 @@ func handle(conn net.Conn) {
 		}
 		// allowLan：开启 IP 转发（macOS 键名，与 Linux 不同）
 		if fwd == "1" {
-			_ = exec.Command("/usr/sbin/sysctl", "-w", "net.inet.ip.forwarding=1").Run()
-			_ = exec.Command("/usr/sbin/sysctl", "-w", "net.inet6.ip6.forwarding=1").Run()
+			_ = execRun(execTimeout, "/usr/sbin/sysctl", "-w", "net.inet.ip.forwarding=1")
+			_ = execRun(execTimeout, "/usr/sbin/sysctl", "-w", "net.inet6.ip6.forwarding=1")
 		}
 		c := exec.Command(singboxBin, "run", "-c", cfg)
 		// sing-box 早期 stdout/stderr 重定向到 app 日志文件（与 osascript 看护脚本一致），便于诊断启动问题。
@@ -489,7 +574,7 @@ func handle(conn net.Conn) {
 		}()
 		// 父死看护（proto v2）：覆盖 GUI 崩溃/kill -9 后 stopCore 够不到的孤儿场景。
 		if ppid > 0 {
-			go watchParent(ppid, c, done)
+			go watchParent(ppid, ppidStart, c, done)
 		}
 		fmt.Fprintf(conn, "OK started %d\n", c.Process.Pid)
 	case "install-core":
@@ -543,7 +628,7 @@ func main() {
 			// 的窗口内——那个收割 goroutine 会随本进程 os.Exit 一起消失，其 5s KILL 升级丢失 → 残留 root 孤儿。
 			// `-U 0` 限定 root 进程：helper child 与 osascript-TUN 的 sing-box 均为 root，而 systemProxy 模式由
 			// app 直接 spawn 的是用户态 sing-box（同一二进制路径）→ 卸载/重装 helper 时不会误杀活跃用户会话（M-B）。
-			_ = exec.Command("/usr/bin/pkill", "-9", "-U", "0", "-f", singboxBin+" run").Run()
+			_ = execRun(execTimeout, "/usr/bin/pkill", "-9", "-U", "0", "-f", singboxBin+" run")
 		}
 		os.Exit(0)
 	}()

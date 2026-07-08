@@ -82,6 +82,10 @@ function App() {
     };
 
     const unsubscribe = ipcClient.on<string>(IPC_CHANNELS.EVENT_NAVIGATE, (route) => {
+      // #256 关窗保活后，托盘再开窗是「隐藏→show」而非重建：Chromium 恢复隐藏前的焦点元素，且此路径
+      // 命中 :focus-visible（键盘 ring 刻意保留，见 index.css .sidebar-toggle 注释）→ 折叠 toggle/导航项
+      // 复现 #203 的「点亮」。托盘导航必然是新的鼠标语境 → 清掉恢复的焦点（落回 body，Tab 键可达性不受损）。
+      (document.activeElement as HTMLElement | null)?.blur?.();
       const view = routeMap[route];
       if (view) {
         setCurrentView(view);

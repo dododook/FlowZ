@@ -593,14 +593,16 @@ function applyAntiCensorshipOptions(outbound: SingBoxOutbound, server: ServerCon
     //   2. 协议：仅标准 TCP-TLS 栈（排除 hy2/tuic 的 QUIC 内 TLS、naive 的 Cronet 自管 TLS），与 fragment 同集；
     //   3. 诱饵 SNI 必须是域名：IP 字面量内核拒（`spoof requires TLS ClientHello with SNI`）；
     //   4. **诱饵 SNI 必须不同于真 server_name**：内核 FATAL `spoof must differ from server_name`（已真核实证）；
-    //   5. 方法合法（wrong-ack/wrong-md5/wrong-timestamp）。
+    //   5. 方法合法（wrong-ack/wrong-md5/wrong-timestamp）；
+    //   6. **真 server_name 本身非 IP 字面量**：节点 address 为 IP 且未填 serverName 时 server_name 回退为 IP，真握手无 SNI →
+    //      内核 init 报 `spoof requires TLS ClientHello with SNI` 致整配置 FATAL。由 validateTlsSpoof 收口（传 serverSni 即校验）。
     // 注：提权（CAP_NET_RAW+NET_ADMIN / root / 管理员）是运行期生效条件，不影响配置合法性 → 此处不门控，
     //    UI 已提示需提权；缺权时内核启动期报权限错（非配置 FATAL），属用户环境问题。
     const spoofMethod = server.tlsSettings?.spoofMethod;
     const spoofSni = server.tlsSettings?.spoofSni?.trim();
     const realSni = outbound.tls.server_name;
-    // 六重门控（方法/arch/SNI 非空/SNI 非 IP/协议 TCP-TLS/SNI≠真 server_name）经 validateTlsSpoof 单一真值，
-    // 与 route action spoof（singbox-custom-rules）共用同一份。
+    // 门控（方法/arch/诱饵非空/诱饵非 IP/协议 TCP-TLS/诱饵≠真 server_name/真 server_name 非 IP）经 validateTlsSpoof
+    // 单一真值，与 route action spoof（singbox-custom-rules）共用同一份。
     if (
       validateTlsSpoof(spoofSni, spoofMethod, process.arch, isIpLiteral, {
         protocol: protocolLower,

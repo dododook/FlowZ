@@ -116,6 +116,44 @@ describe('StatsSubscriptionRegistry', () => {
     expect(wc.once).toHaveBeenCalledTimes(1);
   });
 
+  it('引用计数：同 wc 同 topic 双订阅，退订一次仍在流、不驱动 demand；归零才断流 + 驱动 demand', () => {
+    const { registry, onDemandChange } = makeRegistry();
+    const wc = makeWc(1);
+    registry.subscribe(asWc(wc), 'aggregate'); // count 1
+    registry.subscribe(asWc(wc), 'aggregate'); // count 2
+    onDemandChange.mockClear();
+
+    registry.unsubscribe(asWc(wc), 'aggregate'); // 2→1：另一个组件仍订阅
+    expect(registry.hasSubscribers('aggregate')).toBe(true);
+    expect(onDemandChange).not.toHaveBeenCalled(); // 未归零 → 不断流、不驱动 demand
+
+    registry.unsubscribe(asWc(wc), 'aggregate'); // 1→0：最后一个退订才真断流
+    expect(registry.hasSubscribers('aggregate')).toBe(false);
+    expect(onDemandChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('引用计数不放大 relay 目标：同 wc 多订阅 subscribersOf 仍去重、broadcast 只发一次', () => {
+    const { registry } = makeRegistry();
+    const wc = makeWc(1);
+    registry.subscribe(asWc(wc), 'stats');
+    registry.subscribe(asWc(wc), 'stats');
+    expect(registry.subscribersOf('stats')).toHaveLength(1);
+    wc.send.mockClear();
+    registry.broadcast('stats', { x: 1 });
+    expect(wc.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('destroyed 清理无视引用计数：多订阅一次性全清 + 驱动一次 demand', () => {
+    const { registry, onDemandChange } = makeRegistry();
+    const wc = makeWc(1);
+    registry.subscribe(asWc(wc), 'detail');
+    registry.subscribe(asWc(wc), 'detail');
+    onDemandChange.mockClear();
+    wc.fireDestroyed!();
+    expect(registry.hasSubscribers('detail')).toBe(false);
+    expect(onDemandChange).toHaveBeenCalledTimes(1);
+  });
+
   it('已 destroyed 的 wc subscribe 被忽略（不入表、不回初始帧、不驱动 demand）', () => {
     const { registry, onDemandChange } = makeRegistry();
     const wc = makeWc(1);

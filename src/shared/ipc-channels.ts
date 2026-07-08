@@ -48,6 +48,7 @@ export const IPC_CHANNELS = {
   SUBSCRIPTION_UPDATE: 'subscription:update',
   SUBSCRIPTION_DELETE: 'subscription:delete',
   SUBSCRIPTION_UPDATE_SERVERS: 'subscription:updateServers',
+  SUBSCRIPTION_PREVIEW: 'subscription:preview', // 新增订阅前预检：拉取+解析 URL 但不写 config，返回节点数或分类错误
 
   // 路由规则管理
   RULES_GET_ALL: 'rules:getAll',

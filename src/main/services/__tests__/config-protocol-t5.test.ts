@@ -118,31 +118,29 @@ describe('T5 protocol 白名单（validateConfig）', () => {
     }
   });
 
-  it('非法 protocol（不在白名单）被拒，错误信息枚举全部合法协议', () => {
+  // 数据丢失防线：validateConfig 已从「非法 protocol → throw 整份」改为「剔除该坏节点、保住其余合法配置」
+  //（throw 会走 loadConfig catch 用默认配置覆盖落盘 → 用户 servers/订阅/规则全丢）。故非法/缺省/空串 protocol
+  //   的断言由 toThrow 改为「该节点被剔除、validateConfig 不抛」。白名单 ↔ Protocol 联合的对齐仍由上方
+  //   it.each(ALL_PROTOCOLS)「合法 protocol 被放行」正向用例守卫。
+  it('非法 protocol（不在白名单）→ 剔除该节点（sanitize 不 throw）', () => {
     const cfg = makeConfig({
       servers: [makeServerConfig('ssr' as unknown as Protocol)], // ssr 未在 Protocol 联合
     });
-    expect(() => cm.validateConfig(cfg)).toThrow(/protocol/i);
-    try {
-      cm.validateConfig(cfg);
-    } catch (e) {
-      const msg = (e as Error).message;
-      // 错误串必须枚举所有合法协议（曾出现数组含某协议、错误串漏列的漂移）
-      for (const p of ALL_PROTOCOLS) {
-        expect(msg).toContain(p);
-      }
-    }
+    expect(() => cm.validateConfig(cfg)).not.toThrow();
+    expect(cfg.servers).toEqual([]); // 唯一的坏节点被剔除
   });
 
-  it('protocol 缺省（undefined）被拒', () => {
+  it('protocol 缺省（undefined）→ 剔除该节点', () => {
     const srv = makeServerConfig('vless');
     delete (srv as any).protocol;
     const cfg = makeConfig({ servers: [srv] });
-    expect(() => cm.validateConfig(cfg)).toThrow(/protocol/i);
+    expect(() => cm.validateConfig(cfg)).not.toThrow();
+    expect(cfg.servers).toEqual([]);
   });
 
-  it('protocol 空串被拒', () => {
+  it('protocol 空串 → 剔除该节点', () => {
     const cfg = makeConfig({ servers: [makeServerConfig('' as unknown as Protocol)] });
-    expect(() => cm.validateConfig(cfg)).toThrow(/protocol/i);
+    expect(() => cm.validateConfig(cfg)).not.toThrow();
+    expect(cfg.servers).toEqual([]);
   });
 });

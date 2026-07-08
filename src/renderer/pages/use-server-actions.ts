@@ -12,11 +12,23 @@ import {
   updateSubscription,
   deleteSubscription as apiDeleteSubscription,
   updateSubscriptionServers as apiUpdateSubscriptionServers,
+  previewSubscription as apiPreviewSubscription,
 } from '@/bridge/api-wrapper';
 import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
+import type { SubscriptionErrorKind } from '@shared/subscription-preview';
 import { buildSavedServers, buildClonedServer, type NewServerData } from './server-mutations';
 import { tailscaleSlotTaken } from '../../shared/endpoint-routes';
 import { isWarpServer, warpSlotTaken } from '../../shared/warp';
+
+// saveSubscription 的可判定返回：ok=false 让对话框保留不关、留住用户输入（原全吞错致失败仍关窗丢输入）。
+// 成功携带 sub，供调用方（server-page）setTabOverride 切到该订阅分组。
+// add 路径预检失败携带 errorKind/httpStatus，供对话框按分类展示错误文案（不建任何记录 → 无闪现）。
+export interface SaveSubscriptionResult {
+  ok: boolean;
+  sub?: SubscriptionConfig;
+  errorKind?: SubscriptionErrorKind;
+  httpStatus?: number;
+}
 
 export function useServerActions() {
   const { t } = useTranslation();
@@ -25,7 +37,9 @@ export function useServerActions() {
   const deleteServerStore = useAppStore((s) => s.deleteServer);
   const deleteServersStore = useAppStore((s) => s.deleteServers);
   const loadConfig = useAppStore((s) => s.loadConfig);
-  const [updatingSubId, setUpdatingSubId] = useState<string | null>(null);
+  // 单槽 string|null → 多槽 Set：并发更新多个订阅时后发者会覆盖前者的 subId，导致前者 spinner 提前熄灭。
+  // 用 Set 让每个在更新的订阅各自持有独立 spinner；不可变更新（new Set）保证 React 感知引用变化。
+  const [updatingSubIds, setUpdatingSubIds] = useState<Set<string>>(new Set());
 
   const servers = config?.servers || [];
 
@@ -148,19 +162,29 @@ export function useServerActions() {
   };
 
   const updateSubscriptionServers = async (subId: string) => {
-    setUpdatingSubId(subId);
+    // 进入更新态：把本 subId 加入 Set（不可变更新，避免并发更新互相覆盖 spinner）。
+    setUpdatingSubIds((prev) => {
+      const next = new Set(prev);
+      next.add(subId);
+      return next;
+    });
     try {
       const res = await apiUpdateSubscriptionServers(subId);
       if (res.success) await loadConfig();
     } finally {
-      setUpdatingSubId(null);
+      // 退出更新态：仅移除本 subId，其它并发更新中的订阅 spinner 不受影响。
+      setUpdatingSubIds((prev) => {
+        const next = new Set(prev);
+        next.delete(subId);
+        return next;
+      });
     }
   };
 
   const saveSubscription = async (
     subData: Omit<SubscriptionConfig, 'id' | 'createdAt'>,
     editingSub: SubscriptionConfig | undefined
-  ) => {
+  ): Promise<SaveSubscriptionResult> => {
     if (editingSub) {
       const updatedSub: SubscriptionConfig = {
         ...subData,
@@ -169,17 +193,32 @@ export function useServerActions() {
         lastUpdated: editingSub.lastUpdated,
       };
       const res = await updateSubscription(updatedSub);
-      if (res.success) await loadConfig();
-    } else {
-      const res = await addSubscription(subData);
-      if (res.success && res.data) {
-        await updateSubscriptionServers(res.data.id);
-      }
+      // 失败（api-wrapper 已 toast）返回 ok:false → 对话框不关、留住用户输入。
+      if (!res.success) return { ok: false };
+      await loadConfig();
+      return { ok: true, sub: updatedSub };
     }
+    // 预检先行：add 前用 URL 拉取+解析（**不写 config、不建记录**），成功才建记录，失败留窗 + 分类错误（无先加后删闪现）。
+    const pre = await apiPreviewSubscription(subData.url, {
+      viaProxy: subData.updateViaProxy,
+      userAgent: subData.userAgent,
+    });
+    if (!pre.ok) {
+      // 不建任何记录 → 对话框据 errorKind/httpStatus 展示错误、留窗；无闪现节点。
+      return { ok: false, errorKind: pre.errorKind, httpStatus: pre.httpStatus };
+    }
+    const res = await addSubscription(subData);
+    // 新增失败（api-wrapper 已 toast）→ ok:false，对话框不关。
+    if (!res.success || !res.data) return { ok: false };
+    // tab 修复：先 loadConfig 让新订阅立即进入 config（分组/tab 即时可见），再拉取其节点；
+    // 最后返回新 sub 供调用方 setTabOverride 切到该订阅分组。
+    await loadConfig();
+    await updateSubscriptionServers(res.data.id);
+    return { ok: true, sub: res.data };
   };
 
   return {
-    updatingSubId,
+    updatingSubIds,
     deleteServer,
     deleteServers,
     selectServer,

@@ -7,6 +7,7 @@ import { api } from '../ipc/api-client';
 import { ErrorHandler } from '../lib/error-handler';
 import i18n from '../i18n';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import type { SubscriptionPreviewResult } from '../../shared/subscription-preview';
 import type { ApiResponse, ServerConfig, SubscriptionConfig } from './types';
 
 /**
@@ -61,9 +62,16 @@ export async function getVersionInfo(): Promise<
  */
 export async function openExternal(url: string): Promise<ApiResponse<boolean>> {
   try {
-    await window.electron.ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url);
-    return { success: true, data: true };
+    // registerIpcHandler 包装 handler：成功返 {success:true,data}，抛错返 {success:false,error}。
+    // 原代码忽略此 envelope 恒返 success:true，掩盖打开失败（点链接无反应却无任何提示）。检查真实结果。
+    const result = await window.electron.ipcRenderer.invoke(IPC_CHANNELS.SHELL_OPEN_EXTERNAL, url);
+    if (result?.success) {
+      return { success: true, data: true };
+    }
+    ErrorHandler.showError(i18n.t('apiToast.openExternalFailed', { error: result?.error ?? '' }));
+    return { success: false, error: result?.error };
   } catch (error: any) {
+    ErrorHandler.showError(i18n.t('apiToast.openExternalFailed', { error: error?.message ?? '' }));
     return { success: false, error: error?.message };
   }
 }
@@ -229,6 +237,22 @@ export async function updateSubscriptionServers(subscriptionId: string): Promise
   } catch (error: any) {
     ErrorHandler.handleApiError(error, i18n.t('apiToast.updateSubServers'));
     return { success: false, error: error?.message };
+  }
+}
+
+/**
+ * 订阅预检（add 前先行，不写 config）：直接返回契约结果 SubscriptionPreviewResult（ok/errorKind/httpStatus）——
+ * **不套 {success,data} 信封、不 toast**（错误文案由对话框按 errorKind 分类展示）。IPC 传输异常（预检本身不 throw）
+ * → 兜底 unknown。
+ */
+export async function previewSubscription(
+  url: string,
+  opts: { viaProxy?: boolean; userAgent?: string }
+): Promise<SubscriptionPreviewResult> {
+  try {
+    return await api.subscription.preview(url, opts);
+  } catch (error: any) {
+    return { ok: false, errorKind: 'unknown', message: error?.message };
   }
 }
 

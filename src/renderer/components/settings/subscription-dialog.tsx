@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,6 +21,10 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import type { SubscriptionConfig } from '@/bridge/types';
+import {
+  SUBSCRIPTION_ERROR_I18N_KEY,
+  type SubscriptionErrorKind,
+} from '@shared/subscription-preview';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '@/lib/format';
 import { getVersionInfo } from '@/bridge/api-wrapper';
@@ -29,7 +34,11 @@ interface SubscriptionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subscription?: SubscriptionConfig;
-  onSave: (subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'>) => Promise<void>;
+  // 返回 ok 让对话框区分成功/失败：失败(ok:false)不关窗、留住用户输入。兼容 void（旧契约按成功关窗）。
+  // add 预检失败携 errorKind/httpStatus → 对话框按分类展示错误文案（sub.preview.*）。
+  onSave: (
+    subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'>
+  ) => Promise<{ ok: boolean; errorKind?: SubscriptionErrorKind; httpStatus?: number } | void>;
   // 全局订阅代理策略：'follow' 时本 per-sub 开关可设；'proxy'/'direct' 时被全局覆盖、置灰。
   subscriptionProxyPolicy?: 'follow' | 'proxy' | 'direct';
 }
@@ -103,7 +112,7 @@ export function SubscriptionDialog({
     try {
       setIsSaving(true);
       const trimmedUa = userAgent.trim();
-      await onSave({
+      const result = await onSave({
         name: name.trim(),
         url: url.trim(),
         autoUpdate,
@@ -112,9 +121,17 @@ export function SubscriptionDialog({
         // 仅 true 才写入（默认关 = 不带字段，落回直连）。
         ...(updateViaProxy ? { updateViaProxy: true } : {}),
       });
-      onOpenChange(false);
+      // 仅保存成功才关窗；失败(ok:false)保留对话框与已填内容，免用户重填。onSave 返回 void（旧契约）时按成功关窗。
+      if (!result || result.ok) {
+        onOpenChange(false);
+      } else if (result.errorKind) {
+        // add 预检失败：按分类取 title/detail key 展示（detail 传 status 供 http 文案插值）。edit 路径 result 无
+        // errorKind（api-wrapper 已 toast）→ 不重复提示。缺 i18n key 时 t() 回退原样，不影响流程。
+        const { title, detail } = SUBSCRIPTION_ERROR_I18N_KEY[result.errorKind];
+        toast.error(t(title), { description: t(detail, { status: result.httpStatus }) });
+      }
     } catch {
-      // Error is handled by api wrapper
+      // onSave 内部已 toast；异常同样不关窗，保留用户输入
     } finally {
       setIsSaving(false);
     }
