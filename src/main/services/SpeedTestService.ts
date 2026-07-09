@@ -303,23 +303,14 @@ export class SpeedTestService {
     // 解析测速端点（一次，预热+正式共用）；非法 testUrl 经 resolveSpeedTestTarget 回落默认 generate_204。
     const target = resolveSpeedTestTarget(testUrl);
 
-    // 端点节点（WG/WARP，L3）目标域名必被 sing-box 本地解析 → 需 exit-DNS(穿隧道) + local-DNS(兜底) 双形态入站，
-    // 故对端点多分配一个「local 兜底口」。isEndpointProtocol 键控（非硬编码 wireguard），未来端点类型自动覆盖。
-    const isEndpoint = (u: { outbound: Record<string, unknown> }) =>
-      isEndpointProtocol(u.outbound.type as string);
-    const endpointUsable = usable.filter(isEndpoint);
     try {
-      // 1. 分配 HTTP 代理端口：前 usable.length 个=各节点 exit 形态口；其后 endpointUsable.length 个=端点 local 兜底口。
-      const ports = await this.findFreePorts(usable.length + endpointUsable.length);
-      const serverPortMap = new Map<string, number>(); // serverId → exit 形态 HTTP proxy port
+      // 1. 为可用节点分配 HTTP 代理端口
+      const ports = await this.findFreePorts(usable.length);
+      const serverPortMap = new Map<string, number>(); // serverId → HTTP proxy port
       usable.forEach((u, idx) => serverPortMap.set(u.server.id, ports[idx]));
-      const endpointLocalPortMap = new Map<string, number>(); // 端点 serverId → local-DNS 兜底口
-      endpointUsable.forEach((u, idx) =>
-        endpointLocalPortMap.set(u.server.id, ports[usable.length + idx])
-      );
 
-      // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点额外 local 兜底入站 + 穿隧道 DNS）
-      const config = this.generateProxyTestConfig(usable, serverPortMap, endpointLocalPortMap);
+      // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点目标解析走穿隧道 223.5.5.5，geo 正确）
+      const config = this.generateProxyTestConfig(usable, serverPortMap);
 
       // 3. 写入临时配置文件
       const userDataPath = getUserDataPath();
@@ -373,45 +364,12 @@ export class SpeedTestService {
       //    预热轮。并发上限避免大订阅 N 路握手同时打出→请求风暴假超时；小订阅(≤上限)等价全并行。
       //    每测完一个节点立即回调 onResult（UI 流式显示），不等队列。
       await this.runWithLimit(usable, SpeedTestService.PROXY_TEST_CONCURRENCY, async (u) => {
-        let latency: number | null;
-        let reason: string | undefined;
-        if (isEndpoint(u)) {
-          // 端点双测（两路并行、总耗时 ≤ MEASURE_TIMEOUT_MS）：exit-DNS 形态（目标经隧道解析、geo 正确）优先，
-          // 失败才回落 local-DNS 形态（dns-direct 兜底，救国内出口 WG）。exit 优先而非先到先得——local 本机解析
-          // 几乎恒先到（0-7ms vs 隧道 80-100ms），先到先得会白改（恒选 geo 错的 local）。
-          const exitP = this.measureViaTunnel(
-            serverPortMap.get(u.server.id)!,
-            SpeedTestService.MEASURE_TIMEOUT_MS,
-            target
-          );
-          const localP = this.measureViaTunnel(
-            endpointLocalPortMap.get(u.server.id)!,
-            SpeedTestService.MEASURE_TIMEOUT_MS,
-            target
-          );
-          const exit = await exitP;
-          if (exit.latency !== null) {
-            void localP.catch(() => {}); // exit 命中：local 探测跑完即弃，吞异常防悬挂
-            latency = exit.latency;
-          } else {
-            const local = await localP;
-            if (local.latency !== null) {
-              latency = local.latency;
-              this.logManager.addLog('info', `${u.server.name} 测速回落 local-DNS`, 'SpeedTest');
-            } else {
-              latency = null;
-              reason = `exit:${exit.reason ?? '?'}|local:${local.reason ?? '?'}`;
-            }
-          }
-        } else {
-          const r = await this.measureViaTunnel(
-            serverPortMap.get(u.server.id)!,
-            SpeedTestService.MEASURE_TIMEOUT_MS,
-            target
-          );
-          latency = r.latency;
-          reason = r.reason;
-        }
+        const port = serverPortMap.get(u.server.id)!;
+        const { latency, reason } = await this.measureViaTunnel(
+          port,
+          SpeedTestService.MEASURE_TIMEOUT_MS,
+          target
+        );
         results.set(u.server.id, latency);
         if (latency === null) noteFail(reason ?? 'unknown'); // ③ 记失败模式
         report(u.server.id, latency);
@@ -460,14 +418,13 @@ export class SpeedTestService {
    */
   private generateProxyTestConfig(
     usable: { server: ServerConfig; tag: string; outbound: Record<string, unknown> }[],
-    serverPortMap: Map<string, number>,
-    endpointLocalPortMap: Map<string, number>
+    serverPortMap: Map<string, number>
   ): Record<string, unknown> {
     const inbounds: Record<string, unknown>[] = [];
     const outbounds: Record<string, unknown>[] = [];
     const endpoints: Record<string, unknown>[] = [];
     const routeRules: Record<string, unknown>[] = [];
-    // 仅解析节点 server 地址的国内 DNS（见下「两类解析不变量」）；端点另加穿隧道 DNS（dns-exit-<id8>）。
+    // 解析节点 server 地址的国内 DNS（见下「两类解析不变量」）；端点另加穿隧道 DNS（dns-exit-<id8>）。
     const dnsServers: Record<string, unknown>[] = [
       { tag: 'dns-direct', type: 'udp', server: '223.5.5.5', server_port: 53 },
     ];
@@ -485,33 +442,24 @@ export class SpeedTestService {
       if (isEndpointProtocol(outbound.type as string)) {
         endpoints.push(outbound);
         // 端点是 L3（运 IP 包、不认域名）→ sing-box 强制**本地解析**目标域名（wireguard/endpoint.go 空 QueryOptions，
-        // 过 dns.rules + default）。默认 dns-direct(223.5.5.5 国内 DNS) 解出国内 geo 镜像 IP、境外出口回连中国 → 超时/失真。
-        // 故：exit 形态入站（http-in-<id8>）的目标解析用「穿本节点隧道」的 1.1.1.1（anycast 由出口就近应答 → geo 正确）；
-        // 另起 local 形态入站（http-in-l-<id8>，无 dns.rule → 回落 dns-direct）作兜底——救国内出口 WG（穿隧道查 1.1.1.1
-        // 会 anycast 落境外、答案在墙内不可达）。两形态经 inbound 键控 dns.rule 精确分流（dns router 保留连接 InboundContext）。
-        const localPort = endpointLocalPortMap.get(server.id);
-        if (localPort) {
-          const localInboundTag = `http-in-l-${id8}`;
-          inbounds.push({
-            type: 'http',
-            tag: localInboundTag,
-            listen: '127.0.0.1',
-            listen_port: localPort,
-          });
-          routeRules.push({ inbound: [localInboundTag], action: 'route', outbound: tag });
-        }
+        // 过 dns.rules + default）。默认 dns-direct(223.5.5.5) 从**本机**解析 → 本机 geo 的 IP；但端点出口可能在别处
+        // （境外 WARP / 国内自建 WG），本机 geo IP 出口够不着 → 超时/失真。故把目标解析经 inbound 键控 dns.rule 定向到
+        // 「穿本节点隧道」的 223.5.5.5：查询从**出口**发出，AliDNS（有大陆节点 + ECS）按**出口地理**返 IP（境外出口→境外 IP、
+        // 国内出口→国内 IP），出口恒够得着。真机双证：WARP→142.251.x(境外)/204、国内 WG→58.63.x(国内)/204；1.1.1.1 因
+        // anycast 无大陆 PoP、在国内出口反挂（74.125.x 境外 IP 墙内不可达），故用 223.5.5.5 单形态覆盖境内外。
+        // endpoint 级 domain_resolver 只管 peer 地址、禁指向隧道 DNS（peer 解析死锁 FATAL，实测）。
         const exitDnsTag = `dns-exit-${id8}`;
         dnsServers.push({
           tag: exitDnsTag,
           type: 'udp',
-          server: '1.1.1.1',
+          server: '223.5.5.5',
           server_port: 53,
-          detour: tag, // 查询穿本端点隧道 → anycast 由出口就近应答
+          detour: tag, // 查询穿本端点隧道 → AliDNS 按出口地理(ECS)返 IP
         });
         // WG localAddress 含 v6 → prefer_ipv4（避免 v6 优先落不可达）；纯 v4 → ipv4_only（消 v6 解析噪声）。
         const hasV6 = !!server.wireguardSettings?.localAddress?.some((a) => a.includes(':'));
         dnsRules.push({
-          inbound: [inboundTag], // 仅 exit 形态入站的目标解析走穿隧道 DNS；local 形态回落 dns-direct
+          inbound: [inboundTag], // 端点入站的目标解析走穿隧道 DNS（按出口地理）
           action: 'route',
           server: exitDnsTag,
           strategy: hasV6 ? 'prefer_ipv4' : 'ipv4_only',
@@ -529,8 +477,8 @@ export class SpeedTestService {
     //  · 代理出站（vless/vmess/trojan/hy2/tuic/ss/snell/anytls/naive/ssh…）：目标域名以 ATYP=domain **透传给出口远程
     //    解析**，不经本机 dns-direct（代理 dialer 只拨 server 地址、destination 进协议头）。各节点量到自身真实路径。
     //    ⚠️ 勿引入 sniff / outbound.domain_strategy / 针对目标的本地解析——会破坏此不变量。
-    //  · 端点（WG/WARP…L3）：**必本地解析**目标（内核强制）。故上方用 inbound 键控 dns.rule 把 exit 形态目标解析压到
-    //    穿隧道 1.1.1.1（geo 正确），local 形态回落 dns-direct（国内出口兜底）；default_domain_resolver 仍解节点 server 地址。
+    //  · 端点（WG/WARP…L3）：**必本地解析**目标（内核强制）。故上方用 inbound 键控 dns.rule 把端点的目标解析压到穿隧道
+    //    223.5.5.5（AliDNS ECS 按出口地理返 IP、geo 正确、单形态覆盖境内外出口）；default_domain_resolver 仍解节点 server 地址。
     const dns: Record<string, unknown> = { servers: dnsServers };
     if (dnsRules.length > 0) dns.rules = dnsRules; // 仅有端点节点时下发；纯代理配置零变化
     const config: Record<string, unknown> = {
