@@ -302,7 +302,7 @@ export function ConnectionControlCard() {
             // 空态引导：无节点 → 添加节点/订阅（连接圆钮同排但置灰）。
             <div className="cc-node-row">
               <div className="flex flex-1 flex-wrap items-center gap-2 rounded-[9px] border border-dashed border-[hsl(var(--line))] bg-[hsl(var(--surface-2))] p-3">
-                <span className="w-full text-[12.5px] text-[hsl(var(--fg-dim))]">
+                <span className="text-[12.5px] text-[hsl(var(--fg-dim))]">
                   {t('home.noServerConfig')}
                 </span>
                 <button
