@@ -1151,7 +1151,7 @@
     "meshTsKeyReadySub": "تنظیمات · حذف",
     "meshTsAddSub": "ورود تعاملی / AuthKey",
     "meshTsEntryTitle": "دسترسی به شبکهٔ Tailscale و مدیریت حساب",
-    "speedTestingCount": "در حال تست · {{count}} گروه"
+    "speedTestingNodes": "در حال تست · {{tested}}/{{total}} گره"
   },
   "rules": {
     "ruleColumn": "قانون",

@@ -1,8 +1,7 @@
 /**
  * 节点测速 hook —— 从 server-list.tsx 下沉（审计 §1 Tier-1，纯逻辑零 JSX）。
- * 封 isTestingSpeed/speedProgress/testingServerIds 三态 + 全量/单节点两个 handler。
- * 测速事件订阅在 handleSpeedTest 内声明（try 外），catch/finally 路径均 unsubscribe（防 listener 泄漏，
- * 与原 god-component 行为逐字一致——无独立 useEffect 生命周期，订阅随 handler 起止）。
+ * 封 isTestingSpeed/testingServerIds 两态 + 全量/单节点两个 handler。进度/结果 toast 移交
+ * speed-test-toast 聚合协调器（跨入口/多组去重并集节点进度、单一 toast），按钮仅显「测速中」二态。
  */
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -17,12 +16,19 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
   const applyLatencyResults = useAppStore((state) => state.applyLatencyResults);
   const { t } = useTranslation();
   const [isTestingSpeed, setIsTestingSpeed] = useState(false);
-  const [speedProgress, setSpeedProgress] = useState<{
-    tested: number;
-    ok: number;
-    total: number;
-  } | null>(null);
   const [testingServerIds, setTestingServerIds] = useState<Set<string>>(new Set());
+
+  // 聚合 toast 文案（进度由 speed-test-toast 协调器按已测/并集节点数动态渲染）。
+  const aggLabels = {
+    running: (tested: number, total: number) =>
+      t('servers.speedTestingNodes', {
+        tested,
+        total,
+        defaultValue: '测速中 · {{tested}}/{{total}} 节点',
+      }),
+    done: t('servers.speedTestDone'),
+    fail: t('servers.speedTestFail'),
+  };
 
   const handleSpeedTest = async () => {
     // 排除不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：与 ⚡ 禁用、后端 null 分支同口径
@@ -33,20 +39,8 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
       return;
     }
     setIsTestingSpeed(true);
-    // per-node 结果监听已上移到 use-native-events 顶层持久 hook（托盘/UI 两入口共用，写全局 latencyMap，跨页不丢）；
-    // 此处仅订阅进度（页面局部进度条）+ 末尾兜底同步。订阅声明在 try 外，确保 catch/finally 都能 unsubscribe。
-    const unsubscribeProgress = api.server.onSpeedTestProgress(({ tested, ok, total }) => {
-      setSpeedProgress({ tested, ok, total });
-    });
-    // 聚合 toast（跨入口/多组并发只弹一个：首个开始→loading、仍有在跑显剩余组数、全部结束→success/error 一次，
-    // 不堆叠；保留排队多组能力，见 speed-test-toast）。
-    beginAggSpeedTest({
-      start: t('servers.speedTestStart'),
-      running: (n) =>
-        t('servers.speedTestingCount', { count: n, defaultValue: '测速中 · {{count}} 组' }),
-      done: t('servers.speedTestDone'),
-      fail: t('servers.speedTestFail'),
-    });
+    // 进度/结果移交聚合 toast 协调器（订 result 事件、去重并集节点进度）；按钮仅「测速中」，不再各自弹 toast。
+    beginAggSpeedTest(serverIdsToTest, aggLabels);
     try {
       const results = await api.server.speedTest(serverIdsToTest);
       // 末尾兜底同步（确保最终结果一致，兜底事件丢失）；函数式合并保留未测节点的历史延迟。
@@ -56,9 +50,7 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
     } catch (error) {
       endAggSpeedTest(true, error instanceof Error ? error.message : String(error));
     } finally {
-      unsubscribeProgress();
       setIsTestingSpeed(false);
-      setSpeedProgress(null);
     }
   };
 
@@ -69,19 +61,15 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
       s.add(serverId);
       return s;
     });
+    // 单节点也并入聚合 toast（连点多个节点不堆叠终端 toast）；行内 spinner 仍由 testingServerIds 驱动。
+    beginAggSpeedTest([serverId], aggLabels);
     try {
       const results = await api.server.speedTest([serverId]);
-
       // Update only this specific node's latency in the store（函数式合并，避免 stale 覆盖）
       applyLatencyResults(results);
-
-      if (results[serverId] !== undefined) {
-        toast.success(t('servers.speedTestDone'));
-      }
+      endAggSpeedTest(false);
     } catch (error) {
-      toast.error(t('servers.speedTestFail'), {
-        description: error instanceof Error ? error.message : String(error),
-      });
+      endAggSpeedTest(true, error instanceof Error ? error.message : String(error));
     } finally {
       setTestingServerIds((prev) => {
         const s = new Set(prev);
@@ -93,7 +81,6 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
 
   return {
     isTestingSpeed,
-    speedProgress,
     testingServerIds,
     handleSpeedTest,
     handleSingleSpeedTest,

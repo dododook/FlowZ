@@ -1151,7 +1151,7 @@
     "meshTsKeyReadySub": "Settings · Delete",
     "meshTsAddSub": "Interactive login / AuthKey",
     "meshTsEntryTitle": "Tailscale mesh access and account management",
-    "speedTestingCount": "Testing · {{count}} groups"
+    "speedTestingNodes": "Testing · {{tested}}/{{total}} nodes"
   },
   "rules": {
     "ruleColumn": "Rule",

@@ -127,8 +127,8 @@ export function ConnectionControlCard() {
   const selectedServer = servers.find((s) => s.id === selectedServerId);
   const isDirect = isDirectSelection(selectedServerId);
 
-  // 就地全量测速（复用服务器页 hook：isSpeedTestable 过滤 + 三态 + toast，结果经全局 latencyMap 回流下拉）。
-  const { isTestingSpeed, speedProgress, handleSpeedTest } = useSpeedTest(servers);
+  // 就地全量测速（复用服务器页 hook：isSpeedTestable 过滤 + 聚合 toast，结果经全局 latencyMap 回流下拉）。
+  const { isTestingSpeed, handleSpeedTest } = useSpeedTest(servers);
 
   // config 是接管方式持久化真值；优先它，避免启动时 connectionStatus 未刷新而默认 systemProxy 盖掉已存的 tun。
   const proxyModeType = config?.proxyModeType || connectionStatus?.proxyModeType || 'systemProxy';
@@ -288,10 +288,7 @@ export function ConnectionControlCard() {
         ? startDisabledReason || t('home.startProxy')
         : t('home.startProxy');
 
-  const speedTitle =
-    isTestingSpeed && speedProgress
-      ? `${speedProgress.tested}/${speedProgress.total}`
-      : t('servers.speedTestGroup');
+  const speedTitle = isTestingSpeed ? t('servers.speedTesting') : t('servers.speedTestGroup');
 
   const isEmptyState = servers.length === 0 && !isDirect;
 

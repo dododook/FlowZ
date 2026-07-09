@@ -83,13 +83,8 @@ export function ServerList({
   const { t } = useTranslation();
 
   // 测速态 + handler（hook 下沉，纯逻辑）
-  const {
-    isTestingSpeed,
-    speedProgress,
-    testingServerIds,
-    handleSpeedTest,
-    handleSingleSpeedTest,
-  } = useSpeedTest(servers);
+  const { isTestingSpeed, testingServerIds, handleSpeedTest, handleSingleSpeedTest } =
+    useSpeedTest(servers);
 
   // 搜索 / 过滤 / 排序态 + 派生列表（hook 下沉，纯逻辑）
   const {
@@ -390,11 +385,7 @@ export function ServerList({
           disabled={isTestingSpeed}
         >
           <Zap className={isTestingSpeed ? 'animate-pulse fill-current/20' : ''} />
-          {isTestingSpeed
-            ? speedProgress
-              ? `${t('servers.speedTesting')} ${speedProgress.tested}/${speedProgress.total}`
-              : t('servers.speedTesting')
-            : t('servers.speedTestGroup')}
+          {isTestingSpeed ? t('servers.speedTesting') : t('servers.speedTestGroup')}
         </button>
 
         {/* 多选 */}

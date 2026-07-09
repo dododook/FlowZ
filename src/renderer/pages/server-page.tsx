@@ -247,11 +247,7 @@ export function ServerPage() {
             disabled={allSpeed.isTestingSpeed}
           >
             <Zap className={allSpeed.isTestingSpeed ? 'animate-pulse fill-current/20' : ''} />
-            {allSpeed.isTestingSpeed
-              ? allSpeed.speedProgress
-                ? `${t('servers.speedTesting')} ${allSpeed.speedProgress.tested}/${allSpeed.speedProgress.total}`
-                : t('servers.speedTesting')
-              : t('servers.speedTestAll')}
+            {allSpeed.isTestingSpeed ? t('servers.speedTesting') : t('servers.speedTestAll')}
           </button>
           {/* 添加下拉（CSS-only :focus-within 弹出，与工具栏协议/排序下拉同范式） */}
           <div className="nd-dd">

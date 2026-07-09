@@ -1151,7 +1151,7 @@
     "meshTsKeyReadySub": "Настройки · удаление",
     "meshTsAddSub": "Интерактивный вход / AuthKey",
     "meshTsEntryTitle": "Подключение к сети Tailscale и управление аккаунтом",
-    "speedTestingCount": "Тест · {{count}} гр."
+    "speedTestingNodes": "Тест · {{tested}}/{{total}} узлов"
   },
   "rules": {
     "ruleColumn": "Правило",

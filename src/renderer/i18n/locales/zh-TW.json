@@ -1151,7 +1151,7 @@
     "meshTsKeyReadySub": "設定 · 刪除",
     "meshTsAddSub": "互動登入 / AuthKey",
     "meshTsEntryTitle": "Tailscale 組網接入與帳戶管理",
-    "speedTestingCount": "測速中 · {{count}} 組"
+    "speedTestingNodes": "測速中 · {{tested}}/{{total}} 節點"
   },
   "rules": {
     "ruleColumn": "規則",
