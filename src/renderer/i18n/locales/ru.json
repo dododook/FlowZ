@@ -1150,7 +1150,8 @@
     "meshTsManageSub": "Настройки · выход / смена аккаунта",
     "meshTsKeyReadySub": "Настройки · удаление",
     "meshTsAddSub": "Интерактивный вход / AuthKey",
-    "meshTsEntryTitle": "Подключение к сети Tailscale и управление аккаунтом"
+    "meshTsEntryTitle": "Подключение к сети Tailscale и управление аккаунтом",
+    "speedTestingCount": "Тест · {{count}} гр."
   },
   "rules": {
     "ruleColumn": "Правило",

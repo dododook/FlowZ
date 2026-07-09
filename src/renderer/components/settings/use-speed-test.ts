@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import { isSpeedTestable } from '../../../shared/endpoint-routes';
+import { beginAggSpeedTest, endAggSpeedTest } from './speed-test-toast';
 import type { ServerConfigWithId } from './server-list-helpers';
 
 export function useSpeedTest(servers: ServerConfigWithId[]) {
@@ -37,19 +38,23 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
     const unsubscribeProgress = api.server.onSpeedTestProgress(({ tested, ok, total }) => {
       setSpeedProgress({ tested, ok, total });
     });
-    // 进度 toast 捕获 id：完成/失败原地替换「开始测速」（声明在 try 外供 catch 引用）。
-    const speedToastId = toast.loading(t('servers.speedTestStart'));
+    // 聚合 toast（跨入口/多组并发只弹一个：首个开始→loading、仍有在跑显剩余组数、全部结束→success/error 一次，
+    // 不堆叠；保留排队多组能力，见 speed-test-toast）。
+    beginAggSpeedTest({
+      start: t('servers.speedTestStart'),
+      running: (n) =>
+        t('servers.speedTestingCount', { count: n, defaultValue: '测速中 · {{count}} 组' }),
+      done: t('servers.speedTestDone'),
+      fail: t('servers.speedTestFail'),
+    });
     try {
       const results = await api.server.speedTest(serverIdsToTest);
       // 末尾兜底同步（确保最终结果一致，兜底事件丢失）；函数式合并保留未测节点的历史延迟。
       applyLatencyResults(results);
-      toast.success(t('servers.speedTestDone'), { id: speedToastId });
+      endAggSpeedTest(false);
       // 不再自动排序（保留用户排序偏好，测速只更新延迟值）
     } catch (error) {
-      toast.error(t('servers.speedTestFail'), {
-        id: speedToastId,
-        description: error instanceof Error ? error.message : String(error),
-      });
+      endAggSpeedTest(true, error instanceof Error ? error.message : String(error));
     } finally {
       unsubscribeProgress();
       setIsTestingSpeed(false);

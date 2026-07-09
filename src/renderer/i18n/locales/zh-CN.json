@@ -1150,7 +1150,8 @@
     "meshTsManageSub": "设置 · 登出 / 切换账户",
     "meshTsKeyReadySub": "设置 · 删除",
     "meshTsAddSub": "交互登录 / AuthKey",
-    "meshTsEntryTitle": "Tailscale 组网接入与账户管理"
+    "meshTsEntryTitle": "Tailscale 组网接入与账户管理",
+    "speedTestingCount": "测速中 · {{count}} 组"
   },
   "rules": {
     "ruleColumn": "规则",

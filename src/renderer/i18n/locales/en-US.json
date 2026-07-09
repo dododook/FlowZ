@@ -1150,7 +1150,8 @@
     "meshTsManageSub": "Settings · Log out / Switch account",
     "meshTsKeyReadySub": "Settings · Delete",
     "meshTsAddSub": "Interactive login / AuthKey",
-    "meshTsEntryTitle": "Tailscale mesh access and account management"
+    "meshTsEntryTitle": "Tailscale mesh access and account management",
+    "speedTestingCount": "Testing · {{count}} groups"
   },
   "rules": {
     "ruleColumn": "Rule",

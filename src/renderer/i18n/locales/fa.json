@@ -1150,7 +1150,8 @@
     "meshTsManageSub": "تنظیمات · خروج / تعویض حساب",
     "meshTsKeyReadySub": "تنظیمات · حذف",
     "meshTsAddSub": "ورود تعاملی / AuthKey",
-    "meshTsEntryTitle": "دسترسی به شبکهٔ Tailscale و مدیریت حساب"
+    "meshTsEntryTitle": "دسترسی به شبکهٔ Tailscale و مدیریت حساب",
+    "speedTestingCount": "در حال تست · {{count}} گروه"
   },
   "rules": {
     "ruleColumn": "قانون",
