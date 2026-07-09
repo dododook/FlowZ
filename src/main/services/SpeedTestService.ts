@@ -53,9 +53,11 @@ export class SpeedTestService {
    */
   private buildOutboundFn?: (server: ServerConfig, tag: string) => Record<string, unknown> | null;
 
-  /** 进行中的测速 Promise：双入口（UI/托盘）并发时复用同一次测速，避免起两个临时 sing-box（端口/资源冲突）。
-   *  第二个调用方等待同一份最终结果（不收流式 onResult，末尾 results 同步覆盖即可）。 */
+  /** 进行中的测速 Promise + 其覆盖的节点 id 集：多入口并发（首页/托盘/页级全部/本组/单节点，各传不同 serverIds
+   *  子集）时按「覆盖」编排——新请求 ⊆ 在飞集 → 复用同一次（零重跑、避免双临时 sing-box 端口冲突）；未覆盖 → 串行链
+   *  在其后（不同分组/单节点/子集先-全量后 各自被完整测到，永不并发双 sing-box、无静默漏测）。 */
   private currentTest: Promise<Map<string, number | null>> | null = null;
+  private currentTestIds: Set<string> | null = null;
 
   constructor(
     logManager: LogManager,
@@ -83,17 +85,33 @@ export class SpeedTestService {
     if (testable.length === 0) {
       return new Map();
     }
-    // 双入口（UI/托盘）并发复用同一次测速，避免起两个临时 sing-box（端口/资源冲突）。
-    // second caller 拿同一份 final results，但其 onResult/onProgress 不触发（流式只由 first caller 驱动）；
-    // 可接受：数据最终正确，且 EVENT_SPEED_TEST_RESULT/PROGRESS 是 IPC broadcast，second caller 的 renderer
-    // 订阅仍能收到 first caller 推的事件（latencyMap/进度照常更新）。
-    if (this.currentTest) return this.currentTest;
-    this.currentTest = this.doTestAllServers(testable, onResult, onProgress, testUrl).finally(
-      () => {
+    // 并发编排（多入口各传不同子集）：按「在飞测速是否覆盖本次请求」决定复用 or 串行。
+    const inFlight = this.currentTest;
+    const inFlightIds = this.currentTestIds;
+    const requestIds = new Set(testable.map((s) => s.id));
+    if (inFlight && inFlightIds && [...requestIds].every((id) => inFlightIds.has(id))) {
+      // 覆盖态（在飞集 ⊇ 本次请求）：复用同一次测速，零重跑。second caller 拿同一份 final results，其 onResult/
+      // onProgress 不驱动（流式只由 first caller），但 EVENT_SPEED_TEST_RESULT/PROGRESS 是 IPC broadcast，
+      // 本 caller 的 renderer 仍收得到（latencyMap/进度照常更新）。
+      return inFlight;
+    }
+    // 未覆盖（不同分组 / 单节点先-全量后 / 子集先-全量后）：串行链在在飞测速之后跑——永不并发双临时 sing-box
+    // （端口/资源冲突），且本次请求的节点集用**自身** set 完整测到（杜绝旧「无条件复用」导致的静默漏测/错测）。
+    const run = inFlight
+      ? inFlight
+          .catch(() => {}) // 吞前一次异常，仅为串行不断链（本次独立、不受前次成败影响）
+          .then(() => this.doTestAllServers(testable, onResult, onProgress, testUrl))
+      : this.doTestAllServers(testable, onResult, onProgress, testUrl);
+    this.currentTest = run;
+    this.currentTestIds = requestIds;
+    void run.finally(() => {
+      // 仅当仍是最新一次（其后无更晚的串行链接）才清空，避免清掉排队中的下一次。
+      if (this.currentTest === run) {
         this.currentTest = null;
+        this.currentTestIds = null;
       }
-    );
-    return this.currentTest;
+    });
+    return run;
   }
 
   private async doTestAllServers(
