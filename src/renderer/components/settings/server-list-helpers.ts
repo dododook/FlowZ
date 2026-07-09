@@ -67,7 +67,7 @@ export const getCountryCode = (name: string): string | null => {
   // russia 含 us、berlin 含 in、montreal 含 tr、sweden 含 de、madrid 含 id 等；
   // 同时兼容 "US01" / "HK-02" 等写法。中文名/城市/旗帜 emoji 足够独特，仍按子串匹配。
   if (/香港|🇭🇰|hong kong|(?<![a-z])hk(?![a-z])/.test(lowerName)) return 'hk';
-  if (/台湾|🇹🇼|台北|新北|(?<![a-z])(?:tw|taiwan)(?![a-z])/.test(lowerName)) return 'cn';
+  if (/台湾|🇹🇼|台北|新北|(?<![a-z])(?:tw|taiwan)(?![a-z])/.test(lowerName)) return 'tw';
   if (/日本|🇯🇵|东京|大阪|(?<![a-z])(?:jp|japan)(?![a-z])/.test(lowerName)) return 'jp';
   if (/新加坡|🇸🇬|狮城|(?<![a-z])(?:sg|singapore)(?![a-z])/.test(lowerName)) return 'sg';
   if (/美国|🇺🇸|洛杉矶|硅谷|西雅图|(?<![a-z])(?:us|usa|america)(?![a-z])/.test(lowerName))

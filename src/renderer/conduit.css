@@ -342,7 +342,8 @@
   .nd-card.pick { border-color: hsl(var(--flow) / 0.5); background: hsl(var(--flow-weak) / 0.55); }
 
   /* 国旗水印（淡） */
-  .nd-flag { position: absolute; right: -8px; top: -12px; font-size: 66px; line-height: 1;
+  /* 国旗水印置右下角：避让首行右侧的 SpeedBadge 延迟徽标（原右上重叠遮挡测速结果，用户反馈）。 */
+  .nd-flag { position: absolute; right: -8px; bottom: -12px; font-size: 66px; line-height: 1;
     opacity: 0.08; filter: grayscale(0.15); pointer-events: none; user-select: none; }
   .dark .nd-flag { opacity: 0.11; }
 
