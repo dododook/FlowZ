@@ -9,6 +9,7 @@ import {
   sortServers,
   meshIsExitCapable,
   meshInternetOff,
+  flagAsset,
 } from '../server-list-helpers';
 
 // 仅取 tailscaleNeedsLogin 用到的字段，避免引 @/bridge/types（jest 无 @ 别名）。
@@ -42,6 +43,19 @@ describe('tailscaleNeedsLogin', () => {
   it('非 Tailscale 节点 → 恒 false（即使 loggedIn 缺省）', () => {
     expect(tailscaleNeedsLogin(ts({ protocol: 'vless' }))).toBe(false);
     expect(tailscaleNeedsLogin(ts({ protocol: 'wireguard' }), false)).toBe(false);
+  });
+});
+
+describe('flagAsset（节点名地区 → 本地 SVG 国旗资源）', () => {
+  it('识别到地区时返回本地 SVG data URI，不依赖系统 emoji 字体', () => {
+    const flag = flagAsset('HK-01');
+    expect(flag).toMatchObject({ code: 'hk', label: 'Hong Kong' });
+    expect(flag?.src).toMatch(/^data:image\/svg\+xml,/);
+    expect(decodeURIComponent(flag!.src)).toContain('<svg');
+  });
+
+  it('识别不到地区 → null（调用方省略国旗）', () => {
+    expect(flagAsset('unknown-node')).toBeNull();
   });
 });
 

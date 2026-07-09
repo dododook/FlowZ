@@ -1,6 +1,6 @@
 /**
- * 节点卡片视图项 —— Conduit `.nd-card` 形态（原型 1:1）。国旗 emoji 水印 + 状态点 + 名称 + 延迟徽标（首行），
- * 协议/组网能力/登录态/当前/传输摘要角标（第二行），hover 操作条（ServerActions）。
+ * 节点卡片视图项 —— Conduit `.nd-card` 形态（原型 1:1）。本地 SVG 国旗水印 + 状态点 + 名称 + 延迟徽标（首行），
+ * 协议/组网能力/登录态/当前/传输摘要角标（第二行），常显操作条（ServerActions）。
  * 选中态（.cur）/批量选中态（.pick + .nd-chk）/组网态（.mesh + pending）/各角标均逐字保留原判定与行为。
  */
 import { useTranslation } from 'react-i18next';
@@ -12,7 +12,7 @@ import { ServerActions } from './server-actions';
 import { SpeedBadge } from './speed-badge';
 import { MeshInfoPopover } from './mesh-info-popover';
 import {
-  flagEmoji,
+  flagAsset,
   transferSummary,
   nodeTypeLabel,
   tailscaleNeedsLogin,
@@ -51,7 +51,7 @@ export function ServerCard({
   actions,
 }: ServerCardProps) {
   const { t } = useTranslation();
-  const flag = flagEmoji(server.name);
+  const flag = flagAsset(server.name);
   const isMesh = isEndpointProtocol(server.protocol);
   const isCurrent = selectedServerId === server.id;
   const isPicked = selectedIds.has(server.id);
@@ -90,7 +90,9 @@ export function ServerCard({
         }
       }}
     >
-      {flag && <span className="nd-flag">{flag}</span>}
+      {flag && (
+        <img className="nd-flag" src={flag.src} alt="" aria-hidden="true" draggable={false} />
+      )}
 
       <div className="nd-card-top">
         {isSelecting ? (

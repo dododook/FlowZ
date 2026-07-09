@@ -94,6 +94,8 @@ export interface NodePickerProps {
   emptyText?: string;
   /** 触发器是否显示地址副文本（首页 lg 用）。 */
   showAddress?: boolean;
+  /** 触发器是否隐藏当前项延迟；选项列表仍显示延迟，保留排序/对比信息。 */
+  hideTriggerLatency?: boolean;
   ariaLabel?: string;
 }
 
@@ -116,6 +118,7 @@ export function NodePicker({
   searchPlaceholder,
   emptyText,
   showAddress,
+  hideTriggerLatency,
   ariaLabel,
 }: NodePickerProps) {
   const { t } = useTranslation();
@@ -187,7 +190,7 @@ export function NodePicker({
             )}
             {/* 延迟+角标包进恒渲染的 ms-auto 组：无延迟值时 LatencyLabel 返 null 也不丢右锚，角标恒贴最右。 */}
             <span className="ms-auto flex shrink-0 items-center gap-1">
-              <LatencyLabel item={current} />
+              {!hideTriggerLatency && <LatencyLabel item={current} />}
               <ChevronDown className="h-4 w-4 opacity-50" />
             </span>
           </>

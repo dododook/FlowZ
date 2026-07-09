@@ -1580,6 +1580,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
       if (allOk) {
         this.currentConfig = newConfig;
+        this.flushConnectionsAfterInterruptedHotSwitch(newConfig, plan.kind);
         // L3：norm 排除了外化规则的值 → 「切节点 + 改外化规则值」同一次 save 会通过 planHotSwitch 检查，
         //   补一次文件对账防值静默丢失（通常零 diff、幂等）。降级态文件无消费者 → 改走重启重落盘（与 no-op 分支对称）。
         if (this.customRuleFilesDegraded) this.scheduleDebouncedRestart();
@@ -1737,6 +1738,33 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (puts.length === 0) return { kind: 'none', puts: [] };
     const kind = globalChanged && rulePuts.length > 0 ? 'both' : globalChanged ? 'global' : 'rules';
     return { kind, puts };
+  }
+
+  /**
+   * 用户开启「切换节点时断开现有连接」后，全局出口热切换成功即显式 CloseAllConnections。
+   * sing-box selector 的 interrupt_exist_connections 仍是配置层单一语义；此处是 FlowZ 层兜底，覆盖运行时旧连接未即时
+   * 被 selector 清掉的情况。仅 global/both：规则目标热切换不误杀全局连接。
+   */
+  private flushConnectionsAfterInterruptedHotSwitch(
+    config: UserConfig,
+    kind: 'none' | 'global' | 'rules' | 'both'
+  ): void {
+    if (config.interruptConnectionsOnSwitch !== true) return;
+    if (kind !== 'global' && kind !== 'both') return;
+    const client = this.tailscaleApiClient;
+    if (!client) {
+      this.logToManager('warn', '切换节点断连：管理 API 客户端未就绪，跳过 CloseAllConnections');
+      return;
+    }
+    void client
+      .closeAllConnections()
+      .then(() => this.logToManager('info', '切换节点断连：管理 API CloseAllConnections → ok'))
+      .catch((e) =>
+        this.logToManager(
+          'warn',
+          `切换节点断连：管理 API CloseAllConnections 失败(${(e as Error)?.message ?? e})`
+        )
+      );
   }
 
   /**

@@ -11,6 +11,7 @@ import {
 } from '../../../shared/endpoint-routes';
 import { isWarpServer } from '../../../shared/warp';
 import { sortServersByLatency } from '../../../shared/server-latency-sort';
+import { countryCodeToFlagAsset, type FlagAsset } from './flag-assets';
 
 export type ServerConfigWithId = ServerConfig;
 export type ViewMode = 'card' | 'list';
@@ -219,15 +220,9 @@ export const getProtocolBadgeVariant = (protocol: string) => {
 
 // ══════════════════ Conduit nodes-page（.nd-*）展示辅助 ══════════════════
 
-/** ISO 3166-1 alpha-2 国家码 → 区域指示符 emoji 旗帜（hk → 🇭🇰）。非法/空输入 → 空串。 */
-export const countryCodeToFlag = (code: string | null): string => {
-  if (!code || code.length !== 2) return '';
-  const cc = code.toUpperCase();
-  return String.fromCodePoint(0x1f1e6 + cc.charCodeAt(0) - 65, 0x1f1e6 + cc.charCodeAt(1) - 65);
-};
-
-/** 节点名 → 旗帜 emoji（.nd-flag 水印用）；识别不到国家 → 空串（省略水印）。复用 getCountryCode 单一真值。 */
-export const flagEmoji = (name: string): string => countryCodeToFlag(getCountryCode(name));
+/** 节点名 → 本地 SVG 国旗资源；识别不到国家 → null（省略水印）。复用 getCountryCode 单一真值。 */
+export const flagAsset = (name: string): FlagAsset | null =>
+  countryCodeToFlagAsset(getCountryCode(name));
 
 /** 延迟数值 → .nd-lat 语义档类名（ok/warn/err）；无测速结果 / idle → ''。
  *  阈值判定委托 latencyTone（与 getLatencyColor / .npick 同一单一真值，杜绝阈值双写漂移）。 */

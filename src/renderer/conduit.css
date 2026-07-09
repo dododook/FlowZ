@@ -341,9 +341,8 @@
   .nd-card.cur { border-color: hsl(var(--flow)); box-shadow: 0 0 0 2px hsl(var(--ring) / 0.45); }
   .nd-card.pick { border-color: hsl(var(--flow) / 0.5); background: hsl(var(--flow-weak) / 0.55); }
 
-  /* 国旗水印（淡） */
-  /* 国旗水印置右下角：避让首行右侧的 SpeedBadge 延迟徽标（原右上重叠遮挡测速结果，用户反馈）。 */
-  .nd-flag { position: absolute; right: -8px; bottom: -12px; font-size: 66px; line-height: 1;
+  /* 国旗水印置右下角：本地 SVG 资源，避让首行右侧的 SpeedBadge 延迟徽标。 */
+  .nd-flag { position: absolute; right: -10px; bottom: -10px; width: 86px; height: 58px; object-fit: cover; border-radius: 6px;
     opacity: 0.08; filter: grayscale(0.15); pointer-events: none; user-select: none; }
   .dark .nd-flag { opacity: 0.11; }
 
@@ -363,9 +362,8 @@
     background: hsl(var(--flow-solid)); color: #fff; display: inline-flex; align-items: center; }
   .nd-xfer { font-size: 10.5px; font-weight: 500; color: hsl(var(--fg-faint)); margin-left: 2px; }
 
-  /* hover 操作条 */
-  .nd-acts { display: flex; gap: 5px; opacity: 0; transition: opacity 0.14s; }
-  .nd-card:hover .nd-acts, .nd-card:focus-within .nd-acts, .nd-row:hover .nd-acts, .nd-row:focus-within .nd-acts { opacity: 1; }
+  /* 操作条默认常显，避免需要 hover 才能发现入口。 */
+  .nd-acts { display: flex; gap: 5px; opacity: 1; }
   .nd-act { width: 28px; height: 28px; flex: none; border-radius: 7px; border: 1px solid hsl(var(--hair));
     background: hsl(var(--surface-2)); color: hsl(var(--fg-dim)); display: grid; place-items: center; cursor: pointer; }
   .nd-act svg { width: 15px; height: 15px; }
@@ -385,7 +383,8 @@
   .nd-row { display: flex; align-items: center; gap: 9px; padding: 9px 13px; border-top: 1px solid hsl(var(--hair)); cursor: pointer; }
   .nd-row:first-child { border-top: 0; }
   .nd-row:hover { background: hsl(var(--surface-2)); }
-  .nd-row-flag { font-size: 15px; line-height: 1; flex: none; }
+  .nd-row-flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; flex: none;
+    box-shadow: inset 0 0 0 1px hsl(var(--line) / 0.75); }
   .nd-row .nd-name { flex: 0 1 auto; }
   .nd-row-sp { flex: 1; }
 

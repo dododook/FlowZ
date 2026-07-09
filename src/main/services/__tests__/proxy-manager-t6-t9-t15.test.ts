@@ -176,6 +176,32 @@ describe('§3-C：selector/close 经管理 API gRPC', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('切换节点断连兜底：全局热切换 + 开关开启 → gRPC closeAllConnections()', () => {
+    const svc = makeSvc();
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
+    svc.flushConnectionsAfterInterruptedHotSwitch(
+      { interruptConnectionsOnSwitch: true } as any,
+      'global'
+    );
+    expect(calls).toEqual([{ method: 'closeAllConnections', args: [] }]);
+  });
+
+  it('切换节点断连兜底：规则热切换或开关关闭 → 不关全部连接', () => {
+    const svc = makeSvc();
+    const { client, calls } = makeApiClientStub();
+    svc.tailscaleApiClient = client;
+    svc.flushConnectionsAfterInterruptedHotSwitch(
+      { interruptConnectionsOnSwitch: true } as any,
+      'rules'
+    );
+    svc.flushConnectionsAfterInterruptedHotSwitch(
+      { interruptConnectionsOnSwitch: false } as any,
+      'global'
+    );
+    expect(calls).toHaveLength(0);
+  });
+
   it('reassertRuleSelectors 对每条启用的 proxy 规则 → gRPC selectOutbound(selectorTag, memberTag)', async () => {
     const svc = makeSvc();
     const { client, calls } = makeApiClientStub();

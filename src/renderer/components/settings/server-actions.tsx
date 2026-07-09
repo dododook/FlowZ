@@ -1,6 +1,6 @@
 /**
  * 节点操作按钮组（测速 / 复制分享 / 克隆 / 编辑 / 删除）—— Conduit `.nd-acts` / `.nd-act` 形态，
- * 卡片视图与列表视图共用，hover/focus 显现（CSS `.nd-card:hover .nd-acts`）。
+ * 卡片视图与列表视图共用，默认常显，避免用户需要 hover 才能发现操作入口。
  * handler 经 props 注入，调用点逐字不变；删除仍走 radix AlertDialog 二次确认（行为保留）。
  */
 import {

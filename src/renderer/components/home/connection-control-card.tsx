@@ -86,6 +86,7 @@ function ExitNodePicker({
       onSelect={onSelect}
       size="lg"
       showAddress
+      hideTriggerLatency
       className="min-w-0 flex-1"
       placeholder={t('home.selectServer')}
       searchPlaceholder={t('common.search', '搜索')}

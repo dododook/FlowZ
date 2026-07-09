@@ -1,6 +1,6 @@
 /**
- * 节点列表视图行 —— Conduit `.nd-row` 形态（原型 1:1）。国旗 emoji + 状态点/多选框 + 名称 + 协议/组网/当前/
- * 传输角标 + 弹性占位 + 延迟徽标 + hover 操作条。行点击在选择态走 onToggleSelectId、非选择态走 onSelectServer；
+ * 节点列表视图行 —— Conduit `.nd-row` 形态（原型 1:1）。本地 SVG 国旗 + 状态点/多选框 + 名称 + 协议/组网/当前/
+ * 传输角标 + 弹性占位 + 延迟徽标 + 常显操作条。行点击在选择态走 onToggleSelectId、非选择态走 onSelectServer；
  * 各角标判定逐字保留原行为，无功能变化。
  */
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,7 @@ import { ServerActions } from './server-actions';
 import { SpeedBadge } from './speed-badge';
 import { MeshInfoPopover } from './mesh-info-popover';
 import {
-  flagEmoji,
+  flagAsset,
   transferSummary,
   nodeTypeLabel,
   tailscaleNeedsLogin,
@@ -50,7 +50,7 @@ export function ServerRow({
   actions,
 }: ServerRowProps) {
   const { t } = useTranslation();
-  const flag = flagEmoji(server.name);
+  const flag = flagAsset(server.name);
   const isCurrent = selectedServerId === server.id;
   const isPicked = selectedIds.has(server.id);
   const invalid = invalidNodes[server.id];
@@ -78,7 +78,9 @@ export function ServerRow({
         }
       }}
     >
-      {flag && <span className="nd-row-flag">{flag}</span>}
+      {flag && (
+        <img className="nd-row-flag" src={flag.src} alt="" aria-hidden="true" draggable={false} />
+      )}
       {isSelecting ? (
         <label className={`nd-chk${isPicked ? ' on' : ''}`} />
       ) : (
