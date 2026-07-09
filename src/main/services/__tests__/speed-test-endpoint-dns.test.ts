@@ -76,4 +76,37 @@ describe('测速临时 config:端点目标解析穿隧道 223.5.5.5（单形态�
       'http-in-wgnode01',
     ]);
   });
+
+  it('DNS A 响应解析：压缩 answer name + A 记录 → resolved IP', () => {
+    const qname = Buffer.from([
+      3, 119, 119, 119, 7, 103, 115, 116, 97, 116, 105, 99, 3, 99, 111, 109, 0,
+    ]); // www.gstatic.com
+    const question = Buffer.concat([qname, Buffer.from([0, 1, 0, 1])]);
+    const answer = Buffer.from([
+      0xc0,
+      0x0c, // name pointer to question
+      0x00,
+      0x01, // A
+      0x00,
+      0x01, // IN
+      0x00,
+      0x00,
+      0x00,
+      0x3c, // TTL
+      0x00,
+      0x04, // rdlength
+      203,
+      0,
+      113,
+      7,
+    ]);
+    const header = Buffer.alloc(12);
+    header.writeUInt16BE(0x1234, 0);
+    header.writeUInt16BE(0x8180, 2);
+    header.writeUInt16BE(1, 4);
+    header.writeUInt16BE(1, 6);
+    const response = Buffer.concat([header, question, answer]);
+
+    expect((SpeedTestService as any).parseDnsAResponse(response)).toEqual(['203.0.113.7']);
+  });
 });

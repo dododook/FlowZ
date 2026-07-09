@@ -36,6 +36,16 @@ describe('SpeedTestService 进度与流式回调', () => {
       { tested: 2, ok: 0, total: 3 },
       { tested: 3, ok: 0, total: 3 },
     ]);
+    expect(svc.getLastSpeedTestDiagnostics()).toMatchObject({
+      total: 3,
+      usable: 0,
+      resolvedIpProbes: [],
+      failures: [
+        { serverId: 's1', serverName: 's1', tag: 'out-s1', reason: 'unusable' },
+        { serverId: 's2', serverName: 's2', tag: 'out-s2', reason: 'unusable' },
+        { serverId: 's3', serverName: 's3', tag: 'out-s3', reason: 'unusable' },
+      ],
+    });
   });
 
   it('空 servers 列表不触发 onResult/onProgress', async () => {

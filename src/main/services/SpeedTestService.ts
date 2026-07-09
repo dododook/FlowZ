@@ -36,6 +36,39 @@ export interface SpeedTestResult {
   error?: string;
 }
 
+export interface SpeedTestFailureDiagnostic {
+  serverId: string;
+  serverName?: string;
+  tag?: string;
+  reason: string;
+}
+
+export interface SpeedTestResolvedIpDiagnostic {
+  serverId: string;
+  serverName?: string;
+  tag?: string;
+  targetHost: string;
+  resolverPath: string;
+  resolvedIps: string[];
+  error?: string;
+}
+
+export interface SpeedTestDiagnosticSnapshot {
+  generatedAt: string;
+  target: {
+    host: string;
+    port: number;
+    path: string;
+    https: boolean;
+    hostHeader: string;
+  };
+  total: number;
+  usable: number;
+  failures: SpeedTestFailureDiagnostic[];
+  resolvedIpProbes: SpeedTestResolvedIpDiagnostic[];
+  tempConfig?: Record<string, unknown>;
+}
+
 export class SpeedTestService {
   private logManager: LogManager;
   private readonly MAX_CONCURRENT = 5; // TCP 并发数（仅兜底裸 ping 路径）
@@ -46,6 +79,8 @@ export class SpeedTestService {
   /** 单节点测速总超时（ms）：覆盖冷建连(CONNECT+到代理/目标握手)+两次 GET；上报值只取第二次 warm RTT，与此无关。
    *  取 8s 给大订阅并发冷启动留足头寸，超时即判该节点不可达(null)。 */
   private static readonly MEASURE_TIMEOUT_MS = 8000;
+  /** endpoint 失败后的结构化 DNS 探测超时。只走失败 endpoint，避免影响正常测速值。 */
+  private static readonly DNS_PROBE_TIMEOUT_MS = 1500;
   /**
    * 出站构造器（由 index.ts 注入 ProxyManager.buildSpeedTestOutbound）：注入后**所有协议**统一走「临时 sing-box
    * 经代理 urltest」真实测速（端口通≠代理可用，裸 TCP ping 测不出鉴权/中继失败）；返回 null=该节点不可用（如 naive
@@ -58,6 +93,7 @@ export class SpeedTestService {
    *  在其后（不同分组/单节点/子集先-全量后 各自被完整测到，永不并发双 sing-box、无静默漏测）。 */
   private currentTest: Promise<Map<string, number | null>> | null = null;
   private currentTestIds: Set<string> | null = null;
+  private lastDiagnostics: SpeedTestDiagnosticSnapshot | null = null;
 
   constructor(
     logManager: LogManager,
@@ -65,6 +101,10 @@ export class SpeedTestService {
   ) {
     this.logManager = logManager;
     this.buildOutboundFn = buildOutboundFn;
+  }
+
+  getLastSpeedTestDiagnostics(): SpeedTestDiagnosticSnapshot | null {
+    return this.lastDiagnostics;
   }
 
   /**
@@ -268,8 +308,20 @@ export class SpeedTestService {
     // issue #154 ③：失败原因计数（reason→次数）+ 末尾分布日志，把「为何全超时」从玄学变可定位
     //（http-403=目标拒绝/查测速地址、connect-timeout=连不上、unusable=naive 缺库、core-not-ready=临时核没起）。
     const failReasons = new Map<string, number>();
+    const failures: SpeedTestFailureDiagnostic[] = [];
+    const resolvedIpProbes: SpeedTestResolvedIpDiagnostic[] = [];
+    const resolvedIpProbePromises: Promise<SpeedTestResolvedIpDiagnostic>[] = [];
     const noteFail = (reason: string) =>
       failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
+    const noteNodeFail = (reason: string, server: ServerConfig, tag?: string): void => {
+      noteFail(reason);
+      failures.push({
+        serverId: server.id,
+        serverName: server.name,
+        tag,
+        reason,
+      });
+    };
     const logFailDist = () => {
       if (failReasons.size === 0) return;
       const dist = [...failReasons.entries()]
@@ -280,6 +332,9 @@ export class SpeedTestService {
     };
     let singboxProcess: ChildProcess | null = null;
     let configFilePath: string | null = null;
+    let tempConfig: Record<string, unknown> | undefined;
+    let stderrOutput = '';
+    let stdoutOutput = '';
 
     // 构造各节点出站；不可用（naive 缺 libcronet / 异常）→ 直接 null，不进临时核（避免预初始化 FATAL 拖垮整批）。
     const getOutbound =
@@ -291,17 +346,24 @@ export class SpeedTestService {
       if (ob) usable.push({ server: s, tag, outbound: ob });
       else {
         results.set(s.id, null);
-        noteFail('unusable'); // naive 缺 libcronet / 构造异常 → 不可测节点
+        noteNodeFail('unusable', s, tag); // naive 缺 libcronet / 构造异常 → 不可测节点
         report(s.id, null);
       }
     }
+    // 解析测速端点（一次，预热+正式共用）；非法 testUrl 经 resolveSpeedTestTarget 回落默认 generate_204。
+    const target = resolveSpeedTestTarget(testUrl);
     if (usable.length === 0) {
+      this.lastDiagnostics = {
+        generatedAt: new Date().toISOString(),
+        target,
+        total,
+        usable: 0,
+        failures: [...failures],
+        resolvedIpProbes: [],
+      };
       logFailDist();
       return results;
     }
-
-    // 解析测速端点（一次，预热+正式共用）；非法 testUrl 经 resolveSpeedTestTarget 回落默认 generate_204。
-    const target = resolveSpeedTestTarget(testUrl);
 
     try {
       // 1. 为可用节点分配 HTTP 代理端口
@@ -311,6 +373,7 @@ export class SpeedTestService {
 
       // 2. 生成临时 sing-box 配置（每节点独立 HTTP 入站 → 该节点出站；端点目标解析走穿隧道 223.5.5.5，geo 正确）
       const config = this.generateProxyTestConfig(usable, serverPortMap);
+      tempConfig = config;
 
       // 3. 写入临时配置文件
       const userDataPath = getUserDataPath();
@@ -323,8 +386,10 @@ export class SpeedTestService {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      // 收集 stderr 用于调试
-      let stderrOutput = '';
+      // 收集临时核输出用于调试。正常退出也在 finally 以 debug 写 app.log；日志级别非 debug 时自动被 LogManager 过滤。
+      singboxProcess.stdout?.on('data', (data: Buffer) => {
+        stdoutOutput += data.toString();
+      });
       singboxProcess.stderr?.on('data', (data: Buffer) => {
         stderrOutput += data.toString();
       });
@@ -352,7 +417,7 @@ export class SpeedTestService {
         );
         for (const u of usable) {
           results.set(u.server.id, null);
-          noteFail('core-not-ready'); // 临时 sing-box 未就绪：整批不可测
+          noteNodeFail('core-not-ready', u.server, u.tag); // 临时 sing-box 未就绪：整批不可测
           report(u.server.id, null);
         }
         return results;
@@ -371,21 +436,54 @@ export class SpeedTestService {
           target
         );
         results.set(u.server.id, latency);
-        if (latency === null) noteFail(reason ?? 'unknown'); // ③ 记失败模式
+        if (latency === null) {
+          noteNodeFail(reason ?? 'unknown', u.server, u.tag); // ③ 记失败模式
+          report(u.server.id, latency);
+          if (isEndpointProtocol(u.outbound.type as string)) {
+            resolvedIpProbePromises.push(
+              this.probeEndpointTargetResolvedIps(
+                port,
+                u.server,
+                u.tag,
+                target.host,
+                SpeedTestService.DNS_PROBE_TIMEOUT_MS
+              )
+            );
+          }
+          return;
+        }
         report(u.server.id, latency);
       });
+      resolvedIpProbes.push(...(await Promise.all(resolvedIpProbePromises)));
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logManager.addLog('error', `测速异常: ${msg}`, 'SpeedTest');
       for (const u of usable) {
         if (!results.has(u.server.id)) {
           results.set(u.server.id, null);
-          noteFail('exception');
+          noteNodeFail('exception', u.server, u.tag);
           report(u.server.id, null);
         }
       }
     } finally {
+      this.lastDiagnostics = {
+        generatedAt: new Date().toISOString(),
+        target,
+        total,
+        usable: usable.length,
+        failures: [...failures],
+        resolvedIpProbes: [...resolvedIpProbes],
+        tempConfig,
+      };
       logFailDist(); // ③ 末尾打失败原因分布（normal/not-ready/catch 路径都经 finally）
+      const coreOutput = [stderrOutput, stdoutOutput].filter(Boolean).join('\n').trim();
+      if (coreOutput) {
+        this.logManager.addLog(
+          'debug',
+          `临时 sing-box 测速输出：${coreOutput.slice(-4000)}`,
+          'SpeedTest'
+        );
+      }
       // 清理临时进程
       if (singboxProcess && !singboxProcess.killed) {
         singboxProcess.kill('SIGTERM');
@@ -482,7 +580,9 @@ export class SpeedTestService {
     const dns: Record<string, unknown> = { servers: dnsServers };
     if (dnsRules.length > 0) dns.rules = dnsRules; // 仅有端点节点时下发；纯代理配置零变化
     const config: Record<string, unknown> = {
-      log: { level: 'warn' },
+      // 诊断采集会把 LogManager 提到 debug；临时测速核随之提级，复现时能把测速核自身的 DNS/dial 细节带进 app.log。
+      // 非采集态保持 warn，避免普通测速输出膨胀。
+      log: { level: this.logManager.getLogLevel?.() === 'debug' ? 'debug' : 'warn' },
       dns,
       inbounds,
       outbounds,
@@ -639,6 +739,190 @@ export class SpeedTestService {
       });
       connectReq.end();
     });
+  }
+
+  private async probeEndpointTargetResolvedIps(
+    proxyPort: number,
+    server: ServerConfig,
+    tag: string,
+    targetHost: string,
+    timeout: number
+  ): Promise<SpeedTestResolvedIpDiagnostic> {
+    const resolverPath = `dns-exit-${server.id.slice(0, 8)} tcp/53 probe`;
+    if (net.isIP(targetHost)) {
+      return {
+        serverId: server.id,
+        serverName: server.name,
+        tag,
+        targetHost,
+        resolverPath,
+        resolvedIps: [targetHost],
+      };
+    }
+    try {
+      const resolvedIps = await this.queryDnsAOverTcpViaProxy(proxyPort, targetHost, timeout);
+      return {
+        serverId: server.id,
+        serverName: server.name,
+        tag,
+        targetHost,
+        resolverPath,
+        resolvedIps,
+        error: resolvedIps.length === 0 ? 'no-a-record' : undefined,
+      };
+    } catch (e: any) {
+      return {
+        serverId: server.id,
+        serverName: server.name,
+        tag,
+        targetHost,
+        resolverPath,
+        resolvedIps: [],
+        error: e?.message ?? String(e),
+      };
+    }
+  }
+
+  private queryDnsAOverTcpViaProxy(
+    proxyPort: number,
+    hostname: string,
+    timeout: number
+  ): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      let connectReq: http.ClientRequest | null = null;
+      let socket: net.Socket | null = null;
+      let done = false;
+      let buf = Buffer.alloc(0);
+      const finish = (err: Error | null, ips?: string[]) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        socket?.destroy();
+        connectReq?.destroy();
+        if (err) reject(err);
+        else resolve(ips ?? []);
+      };
+      const timer = setTimeout(() => finish(new Error('dns-probe-timeout')), timeout);
+      connectReq = http.request({
+        host: '127.0.0.1',
+        port: proxyPort,
+        method: 'CONNECT',
+        path: '223.5.5.5:53',
+        headers: { Host: '223.5.5.5:53' },
+        timeout,
+      });
+      connectReq.on('error', () => finish(new Error('dns-probe-connect-error')));
+      connectReq.on('timeout', () => finish(new Error('dns-probe-connect-timeout')));
+      connectReq.on('response', () => finish(new Error('dns-probe-connect-downgraded')));
+      connectReq.on('connect', (res, s) => {
+        socket = s;
+        if (res.statusCode !== 200) {
+          s.destroy();
+          finish(new Error(`dns-probe-connect-${res.statusCode}`));
+          return;
+        }
+        socket.setNoDelay(true);
+        socket.on('error', () => finish(new Error('dns-probe-socket-error')));
+        socket.on('end', () => finish(new Error('dns-probe-early-close')));
+        socket.on('data', (chunk: Buffer) => {
+          buf = Buffer.concat([buf, chunk]);
+          if (buf.length < 2) return;
+          const len = buf.readUInt16BE(0);
+          if (buf.length < len + 2) return;
+          try {
+            finish(null, SpeedTestService.parseDnsAResponse(buf.subarray(2, len + 2)));
+          } catch (e: any) {
+            finish(new Error(e?.message ?? String(e)));
+          }
+        });
+        try {
+          socket.write(SpeedTestService.buildDnsTcpQuery(hostname, 1));
+        } catch (e: any) {
+          finish(new Error(e?.message ?? String(e)));
+        }
+      });
+      connectReq.end();
+    });
+  }
+
+  private static buildDnsTcpQuery(hostname: string, qtype: number): Buffer {
+    const labels = hostname.split('.').filter(Boolean);
+    const qnameParts: Buffer[] = [];
+    for (const label of labels) {
+      const b = Buffer.from(label, 'ascii');
+      if (b.length === 0 || b.length > 63) throw new Error('invalid-dns-label');
+      qnameParts.push(Buffer.from([b.length]), b);
+    }
+    qnameParts.push(Buffer.from([0]));
+    const body = Buffer.alloc(12 + qnameParts.reduce((n, b) => n + b.length, 0) + 4);
+    let off = 0;
+    body.writeUInt16BE(Math.floor(Math.random() * 0xffff), off);
+    off += 2;
+    body.writeUInt16BE(0x0100, off); // RD
+    off += 2;
+    body.writeUInt16BE(1, off); // QDCOUNT
+    off += 2;
+    body.writeUInt16BE(0, off); // ANCOUNT
+    off += 2;
+    body.writeUInt16BE(0, off); // NSCOUNT
+    off += 2;
+    body.writeUInt16BE(0, off); // ARCOUNT
+    off += 2;
+    for (const part of qnameParts) {
+      part.copy(body, off);
+      off += part.length;
+    }
+    body.writeUInt16BE(qtype, off);
+    off += 2;
+    body.writeUInt16BE(1, off); // IN
+    const frame = Buffer.alloc(body.length + 2);
+    frame.writeUInt16BE(body.length, 0);
+    body.copy(frame, 2);
+    return frame;
+  }
+
+  private static parseDnsAResponse(buf: Buffer): string[] {
+    if (buf.length < 12) throw new Error('dns-response-short');
+    const qd = buf.readUInt16BE(4);
+    const an = buf.readUInt16BE(6);
+    let off = 12;
+    for (let i = 0; i < qd; i++) {
+      off = SpeedTestService.skipDnsName(buf, off) + 4; // qtype + qclass
+      if (off > buf.length) throw new Error('dns-question-truncated');
+    }
+    const ips: string[] = [];
+    for (let i = 0; i < an; i++) {
+      off = SpeedTestService.skipDnsName(buf, off);
+      if (off + 10 > buf.length) throw new Error('dns-answer-truncated');
+      const type = buf.readUInt16BE(off);
+      const klass = buf.readUInt16BE(off + 2);
+      const rdlen = buf.readUInt16BE(off + 8);
+      off += 10;
+      if (off + rdlen > buf.length) throw new Error('dns-rdata-truncated');
+      if (type === 1 && klass === 1 && rdlen === 4) {
+        ips.push(`${buf[off]}.${buf[off + 1]}.${buf[off + 2]}.${buf[off + 3]}`);
+      }
+      off += rdlen;
+    }
+    return ips;
+  }
+
+  private static skipDnsName(buf: Buffer, offset: number): number {
+    let off = offset;
+    let jumps = 0;
+    while (off < buf.length) {
+      const len = buf[off];
+      if ((len & 0xc0) === 0xc0) {
+        if (off + 1 >= buf.length) throw new Error('dns-pointer-truncated');
+        jumps++;
+        if (jumps > 16) throw new Error('dns-pointer-loop');
+        return off + 2;
+      }
+      if (len === 0) return off + 1;
+      if ((len & 0xc0) !== 0) throw new Error('dns-label-invalid');
+      off += 1 + len;
+    }
+    throw new Error('dns-name-truncated');
   }
 
   /**

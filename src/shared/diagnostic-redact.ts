@@ -301,6 +301,35 @@ export interface DiagnosticReportInput {
   };
   redactedUserConfig: unknown;
   redactedSingboxConfig: unknown;
+  /** 最近一次测速诊断：临时测速 sing-box 配置 + 逐节点失败 reason。配置必须由调用方先脱敏。 */
+  speedTestDiagnostics?: {
+    generatedAt: string;
+    target: {
+      host: string;
+      port: number;
+      path: string;
+      https: boolean;
+      hostHeader: string;
+    };
+    total: number;
+    usable: number;
+    failures: ReadonlyArray<{
+      serverId: string;
+      serverName?: string;
+      tag?: string;
+      reason: string;
+    }>;
+    resolvedIpProbes?: ReadonlyArray<{
+      serverId: string;
+      serverName?: string;
+      tag?: string;
+      targetHost: string;
+      resolverPath: string;
+      resolvedIps: readonly string[];
+      error?: string;
+    }>;
+    redactedTempConfig?: unknown;
+  };
   /** 逐进程内存/CPU 快照（issue #242）：一眼看出是哪个子进程内存偏高；type/pid/内存/CPU 非敏感，无需脱敏。 */
   processMetrics?: ProcessMetricsSummary;
   /** 渲染进程堆分层（issue #242 §6.2）：V8 堆 + 进程 RSS + Blink 资源缓存；取不到为 unavailable。 */
@@ -337,6 +366,22 @@ function fence(lang: string, body: string): string {
   }
   const ticks = '`'.repeat(Math.max(3, maxRun + 1));
   return `${ticks}${lang}\n${safe}\n${ticks}`;
+}
+
+function tableCell(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
+}
+
+function formatSpeedTestTargetForReport(
+  target: NonNullable<DiagnosticReportInput['speedTestDiagnostics']>['target']
+): string {
+  const scheme = target.https ? 'https' : 'http';
+  const raw = `${scheme}://${target.hostHeader}${target.path}`;
+  return target.host === 'www.gstatic.com' && target.path === '/generate_204'
+    ? raw
+    : redactUrlValue(raw);
 }
 
 /** 构建诊断报告 Markdown（纯字符串拼装，可单测）。 */
@@ -399,6 +444,46 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
   lines.push('');
   lines.push(fence('json', JSON.stringify(input.redactedUserConfig, null, 2)));
   lines.push('');
+
+  if (input.speedTestDiagnostics) {
+    const d = input.speedTestDiagnostics;
+    lines.push('## 最近一次测速诊断');
+    lines.push('');
+    lines.push(`- 生成时间：${d.generatedAt}`);
+    lines.push(`- 测速目标：${formatSpeedTestTargetForReport(d.target)}`);
+    lines.push(`- 节点数：total=${d.total} / usable=${d.usable} / failed=${d.failures.length}`);
+    lines.push('');
+    if (d.failures.length > 0) {
+      lines.push('| 节点 ID | 节点名 | 出站 tag | reason |');
+      lines.push('|---|---|---|---|');
+      for (const f of d.failures) {
+        lines.push(
+          `| ${tableCell(f.serverId)} | ${tableCell(f.serverName)} | ${tableCell(f.tag)} | ${tableCell(f.reason)} |`
+        );
+      }
+      lines.push('');
+    }
+    if (d.resolvedIpProbes && d.resolvedIpProbes.length > 0) {
+      lines.push('### 失败 endpoint 目标解析探测');
+      lines.push('');
+      lines.push(
+        '| 节点 ID | 节点名 | 出站 tag | 目标域名 | resolver path | resolved IPs | error |'
+      );
+      lines.push('|---|---|---|---|---|---|---|');
+      for (const p of d.resolvedIpProbes) {
+        lines.push(
+          `| ${tableCell(p.serverId)} | ${tableCell(p.serverName)} | ${tableCell(p.tag)} | ${tableCell(p.targetHost)} | ${tableCell(p.resolverPath)} | ${tableCell(p.resolvedIps.join(', '))} | ${tableCell(p.error)} |`
+        );
+      }
+      lines.push('');
+    }
+    if (d.redactedTempConfig !== undefined) {
+      lines.push('### 临时测速 sing-box 配置（脱敏）');
+      lines.push('');
+      lines.push(fence('json', JSON.stringify(d.redactedTempConfig, null, 2)));
+      lines.push('');
+    }
+  }
 
   lines.push('## app.log（近期）');
   lines.push('');

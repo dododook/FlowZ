@@ -1730,7 +1730,9 @@ if (gotTheLock) {
           discardCount: rendererDiscardCount,
           warnCount: rendererWarnCount,
           thresholdMb: RENDERER_RSS_LIMIT_MB,
-        })
+        }),
+        // 测速专项诊断：最近一次临时测速 sing-box config + 逐节点失败 reason。DiagnosticService 内统一脱敏。
+        () => speedTestService?.getLastSpeedTestDiagnostics() ?? null
       );
       registerDiagnosticHandlers(diagnosticService);
     }

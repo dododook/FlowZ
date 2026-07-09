@@ -274,6 +274,74 @@ describe('buildDiagnosticReport', () => {
     });
     expect(md).toContain('````json');
   });
+
+  it('测速诊断段包含逐节点失败与临时测速配置，并走节点标识符统一打码', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      speedTestDiagnostics: {
+        generatedAt: '2026-07-09T10:00:00.000Z',
+        target: {
+          host: 'www.gstatic.com',
+          port: 80,
+          path: '/generate_204',
+          https: false,
+          hostHeader: 'www.gstatic.com',
+        },
+        total: 2,
+        usable: 1,
+        failures: [{ serverId: 's1', serverName: '香港机场A', tag: 'out-s1', reason: 'timeout' }],
+        resolvedIpProbes: [
+          {
+            serverId: 's1',
+            serverName: '香港机场A',
+            tag: 'out-s1',
+            targetHost: 'www.gstatic.com',
+            resolverPath: 'dns-exit-s1 tcp/53 probe',
+            resolvedIps: ['203.0.113.7'],
+          },
+        ],
+        redactedTempConfig: {
+          outbounds: [{ type: 'vless', tag: 'out-s1', server: 'node.secret.example' }],
+        },
+      },
+      nodeIdentifiers: [
+        { value: '香港机场A', placeholder: '<node-1>' },
+        { value: 'node.secret.example', placeholder: '<domain-1>' },
+      ],
+    });
+    expect(md).toContain('## 最近一次测速诊断');
+    expect(md).toContain('- 测速目标：http://www.gstatic.com/generate_204');
+    expect(md).toContain('| s1 | <node-1> | out-s1 | timeout |');
+    expect(md).toContain(
+      '| s1 | <node-1> | out-s1 | www.gstatic.com | dns-exit-s1 tcp/53 probe | 203.0.113.7 |  |'
+    );
+    expect(md).toContain('"server": "<domain-1>"');
+    expect(md).not.toContain('香港机场A');
+    expect(md).not.toContain('node.secret.example');
+  });
+
+  it('测速诊断目标为自定义 URL 时脱敏 path/query，避免 token 泄漏', () => {
+    const md = buildDiagnosticReport({
+      ...base,
+      speedTestDiagnostics: {
+        generatedAt: '2026-07-09T10:00:00.000Z',
+        target: {
+          host: 'probe.example.com',
+          port: 443,
+          path: '/check/token-abc?secret=token-xyz',
+          https: true,
+          hostHeader: 'probe.example.com',
+        },
+        total: 1,
+        usable: 1,
+        failures: [],
+        resolvedIpProbes: [],
+      },
+    });
+    expect(md).toContain('- 测速目标：https://probe.example.com/<redacted>');
+    expect(md).not.toContain('token-abc');
+    expect(md).not.toContain('token-xyz');
+  });
 });
 
 describe('buildDiagnosticReport × issue #242 §6 观测随包新字段', () => {

@@ -32,6 +32,7 @@ import { getLogsPath, getSingBoxLogPath } from '../utils/paths';
 import path from 'path';
 import type { LogManager } from './LogManager';
 import type { ProxyManager } from './ProxyManager';
+import type { SpeedTestDiagnosticSnapshot } from './SpeedTestService';
 import type { IConfigManager } from './ConfigManager';
 import type { ISystemProxyManager } from './SystemProxyManager';
 import { resourceManager } from './ResourceManager';
@@ -57,7 +58,9 @@ export class DiagnosticService {
       discardCount: number;
       warnCount: number;
       thresholdMb: number;
-    }
+    },
+    /** 最近一次测速诊断快照（临时测速 config + 逐节点失败 reason）；缺省=无测速诊断段。 */
+    private readonly speedTestDiagnosticsProvider?: () => SpeedTestDiagnosticSnapshot | null
   ) {}
 
   /** 读文件尾部最多 maxBytes 字节；不存在/失败返回占位串（绝不抛）。 */
@@ -124,6 +127,28 @@ export class DiagnosticService {
       redactedUserConfig = redactDeep(config);
     } catch (e: any) {
       redactedUserConfig = { error: `脱敏失败: ${e?.message ?? e}` };
+    }
+
+    let speedTestDiagnostics: DiagnosticReportInput['speedTestDiagnostics'];
+    const rawSpeedTestDiagnostics = this.speedTestDiagnosticsProvider?.();
+    if (rawSpeedTestDiagnostics) {
+      let redactedTempConfig: unknown;
+      if (rawSpeedTestDiagnostics.tempConfig !== undefined) {
+        try {
+          redactedTempConfig = redactDeep(rawSpeedTestDiagnostics.tempConfig, customSecretKeys);
+        } catch (e: any) {
+          redactedTempConfig = { error: `脱敏失败: ${e?.message ?? e}` };
+        }
+      }
+      speedTestDiagnostics = {
+        generatedAt: rawSpeedTestDiagnostics.generatedAt,
+        target: rawSpeedTestDiagnostics.target,
+        total: rawSpeedTestDiagnostics.total,
+        usable: rawSpeedTestDiagnostics.usable,
+        failures: rawSpeedTestDiagnostics.failures,
+        resolvedIpProbes: rawSpeedTestDiagnostics.resolvedIpProbes,
+        redactedTempConfig,
+      };
     }
 
     // 逐进程内存/CPU 快照（issue #242）：一次导出即可定位是哪个子进程内存偏高，取代靠用户截系统监视器猜。
@@ -212,6 +237,7 @@ export class DiagnosticService {
       },
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,
+      speedTestDiagnostics,
       processMetrics,
       rendererHeap,
       coreProcess,
