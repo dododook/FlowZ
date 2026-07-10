@@ -248,7 +248,9 @@ describe('ProxyManager.planHotSwitch winTun 拦截', () => {
     const next = makeConfig({ proxyModeType: 'tun', tunStack: 'system', selectedServerId: NODE_B });
     const plan = svc.planHotSwitch(next);
     expect(plan.kind).toBe('global');
-    expect(plan.puts).toEqual([{ selectorTag: 'proxy-selector', memberTag: 'tagB' }]);
+    expect(plan.puts).toEqual([
+      { selectorTag: 'proxy-selector', memberTag: 'tagB', oldMemberTag: 'tagA' },
+    ]);
   });
 
   it('win32 + systemProxy：换全局节点 → kind="global"（非 tun 不受 winTun 约束）', () => {

@@ -246,6 +246,27 @@ export interface IProxyManager {
   closeConnection(id?: string): Promise<{ ok: boolean; status: number }>;
 }
 
+/** 热切换实际改变了指向的某个 selector 的 (selectorTag, 旧成员 tag) 对。 */
+export interface SwitchedMemberPair {
+  selectorTag: string;
+  oldMemberTag: string;
+}
+
+/**
+ * 精准断连纯谓词：某连接（chainList）是否属于本次热切换改变了指向的某个 selector 上、仍指向旧成员的存量连接。
+ * chains 同时含 selectorTag 与 oldMemberTag 即命中。chains 语义（实测坐实）：含所经全部 selector tag + 最终拨号成员 tag，
+ * 嵌套不折叠——如「跟全局的规则连接」chains=['节点','proxy-selector','rule-sel-x'] 同时含 proxy-selector 与节点 tag，
+ * 全局切换的 pair ('proxy-selector', 旧节点) 正确命中；而「规则固定节点」chains=['节点','rule-sel-x'] 不含 proxy-selector，
+ * 全局切换不误杀。导出供单测。
+ */
+export function connectionMatchesSwitchedPairs(
+  chainList: string[] | undefined,
+  pairs: SwitchedMemberPair[]
+): boolean {
+  if (!Array.isArray(chainList) || chainList.length === 0) return false;
+  return pairs.some((p) => chainList.includes(p.selectorTag) && chainList.includes(p.oldMemberTag));
+}
+
 export class ProxyManager extends EventEmitter implements IProxyManager {
   private singboxProcess: ChildProcess | null = null;
   private startTime: Date | null = null;
@@ -1580,7 +1601,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
       if (allOk) {
         this.currentConfig = newConfig;
-        this.flushConnectionsAfterInterruptedHotSwitch(newConfig, plan.kind);
+        // 精准断连：pair（含旧成员 tag）已在 planHotSwitch 阶段（currentConfig 尚旧时）算好，此处直接消费 plan。
+        this.closeOldNodeConnectionsAfterHotSwitch(newConfig, plan);
         // L3：norm 排除了外化规则的值 → 「切节点 + 改外化规则值」同一次 save 会通过 planHotSwitch 检查，
         //   补一次文件对账防值静默丢失（通常零 diff、幂等）。降级态文件无消费者 → 改走重启重落盘（与 no-op 分支对称）。
         if (this.customRuleFilesDegraded) this.scheduleDebouncedRestart();
@@ -1682,7 +1704,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    */
   private planHotSwitch(newConfig: UserConfig): {
     kind: 'none' | 'global' | 'rules' | 'both';
-    puts: { selectorTag: string; memberTag: string }[];
+    puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[];
   } {
     const old = this.currentConfig;
     if (!old) return { kind: 'none', puts: [] };
@@ -1692,7 +1714,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     }
     if (this.winTunBlocksHotSwitch(newConfig)) return { kind: 'none', puts: [] };
 
-    const puts: { selectorTag: string; memberTag: string }[] = [];
+    const puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[] = [];
     let globalChanged = false;
 
     // 全局节点变化（含切到/切出"直连"哨兵：memberTag=direct，direct 恒是 proxy-selector 成员→可热切换不重启）
@@ -1725,7 +1747,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
       const targetTag = resolveGlobalExitTag(newConfig.selectedServerId, this.currentIdToTagMap);
       if (!targetTag) return { kind: 'none', puts: [] };
-      puts.push({ selectorTag: 'proxy-selector', memberTag: targetTag });
+      // 旧全局出口 tag（供精准断连 pair）：登录期出口让位态下 proxy-selector 实际指 direct（非 config 选中节点 tag），
+      // 否则解析旧选中节点 tag。缺失（解析不到）→ 该 pair 的断连跳过（宁可漏关不误杀）。
+      const oldGlobalTag = this.bootstrapFallbackEngaged
+        ? 'direct'
+        : resolveGlobalExitTag(old.selectedServerId, this.currentIdToTagMap);
+      puts.push({
+        selectorTag: 'proxy-selector',
+        memberTag: targetTag,
+        oldMemberTag: oldGlobalTag,
+      });
       globalChanged = true;
     }
 
@@ -1741,30 +1772,71 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 用户开启「切换节点时断开现有连接」后，全局出口热切换成功即显式 CloseAllConnections。
-   * sing-box selector 的 interrupt_exist_connections 仍是配置层单一语义；此处是 FlowZ 层兜底，覆盖运行时旧连接未即时
-   * 被 selector 清掉的情况。仅 global/both：规则目标热切换不误杀全局连接。
+   * 精准断连：热切换成功后关掉仍指向【旧成员】的存量连接，使其在新成员重建。基于 pair 模型——对本次实际改变了指向的
+   * 每个 selector 取 (selectorTag, 旧成员 tag) 对，只关 chains 同时含二者的活连接（见 connectionMatchesSwitchedPairs）。
+   * 全局=('proxy-selector', 旧节点)，规则=(rule-sel-<id>, 旧目标 tag 或 'proxy-selector')。据此：
+   *  - 全局切换：关全局连接 + 跟全局的规则连接，不误杀「规则固定旧节点」的连接（chains 不含 proxy-selector）；
+   *  - 规则切换：对称断连该规则自己的旧连接；
+   *  - direct/国内/LAN/Tailscale force-route 段/新成员连接均不动（chains 不同时含某对的 selector+旧成员）。
+   *
+   * 为何必须 FlowZ 侧显式关（实测坐实 v1.14.0-alpha.40/41，见上游 SagerNet/sing-box#4281）：sing-box selector 的
+   * interrupt_exist_connections 对 routed 连接 no-op——连接经 ConnectionHandler 路径直接 dial，不注册进 selector 的
+   * interrupt group，SelectOutbound 触发的 Interrupt() 遍历空集。故存量连接不会被内核断，须 CloseConnection 逐条关。
+   * interrupt_exist_connections 仍留配置（对 detour 型内部连接如 DoH 有效，切换后 DNS 立即走新成员），但不作断连承担者。
    */
-  private flushConnectionsAfterInterruptedHotSwitch(
+  private closeOldNodeConnectionsAfterHotSwitch(
     config: UserConfig,
-    kind: 'none' | 'global' | 'rules' | 'both'
+    plan: { puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[] }
   ): void {
     if (config.interruptConnectionsOnSwitch !== true) return;
-    if (kind !== 'global' && kind !== 'both') return;
+    // 实际改变了指向的每个 selector 的 (selectorTag, 旧成员) 对；缺旧成员 tag 或旧==新的跳过（后者指向未变、无需断）。
+    const pairs: SwitchedMemberPair[] = plan.puts
+      .filter((p) => p.oldMemberTag && p.oldMemberTag !== p.memberTag)
+      .map((p) => ({ selectorTag: p.selectorTag, oldMemberTag: p.oldMemberTag as string }));
+    if (pairs.length === 0) return;
     const client = this.tailscaleApiClient;
     if (!client) {
-      this.logToManager('warn', '切换节点断连：管理 API 客户端未就绪，跳过 CloseAllConnections');
+      this.logToManager('warn', '切换节点断连：管理 API 客户端未就绪，跳过');
       return;
     }
-    void client
-      .closeAllConnections()
-      .then(() => this.logToManager('info', '切换节点断连：管理 API CloseAllConnections → ok'))
-      .catch((e) =>
-        this.logToManager(
-          'warn',
-          `切换节点断连：管理 API CloseAllConnections 失败(${(e as Error)?.message ?? e})`
-        )
+    // 一次性订阅 Connections 流：首帧（reset）即内核当前全量连接。关掉命中 pair 的活连接（跳过 closedAt>0 死连接
+    // 历史环），处理完即停。3s 兜底防首帧不来时泄漏订阅。
+    let stop: (() => void) | null = null;
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      try {
+        stop?.();
+      } catch {
+        /* ignore */
+      }
+    };
+    const guard = setTimeout(() => {
+      this.logToManager('warn', '切换节点断连：连接列表首帧超时，跳过');
+      finish();
+    }, 3000);
+    stop = client.subscribeConnections(1_000_000_000, (events) => {
+      if (done) return;
+      clearTimeout(guard);
+      let closed = 0;
+      for (const ev of events?.events ?? []) {
+        const c = ev?.connection;
+        const id = ev?.id ?? c?.id;
+        if (!id || !c) continue;
+        if (Number(c.closedAt) > 0) continue; // 死连接（重置帧幽灵历史环）不处理
+        if (connectionMatchesSwitchedPairs(c.chainList, pairs)) {
+          void client.closeConnection(id).catch(() => {});
+          closed++;
+        }
+      }
+      const pairsDesc = pairs.map((p) => `${p.selectorTag}:${p.oldMemberTag}`).join(',');
+      this.logToManager(
+        'info',
+        `切换节点断连：关旧成员存量连接 ${closed} 条（pairs=${pairsDesc}）`
       );
+      finish();
+    });
   }
 
   /**
@@ -1775,13 +1847,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private planRuleHotSwitch(
     old: UserConfig,
     newConfig: UserConfig
-  ): { selectorTag: string; memberTag: string }[] | null {
+  ): { selectorTag: string; memberTag: string; oldMemberTag?: string }[] | null {
     const map = this.currentRuleTargetMap;
     if (!map) return []; // 启动时无 rule-sel（无 proxy+targetServerId 规则）→ 无规则热切换
     const idToTag = this.currentIdToTagMap;
     if (!idToTag) return null;
 
-    const puts: { selectorTag: string; memberTag: string }[] = [];
+    const puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[] = [];
     const visit = (
       ruleKey: string,
       oldTarget: string | undefined,
@@ -1793,7 +1865,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 新目标有→解析节点 tag；无（节点切回默认/跟全局）→ proxy-selector（rule-sel 嵌套 default）
       const memberTag = newTarget ? idToTag.get(newTarget) : 'proxy-selector';
       if (newTarget && !memberTag) return false; // 新目标节点不在 selector → 退回重启
-      puts.push({ selectorTag: entry.selectorTag, memberTag: memberTag || 'proxy-selector' });
+      // 旧成员 tag（供精准断连 pair）：旧目标节点 tag，无旧目标（跟全局）→ proxy-selector（rule-sel 嵌套 default）。
+      // 必须从 oldTarget 现算，禁用 currentRuleTargetMap.memberTag（那是生成时 default，首次规则热切后即陈旧）。
+      const oldMemberTag = oldTarget
+        ? (idToTag.get(oldTarget) ?? 'proxy-selector')
+        : 'proxy-selector';
+      puts.push({
+        selectorTag: entry.selectorTag,
+        memberTag: memberTag || 'proxy-selector',
+        oldMemberTag,
+      });
       return true;
     };
 

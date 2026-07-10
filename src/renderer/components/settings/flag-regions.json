@@ -1,0 +1,427 @@
+[
+  {
+    "code": "cn",
+    "label": "China",
+    "zh": ["中国", "中國", "回国", "回國", "上海", "北京", "广州", "深圳", "杭州"],
+    "en": ["china", "shanghai", "beijing", "guangzhou", "shenzhen"],
+    "noAlpha2": true,
+    "patterns": ["(?<![a-z])cn(?!2)(?![a-z])"]
+  },
+  { "code": "hk", "label": "Hong Kong", "zh": ["香港"], "en": ["hong kong", "hkg"] },
+  { "code": "mo", "label": "Macao", "zh": ["澳门", "澳門"], "en": ["macau", "macao"] },
+  {
+    "code": "tw",
+    "label": "Taiwan",
+    "zh": ["台湾", "台灣", "臺灣", "台北", "新北", "台中", "高雄", "彰化"],
+    "en": ["taiwan", "twn", "taipei", "hinet"]
+  },
+  {
+    "code": "jp",
+    "label": "Japan",
+    "zh": ["日本", "东京", "東京", "大阪", "埼玉", "名古屋"],
+    "en": ["japan", "jpn", "tokyo", "osaka", "saitama", "nagoya"]
+  },
+  {
+    "code": "kr",
+    "label": "South Korea",
+    "zh": ["韩国", "韓國", "首尔", "首爾", "春川", "釜山"],
+    "en": ["korea", "kor", "seoul", "busan", "chuncheon"]
+  },
+  {
+    "code": "sg",
+    "label": "Singapore",
+    "zh": ["新加坡", "狮城", "獅城"],
+    "en": ["singapore", "sgp"]
+  },
+  {
+    "code": "my",
+    "label": "Malaysia",
+    "zh": ["马来西亚", "馬來西亞", "吉隆坡"],
+    "en": ["malaysia", "mys", "kuala lumpur"]
+  },
+  {
+    "code": "th",
+    "label": "Thailand",
+    "zh": ["泰国", "泰國", "曼谷"],
+    "en": ["thailand", "tha", "bangkok"]
+  },
+  {
+    "code": "vn",
+    "label": "Vietnam",
+    "zh": ["越南", "河内", "胡志明", "西贡"],
+    "en": ["vietnam", "vnm", "hanoi", "ho chi minh", "saigon"]
+  },
+  {
+    "code": "ph",
+    "label": "Philippines",
+    "zh": ["菲律宾", "菲律賓", "马尼拉", "馬尼拉"],
+    "en": ["philippines", "phl", "manila"]
+  },
+  {
+    "code": "id",
+    "label": "Indonesia",
+    "zh": ["印尼", "印度尼西亚", "雅加达"],
+    "en": ["indonesia", "idn", "jakarta"]
+  },
+  {
+    "code": "kh",
+    "label": "Cambodia",
+    "zh": ["柬埔寨", "金边"],
+    "en": ["cambodia", "khm", "phnom penh"]
+  },
+  {
+    "code": "mm",
+    "label": "Myanmar",
+    "zh": ["缅甸", "緬甸", "仰光"],
+    "en": ["myanmar", "mmr", "yangon"]
+  },
+  {
+    "code": "in",
+    "label": "India",
+    "zh": ["印度", "孟买", "新德里", "班加罗尔"],
+    "en": ["india", "ind", "mumbai", "delhi", "bangalore", "chennai"]
+  },
+  {
+    "code": "pk",
+    "label": "Pakistan",
+    "zh": ["巴基斯坦", "卡拉奇"],
+    "en": ["pakistan", "pak", "karachi"]
+  },
+  {
+    "code": "bd",
+    "label": "Bangladesh",
+    "zh": ["孟加拉", "达卡"],
+    "en": ["bangladesh", "bgd", "dhaka"]
+  },
+  {
+    "code": "ae",
+    "label": "United Arab Emirates",
+    "zh": ["阿联酋", "阿聯酋", "迪拜", "杜拜"],
+    "en": ["uae", "united arab emirates", "dubai"]
+  },
+  {
+    "code": "tr",
+    "label": "Turkey",
+    "zh": ["土耳其", "伊斯坦布尔"],
+    "en": ["turkey", "turkiye", "tur", "istanbul"]
+  },
+  {
+    "code": "il",
+    "label": "Israel",
+    "zh": ["以色列", "特拉维夫"],
+    "en": ["israel", "isr", "tel aviv"]
+  },
+  {
+    "code": "sa",
+    "label": "Saudi Arabia",
+    "zh": ["沙特", "沙烏地", "利雅得"],
+    "en": ["saudi", "sau", "riyadh", "jeddah"]
+  },
+  {
+    "code": "qa",
+    "label": "Qatar",
+    "zh": ["卡塔尔", "卡達", "多哈"],
+    "en": ["qatar", "qat", "doha"]
+  },
+  {
+    "code": "kz",
+    "label": "Kazakhstan",
+    "zh": ["哈萨克", "阿拉木图"],
+    "en": ["kazakhstan", "kaz", "almaty"]
+  },
+  {
+    "code": "ge",
+    "label": "Georgia",
+    "zh": ["格鲁吉亚", "喬治亞", "第比利斯"],
+    "en": ["georgia", "geo", "tbilisi"]
+  },
+  {
+    "code": "am",
+    "label": "Armenia",
+    "zh": ["亚美尼亚", "亞美尼亞", "埃里温"],
+    "en": ["armenia", "arm", "yerevan"]
+  },
+  {
+    "code": "cy",
+    "label": "Cyprus",
+    "zh": ["塞浦路斯", "賽普勒斯", "尼科西亚"],
+    "en": ["cyprus", "cyp", "nicosia"]
+  },
+  {
+    "code": "gb",
+    "label": "United Kingdom",
+    "zh": ["英国", "英國", "伦敦", "倫敦"],
+    "en": ["uk", "gbr", "united kingdom", "britain", "england", "london"]
+  },
+  {
+    "code": "de",
+    "label": "Germany",
+    "zh": ["德国", "德國", "法兰克福", "柏林", "慕尼黑"],
+    "en": ["germany", "deu", "ger", "frankfurt", "berlin", "munich"]
+  },
+  {
+    "code": "fr",
+    "label": "France",
+    "zh": ["法国", "法國", "巴黎", "马赛"],
+    "en": ["france", "fra", "paris", "marseille"]
+  },
+  {
+    "code": "nl",
+    "label": "Netherlands",
+    "zh": ["荷兰", "荷蘭", "阿姆斯特丹"],
+    "en": ["netherlands", "nld", "holland", "amsterdam"]
+  },
+  {
+    "code": "ru",
+    "label": "Russia",
+    "zh": ["俄罗斯", "俄羅斯", "莫斯科", "圣彼得堡", "海参崴", "伯力", "新西伯利亚"],
+    "en": ["russia", "rus", "moscow", "petersburg", "vladivostok", "khabarovsk", "novosibirsk"]
+  },
+  {
+    "code": "ua",
+    "label": "Ukraine",
+    "zh": ["乌克兰", "烏克蘭", "基辅"],
+    "en": ["ukraine", "ukr", "kyiv", "kiev"]
+  },
+  {
+    "code": "it",
+    "label": "Italy",
+    "zh": ["意大利", "義大利", "米兰", "罗马", "羅馬"],
+    "en": ["italy", "ita", "milan", "rome"]
+  },
+  {
+    "code": "es",
+    "label": "Spain",
+    "zh": ["西班牙", "马德里", "馬德里", "巴塞罗那"],
+    "en": ["spain", "esp", "madrid", "barcelona"]
+  },
+  {
+    "code": "pt",
+    "label": "Portugal",
+    "zh": ["葡萄牙", "里斯本"],
+    "en": ["portugal", "prt", "lisbon"]
+  },
+  {
+    "code": "ch",
+    "label": "Switzerland",
+    "zh": ["瑞士", "苏黎世", "蘇黎世", "日内瓦"],
+    "en": ["switzerland", "che", "zurich", "geneva"]
+  },
+  {
+    "code": "se",
+    "label": "Sweden",
+    "zh": ["瑞典", "斯德哥尔摩"],
+    "en": ["sweden", "swe", "stockholm"]
+  },
+  {
+    "code": "no",
+    "label": "Norway",
+    "zh": ["挪威", "奥斯陆"],
+    "en": ["norway", "nor", "oslo"],
+    "noAlpha2": true
+  },
+  {
+    "code": "dk",
+    "label": "Denmark",
+    "zh": ["丹麦", "丹麥", "哥本哈根"],
+    "en": ["denmark", "dnk", "copenhagen"]
+  },
+  {
+    "code": "fi",
+    "label": "Finland",
+    "zh": ["芬兰", "芬蘭", "赫尔辛基"],
+    "en": ["finland", "fin", "helsinki"]
+  },
+  {
+    "code": "is",
+    "label": "Iceland",
+    "zh": ["冰岛", "冰島", "雷克雅未克"],
+    "en": ["iceland", "isl", "reykjavik"]
+  },
+  {
+    "code": "ie",
+    "label": "Ireland",
+    "zh": ["爱尔兰", "愛爾蘭", "都柏林"],
+    "en": ["ireland", "irl", "dublin"]
+  },
+  {
+    "code": "be",
+    "label": "Belgium",
+    "zh": ["比利时", "比利時", "布鲁塞尔"],
+    "en": ["belgium", "bel", "brussels"]
+  },
+  {
+    "code": "at",
+    "label": "Austria",
+    "zh": ["奥地利", "奧地利", "维也纳"],
+    "en": ["austria", "aut", "vienna"]
+  },
+  {
+    "code": "pl",
+    "label": "Poland",
+    "zh": ["波兰", "波蘭", "华沙"],
+    "en": ["poland", "pol", "warsaw"]
+  },
+  {
+    "code": "cz",
+    "label": "Czechia",
+    "zh": ["捷克", "布拉格"],
+    "en": ["czech", "czechia", "cze", "prague"]
+  },
+  {
+    "code": "hu",
+    "label": "Hungary",
+    "zh": ["匈牙利", "布达佩斯"],
+    "en": ["hungary", "hun", "budapest"]
+  },
+  {
+    "code": "ro",
+    "label": "Romania",
+    "zh": ["罗马尼亚", "羅馬尼亞", "布加勒斯特"],
+    "en": ["romania", "rou", "bucharest"]
+  },
+  {
+    "code": "bg",
+    "label": "Bulgaria",
+    "zh": ["保加利亚", "索菲亚"],
+    "en": ["bulgaria", "bgr", "sofia"]
+  },
+  {
+    "code": "gr",
+    "label": "Greece",
+    "zh": ["希腊", "希臘", "雅典"],
+    "en": ["greece", "grc", "athens"]
+  },
+  {
+    "code": "rs",
+    "label": "Serbia",
+    "zh": ["塞尔维亚", "贝尔格莱德"],
+    "en": ["serbia", "srb", "belgrade"]
+  },
+  {
+    "code": "ee",
+    "label": "Estonia",
+    "zh": ["爱沙尼亚", "愛沙尼亞", "塔林"],
+    "en": ["estonia", "est", "tallinn"]
+  },
+  { "code": "lv", "label": "Latvia", "zh": ["拉脱维亚", "里加"], "en": ["latvia", "lva", "riga"] },
+  {
+    "code": "lt",
+    "label": "Lithuania",
+    "zh": ["立陶宛", "维尔纽斯"],
+    "en": ["lithuania", "ltu", "vilnius"]
+  },
+  {
+    "code": "md",
+    "label": "Moldova",
+    "zh": ["摩尔多瓦", "摩爾多瓦", "基希讷乌"],
+    "en": ["moldova", "mda", "chisinau"]
+  },
+  { "code": "lu", "label": "Luxembourg", "zh": ["卢森堡", "盧森堡"], "en": ["luxembourg", "lux"] },
+  { "code": "mt", "label": "Malta", "zh": ["马耳他", "馬耳他"], "en": ["malta", "mlt"] },
+  {
+    "code": "by",
+    "label": "Belarus",
+    "zh": ["白俄罗斯", "白俄羅斯", "明斯克"],
+    "en": ["belarus", "blr", "minsk"],
+    "noAlpha2": true
+  },
+  {
+    "code": "us",
+    "label": "United States",
+    "zh": [
+      "美国",
+      "美國",
+      "洛杉矶",
+      "硅谷",
+      "圣何塞",
+      "西雅图",
+      "纽约",
+      "紐約",
+      "芝加哥",
+      "达拉斯",
+      "迈阿密",
+      "凤凰城"
+    ],
+    "en": [
+      "usa",
+      "united states",
+      "america",
+      "los angeles",
+      "san jose",
+      "silicon valley",
+      "seattle",
+      "new york",
+      "chicago",
+      "dallas",
+      "miami",
+      "phoenix"
+    ]
+  },
+  {
+    "code": "ca",
+    "label": "Canada",
+    "zh": ["加拿大", "多伦多", "多倫多", "温哥华", "溫哥華", "蒙特利尔"],
+    "en": ["canada", "toronto", "vancouver", "montreal"]
+  },
+  { "code": "mx", "label": "Mexico", "zh": ["墨西哥"], "en": ["mexico", "mex"] },
+  {
+    "code": "br",
+    "label": "Brazil",
+    "zh": ["巴西", "圣保罗", "聖保羅"],
+    "en": ["brazil", "bra", "sao paulo"]
+  },
+  {
+    "code": "ar",
+    "label": "Argentina",
+    "zh": ["阿根廷", "布宜诺斯艾利斯"],
+    "en": ["argentina", "arg", "buenos aires"]
+  },
+  {
+    "code": "cl",
+    "label": "Chile",
+    "zh": ["智利", "圣地亚哥"],
+    "en": ["chile", "chl", "santiago"]
+  },
+  {
+    "code": "co",
+    "label": "Colombia",
+    "zh": ["哥伦比亚", "波哥大"],
+    "en": ["colombia", "col", "bogota"],
+    "noAlpha2": true
+  },
+  { "code": "pe", "label": "Peru", "zh": ["秘鲁", "秘魯", "利马"], "en": ["peru", "lima"] },
+  { "code": "pa", "label": "Panama", "zh": ["巴拿马", "巴拿馬"], "en": ["panama", "pan"] },
+  {
+    "code": "au",
+    "label": "Australia",
+    "zh": ["澳大利亚", "澳洲", "悉尼", "雪梨", "墨尔本", "墨爾本"],
+    "en": ["australia", "aus", "sydney", "melbourne"]
+  },
+  {
+    "code": "nz",
+    "label": "New Zealand",
+    "zh": ["新西兰", "紐西蘭", "奥克兰", "奧克蘭"],
+    "en": ["new zealand", "nzl", "auckland"]
+  },
+  {
+    "code": "za",
+    "label": "South Africa",
+    "zh": ["南非", "约翰内斯堡"],
+    "en": ["south africa", "zaf", "johannesburg"]
+  },
+  { "code": "eg", "label": "Egypt", "zh": ["埃及", "开罗"], "en": ["egypt", "egy", "cairo"] },
+  {
+    "code": "ng",
+    "label": "Nigeria",
+    "zh": ["尼日利亚", "拉各斯"],
+    "en": ["nigeria", "nga", "lagos"]
+  },
+  { "code": "ke", "label": "Kenya", "zh": ["肯尼亚", "内罗毕"], "en": ["kenya", "ken", "nairobi"] },
+  {
+    "code": "ma",
+    "label": "Morocco",
+    "zh": ["摩洛哥", "卡萨布兰卡"],
+    "en": ["morocco", "mar", "casablanca"]
+  }
+]

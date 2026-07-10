@@ -228,6 +228,27 @@ describe('StatsService 流式门控（gRPC streams）', () => {
       expect(snap?.connections).toHaveLength(0);
     });
 
+    it('reset 帧注入的死连接（closedAt>0）被 NEW 分支丢弃，不成幽灵', () => {
+      // sing-box 1.14 SubscribeConnections 初始/重置帧把「已关闭连接历史环」当 NEW 下发（仅 closedAt>0 可区分），
+      // 且不再补发 CLOSED。若照收即成永久幽灵（连接页显示已死旧节点连线）。断言死连接不入 map、活连接正常入。
+      const { service, mock } = setup({ withVisible: true, visible: true });
+      service.start();
+      mock.pushConn({
+        reset: true,
+        events: [
+          { type: 'NEW', id: 'live-1', connection: { ...RAW_CONN, id: 'live-1' } },
+          {
+            type: 'NEW',
+            id: 'dead-1',
+            connection: { ...RAW_CONN, id: 'dead-1', closedAt: '1720000000000' },
+          },
+        ],
+      });
+      expect((service as any).connMap.has('live-1')).toBe(true);
+      expect((service as any).connMap.has('dead-1')).toBe(false);
+      expect(service.getConnectionsSnapshot().connections).toHaveLength(1);
+    });
+
     it('UPDATE 累加 delta 到既有条目 totals（实测 UPDATE 无 connection、仅带 delta）', () => {
       const { service, onConnections, mock } = setup({ withVisible: true, visible: true });
       service.start();

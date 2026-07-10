@@ -367,7 +367,7 @@ describe('ProxyManager.planRuleHotSwitch', () => {
     const old = makeConfig({ customRules: [extRule('r1', NODE_A)] });
     const next = makeConfig({ customRules: [extRule('r1', NODE_B)] });
     const puts = svc.planRuleHotSwitch(old, next);
-    expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'tagB' }]);
+    expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'tagB', oldMemberTag: 'tagA' }]);
   });
 
   it('节点→默认（targetServerId 有→undefined）→ PUT rule-sel-r1 default="proxy-selector"', () => {
@@ -376,7 +376,9 @@ describe('ProxyManager.planRuleHotSwitch', () => {
     const old = makeConfig({ customRules: [extRule('r1', NODE_A)] });
     const next = makeConfig({ customRules: [extRule('r1', undefined)] });
     const puts = svc.planRuleHotSwitch(old, next);
-    expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'proxy-selector' }]);
+    expect(puts).toEqual([
+      { selectorTag: 'rule-sel-r1', memberTag: 'proxy-selector', oldMemberTag: 'tagA' },
+    ]);
   });
 
   it('默认→节点（undefined→有 target）→ PUT rule-sel-r1 default=节点 tag', () => {
@@ -385,7 +387,9 @@ describe('ProxyManager.planRuleHotSwitch', () => {
     const old = makeConfig({ customRules: [extRule('r1', undefined)] });
     const next = makeConfig({ customRules: [extRule('r1', NODE_B)] });
     const puts = svc.planRuleHotSwitch(old, next);
-    expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'tagB' }]);
+    expect(puts).toEqual([
+      { selectorTag: 'rule-sel-r1', memberTag: 'tagB', oldMemberTag: 'proxy-selector' },
+    ]);
   });
 
   it('appRules 换节点 → PUT rule-sel-app default=tagB', () => {
@@ -398,7 +402,9 @@ describe('ProxyManager.planRuleHotSwitch', () => {
       appRules: [{ appId: 'app1', action: 'proxy', enabled: true, targetServerId: NODE_B }],
     });
     const puts = svc.planRuleHotSwitch(old, next);
-    expect(puts).toEqual([{ selectorTag: 'rule-sel-app1', memberTag: 'tagB' }]);
+    expect(puts).toEqual([
+      { selectorTag: 'rule-sel-app1', memberTag: 'tagB', oldMemberTag: 'tagA' },
+    ]);
   });
 
   // N1：补 appRule 对称用例（customRule 已测有→undefined / undefined→有，appRule 此前只测了换节点 A→B）。
@@ -413,7 +419,9 @@ describe('ProxyManager.planRuleHotSwitch', () => {
       appRules: [{ appId: 'app1', action: 'proxy', enabled: true, targetServerId: undefined }],
     });
     const puts = svc.planRuleHotSwitch(old, next);
-    expect(puts).toEqual([{ selectorTag: 'rule-sel-app1', memberTag: 'proxy-selector' }]);
+    expect(puts).toEqual([
+      { selectorTag: 'rule-sel-app1', memberTag: 'proxy-selector', oldMemberTag: 'tagA' },
+    ]);
   });
 
   it('新目标节点不在 selector（idToTagMap 无此 id）→ return null（退回重启）', () => {
@@ -478,8 +486,8 @@ describe('ProxyManager.planRuleHotSwitch', () => {
     });
     const puts = svc.planRuleHotSwitch(old, next);
     expect(puts).toEqual([
-      { selectorTag: 'rule-sel-r1', memberTag: 'tagB' },
-      { selectorTag: 'rule-sel-r2', memberTag: 'proxy-selector' },
+      { selectorTag: 'rule-sel-r1', memberTag: 'tagB', oldMemberTag: 'tagA' },
+      { selectorTag: 'rule-sel-r2', memberTag: 'proxy-selector', oldMemberTag: 'tagA' },
     ]);
   });
 
@@ -494,7 +502,7 @@ describe('ProxyManager.planRuleHotSwitch', () => {
     });
     const puts = svc.planRuleHotSwitch(old, next);
     // r1 变化 → 一条 PUT；r2 禁用 → 不参与
-    expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'tagB' }]);
+    expect(puts).toEqual([{ selectorTag: 'rule-sel-r1', memberTag: 'tagB', oldMemberTag: 'tagA' }]);
   });
 });
 
@@ -560,7 +568,11 @@ describe('ProxyManager.planHotSwitch 全局 route 投影 guard', () => {
     svc.currentConfig = cfg(list, FT);
     const plan = svc.planHotSwitch(cfg(list, FT2));
     expect(plan.kind).toBe('global');
-    expect(plan.puts).toContainEqual({ selectorTag: 'proxy-selector', memberTag: `tag-${FT2}` });
+    expect(plan.puts).toContainEqual({
+      selectorTag: 'proxy-selector',
+      memberTag: `tag-${FT2}`,
+      oldMemberTag: `tag-${FT}`,
+    });
   });
 
   it('切到 alwaysRouteSubnets=false 的 endpoint（force-route 段随选中翻转）→ kind:none', () => {

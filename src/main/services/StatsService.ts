@@ -372,7 +372,13 @@ export class StatsService {
         }
         case 'NEW':
         default:
-          if (ev?.connection) this.connMap.set(id, ev.connection);
+          // sing-box 1.14 SubscribeConnections 的初始/重置帧会把「已关闭连接历史环」（最近 ≤1000 条死连接，含刚被
+          // 切换杀掉的整批旧节点连接）作为 NEW 下发，仅 closedAt>0 可区分；这些死连接不进服务端 snapshots → 永不补发
+          // CLOSED。若照收入 map 即成永久幽灵（连接页/首页拓扑显示已死的旧节点连线、上下行数值冻结，看着像"切换未断连"）。
+          // 故 NEW 丢弃 closedAt>0 条目：只留活连接。附带根治 connMap 死连接单调累积（审计 #3）。
+          if (ev?.connection && !(Number(ev.connection.closedAt) > 0)) {
+            this.connMap.set(id, ev.connection);
+          }
           break;
       }
     }

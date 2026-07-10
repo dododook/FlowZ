@@ -28,7 +28,7 @@ jest.mock('child_process', () => ({
   execFile: (...args: any[]) => mockExecFile(...args),
 }));
 
-import { ProxyManager } from '../ProxyManager';
+import { ProxyManager, connectionMatchesSwitchedPairs } from '../ProxyManager';
 
 afterAll(() => {
   try {
@@ -176,30 +176,130 @@ describe('§3-C：selector/close 经管理 API gRPC', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('切换节点断连兜底：全局热切换 + 开关开启 → gRPC closeAllConnections()', () => {
-    const svc = makeSvc();
-    const { client, calls } = makeApiClientStub();
-    svc.tailscaleApiClient = client;
-    svc.flushConnectionsAfterInterruptedHotSwitch(
-      { interruptConnectionsOnSwitch: true } as any,
-      'global'
-    );
-    expect(calls).toEqual([{ method: 'closeAllConnections', args: [] }]);
+  // 精准断连（pair 模型）：stub apiClient 首帧回放 reset 全量连接，断言只关命中 pair 的活连接。
+  const makeConnStub = (frame: unknown) => {
+    const closed: string[] = [];
+    let subscribed = 0;
+    const client = {
+      closeConnection: (id: string) => {
+        closed.push(id);
+        return Promise.resolve();
+      },
+      subscribeConnections: (_iv: number, cb: (e: unknown) => void) => {
+        subscribed++;
+        cb(frame);
+        return () => {};
+      },
+    };
+    return { client, closed, subscribedCount: () => subscribed };
+  };
+  const conn = (id: string, chainList: string[], closedAt = '0') => ({
+    type: 'NEW',
+    id,
+    connection: { id, chainList, closedAt },
   });
 
-  it('切换节点断连兜底：规则热切换或开关关闭 → 不关全部连接', () => {
+  it('精准断连·全局：关全局连接 + 跟全局规则连接，不误杀规则固定旧节点', () => {
     const svc = makeSvc();
-    const { client, calls } = makeApiClientStub();
+    const { client, closed } = makeConnStub({
+      reset: true,
+      events: [
+        conn('a', ['Hk01', 'proxy-selector']), // 全局旧节点 → 关
+        conn('b', ['Hk01', 'proxy-selector', 'rule-sel-x']), // 跟全局的规则 → 关
+        conn('c', ['Hk01', 'rule-sel-x']), // 规则固定 Hk01（误杀点）→ 不关
+        conn('d', ['Hk02', 'proxy-selector']), // 新节点 → 不关
+        conn('e', ['direct']), // 国内/LAN 直连 → 不关
+        conn('f', ['Hk01', 'proxy-selector'], '1720000000000'), // 死连接 → 不关
+      ],
+    });
     svc.tailscaleApiClient = client;
-    svc.flushConnectionsAfterInterruptedHotSwitch(
-      { interruptConnectionsOnSwitch: true } as any,
-      'rules'
-    );
-    svc.flushConnectionsAfterInterruptedHotSwitch(
-      { interruptConnectionsOnSwitch: false } as any,
-      'global'
-    );
-    expect(calls).toHaveLength(0);
+    svc.closeOldNodeConnectionsAfterHotSwitch({ interruptConnectionsOnSwitch: true } as any, {
+      puts: [{ selectorTag: 'proxy-selector', memberTag: 'Hk02', oldMemberTag: 'Hk01' }],
+    });
+    expect(closed.sort()).toEqual(['a', 'b']);
+  });
+
+  it('精准断连·规则：对称断连该规则自己的旧连接，不碰全局连接', () => {
+    const svc = makeSvc();
+    const { client, closed } = makeConnStub({
+      reset: true,
+      events: [
+        conn('a', ['Hk01', 'rule-sel-x']), // 规则固定旧 Hk01 → 关
+        conn('b', ['Hk01', 'proxy-selector']), // 全局连接（非本规则）→ 不关
+        conn('c', ['Hk03', 'rule-sel-x']), // 规则新目标 → 不关
+      ],
+    });
+    svc.tailscaleApiClient = client;
+    svc.closeOldNodeConnectionsAfterHotSwitch({ interruptConnectionsOnSwitch: true } as any, {
+      puts: [{ selectorTag: 'rule-sel-x', memberTag: 'Hk03', oldMemberTag: 'Hk01' }],
+    });
+    expect(closed).toEqual(['a']);
+  });
+
+  it('精准断连·全局直连切到节点：关全局直连存量，不碰规则/国内直连', () => {
+    const svc = makeSvc();
+    const { client, closed } = makeConnStub({
+      reset: true,
+      events: [
+        conn('a', ['direct', 'proxy-selector']), // 全局直连存量 → 关
+        conn('b', ['direct']), // 规则/国内/LAN 直连 → 不关
+      ],
+    });
+    svc.tailscaleApiClient = client;
+    svc.closeOldNodeConnectionsAfterHotSwitch({ interruptConnectionsOnSwitch: true } as any, {
+      puts: [{ selectorTag: 'proxy-selector', memberTag: 'Hk01', oldMemberTag: 'direct' }],
+    });
+    expect(closed).toEqual(['a']);
+  });
+
+  it('精准断连：开关关闭 / 空 puts / 旧==新 → 不订阅、不关', () => {
+    const svc = makeSvc();
+    const { client, closed, subscribedCount } = makeConnStub({
+      reset: true,
+      events: [conn('a', ['Hk01', 'proxy-selector'])],
+    });
+    svc.tailscaleApiClient = client;
+    svc.closeOldNodeConnectionsAfterHotSwitch({ interruptConnectionsOnSwitch: false } as any, {
+      puts: [{ selectorTag: 'proxy-selector', memberTag: 'Hk02', oldMemberTag: 'Hk01' }],
+    }); // 开关关
+    svc.closeOldNodeConnectionsAfterHotSwitch({ interruptConnectionsOnSwitch: true } as any, {
+      puts: [],
+    }); // 无变化
+    svc.closeOldNodeConnectionsAfterHotSwitch({ interruptConnectionsOnSwitch: true } as any, {
+      puts: [{ selectorTag: 'proxy-selector', memberTag: 'Hk01', oldMemberTag: 'Hk01' }],
+    }); // 旧==新
+    expect(subscribedCount()).toBe(0);
+    expect(closed).toHaveLength(0);
+  });
+
+  describe('connectionMatchesSwitchedPairs（纯谓词）', () => {
+    const pGlobal = [{ selectorTag: 'proxy-selector', oldMemberTag: 'Hk01' }];
+    it('含 selector + 旧成员 → true（含嵌套跟全局规则）', () => {
+      expect(connectionMatchesSwitchedPairs(['Hk01', 'proxy-selector'], pGlobal)).toBe(true);
+      expect(
+        connectionMatchesSwitchedPairs(['Hk01', 'proxy-selector', 'rule-sel-x'], pGlobal)
+      ).toBe(true);
+    });
+    it('缺 selector（规则固定节点）或缺旧成员（新节点）→ false', () => {
+      expect(connectionMatchesSwitchedPairs(['Hk01', 'rule-sel-x'], pGlobal)).toBe(false);
+      expect(connectionMatchesSwitchedPairs(['Hk02', 'proxy-selector'], pGlobal)).toBe(false);
+    });
+    it('全局直连对区分 direct 全局 vs 规则/国内直连', () => {
+      const pDirect = [{ selectorTag: 'proxy-selector', oldMemberTag: 'direct' }];
+      expect(connectionMatchesSwitchedPairs(['direct', 'proxy-selector'], pDirect)).toBe(true);
+      expect(connectionMatchesSwitchedPairs(['direct'], pDirect)).toBe(false);
+    });
+    it('空/非数组 chainList → false', () => {
+      expect(connectionMatchesSwitchedPairs([], pGlobal)).toBe(false);
+      expect(connectionMatchesSwitchedPairs(undefined, pGlobal)).toBe(false);
+    });
+    it('多 pair（both）任一命中即 true', () => {
+      const pBoth = [
+        { selectorTag: 'proxy-selector', oldMemberTag: 'Hk01' },
+        { selectorTag: 'rule-sel-x', oldMemberTag: 'Jp01' },
+      ];
+      expect(connectionMatchesSwitchedPairs(['Jp01', 'rule-sel-x'], pBoth)).toBe(true);
+    });
   });
 
   it('reassertRuleSelectors 对每条启用的 proxy 规则 → gRPC selectOutbound(selectorTag, memberTag)', async () => {

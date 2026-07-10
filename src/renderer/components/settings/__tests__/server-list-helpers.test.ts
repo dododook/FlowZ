@@ -10,7 +10,11 @@ import {
   meshIsExitCapable,
   meshInternetOff,
   flagAsset,
+  getCountryCode,
 } from '../server-list-helpers';
+import { countryCodeToFlagAsset } from '../flag-assets';
+import { FLAG_BODIES } from '../flag-assets.generated';
+import regions from '../flag-regions.json';
 
 // 仅取 tailscaleNeedsLogin 用到的字段，避免引 @/bridge/types（jest 无 @ 别名）。
 const ts = (over: Record<string, unknown> = {}) =>
@@ -56,6 +60,121 @@ describe('flagAsset（节点名地区 → 本地 SVG 国旗资源）', () => {
 
   it('识别不到地区 → null（调用方省略国旗）', () => {
     expect(flagAsset('unknown-node')).toBeNull();
+  });
+});
+
+type Region = {
+  code: string;
+  label: string;
+  zh: string[];
+  en: string[];
+  noAlpha2?: boolean;
+  patterns?: string[];
+};
+const REGIONS = regions as Region[];
+
+describe('国旗全球化 · manifest ↔ FLAG_BODIES 1:1', () => {
+  it('区域数 = 74（覆盖清单 §2）', () => {
+    expect(REGIONS.length).toBe(74);
+    expect(Object.keys(FLAG_BODIES).length).toBe(74);
+  });
+
+  it('manifest 每个 code 都有对应旗面，且无孤儿旗面（双向 1:1）', () => {
+    const manifestCodes = REGIONS.map((r) => r.code).sort();
+    const bodyCodes = Object.keys(FLAG_BODIES).sort();
+    expect(bodyCodes).toEqual(manifestCodes);
+    for (const r of REGIONS) expect(typeof FLAG_BODIES[r.code]).toBe('string');
+  });
+
+  it('每面旗均携带原库 3:2 viewBox 的嵌套 <svg>（30×20 外框，零裁切）', () => {
+    for (const r of REGIONS) {
+      expect(FLAG_BODIES[r.code]).toMatch(/^<svg viewBox="[^"]+" width="30" height="20">/);
+      expect(FLAG_BODIES[r.code]).not.toContain('xmlns'); // strip 掉（父级 flagSvg 已有）
+    }
+  });
+
+  it('token 归一化后跨区域唯一（无 manifest 重复 → 无 code 覆盖）', () => {
+    const norm = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '');
+    const seen = new Map<string, string>();
+    for (const r of REGIONS) {
+      const keys = [...r.zh, ...r.en];
+      if (!r.noAlpha2) keys.push(r.code);
+      for (const k of keys) {
+        const nk = norm(k);
+        const prev = seen.get(nk);
+        if (prev && prev !== r.code) throw new Error(`token "${k}" 冲突：${prev} vs ${r.code}`);
+        seen.set(nk, r.code);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(0);
+  });
+});
+
+describe('国旗全球化 · 每 asset 波浪包装外壳继承', () => {
+  it('每个 code 的 src decode 后含 viewBox="0 0 30 20" 外壳与 clip-path（flagSvg 单一真值）', () => {
+    for (const r of REGIONS) {
+      const asset = countryCodeToFlagAsset(r.code);
+      expect(asset).not.toBeNull();
+      expect(asset!.code).toBe(r.code);
+      expect(asset!.label).toBe(r.label); // label 查 manifest
+      const decoded = decodeURIComponent(asset!.src);
+      expect(decoded).toContain('viewBox="0 0 30 20"');
+      expect(decoded).toContain('clip-path');
+    }
+  });
+});
+
+describe('getCountryCode · emoji 区域指示符通用解码（零表覆盖全 ISO）', () => {
+  it('🇩🇰 节点 → dk（旧 23 表外国家，证明零表扩展）', () => {
+    expect(getCountryCode('🇩🇰 节点')).toBe('dk');
+  });
+
+  it('🇭🇰 香港 → hk；🇺🇸 → us（emoji 优先于 token）', () => {
+    expect(getCountryCode('🇭🇰 香港')).toBe('hk');
+    expect(getCountryCode('🇺🇸')).toBe('us');
+  });
+
+  it('emoji 解码结果不在 74 集合内（如 🇱🇰 斯里兰卡）→ 回落 token → null', () => {
+    expect(getCountryCode('🇱🇰 srilanka')).toBeNull();
+  });
+});
+
+describe('getCountryCode · §3 陷阱表逐条', () => {
+  const cases: Array<[string, string | null]> = [
+    ['russia', 'ru'], // 含 us：边界 + 更长 token
+    ['north', null], // 含 th：边界，不误判
+    ['berlin', 'de'], // 含 in：边界 + city token
+    ['madrid', 'es'], // 含 id：边界 + city token
+    ['montreal', 'ca'], // 含 tr：边界 + city token
+    ['sweden', 'se'], // 含 de：边界 + 更长 token
+    ['印度尼西亚', 'id'], // 含 印度：全局最长优先（修现状 bug）
+    ['印度', 'in'], // 印度本身仍 → in
+    ['罗马尼亚', 'ro'], // 含 罗马(it 城市)：全局最长优先
+    ['US CN2 GIA', 'us'], // cn 线路标签：最早位置 + cn (?!2)
+    ['No.1 香港', 'hk'], // no=挪威：no 行 noAlpha2
+    ['Powered by X', null], // by=白俄：by 行 noAlpha2
+    ['XX Co. 节点', null], // co=哥伦比亚：co 行 noAlpha2
+    ['unknown-node', null], // no/de 子串：noAlpha2(no)+边界(de 前是 o)
+    ['US Georgia Atlanta', 'us'], // georgia=格鲁吉亚：us 位置更早（残余歧义接受）
+  ];
+  it.each(cases)('getCountryCode(%p) → %p', (input: string, expected: string | null) => {
+    expect(getCountryCode(input)).toBe(expected);
+  });
+});
+
+describe('getCountryCode · 新增区域正/负样本（数据驱动扩展证明）', () => {
+  it('城市/别名命中新覆盖国家', () => {
+    expect(getCountryCode('Frankfurt 节点')).toBe('de');
+    expect(getCountryCode('hongkong')).toBe('hk'); // 无分隔符多词 token 归一
+    expect(getCountryCode('Ho Chi Minh 01')).toBe('vn');
+    expect(getCountryCode('Warsaw-PL')).toBe('pl');
+    expect(getCountryCode('Sao Paulo')).toBe('br');
+  });
+
+  it('CN2 线路不误判为 cn；纯 cn 命中', () => {
+    expect(getCountryCode('US CN2 广州')).toBe('us'); // 最早位置 us
+    expect(getCountryCode('CN 上海')).toBe('cn');
+    expect(getCountryCode('香港 CN2 中转')).toBe('hk'); // 最早位置 香港
   });
 });
 
