@@ -363,9 +363,9 @@ describe('checkDisney（bamgrid 三段 devices→token→graphql + disneyplus pr
 
 describe('checkSpotify', () => {
   const sp = (body: string) => res({ status: 200, body });
-  it('ok：status 311 + is_country_launched true + country', async () => {
+  it('ok：validate 面 status:1 + is_country_launched true + country（不再 gate 311）', async () => {
     const f = fakeFetch([
-      [SPOTIFY.signupUrl, sp('{"status":311,"country":"US","is_country_launched":true}')],
+      [SPOTIFY.signupUrl, sp('{"status":1,"country":"US","is_country_launched":true}')],
     ]);
     expect(await checkSpotify(f)).toEqual({ status: 'ok', region: 'US' });
   });

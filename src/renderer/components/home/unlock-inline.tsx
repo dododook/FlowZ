@@ -83,7 +83,11 @@ export function UnlockInline() {
           <span className="font-medium text-fg">{s.name}</span>
           <span className="text-fg-dim">
             {' · '}
-            {t(STATUS_LABEL_KEY[status])}
+            {t(
+              status === 'partial' && s.partialLabelKey
+                ? s.partialLabelKey
+                : STATUS_LABEL_KEY[status]
+            )}
             {r?.region ? ` · ${r.region}` : ''}
           </span>
           {/* X3（§12.2 P12）：timeout 且出口本身连通（egress 非空）→ 诚实提示「服务经该出口不可达（可能被服务方网络层

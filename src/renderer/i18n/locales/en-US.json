@@ -344,6 +344,7 @@
     "unlockCooldown": "Just checked — refresh shortly",
     "unlockStateOk": "Unlocked",
     "unlockStatePartial": "Originals only",
+    "unlockStateSoon": "Coming soon",
     "unlockStateBlocked": "Blocked",
     "unlockStateChecking": "Checking",
     "unlockStateTimeout": "Timeout",

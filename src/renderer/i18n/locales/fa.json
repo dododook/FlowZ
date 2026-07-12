@@ -344,6 +344,7 @@
     "unlockCooldown": "همین الان بررسی شد — کمی بعد تازه‌سازی کنید",
     "unlockStateOk": "باز",
     "unlockStatePartial": "فقط تولیدات اختصاصی",
+    "unlockStateSoon": "به‌زودی در دسترس",
     "unlockStateBlocked": "مسدود",
     "unlockStateChecking": "در حال بررسی",
     "unlockStateTimeout": "مهلت تمام شد",

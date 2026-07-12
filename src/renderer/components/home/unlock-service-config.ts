@@ -20,6 +20,9 @@ export interface UnlockService {
   mark: string; // 品牌字标
   color: string; // 品牌色（字标底色）
   group: UnlockGroup;
+  // partial 态的 per-service 文案 key（覆盖默认 STATUS_LABEL_KEY.partial）：partial 语义按服务不同——Netflix=「仅自制剧」
+  // （部分可看），Disney=「即将上线」（region 识别但全部未开服，非部分可看）。缺省用通用 partial 文案。
+  partialLabelKey?: string;
 }
 
 /* eslint-disable no-restricted-syntax -- 品牌标识色（各服务官方 logo 色），非 UI 主题色，不可 tokenize 成 Conduit 变量 */
@@ -28,7 +31,15 @@ export const UNLOCK_SERVICES: UnlockService[] = [
   { id: 'claude', name: 'Claude', short: 'Claude', mark: 'C', color: '#d97757', group: 'ai' },
   { id: 'gemini', name: 'Gemini', short: 'Gemini', mark: 'G', color: '#4285f4', group: 'ai' },
   { id: 'netflix', name: 'Netflix', short: 'Netflix', mark: 'N', color: '#e50914', group: 'media' },
-  { id: 'disney', name: 'Disney+', short: 'Disney+', mark: 'D', color: '#0063e5', group: 'media' },
+  {
+    id: 'disney',
+    name: 'Disney+',
+    short: 'Disney+',
+    mark: 'D',
+    color: '#0063e5',
+    group: 'media',
+    partialLabelKey: 'home.unlockStateSoon', // partial=「即将上线」（region 识别但未开服），非 Netflix 的「仅自制剧」
+  },
   { id: 'spotify', name: 'Spotify', short: 'Spotify', mark: 'S', color: '#1db954', group: 'media' },
 ];
 /* eslint-enable no-restricted-syntax */

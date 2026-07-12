@@ -344,6 +344,7 @@
     "unlockCooldown": "剛檢測過，稍等再刷新",
     "unlockStateOk": "解鎖",
     "unlockStatePartial": "僅自製劇",
+    "unlockStateSoon": "即將上線",
     "unlockStateBlocked": "未解鎖",
     "unlockStateChecking": "檢測中",
     "unlockStateTimeout": "逾時",

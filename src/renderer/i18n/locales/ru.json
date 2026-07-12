@@ -344,6 +344,7 @@
     "unlockCooldown": "Только что проверено — обновите позже",
     "unlockStateOk": "Разблокировано",
     "unlockStatePartial": "Только оригиналы",
+    "unlockStateSoon": "Скоро будет доступно",
     "unlockStateBlocked": "Заблокировано",
     "unlockStateChecking": "Проверка",
     "unlockStateTimeout": "Тайм-аут",

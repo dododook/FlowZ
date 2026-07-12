@@ -206,31 +206,27 @@ export const checkDisney: Checker = async (fetch) => {
 };
 
 /**
- * Spotify（对齐 check.sh MediaUnlockTest_Spotify）：POST signup 端点，解析 status/country/is_country_launched。
- * 网络失败/无 status→timeout；`status` 320/120→blocked（代理/datacenter IP 被 Spotify flag 或地区不支持）；
- * is_country_launched 或 country 缺→timeout；is_country_launched:false→blocked；status 311+launched+country→ok；其余→timeout。
+ * Spotify（§18）：**GET ?validate=1** signup 端点，解析 status/country/is_country_launched。
+ * 治全误判 blocked——原 POST + 过时固定 body 被 anti-abuse 指纹拉黑返 status:320「代理」即使家宽（见 unlock-endpoints SPOTIFY）。
+ * 网络失败/无 status→timeout；`status` 320/120→blocked（真·代理/datacenter flag，GET 面实测不误触）；
+ * country/is_country_launched 缺→timeout；is_country_launched:false→blocked（地区未开服）；is_country_launched:true+country→ok。
+ * 注：validate 面正常返 `status:1`（非注册面的 311），故不再 gate 311——launched 字段才是地区权威。
  */
 export const checkSpotify: Checker = async (fetch) => {
   const res = await fetch({
     url: SPOTIFY.signupUrl,
-    method: 'POST',
-    headers: {
-      ...HDRS,
-      'Accept-Language': 'en',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: SPOTIFY.signupBody,
+    method: 'GET',
+    headers: { ...HDRS, 'Accept-Language': 'en' },
   });
   if (!reachable(res)) return { status: 'timeout' };
   const statusCode = /"status"\s*:\s*(\d+)/.exec(res.body)?.[1];
   if (!statusCode) return { status: 'timeout' };
-  if (statusCode === '320' || statusCode === '120') return { status: 'blocked' }; // 代理/datacenter IP 被 flag 或地区不支持
+  if (statusCode === '320' || statusCode === '120') return { status: 'blocked' }; // 代理/datacenter IP 被 flag
   const region = /"country"\s*:\s*"([^"]+)"/.exec(res.body)?.[1];
   const launched = /"is_country_launched"\s*:\s*(true|false)/.exec(res.body)?.[1];
   if (!region || !launched) return { status: 'timeout' };
   if (launched === 'false') return { status: 'blocked', region };
-  if (statusCode === '311') return { status: 'ok', region };
-  return { status: 'timeout', region };
+  return { status: 'ok', region }; // is_country_launched:true + country → 该区已开服 → ok
 };
 
 /** serviceId → checker。编排器按 SERVICE_IDS 顺序调用。 */

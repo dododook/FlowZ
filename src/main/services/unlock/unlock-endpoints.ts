@@ -125,10 +125,14 @@ export const DISNEY = {
   previewMarkers: ['preview', 'unavailable'],
 } as const;
 
-/** Spotify：signup 端点 POST 判注册可用性（对齐 check.sh MediaUnlockTest_Spotify）。判定见 checkers.checkSpotify。 */
+/**
+ * Spotify：signup 端点 **GET ?validate=1** 判地区可用性。判定见 checkers.checkSpotify。
+ * §18：原用 POST + 固定注册 body（源 RRC，key/identifier_token/displayname 多年不变）已被 Spotify anti-abuse 全局
+ * 指纹拉黑 → 即使原生家宽也返 status:320「检测到代理」→ 全误判 blocked。改 GET ?validate=1（无 body、无需 email、
+ * 不触发注册 anti-abuse 面），响应仍带 country/is_country_launched 地区信号（实测同一 IP GET 面干净、POST 面 320）。
+ * 漂移 runbook（GET 面若也失效）：改解析 open.spotify.com 内嵌 appServerConfig(base64 JSON) 的 market 字段
+ * （UnlockTests transnation/Spotify.go 现行方案，彻底避开 spclient 域）。
+ */
 export const SPOTIFY = {
-  signupUrl: 'https://spclient.wg.spotify.com/signup/public/v1/account',
-  /** 固定注册探针 body（源 RRC；creation_point 仅 referrer 不 gate 区域，实际区域由出口 IP 定）。 */
-  signupBody:
-    'birth_day=11&birth_month=11&birth_year=2000&collect_personal_info=undefined&creation_flow=&creation_point=https%3A%2F%2Fwww.spotify.com%2Fhk-en%2F&displayname=Gay%20Lord&gender=male&iagree=1&key=a1e486e2729f46d6bb368d6b2bcda326&platform=www&referrer=&send-email=0&thirdpartyemail=0&identifier_token=AgE6YTvEzkReHNfJpO114514',
+  signupUrl: 'https://spclient.wg.spotify.com/signup/public/v1/account?validate=1',
 } as const;
