@@ -689,7 +689,8 @@ export class SpeedTestService {
       }
       // §2：已编辑未生效（dirty）节点——运行核仍跑旧参数，测它得旧参数出口 latency 却挂新参数名下失真。波前剔除
       // 免测（徽标经 pendingChanges.modified 显「待生效」，非 notInPool 的「待入池」，故不入 skipped.notInPool）。
-      if (probe.isDirty(s.id)) {
+      // 传完整节点 s（本列表来自 ConfigManager 最新 config）→ 直接比其指纹 vs 快照，避 currentConfig 滞后漏判（F-B）。
+      if (probe.isDirty(s)) {
         noteNodeFail('dirty-pending', s);
         continue;
       }

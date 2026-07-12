@@ -397,6 +397,21 @@ describe('§2 待应用差集 — getPendingNodeChanges 仅报未引用（review
     expect(svc.getPendingNodeChanges(c)).toEqual({ added: [], modified: [], removed: [] });
   });
 
+  it('测速 probe.isDirty（review F-B）：比传入待测节点指纹 vs 快照，不依赖 currentConfig', () => {
+    const svc = makeSvc();
+    const started = cfg([ss('A'), ss('Z', '9.9.9.9')], { selectedServerId: 'A' });
+    svc.runningServersFingerprint = svc.computeServersFingerprint(started.servers);
+    // 关键：currentConfig 停在旧参数（模拟订阅 OFF 自动刷新不经 switchMode → currentConfig 滞后）。
+    svc.currentConfig = started;
+    const probe = svc.getSpeedTestMainCoreProbe();
+    // 待测节点（来自 ConfigManager 最新 config）参数已变 → dirty=true（即便 currentConfig 仍旧）。
+    expect(probe.isDirty(ss('Z', '5.5.5.5'))).toBe(true);
+    // 参数与快照一致 → 非 dirty。
+    expect(probe.isDirty(ss('Z', '9.9.9.9'))).toBe(false);
+    // 不在快照（新增未入核）→ false（由 hasTag/notInPool 既有判据挡）。
+    expect(probe.isDirty(ss('N', '1.2.3.4'))).toBe(false);
+  });
+
   it('被引用节点（选中/规则目标）的改/增剔除；未引用的改/增/删保留', () => {
     const svc = makeSvc();
     const r1: Rule = {

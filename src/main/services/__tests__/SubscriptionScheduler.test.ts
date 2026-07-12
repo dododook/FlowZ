@@ -154,14 +154,18 @@ describe('SubscriptionScheduler §2 自动刷新分流', () => {
       oneSubConfig(),
       true
     );
-    // fetch 返 S（同指纹保留）+ 新节点 N → 无下架、纯新增。
+    // fetch 返 S（同指纹+同内容保留）+ 新节点 N → 无下架、纯新增。subscriptionId:'d' 镜像真实 fetch（parse 赋值），
+    // 否则 reconcile/内容比对因缺该字段误判选中节点「变更」。
     fetchSubscription.mockResolvedValue({
-      servers: [ss({ name: 'S', address: '1.1.1.1' }), ss({ name: 'N', address: '2.2.2.2' })],
+      servers: [
+        ss({ name: 'S', address: '1.1.1.1', subscriptionId: 'd' }),
+        ss({ name: 'N', address: '2.2.2.2', subscriptionId: 'd' }),
+      ],
     });
     await run();
     const saved = configManager.saveConfig.mock.calls[0][0] as { selectedServerId: string };
     expect(saved.selectedServerId).toBe('S'); // 选中未变
-    expect(applyConfigForcingRestart).not.toHaveBeenCalled(); // OFF + 未下架 → defer
+    expect(applyConfigForcingRestart).not.toHaveBeenCalled(); // OFF + 未下架 + 选中内容未变 → defer
   });
 
   it('开关 ON + 新增节点 → auto-apply 强制重启', async () => {
@@ -170,9 +174,38 @@ describe('SubscriptionScheduler §2 自动刷新分流', () => {
       true
     );
     fetchSubscription.mockResolvedValue({
-      servers: [ss({ name: 'S', address: '1.1.1.1' }), ss({ name: 'N', address: '2.2.2.2' })],
+      servers: [
+        ss({ name: 'S', address: '1.1.1.1', subscriptionId: 'd' }),
+        ss({ name: 'N', address: '2.2.2.2', subscriptionId: 'd' }),
+      ],
     });
     await run();
-    expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1); // ON → auto-apply
+    expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1); // ON + 真新增 → auto-apply
+  });
+
+  // review F-A：ON 开关下 304（无变化）刷新周期**不得**重启（否则 ON 用户每个订阅间隔无谓断流）。
+  it('开关 ON + 304 无变化刷新 → 不重启（nodesChanged=false）', async () => {
+    const { run, fetchSubscription, applyConfigForcingRestart } = makeScheduler(
+      oneSubConfig({ restartOnNodeChange: true }),
+      true
+    );
+    // 304：notModified → 只刷元数据、无节点变更。
+    fetchSubscription.mockResolvedValue({ servers: [], notModified: true });
+    await run();
+    expect(applyConfigForcingRestart).not.toHaveBeenCalled();
+  });
+
+  // review F-C：OFF 下选中节点同 id 但连接参数被改（轮换 SNI 等）→ 活出口须重启对齐（恒重启不受开关）。
+  it('开关 OFF + 选中节点参数被改（同 id）→ 强制重启对齐', async () => {
+    const { run, fetchSubscription, applyConfigForcingRestart } = makeScheduler(
+      oneSubConfig(),
+      true
+    );
+    // 同指纹（host:port:cred:network 不变 → reconcile 保同 id）但内容字段变（sni 改）→ selectedModified。
+    fetchSubscription.mockResolvedValue({
+      servers: [ss({ name: 'S', address: '1.1.1.1', subscriptionId: 'd', sni: 'new.example.com' })],
+    });
+    await run();
+    expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1);
   });
 });

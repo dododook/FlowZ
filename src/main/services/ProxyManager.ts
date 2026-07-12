@@ -3340,10 +3340,13 @@ done
           this.tailscaleStatusGen.get(id) === this.lifecycleGeneration
         );
       },
-      // §2：currentConfig 被 switchMode 每腿更新为最新（含 defer/no-op）→ 与运行核快照比即「已编辑未生效」。核未
-      // 运行 currentConfig 可能为空 → false（无「运行核」概念，dirty 无意义）。
-      isDirty: (id: string): boolean =>
-        this.currentConfig ? this.isServerDirty(id, this.currentConfig) : false,
+      // §2（review F-B）：直接比**传入待测节点**的指纹 vs 运行核启动快照——待测列表来自 ConfigManager 最新 config，
+      // 故避开 currentConfig 在「订阅 OFF 自动刷新（不经 switchMode）」路径的滞后（那会漏判 dirty、仍测旧参数出口失真）。
+      // 快照无此 id（新增未入核）→ false（那由 hasTag/notInPool 既有判据挡）。
+      isDirty: (server: ServerConfig): boolean => {
+        const fp = this.runningServersFingerprint?.get(server.id);
+        return fp !== undefined && fp !== this.serverFingerprint(server);
+      },
     };
   }
 

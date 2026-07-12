@@ -202,7 +202,7 @@ describe('§16 波前 gate 缺席（诚实性：绝不写假 -1）+ outcome', ()
   });
 
   it('§2 dirty（isDirty=true）→ 该节点波前剔除、不测（无值、无 -1）、outcome=completed', async () => {
-    const probe = makeProbe({ isDirty: (id: string) => id === 's2' }, [], []);
+    const probe = makeProbe({ isDirty: (s: ServerConfig) => s.id === 's2' }, [], []);
     const svc = new SpeedTestService(mockLog, undefined, () => probe);
     stubMeasure(svc);
     const { results, outcome } = await svc.testAllServers([vless('s1'), vless('s2')]);

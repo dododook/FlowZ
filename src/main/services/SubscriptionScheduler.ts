@@ -212,6 +212,17 @@ export class SubscriptionScheduler {
       const fresh = await this.configManager.loadConfig();
       const nowIso = new Date().toISOString();
       let updated = 0;
+      // F-A（review）：仅「真实节点增/删/改」置位——304 / 内容等价的 200 不置。ON 开关据此只在真变更时 auto-apply，
+      //   不在无变化的周期刷新空转重启（否则 ON 用户每个订阅更新间隔无谓断流一次）。
+      let nodesChanged = false;
+      // F-C（review）：选中节点（非 direct）id——判「选中节点同 id 但连接参数被改」（轮换 reality-key/SNI 等，指纹外
+      //   字段变、reconcile 保同 id）→ 活出口须重启对齐（矩阵「改被引用/选中节点恒立即重启」）。判据复用 reconcile 自身
+      //   的变更结论：内容变的节点被写 updatedAt=nowIso（未变则保旧值）→ 循环后比选中节点 updatedAt===nowIso 即「本轮被改」，
+      //   免自造内容指纹（避 JSON 键序敏感的误报）。
+      const selId =
+        fresh.selectedServerId && !isDirectSelection(fresh.selectedServerId)
+          ? fresh.selectedServerId
+          : null;
       for (const f of fetched) {
         const sub = fresh.subscriptions?.find((x) => x.id === f.subId);
         if (!sub) continue; // 订阅在此期间被删除 → 跳过
@@ -259,34 +270,43 @@ export class SubscriptionScheduler {
         sub.etag = f.etag;
         sub.lastModified = f.lastModified;
         sub.hasProviders = f.hasProviders;
+        nodesChanged = true; // 走到 merge 路径 = contentChanged 或 partial → 真实节点变更
         updated++;
       }
 
       if (updated > 0) {
+        const liveIds = new Set(fresh.servers.map((s) => s.id));
         // §2 F14：选中节点被自动刷新下架（不在最终 servers、且非 direct 哨兵）→ 流量会留在运行核里的死节点。必须
         // reselect 一个存活出口（pickFallbackExit：无 latency 上下文时取首个候选，空则 direct 哨兵）+ 强制重启逃离死节点。
-        const liveIds = new Set(fresh.servers.map((s) => s.id));
-        const selectedDelisted =
-          !!fresh.selectedServerId &&
-          !isDirectSelection(fresh.selectedServerId) &&
-          !liveIds.has(fresh.selectedServerId);
+        const selectedDelisted = !!selId && !liveIds.has(selId);
         if (selectedDelisted) {
           fresh.selectedServerId = pickFallbackExit([...liveIds], {}) ?? DIRECT_SERVER_ID;
         }
+        // F-C：选中节点仍在但连接参数被本轮刷新改了（同 id 内容变）→ 活出口须重启对齐（旧参数不自愈）。
+        // reconcile 对内容变的节点写 updatedAt=nowIso（本轮时间戳）→ 选中节点 updatedAt===nowIso 即本轮被改。
+        const selectedModified =
+          !!selId &&
+          !selectedDelisted &&
+          fresh.servers.find((s) => s.id === selId)?.updatedAt === nowIso;
+        const selectedAffected = selectedDelisted || selectedModified;
         // 落盘 + 通知 UI（渲染端/托盘刷新 + 差集重算）。
         await this.configManager.saveConfig(fresh);
         this.notifyConfigChanged(fresh);
-        // 变更源分流（§2 矩阵）：默认（restartOnNodeChange OFF 且选中未下架）→ 只落盘不重启，新节点进「待应用」差集、
-        //   下次启动/被选中/一键应用时生效（守「不打断连接」）。ON=auto-apply 全量入核；选中被下架=正确性必须重启逃死节点
-        //   （恒重启不受开关影响，同 §2 矩阵「删被引用/选中节点恒立即重启」）。applyConfigForcingRestart 内部 guard 代理
-        //   未运行/换核窗口（不重启），且单飞去抖合并。
-        if (fresh.restartOnNodeChange === true || selectedDelisted) {
+        // 变更源分流（§2 矩阵）：①选中节点被下架/改参数 = 正确性恒重启（不受开关，同「改被引用/选中节点恒立即重启」）；
+        //   ②restartOnNodeChange ON 且**真有节点变更**（nodesChanged，非 304/内容等价空转）= auto-apply 全量入核。默认
+        //   （OFF 且选中未受影响）只落盘、新节点进「待应用」差集守「不打断连接」。applyConfigForcingRestart 内部 guard
+        //   代理未运行/换核窗口（不重启）+ 单飞去抖合并。
+        if (selectedAffected || (fresh.restartOnNodeChange === true && nodesChanged)) {
           this.applyConfigForcingRestart(fresh);
         }
         this.logManager.addLog(
           'info',
           `[${reason}] 订阅自动更新完成：成功 ${updated}，失败 ${failed}` +
-            (selectedDelisted ? '（选中节点已下架，重选出口并重启）' : ''),
+            (selectedDelisted
+              ? '（选中节点已下架，重选出口并重启）'
+              : selectedModified
+                ? '（选中节点参数变更，重启对齐）'
+                : ''),
           'SubScheduler'
         );
       }
