@@ -147,7 +147,7 @@ describe('issue #176 P2-A — configGenerationNorm(serverIds) 过滤', () => {
   });
 });
 
-describe('issue #176 P2-A — canSkipRestartForAddedUnreferenced 非对称安全判据', () => {
+describe('issue #176 P2-A + §2 P2-B — canSkipRestartForAddedUnreferenced 非对称安全判据', () => {
   it('纯新增未引用纯代理节点 → 可免重启', () => {
     const svc = makeSvc();
     const a = cfg([ss('A'), ss('B')], { selectedServerId: 'A' });
@@ -155,24 +155,43 @@ describe('issue #176 P2-A — canSkipRestartForAddedUnreferenced 非对称安全
     expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(true);
   });
 
-  it('删除未引用节点 → 仍重启（残留陈旧 route 排除/DNS 条目，旧址复用可致错误直连）', () => {
+  // §2 P2-B：未引用节点的删/改改为 defer（与 SERVER_DELETE 不 emit 的现状一致，消除双路径不一致）；未引用节点不承载
+  //   流量，删/改无活流量影响；被选中/被规则指向才连它 → 届时 planHotSwitch dirty 闸门退回重启补全。安全由 P2-B
+  //   非对称模型 + dirty 闸门保证（非 P2-A 的「一律重启」）。
+  it('删除未引用节点 → defer（P2-B，不承载流量；被选中/规则指向才退回重启）', () => {
     const svc = makeSvc();
     const a = cfg([ss('A'), ss('B'), ss('Z')], { selectedServerId: 'A' });
     const b = cfg([ss('A'), ss('B')], { selectedServerId: 'A' });
-    expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(false);
+    expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(true);
   });
 
-  it('改未引用节点 address → 仍重启（H1：route 排除/DNS rule1 遍历全节点 address，残留陈旧）', () => {
+  it('改未引用节点 address → defer（P2-B；dirty 闸门防热切到旧参数）', () => {
     const svc = makeSvc();
     const a = cfg([ss('A'), ss('Z', '9.9.9.9')], { selectedServerId: 'A' });
     const b = cfg([ss('A'), ss('Z', '5.5.5.5')], { selectedServerId: 'A' }); // Z 地址变
-    expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(false);
+    expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(true);
   });
 
-  it('改未引用节点任一参数（同址）→ 仍重启（保守：旧节点须逐字节不变）', () => {
+  it('改未引用节点任一参数（同址）→ defer（P2-B）', () => {
     const svc = makeSvc();
     const a = cfg([ss('A'), ss('Z', '9.9.9.9', { port: 8388 })], { selectedServerId: 'A' });
     const b = cfg([ss('A'), ss('Z', '9.9.9.9', { port: 9999 })], { selectedServerId: 'A' }); // Z 端口变
+    expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(true);
+  });
+
+  it('删/改**被规则指向**节点 → 仍重启（被引用，改/删影响活流量）', () => {
+    const svc = makeSvc();
+    const rule: Rule = {
+      id: 'r1',
+      type: 'domainSuffix',
+      values: ['x.com'],
+      action: 'proxy',
+      enabled: true,
+      targetServerId: 'Z',
+    };
+    const a = cfg([ss('A'), ss('Z', '9.9.9.9')], { selectedServerId: 'A', customRules: [rule] });
+    // 改被规则指向的 Z 地址 → 被引用节点变 → 重启
+    const b = cfg([ss('A'), ss('Z', '5.5.5.5')], { selectedServerId: 'A', customRules: [rule] });
     expect(svc.canSkipRestartForAddedUnreferenced(a, b)).toBe(false);
   });
 
@@ -266,13 +285,40 @@ describe('issue #176 P2-A — switchMode 集成（运行中）', () => {
     expect(sched).toHaveBeenCalledTimes(1);
   });
 
-  it('删未引用节点 → 仍重启（H1 修正：残留陈旧 route/DNS 条目，不能免重启）', async () => {
+  it('删未引用节点 → defer 不重启（§2 P2-B，与 SERVER_DELETE 不 emit 一致）', async () => {
     const svc = makeSvc();
     const a = cfg([ss('A'), ss('B'), ss('Z')], { selectedServerId: 'A' });
     running(svc, a);
     const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
     const b = cfg([ss('A'), ss('B')], { selectedServerId: 'A' }); // 删 Z
     await svc.switchMode(b);
+    expect(sched).not.toHaveBeenCalled();
+  });
+
+  it('编辑未引用节点 → defer 不重启（§2 P2-B）', async () => {
+    const svc = makeSvc();
+    const a = cfg([ss('A'), ss('Z', '9.9.9.9')], { selectedServerId: 'A' });
+    running(svc, a);
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    const b = cfg([ss('A'), ss('Z', '5.5.5.5')], { selectedServerId: 'A' }); // 改未引用 Z 地址
+    await svc.switchMode(b);
+    expect(sched).not.toHaveBeenCalled();
+  });
+
+  it('§2 dirty 闸门：切到「已编辑未生效」节点 → 退回重启（防热切到旧参数）', async () => {
+    const svc = makeSvc();
+    // 运行核起于 A(选中)+Z(9.9.9.9)。快照运行核指纹。
+    const started = cfg([ss('A'), ss('Z', '9.9.9.9')], { selectedServerId: 'A' });
+    running(svc, started);
+    svc.runningServersFingerprint = svc.computeServersFingerprint(started.servers);
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    // 先编辑未引用 Z（defer，currentConfig 更新，Z 变 dirty）→ 再选中 Z。
+    const edited = cfg([ss('A'), ss('Z', '5.5.5.5')], { selectedServerId: 'A' });
+    await svc.switchMode(edited); // 编辑 defer
+    expect(sched).not.toHaveBeenCalled();
+    // 现在切到 dirty 的 Z：planHotSwitch dirty 闸门 → 退回重启（否则热切到运行核里的旧 9.9.9.9）。
+    const selectDirty = cfg([ss('A'), ss('Z', '5.5.5.5')], { selectedServerId: 'Z' });
+    await svc.switchMode(selectDirty);
     expect(sched).toHaveBeenCalledTimes(1);
   });
 });

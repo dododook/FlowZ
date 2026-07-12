@@ -418,6 +418,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 置 true → 热路径(switchMode no-op 分支)改走重启重落盘，防「写文件但无人消费」导致值陈旧。
   private customRuleFilesDegraded = false;
   private currentConfig: UserConfig | null = null;
+  // 待应用差集基准（§2 待应用差集模型）：运行核实际起于的 servers 指纹快照（id→fingerprint）。仅在 startInternal
+  //   实际(重)启核时刷新——defer/no-op 分支的 currentConfig 赋值**不刷**（那不是运行核真值）。ConfigManager 最新
+  //   servers 与它的差集 = 待应用变更（added/modified/removed）；modified 集 = dirty（防热切到旧参数节点）。null=核未起。
+  private runningServersFingerprint: Map<string, string> | null = null;
   // 启动时生成的「节点 id → selector 成员 tag」映射，用于 clash_api 热切换时定位目标 tag
   private currentIdToTagMap: Map<string, string> | null = null;
   // 启动时生成的「规则 key → { selectorTag, memberTag }」映射，用于「改规则目标节点」clash_api 热切换
@@ -659,6 +663,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     // 先保存当前配置（needsRootPrivilege 等方法需要用到）
     this.currentConfig = config;
+    // §2 待应用差集基准：快照运行核实际起于的 servers 指纹。**仅此起核路径刷新**（switchMode 的 defer/no-op 分支不刷，
+    //   见 :420 字段注释）→ 后续 config 编辑相对此快照算差集（added 待入池 / modified 待生效+dirty / removed 待移出）。
+    this.runningServersFingerprint = this.computeServersFingerprint(config.servers);
 
     // Linux：解析现役核（helper 模式=root 受管核，setcap 兜底=userData 可写核）并维护 userData 兜底核。每次 start
     // 重解析（对齐 darwin/win HIGH-1）：探测/校验/实跑对准同一核。ensureWritableCore 内按平台维护 + 返回现役核。
@@ -1361,6 +1368,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 进程已停 → 清掉旧的 id→tag 映射，防止对一个已不存在的 selector 误发 clash_api 切换
       this.currentIdToTagMap = null;
       this.currentRuleTargetMap = null;
+      this.runningServersFingerprint = null; // §2：核停→无运行核基准→待应用差集回空（computePendingDiff 返空）
+
     } finally {
       this.stopping = false;
       // S1：停止时放行任何在等 selector-settled 的 waiter（本次 start 的 reassert 可能未完成即被停）——防 whenSelectorSettled
@@ -1850,6 +1859,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       if (!toDirect && !old.servers.some((s) => s.id === newConfig.selectedServerId)) {
         return { kind: 'none', puts: [] };
       }
+      // §2 P2-B dirty 闸门：目标节点已编辑未生效（config 参数 ≠ 运行核快照）→ 热切到它会 PUT 到运行核里的**旧参数**
+      //   成员、流量走旧参数且不自愈 → 退回重启（重启即对齐新参数）。direct 哨兵无参数、不受影响。
+      if (!toDirect && this.isServerDirty(newConfig.selectedServerId, newConfig)) {
+        return { kind: 'none', puts: [] };
+      }
       // ICMP 规则已恒走 direct（route-builder，静态不依赖选中节点）→ ICMP 不再是热切换边界。但选中节点的【其它】
       // route 投影仍随之变，而 configGenerationNorm 已剔除 selectedServerId → 这些差异 PUT 不重生成，必须退回重启：
       //   (1) 全隧道兜底：meshSelectedExitFallsBackToDirect 翻转 → final/smart-geo 的 userExitTag(proxy-selector↔direct)
@@ -1991,6 +2005,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 新目标有→解析节点 tag；无（节点切回默认/跟全局）→ proxy-selector（rule-sel 嵌套 default）
       const memberTag = newTarget ? idToTag.get(newTarget) : 'proxy-selector';
       if (newTarget && !memberTag) return false; // 新目标节点不在 selector → 退回重启
+      // §2 P2-B dirty 闸门：规则新目标节点已编辑未生效（config 参数≠运行核快照）→ 退回重启（防规则热切到旧参数成员）
+      if (newTarget && this.isServerDirty(newTarget, newConfig)) return false;
       // 旧成员 tag（供精准断连 pair）：旧目标节点 tag，无旧目标（跟全局）→ proxy-selector（rule-sel 嵌套 default）。
       // 必须从 oldTarget 现算，禁用 currentRuleTargetMap.memberTag（那是生成时 default，首次规则热切后即陈旧）。
       const oldMemberTag = oldTarget
@@ -2177,37 +2193,88 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     return R;
   }
 
+  /** 节点生成指纹（剔时间戳、键序无关）：canSkip③、runningServersFingerprint 快照、待应用差集、dirty 判定**共用单一
+   *  真值**——防「差集/UI 显示 vs switchMode 重启决策」用不同指纹而撕裂（§2 Fable R1）。 */
+  private serverFingerprint(s: ServerConfig): string {
+    const c: Record<string, unknown> = { ...s };
+    delete c.updatedAt;
+    delete c.createdAt;
+    return this.stableStringify(c);
+  }
+
+  /** 从 servers 算 id→指纹 Map；startInternal 实际起核时快照为 runningServersFingerprint（待应用差集基准）。 */
+  private computeServersFingerprint(servers: ServerConfig[]): Map<string, string> {
+    return new Map(servers.map((s) => [s.id, this.serverFingerprint(s)]));
+  }
+
   /**
-   * issue #176 P2-A：判 next 相对 old 是否「仅新增了未被引用的纯代理节点」——是则可免整核重启（订阅刷新加新节点）。
-   * 非对称安全模型：新增未引用节点 → 其 route 排除/DNS rule1（route-builder/dns-builder 遍历**全部**节点的 address+
-   *   serverName）条目缺失**无害**（节点未承载流量、被选中才连它→届时退回重启补全）；删除/改址/改任一旧节点 →
-   *   运行核**残留陈旧**条目（旧址被复用为真实代理目标时可致错误直连）→ 必须重启。
+   * 待应用差集（§2 待应用差集模型）：config.servers 相对**运行核快照** runningServersFingerprint 的差集。
+   * added=id 不在快照（新增未入核，徽标「待入池」）；modified=指纹不等（已编辑未生效，徽标「待生效」+dirty）；
+   * removed=快照有而 config 无（已删未从核移出）。核未起（快照 null）→ 空差集（无「运行核」概念，动作条隐藏）。
+   */
+  getPendingNodeChanges(config: UserConfig): {
+    added: string[];
+    modified: string[];
+    removed: string[];
+  } {
+    const snap = this.runningServersFingerprint;
+    if (!snap) return { added: [], modified: [], removed: [] };
+    const added: string[] = [];
+    const modified: string[] = [];
+    const liveIds = new Set<string>();
+    for (const s of config.servers) {
+      liveIds.add(s.id);
+      const fp = snap.get(s.id);
+      if (fp === undefined) added.push(s.id);
+      else if (fp !== this.serverFingerprint(s)) modified.push(s.id);
+    }
+    const removed = [...snap.keys()].filter((id) => !liveIds.has(id));
+    return { added, modified, removed };
+  }
+
+  /**
+   * 节点是否 dirty：config 里的参数 ≠ 运行核快照（=已编辑未生效）。planHotSwitch 禁热切到 dirty 节点——否则 PUT
+   * 到运行核里的旧参数成员、流量走旧参数且不自愈（§2 P2-B 唯一新增风险的堵法）。不在快照（新增未入核）返 false——
+   * 那由 planHotSwitch「目标不在运行 selector」既有判据挡（退回重启）。
+   */
+  private isServerDirty(id: string, config: UserConfig): boolean {
+    const snap = this.runningServersFingerprint;
+    if (!snap) return false;
+    const fp = snap.get(id);
+    if (fp === undefined) return false;
+    const s = config.servers.find((x) => x.id === id);
+    return !!s && fp !== this.serverFingerprint(s);
+  }
+
+  /**
+   * issue #176 P2-A + §2 P2-B：判 next 相对 old 是否「仅变更了**不影响活流量**的节点」——是则免整核重启（defer）。
+   * 覆盖：新增未引用节点（P2-A，订阅刷新）+ 编辑/删除未引用节点（P2-B）。
+   * 非对称安全模型：未引用节点（非选中/非规则目标/非 endpoint/不在 detour 链）仅作 selector 惰性成员、不承载流量，
+   *   增/改/删对运行核行为无影响 → 可 defer（被选中才连它 → 届时 planHotSwitch dirty 闸门退回重启补全陈旧条目）；
+   *   被引用节点 改/删 → 运行核残留陈旧条目或用旧参数承载流量 → 必须重启。
    * 全部满足才放行（缺一即重启）：
-   *   ① selectedServerId 未变；② 所有非 servers 的生成相关字段未变（servers 过滤到空集后归一键相等）；
-   *   ③ 旧节点全部原样保留在 next（无删除、无任一旧节点 address/参数改动——含选中/规则目标/detour/endpoint）；
-   *   ④ 新增节点（next\old）全部未被引用（非选中/非规则目标/不在 detour 链/非 endpoint）。
+   *   ① selectedServerId 未变；② 非 servers 生成字段全等（混入 DNS/mode 变更即重启=正交守卫）；
+   *   ③ 所有**被引用**（refOld∪refNext）旧节点原样保留（无删除、无改动）；④ 新增节点全部未被引用。
    */
   private canSkipRestartForAddedUnreferenced(old: UserConfig, next: UserConfig): boolean {
     if (old.selectedServerId !== next.selectedServerId) return false; // ①
     const EMPTY: ReadonlySet<string> = new Set();
-    // ② 非 servers 字段逐字节一致（servers 投影到空 → 仅比对路由/规则/DNS/端口/模式 等非节点字段）
+    // ② 非 servers 字段逐字节一致（servers 投影到空 → 仅比对路由/规则/DNS/端口/模式 等非节点字段；混入 DNS/mode
+    //   变更即重启=正交守卫，节点 defer 绝不吞其它字段的重启）
     if (this.configGenerationNorm(old, EMPTY) !== this.configGenerationNorm(next, EMPTY))
       return false;
-    const fingerprint = (s: ServerConfig): string => {
-      const c: Record<string, unknown> = { ...s };
-      delete c.updatedAt; // 时间戳不影响生成
-      delete c.createdAt;
-      return this.stableStringify(c);
-    };
     const oldById = new Map(old.servers.map((s) => [s.id, s]));
     const newById = new Map(next.servers.map((s) => [s.id, s]));
-    // ③ 旧节点全部原样保留（无删除、无改动；含 address/serverName 与全部协议参数）
+    const refOld = this.referencedServerIds(old);
+    const refNext = this.referencedServerIds(next);
+    // ③ P2-B：**被引用**（旧或新）的旧节点必须原样保留——删/改被引用节点影响活流量→重启；**未引用**旧节点的删/改
+    //   放行（defer）。未引用节点仅作 selector 惰性成员不承载流量；被选中才连它 → 届时 planHotSwitch dirty 闸门退回重启补全。
     for (const s of old.servers) {
+      if (!refOld.has(s.id) && !refNext.has(s.id)) continue; // 未引用 → 删/改放行
       const n = newById.get(s.id);
-      if (!n || fingerprint(n) !== fingerprint(s)) return false;
+      if (!n || this.serverFingerprint(n) !== this.serverFingerprint(s)) return false;
     }
     // ④ 新增节点全部未被引用
-    const refNext = this.referencedServerIds(next);
     for (const s of next.servers) {
       if (!oldById.has(s.id) && refNext.has(s.id)) return false;
     }
