@@ -111,6 +111,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
+    "@radix-ui/react-tooltip": "^1.2.12",
     "i18next": "^25.8.13",
     "js-yaml": "^4.1.0",
     "plist": "^3.1.0",

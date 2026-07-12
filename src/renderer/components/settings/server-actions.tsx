@@ -17,6 +17,7 @@ import {
 import { Edit, Trash2, Copy, CopyPlus, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { isSpeedTestable, isEndpointProtocol } from '../../../shared/endpoint-routes';
+import { ActionTip } from '../ui/tooltip';
 import { useAppStore } from '../../store/app-store';
 import {
   hasShareLink,
@@ -49,70 +50,82 @@ export function ServerActions({
   return (
     <div className="nd-acts">
       {testable && (
-        <button
-          type="button"
-          className="nd-act speed"
-          title={t('servers.speedTest')}
-          disabled={testingServerIds.has(server.id) || isTestingSpeed}
-          onClick={(e) => {
-            if (stopPropagation) e.stopPropagation();
-            onSingleSpeedTest(server.id, e);
-          }}
-        >
-          <Zap className={testingServerIds.has(server.id) ? 'animate-pulse fill-primary/20' : ''} />
-        </button>
+        <ActionTip label={t('servers.speedTest')}>
+          <button
+            type="button"
+            className="nd-act speed"
+            aria-label={t('servers.speedTest')}
+            disabled={testingServerIds.has(server.id) || isTestingSpeed}
+            onClick={(e) => {
+              if (stopPropagation) e.stopPropagation();
+              onSingleSpeedTest(server.id, e);
+            }}
+          >
+            <Zap
+              className={testingServerIds.has(server.id) ? 'animate-pulse fill-primary/20' : ''}
+            />
+          </button>
+        </ActionTip>
       )}
       {/* 无分享链接的协议(ProtocolParser.generateUrl 无对应分支)隐藏复制按钮 */}
       {hasShareLink(server.protocol) && (
-        <button
-          type="button"
-          className="nd-act"
-          title={t('servers.copyShareUrl')}
-          onClick={(e) => onCopyShareUrl(server, e)}
-        >
-          <Copy />
-        </button>
+        <ActionTip label={t('servers.copyShareUrl')}>
+          <button
+            type="button"
+            className="nd-act"
+            aria-label={t('servers.copyShareUrl')}
+            onClick={(e) => onCopyShareUrl(server, e)}
+          >
+            <Copy />
+          </button>
+        </ActionTip>
       )}
       {/* 组网节点（tailscale/warp/wg endpoint）不显克隆：由 mesh 登录管理、克隆到手动无意义（用户反馈）。 */}
       {onCloneServer && !isEndpointProtocol(server.protocol) && (
+        <ActionTip label={t('servers.cloneToManual', 'Clone to Manual Nodes')}>
+          <button
+            type="button"
+            className="nd-act"
+            aria-label={t('servers.cloneToManual', 'Clone to Manual Nodes')}
+            onClick={(e) => {
+              if (stopPropagation) e.stopPropagation();
+              onCloneServer(server);
+            }}
+          >
+            <CopyPlus />
+          </button>
+        </ActionTip>
+      )}
+      <ActionTip label={t('common.edit')}>
         <button
           type="button"
           className="nd-act"
-          title={t('servers.cloneToManual', 'Clone to Manual Nodes')}
+          aria-label={t('common.edit')}
           onClick={(e) => {
             if (stopPropagation) e.stopPropagation();
-            onCloneServer(server);
+            onEditServer(server);
           }}
         >
-          <CopyPlus />
+          <Edit />
         </button>
-      )}
-      <button
-        type="button"
-        className="nd-act"
-        title={t('common.edit')}
-        onClick={(e) => {
-          if (stopPropagation) e.stopPropagation();
-          onEditServer(server);
-        }}
-      >
-        <Edit />
-      </button>
+      </ActionTip>
       {/* 订阅节点不可单独删除（随订阅更新/「删除订阅」统一管理）→ 直接隐藏删除按钮，而非置灰。 */}
       {!server.subscriptionId && (
         <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <button
-              type="button"
-              className="nd-act del"
-              title={t('common.delete')}
-              onClick={(e) => {
-                if (stopPropagation) e.stopPropagation();
-              }}
-            >
-              <Trash2 />
-            </button>
-          </AlertDialogTrigger>
+          <ActionTip label={t('common.delete')}>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                className="nd-act del"
+                aria-label={t('common.delete')}
+                onClick={(e) => {
+                  if (stopPropagation) e.stopPropagation();
+                }}
+              >
+                <Trash2 />
+              </button>
+            </AlertDialogTrigger>
+          </ActionTip>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>{t('servers.deleteServerTitle')}</AlertDialogTitle>
