@@ -84,6 +84,8 @@ export function SingboxDashboardSection() {
           <>
             {t('settings.advanced.singboxDashboardEnable', '启用外部控制')}
             <InfoTooltip content={t('settings.advanced.dashboardNeedsNetwork')} />
+            {/* D5：延迟重启下面板节点组与 FlowZ 列表可能不一致的提醒 */}
+            <InfoTooltip content={t('settings.advanced.dashboardNodeGroupHint')} />
           </>
         }
       >

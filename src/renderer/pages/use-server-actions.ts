@@ -17,7 +17,7 @@ import {
 import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
 import type { SubscriptionErrorKind } from '@shared/subscription-preview';
 import { buildSavedServers, buildClonedServer, type NewServerData } from './server-mutations';
-import { tailscaleSlotTaken } from '../../shared/endpoint-routes';
+import { tailscaleSlotTaken, collectRuleTargetedServerIds } from '../../shared/endpoint-routes';
 import { isWarpServer, warpSlotTaken } from '../../shared/warp';
 
 // saveSubscription 的可判定返回：ok=false 让对话框保留不关、留住用户输入（原全吞错致失败仍关窗丢输入）。
@@ -43,10 +43,32 @@ export function useServerActions() {
 
   const servers = config?.servers || [];
 
-  const deleteServer = async (serverId: string) => {
-    try {
-      await deleteServerStore(serverId);
+  // 删除成功三态 toast（单删/批删共用）：fallback≠undefined=删了选中节点（null→切直连 / string→切到兜底节点显名）；
+  // 否则 ruleTargeted=删了被规则指向的节点（触发重启，提示配置已重新生效）；否则普通删除（defer 不重启）。
+  const showDeleteToast = (fallback: string | null | undefined, ruleTargeted: boolean) => {
+    if (fallback !== undefined) {
+      if (fallback === null) {
+        toast.success(t('servers.deleteSelectedToDirect'));
+      } else {
+        const name = servers.find((s) => s.id === fallback)?.name ?? fallback;
+        toast.success(t('servers.deleteSelectedSwitched', { name }));
+      }
+    } else if (ruleTargeted) {
+      toast.success(t('servers.deleteRestarted'));
+    } else {
       toast.success(t('servers.deleteSuccess'));
+    }
+  };
+
+  // 删的节点是否被 enabled+proxy 规则显式指向（后端据此触发重启，前端据此给「配置已生效」提示；口径与后端同源）。
+  const ruleTargetedSet = () =>
+    collectRuleTargetedServerIds([...(config?.customRules ?? []), ...(config?.appRules ?? [])]);
+
+  const deleteServer = async (serverId: string) => {
+    const ruleTargeted = ruleTargetedSet().has(serverId);
+    try {
+      const fallback = await deleteServerStore(serverId);
+      showDeleteToast(fallback, ruleTargeted);
     } catch (error) {
       toast.error(t('servers.deleteFail'), {
         description: error instanceof Error ? error.message : t('servers.deleteFailDesc'),
@@ -57,9 +79,11 @@ export function useServerActions() {
   // 批量删除（一次后端配置写，避免并发单删竞态致只删 1 个）。订阅节点的过滤在调用方（server-list）完成。
   const deleteServers = async (serverIds: string[]) => {
     if (serverIds.length === 0) return;
+    const ruleSet = ruleTargetedSet();
+    const ruleTargeted = serverIds.some((id) => ruleSet.has(id));
     try {
-      await deleteServersStore(serverIds);
-      toast.success(t('servers.deleteSuccess'));
+      const { fallback } = await deleteServersStore(serverIds);
+      showDeleteToast(fallback, ruleTargeted);
     } catch (error) {
       toast.error(t('servers.deleteFail'), {
         description: error instanceof Error ? error.message : t('servers.deleteFailDesc'),

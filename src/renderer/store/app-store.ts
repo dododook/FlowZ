@@ -20,6 +20,7 @@ import {
   loadTailscaleLoginStatesFromCache,
   useTailscaleLoginCacheStore,
 } from './use-tailscale-login-cache-store';
+import { pickFallbackExit } from '../../shared/direct-selection';
 
 // 兼容旧的类型定义
 type ProxyMode = UserConfig['proxyMode'];
@@ -183,8 +184,9 @@ interface AppState {
   setTailscalePeers: (serverId: string, peers: TailscaleStatusPeer[]) => void;
 
   // Server Management Actions
-  deleteServer: (serverId: string) => Promise<void>;
-  deleteServers: (serverIds: string[]) => Promise<number>;
+  // 返回删选中节点的兜底出口（undefined=非删选中；null=无剩余→direct；string=兜底节点 id），供调用点 toast「已切换到 X」。
+  deleteServer: (serverId: string) => Promise<string | null | undefined>;
+  deleteServers: (serverIds: string[]) => Promise<{ count: number; fallback: string | null | undefined }>;
 
   // Custom Rules Actions
   addCustomRule: (rule: Rule) => Promise<void>;
@@ -580,7 +582,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Server Management Actions
   deleteServer: async (serverId) => {
     try {
-      await api.server.delete(serverId);
+      // D4：删的是当前选中节点 → 算兜底出口（最快剩余节点，latency 在渲染端会话态）传后端，
+      // 后端据此置 selectedServerId 并 emit 触发重启，把已删节点移出运行核（避免流量仍走已删出口）。
+      const st = get();
+      const cfg = st.config;
+      const fallback =
+        cfg && cfg.selectedServerId === serverId
+          ? pickFallbackExit(
+              cfg.servers.filter((s) => s.id !== serverId).map((s) => s.id),
+              st.latencyMap
+            )
+          : undefined;
+      await api.server.delete(serverId, fallback);
       // 清该节点 Tailscale 登录态缓存（仅 TS 节点有此缓存，非 TS 为 no-op）：免删-增循环陈旧缓存累积，
       // 也免导入/恢复复用旧 uuid 时陈旧 true 让 state 兜底跳过、误显「已登录」。
       useTailscaleLoginCacheStore.getState().removeCached(serverId);
@@ -589,6 +602,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       invalidateLoadConfig();
       // Reload config to get updated server list（Tailscale 登录态由 api STATUS 流实时驱动，无需在此刷新）。
       await get().loadConfig();
+      // 返回兜底出口（供调用点 toast「已切换到 X」）：undefined=非删选中；null=删选中但无剩余→direct；string=兜底节点 id。
+      return fallback;
     } catch (error) {
       console.error('[Store] Exception deleting server:', error);
       throw error; // 调用点 catch + toast
@@ -597,14 +612,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteServers: async (serverIds) => {
     try {
-      const count = await api.server.deleteBatch(serverIds);
+      // D4：删除集合含当前选中节点 → 兜底最快剩余节点（排除全部待删）传后端触发重启（同 deleteServer）。
+      const st = get();
+      const cfg = st.config;
+      const delSet = new Set(serverIds);
+      const fallback =
+        cfg && cfg.selectedServerId && delSet.has(cfg.selectedServerId)
+          ? pickFallbackExit(
+              cfg.servers.filter((s) => !delSet.has(s.id)).map((s) => s.id),
+              st.latencyMap
+            )
+          : undefined;
+      const count = await api.server.deleteBatch(serverIds, fallback);
       // 同 deleteServer：批量清各节点 Tailscale 登录态缓存（非 TS 为 no-op）。
       const cache = useTailscaleLoginCacheStore.getState();
       for (const id of serverIds) cache.removeCached(id);
       // 代际护栏：同 deleteServer，作废在飞旧 load，防批量删后旧快照复活已删节点。
       invalidateLoadConfig();
       await get().loadConfig();
-      return count;
+      // fallback 同 deleteServer 语义（供调用点分流 toast「已切换 X/直连」）；count 保留供其它调用方。
+      return { count, fallback };
     } catch (error) {
       console.error('[Store] Exception batch-deleting servers:', error);
       throw error; // 调用点 catch + toast

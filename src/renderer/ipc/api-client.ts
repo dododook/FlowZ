@@ -306,17 +306,19 @@ export const serverApi = {
   },
 
   /**
-   * 删除服务器
+   * 删除服务器。fallbackSelectedId：删的是当前选中节点时的兜底出口（最快剩余节点，渲染端算 pickFallbackExit）；
+   * 后端据此把 selectedServerId 置兜底节点并 emit 触发重启（D4）。删非选中节点省略即可。
    */
-  async delete(serverId: string): Promise<void> {
-    return ipcClient.invoke(IPC_CHANNELS.SERVER_DELETE, { serverId });
+  async delete(serverId: string, fallbackSelectedId?: string | null): Promise<void> {
+    return ipcClient.invoke(IPC_CHANNELS.SERVER_DELETE, { serverId, fallbackSelectedId });
   },
 
   /**
    * 批量删除服务器（一次配置写，避免并发单删竞态）。返回实际删除数。
+   * fallbackSelectedId：删除集合含当前选中节点时的兜底出口（同 delete）。
    */
-  async deleteBatch(serverIds: string[]): Promise<number> {
-    return ipcClient.invoke(IPC_CHANNELS.SERVER_DELETE_BATCH, { serverIds });
+  async deleteBatch(serverIds: string[], fallbackSelectedId?: string | null): Promise<number> {
+    return ipcClient.invoke(IPC_CHANNELS.SERVER_DELETE_BATCH, { serverIds, fallbackSelectedId });
   },
 
   /**

@@ -9,6 +9,9 @@ import { randomUUID } from 'crypto';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { ServerConfig } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
+import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
+import { collectRuleTargetedServerIds } from '../../../shared/endpoint-routes';
+import { DIRECT_SERVER_ID } from '../../../shared/direct-selection';
 import { ProtocolParser } from '../../services/ProtocolParser';
 import { ConfigManager } from '../../services/ConfigManager';
 import { WarpService, type WarpWireGuardDraft } from '../../services/WarpService';
@@ -112,9 +115,16 @@ export function registerServerHandlers(
   );
 
   // 删除服务器
-  registerIpcHandler<{ serverId: string }, void>(
+  // D4（flowz-node-change-restart）：删「当前选中 / 被规则指向」节点 → emit CONFIG_CHANGED 触发一次去抖重启
+  //   （servers 变→P2-A 兜底重启，把已删节点彻底移出运行核 selector）；删「纯未引用」节点 → 不 emit（defer，惰性
+  //   成员无流量、无害，下次结构性重启清）。删选中时 selectedServerId 置**渲染端传入的兜底节点**（最快剩余节点，
+  //   pickFallbackExit，latency 在渲染端），而非 null——避免删当前出口后无选中兜底（原 null → default nodeTags[0]）。
+  registerIpcHandler<{ serverId: string; fallbackSelectedId?: string | null }, void>(
     IPC_CHANNELS.SERVER_DELETE,
-    async (_event: IpcMainInvokeEvent, args: { serverId: string }) => {
+    async (
+      _event: IpcMainInvokeEvent,
+      args: { serverId: string; fallbackSelectedId?: string | null }
+    ) => {
       const config = await configManager.loadConfig();
       const index = config.servers.findIndex((s) => s.id === args.serverId);
 
@@ -125,22 +135,38 @@ export function registerServerHandlers(
       const removed = config.servers[index];
       config.servers.splice(index, 1);
 
-      // 如果删除的是当前选中的服务器，清除选中状态
-      if (config.selectedServerId === args.serverId) {
-        config.selectedServerId = null;
+      const wasSelected = config.selectedServerId === args.serverId;
+      // 被 enabled+proxy 规则显式指向（custom/app）：删它须重启清运行核陈旧引用（口径与 route-builder/UI 同源）。
+      const ruleTargeted = collectRuleTargetedServerIds([
+        ...(config.customRules ?? []),
+        ...(config.appRules ?? []),
+      ]).has(args.serverId);
+
+      // 删当前选中 → 兜底出口（渲染端最快剩余节点）；无剩余(null/undefined) → DIRECT_SERVER_ID 哨兵（干净直连，
+      // proxy-selector default='direct'）。**不可置 null**：null 非哨兵 → 0 节点时 buildOutbounds `nodeTags.length===0
+      // && !isDirect` throw「没有可用节点」→ 重启失败（设计 D4：0 剩余→direct）。
+      if (wasSelected) {
+        config.selectedServerId = args.fallbackSelectedId ?? DIRECT_SERVER_ID;
       }
 
       await configManager.saveConfig(config);
       await runServerRemovalSideEffects(removed);
+
+      if (wasSelected || ruleTargeted) {
+        mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
+      }
     }
   );
 
   // 批量删除服务器：一次 loadConfig → 过滤掉全部 ids → 命中选中清 selectedServerId → 一次 saveConfig，
   // 再逐个跑删除副作用。单次配置写避免「N 个并发单删各读旧配置、末次写覆盖前面」的竞态（净删 1 个）。
   // 不存在的 id 静默跳过（幂等）。返回实际删除数。
-  registerIpcHandler<{ serverIds: string[] }, number>(
+  registerIpcHandler<{ serverIds: string[]; fallbackSelectedId?: string | null }, number>(
     IPC_CHANNELS.SERVER_DELETE_BATCH,
-    async (_event: IpcMainInvokeEvent, args: { serverIds: string[] }) => {
+    async (
+      _event: IpcMainInvokeEvent,
+      args: { serverIds: string[]; fallbackSelectedId?: string | null }
+    ) => {
       const idSet = new Set(args.serverIds);
       const config = await configManager.loadConfig();
       const removed = config.servers.filter((s) => idSet.has(s.id));
@@ -148,15 +174,27 @@ export function registerServerHandlers(
 
       config.servers = config.servers.filter((s) => !idSet.has(s.id));
 
-      // 选中节点在删除集合内（'__direct__' 哨兵不是真实 id，不会命中）→ 清除选中，
-      // 否则 ConfigManager.validateConfig 会因 selectedServerId 指向不存在节点而抛错。
-      if (config.selectedServerId && idSet.has(config.selectedServerId)) {
-        config.selectedServerId = null;
+      // D4：删除集合是否含「当前选中 / 被规则指向」节点 → 决定是否触发重启（同单删语义）。
+      const selectedDeleted = !!config.selectedServerId && idSet.has(config.selectedServerId);
+      const ruleTargetedIds = collectRuleTargetedServerIds([
+        ...(config.customRules ?? []),
+        ...(config.appRules ?? []),
+      ]);
+      const ruleTargetedDeleted = args.serverIds.some((id) => ruleTargetedIds.has(id));
+
+      // 选中节点在删除集合内（'__direct__' 哨兵不是真实 id，不会命中）→ 置兜底节点（渲染端最快剩余节点）；
+      // 无剩余 → DIRECT_SERVER_ID（同单删：null 会致 0 节点重启 throw）。
+      if (selectedDeleted) {
+        config.selectedServerId = args.fallbackSelectedId ?? DIRECT_SERVER_ID;
       }
 
       await configManager.saveConfig(config);
       for (const r of removed) {
         await runServerRemovalSideEffects(r);
+      }
+
+      if (selectedDeleted || ruleTargetedDeleted) {
+        mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
       }
       return removed.length;
     }

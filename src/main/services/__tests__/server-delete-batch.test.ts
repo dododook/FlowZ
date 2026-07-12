@@ -11,6 +11,8 @@
  *   + ProtocolParser/ConfigManager/WarpService（仅作签名占位，避免加载重依赖）。
  */
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
+import { mainEventEmitter, MAIN_EVENTS } from '../../ipc/main-events';
+import { DIRECT_SERVER_ID } from '../../../shared/direct-selection';
 
 const handleSpy = jest.fn();
 jest.mock('electron', () => ({
@@ -60,7 +62,11 @@ const loadConfigSpy = jest.fn();
 const saveConfigSpy = jest.fn().mockResolvedValue(undefined);
 const configManager = { loadConfig: loadConfigSpy, saveConfig: saveConfigSpy } as any;
 
-let batchHandler: (event: any, args: { serverIds: string[] }) => Promise<any>;
+let batchHandler: (
+  event: any,
+  args: { serverIds: string[]; fallbackSelectedId?: string | null }
+) => Promise<any>;
+let emitSpy: jest.SpyInstance;
 
 beforeAll(() => {
   const { registerServerHandlers } = require('../../ipc/handlers/server-handlers');
@@ -75,13 +81,19 @@ beforeEach(() => {
   saveConfigSpy.mockClear();
   rmSpy.mockClear();
   enqueueSpy.mockClear();
+  // D4：spy emit（无 listener→本就 no-op，仅为断言「删选中/被规则指向→触发 CONFIG_CHANGED 重启」）。
+  emitSpy = jest.spyOn(mainEventEmitter, 'emit').mockReturnValue(true);
 });
 
+afterEach(() => emitSpy.mockRestore());
+
 // registerIpcHandler 把 handler 包成返回 ApiResponse {success,data} → 解包 data。
-async function invoke(serverIds: string[]): Promise<number> {
-  const res = await batchHandler({}, { serverIds });
+async function invoke(serverIds: string[], fallbackSelectedId?: string | null): Promise<number> {
+  const res = await batchHandler({}, { serverIds, fallbackSelectedId });
   return res.data;
 }
+const emittedConfigChanged = () =>
+  emitSpy.mock.calls.some((c) => c[0] === MAIN_EVENTS.CONFIG_CHANGED);
 
 describe('SERVER_DELETE_BATCH', () => {
   it('一次 saveConfig 删除全部入参节点（非未选中节点）', async () => {
@@ -92,14 +104,32 @@ describe('SERVER_DELETE_BATCH', () => {
     expect(saved.servers.map((s: any) => s.id)).toEqual(['s2']);
   });
 
-  it('未命中选中节点 → selectedServerId 不变', async () => {
+  it('未命中选中/未被规则指向 → selectedServerId 不变 + 不触发重启（defer）', async () => {
     await invoke(['s1', 's4']);
     expect(saveConfigSpy.mock.calls[0][0].selectedServerId).toBe('s2');
+    expect(emittedConfigChanged()).toBe(false); // 删未引用节点不 emit → 不重启
   });
 
-  it('命中选中节点 → selectedServerId 清 null', async () => {
+  it('命中选中节点(无兜底) → selectedServerId=DIRECT_SERVER_ID（0 剩余走直连哨兵，非 null）+ 触发重启', async () => {
     await invoke(['s2']);
-    expect(saveConfigSpy.mock.calls[0][0].selectedServerId).toBeNull();
+    expect(saveConfigSpy.mock.calls[0][0].selectedServerId).toBe(DIRECT_SERVER_ID);
+    expect(emittedConfigChanged()).toBe(true);
+  });
+
+  it('命中选中节点 + 传兜底 → selectedServerId=兜底节点 id + 触发重启', async () => {
+    await invoke(['s2'], 's4');
+    expect(saveConfigSpy.mock.calls[0][0].selectedServerId).toBe('s4');
+    expect(emittedConfigChanged()).toBe(true);
+  });
+
+  it('命中被规则指向的非选中节点 → 触发重启（清运行核陈旧引用）+ selectedServerId 不动', async () => {
+    loadConfigSpy.mockImplementationOnce(async () => ({
+      ...makeConfig(),
+      customRules: [{ enabled: true, action: 'proxy', targetServerId: 's1' }],
+    }));
+    await invoke(['s1']); // s1 非选中（选中 s2），但被规则指向
+    expect(emittedConfigChanged()).toBe(true);
+    expect(saveConfigSpy.mock.calls[0][0].selectedServerId).toBe('s2');
   });
 
   it('每个被删 WARP 节点入待注销队列（副作用与单删等价）', async () => {
