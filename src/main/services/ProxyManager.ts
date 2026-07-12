@@ -1370,7 +1370,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.currentIdToTagMap = null;
       this.currentRuleTargetMap = null;
       this.runningServersFingerprint = null; // §2：核停→无运行核基准→待应用差集回空（computePendingDiff 返空）
-
     } finally {
       this.stopping = false;
       // S1：停止时放行任何在等 selector-settled 的 waiter（本次 start 的 reassert 可能未完成即被停）——防 whenSelectorSettled
@@ -2224,11 +2223,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   getPendingNodeChanges(config: UserConfig): PendingNodeChanges {
     const snap = this.runningServersFingerprint;
     if (!snap) return { added: [], modified: [], removed: [] };
+    // 差集只报「可 defer（未引用）」变更。被引用节点（选中/规则目标/detour 链/endpoint）的增/改会即刻去抖重启
+    // （canSkip③/④返 false），仅在 ~1.5s 去抖窗口内因快照尚旧而瞬态出现在差集里——那不是真「待应用」（它正在重启）。
+    // 按引用集过滤 added/modified，消动作条/徽标在自动重启窗口的误报闪动（review Low-1；差集语义收敛为「仅 deferrable」）。
+    // removed 无法据当前 config 判旧引用（节点已不在 config）→ 不过滤；删被引用节点的瞬态窗口极窄且由 B1 重选+重启收口。
+    const ref = this.referencedServerIds(config);
     const added: string[] = [];
     const modified: string[] = [];
     const liveIds = new Set<string>();
     for (const s of config.servers) {
       liveIds.add(s.id);
+      if (ref.has(s.id)) continue; // 被引用节点变更即刻重启，不入待应用差集
       const fp = snap.get(s.id);
       if (fp === undefined) added.push(s.id);
       else if (fp !== this.serverFingerprint(s)) modified.push(s.id);

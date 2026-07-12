@@ -354,9 +354,7 @@ export class ConfigManager implements IConfigManager {
     try {
       const dir = path.dirname(this.configPath);
       const entries = await fs.readdir(dir);
-      const backups = entries
-        .filter((n) => /^config\.corrupt-.*\.json$/.test(n))
-        .sort(); // 时间戳前缀命名 → 字典序即时间序，升序（旧在前）
+      const backups = entries.filter((n) => /^config\.corrupt-.*\.json$/.test(n)).sort(); // 时间戳前缀命名 → 字典序即时间序，升序（旧在前）
       const keep = 2;
       const toDelete = backups.slice(0, Math.max(0, backups.length - keep));
       for (const name of toDelete) {
@@ -912,6 +910,10 @@ export class ConfigManager implements IConfigManager {
     if (config.interruptConnectionsOnSwitch === undefined) {
       config.interruptConnectionsOnSwitch = true;
     }
+
+    // §2 待应用差集开关：归一为严格 boolean（默认 false=OFF=进待应用）。UI 经 setBool 只写 boolean，但手编 config
+    // 写非布尔值（"yes" 等）会被 switchMode 的 !newConfig.restartOnNodeChange 真值强转成 ON → 显式规整杜绝（review Low-2）。
+    config.restartOnNodeChange = config.restartOnNodeChange === true;
 
     // bypassProcesses 是可选字段，兼容旧配置
     if (config.bypassProcesses === undefined) {

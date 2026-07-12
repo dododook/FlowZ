@@ -8,7 +8,7 @@
  * 「立即应用」= applyPendingChanges（复用 F11 applyConfigForcingRestart，去抖 ~1.5s 后整核重启）。重启完成经
  * EVENT_PROXY_STARTED → refreshPendingChanges 自动清差集、本条卸载；applying 本地态仅防重复点击（带超时兜底复位）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -19,6 +19,8 @@ export function PendingChangesBar() {
   const { t } = useTranslation();
   const pending = useAppStore((s) => s.pendingChanges);
   const [applying, setApplying] = useState(false);
+  // 兜底复位定时器引用：供卸载/重触发时 clear，防卸载后 setApplying 空跑（Nit-1）。
+  const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const total = pending.added.length + pending.modified.length + pending.removed.length;
 
@@ -26,6 +28,14 @@ export function PendingChangesBar() {
   useEffect(() => {
     if (total === 0 && applying) setApplying(false);
   }, [total, applying]);
+
+  // 卸载时清兜底定时器（成功路径 <5s 卸载时定时器仍在飞 → clear 防泄漏/卸载后空跑）。
+  useEffect(
+    () => () => {
+      if (applyTimerRef.current) clearTimeout(applyTimerRef.current);
+    },
+    []
+  );
 
   if (total === 0) return null;
 
@@ -40,8 +50,9 @@ export function PendingChangesBar() {
         setApplying(false);
       });
     // 兜底复位：applyConfigForcingRestart 内部 guard 可能因代理未运行/换核窗口不实际重启（无 STARTED 事件回清）→
-    // 5s 后复位 applying，避免按钮永久禁用。差集若已清由上方 effect 复位、此处 no-op。
-    setTimeout(() => setApplying(false), 5000);
+    // 5s 后复位 applying，避免按钮永久禁用。差集若已清由上方 effect 复位、此处 no-op。前一个未触发的先 clear。
+    if (applyTimerRef.current) clearTimeout(applyTimerRef.current);
+    applyTimerRef.current = setTimeout(() => setApplying(false), 5000);
   };
 
   // 明细拆分（新增/修改/删除，仅非零项）供 title 悬停，主文案给总数保持简洁。

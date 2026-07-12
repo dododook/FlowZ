@@ -389,3 +389,41 @@ describe('issue #176 P2-A — switchMode 集成（运行中）', () => {
     expect(sched).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('§2 待应用差集 — getPendingNodeChanges 仅报未引用（review Low-1）', () => {
+  it('核未运行（无快照）→ 空差集', () => {
+    const svc = makeSvc();
+    const c = cfg([ss('A')], { selectedServerId: 'A' });
+    expect(svc.getPendingNodeChanges(c)).toEqual({ added: [], modified: [], removed: [] });
+  });
+
+  it('被引用节点（选中/规则目标）的改/增剔除；未引用的改/增/删保留', () => {
+    const svc = makeSvc();
+    const r1: Rule = {
+      id: 'r1',
+      type: 'domainSuffix',
+      values: ['x.com'],
+      action: 'proxy',
+      enabled: true,
+      targetServerId: 'B',
+    };
+    // 运行核起于 A(选中)+B(规则目标)+Z(未引用)+Del(未引用)。快照。
+    const started = cfg([ss('A'), ss('B'), ss('Z', '9.9.9.9'), ss('Del')], {
+      selectedServerId: 'A',
+      customRules: [r1],
+    });
+    svc.runningServersFingerprint = svc.computeServersFingerprint(started.servers);
+    // 改选中 A（引用）+ 改规则目标 B（引用）+ 改未引用 Z + 新增未引用 N + 删未引用 Del。
+    const next = cfg(
+      [ss('A', '8.8.8.8'), ss('B', '7.7.7.7'), ss('Z', '5.5.5.5'), ss('N', '1.2.3.4')],
+      {
+        selectedServerId: 'A',
+        customRules: [r1],
+      }
+    );
+    const diff = svc.getPendingNodeChanges(next);
+    expect(diff.modified.sort()).toEqual(['Z']); // A/B 被引用（即刻重启）剔除；Z 未引用保留
+    expect(diff.added).toEqual(['N']); // N 未引用新增
+    expect(diff.removed).toEqual(['Del']); // 删未引用保留（removed 不按引用过滤）
+  });
+});
