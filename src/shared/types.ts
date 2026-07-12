@@ -382,6 +382,17 @@ export interface RegionRoutingConfig {
 // 用户配置
 // ============================================================================
 
+/**
+ * §2 待应用差集：节点集相对运行核启动快照（runningServersFingerprint）的差异。
+ * added=新增未入核（徽标「待入池」）；modified=已编辑未生效（徽标「待生效」+dirty）；removed=已删未从核移出。
+ * 三者皆为 serverId 列表；全空 = 运行核与 config 一致（或核未运行）。
+ */
+export interface PendingNodeChanges {
+  added: string[];
+  modified: string[];
+  removed: string[];
+}
+
 export interface UserConfig {
   // 订阅配置
   subscriptions?: SubscriptionConfig[];
@@ -435,6 +446,11 @@ export interface UserConfig {
   privacyPassword?: string; // 隐私模式解锁密码
   autoSwitchNode?: boolean; // 节点故障时自动切换到可用节点
   interruptConnectionsOnSwitch?: boolean; // 切换节点时中断现有连接、强制在新节点重建（默认 true=切换即断旧连接；显式 false=优雅切换，现有连接保留至自然关闭）
+  // §2 待应用差集：节点配置变更后是否立即重启内核应用（默认 false=OFF=进「待应用」差集、动作条一键应用/被选中时才补全；
+  // true=ON=每次节点增/改/删即刻去抖重启，兼作自动订阅刷新的 auto-apply 调度器）。仅节点集/参数变更受此门控，
+  // 影响活流量的变更（改选中/被规则指向节点）恒立即重启不受此开关影响。**不入 configGenerationNorm**（纯调度偏好、
+  // 不影响 sing-box 配置生成；若入 norm 则切开关本身会触发无谓重启）。
+  restartOnNodeChange?: boolean;
   // 组网登录期出口让位（默认开=undefined||true）：当选中出口为 Tailscale 且其隧道尚未 Running 时，默认路由临时让位
   // 直连（hotSwitchSelector→direct，零重启），使浏览器授权页/引导期控制平面流量不被导向「尚未连上的 TS 出口」而死锁；
   // 隧道 Running 后自动切回 TS 出口。关闭=false：宁可授权失败也不在引导期直连（无泄漏窗口）。见 shared/mesh-login-fallback。

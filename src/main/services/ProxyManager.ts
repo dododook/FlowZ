@@ -21,6 +21,7 @@ import type {
   HelperStatus,
   InvalidNodeInfo,
   ProxyExitBlock,
+  PendingNodeChanges,
 } from '../../shared/types';
 import { ProxyErrorCode } from '../../shared/types';
 import { deriveTsExitWarning } from '../../shared/tailscale-exit-warning';
@@ -1792,6 +1793,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //   syncCustomRuleFiles 热重载（不重启）/降级则重启。
     if (
       !plan.mustRestart && // §2 F1：规则目标变更无法热切 → 不落 canSkip defer，走最终重启腿
+      !newConfig.restartOnNodeChange && // §2 开关 ON=节点变更即刻重启：不落 defer，走最终重启腿（auto-apply 语义）
       this.currentConfig &&
       this.canSkipRestartForAddedUnreferenced(this.currentConfig, newConfig)
     ) {
@@ -2088,6 +2090,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 登录期出口让位开关：运行期由 ProxyManager live 读（shouldEngageLoginFallback），不喂 generateSingBoxConfig
       // → 切它走 hotSwitchSelector 零重启，绝不触发整核重启断流。关开关的 disengage 由 switchMode 无重启腿处理（见 reconcileLoginFallback）。
       meshLoginFallbackDirect: null,
+      // §2 待应用差集：restartOnNodeChange 纯调度偏好（switchMode 用它决定节点变更 defer 还是即刻重启），不影响
+      // sing-box 生成 → 排除出 norm，否则切此开关本身 norm 翻转 → 无谓重启断流（同 meshLoginFallbackDirect 处置）。
+      restartOnNodeChange: null,
       // 界面语言纯 UI 偏好，不影响 sing-box 生成 → 运行中切语言（写 config.language 触发 CONFIG_CHANGED→switchMode）
       // 不应重启内核断流。不排除的话每次切语言都会 norm 翻转 → 去抖重启 sing-box（旧 APP_SET_LANGUAGE 路径不写 config、零断流）。
       language: null,
@@ -2216,11 +2221,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * added=id 不在快照（新增未入核，徽标「待入池」）；modified=指纹不等（已编辑未生效，徽标「待生效」+dirty）；
    * removed=快照有而 config 无（已删未从核移出）。核未起（快照 null）→ 空差集（无「运行核」概念，动作条隐藏）。
    */
-  getPendingNodeChanges(config: UserConfig): {
-    added: string[];
-    modified: string[];
-    removed: string[];
-  } {
+  getPendingNodeChanges(config: UserConfig): PendingNodeChanges {
     const snap = this.runningServersFingerprint;
     if (!snap) return { added: [], modified: [], removed: [] };
     const added: string[] = [];

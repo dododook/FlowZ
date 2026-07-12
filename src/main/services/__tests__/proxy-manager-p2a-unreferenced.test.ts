@@ -306,6 +306,31 @@ describe('issue #176 P2-A — switchMode 集成（运行中）', () => {
     expect(sched).not.toHaveBeenCalled();
   });
 
+  // §2 开关：restartOnNodeChange=true → 新增未引用节点也即刻重启（auto-apply），不 defer。
+  it('§2 开关 ON：新增未引用节点也即刻重启（不 defer）', async () => {
+    const svc = makeSvc();
+    const a = cfg([ss('A'), ss('B')], { selectedServerId: 'A', restartOnNodeChange: true });
+    running(svc, a);
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    const b = cfg([ss('A'), ss('B'), ss('Z', '9.9.9.9')], {
+      selectedServerId: 'A',
+      restartOnNodeChange: true,
+    });
+    await svc.switchMode(b);
+    expect(sched).toHaveBeenCalledTimes(1); // ON → 绕 defer 直接重启
+  });
+
+  // 切 restartOnNodeChange 开关本身（无节点变更）→ norm 排除该字段 → no-op 零重启。
+  it('§2 开关：仅切开关本体（无其他变更）→ 零重启（norm 已排除）', async () => {
+    const svc = makeSvc();
+    const a = cfg([ss('A'), ss('B')], { selectedServerId: 'A', restartOnNodeChange: false });
+    running(svc, a);
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    const b = cfg([ss('A'), ss('B')], { selectedServerId: 'A', restartOnNodeChange: true });
+    await svc.switchMode(b);
+    expect(sched).not.toHaveBeenCalled(); // 切开关不触发重启
+  });
+
   it('§2 dirty 闸门：切到「已编辑未生效」节点 → 退回重启（防热切到旧参数）', async () => {
     const svc = makeSvc();
     // 运行核起于 A(选中)+Z(9.9.9.9)。快照运行核指纹。

@@ -1798,7 +1798,7 @@ if (gotTheLock) {
     registerPrivacyHandlers();
     registerServerHandlers(protocolParser, configManager, logManager);
     registerLogHandlers(logManager, proxyManager, isUiBroadcastActive);
-    registerProxyHandlers(proxyManager);
+    registerProxyHandlers(proxyManager, configManager);
     // batch3 §3.7：STATS_SUBSCRIBE/STATS_UNSUBSCRIBE（渲染端 useStatsTopic 声明/撤销 topic 订阅）。
     registerStatsSubscriptionHandlers(statsSubscriptionRegistry);
     registerIpInfoHandlers(ipInfoService);

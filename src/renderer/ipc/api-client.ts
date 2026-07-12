@@ -26,6 +26,7 @@ import type {
   RuleResourceCatalogResult,
   InvalidNodeInfo,
   ImportParseResult,
+  PendingNodeChanges,
 } from '../../shared/types';
 import type { UnlockSnapshot, UnlockProgress } from '../../shared/unlock-detection';
 import type { SubscriptionPreviewResult } from '../../shared/subscription-preview';
@@ -82,6 +83,21 @@ export const proxyApi = {
    */
   async disableSystemProxy(): Promise<{ ok: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.SYSTEM_PROXY_DISABLE);
+  },
+
+  /**
+   * §2 待应用差集（pull）：拉取节点集相对运行核快照的增/改/删差集。核未运行 → 全空。
+   * 调用时机：configChanged / proxyStarted / proxyStopped 事件后。
+   */
+  async getPendingChanges(): Promise<PendingNodeChanges> {
+    return ipcClient.invoke(IPC_CHANNELS.PROXY_GET_PENDING_CHANGES);
+  },
+
+  /**
+   * §2 动作条「立即应用」：把最新 config force-restart 入核（应用全部待应用变更）。
+   */
+  async applyPendingChanges(): Promise<{ ok: boolean }> {
+    return ipcClient.invoke(IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES);
   },
 
   /**

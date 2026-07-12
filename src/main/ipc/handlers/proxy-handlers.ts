@@ -5,9 +5,15 @@
 
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
-import type { UserConfig, ServerConfig, ProxyStatus } from '../../../shared/types';
+import type {
+  UserConfig,
+  ServerConfig,
+  ProxyStatus,
+  PendingNodeChanges,
+} from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { ProxyManager } from '../../services/ProxyManager';
+import type { ConfigManager } from '../../services/ConfigManager';
 import { tailscaleStateExists } from '../../services/tailscale-state';
 import type { TailscaleStatusSnapshot } from '../../../shared/tailscale-status';
 
@@ -28,7 +34,10 @@ export function setTrayStateCallback(callback: TrayStateUpdateCallback): void {
 /**
  * 注册代理管理相关的 IPC 处理器
  */
-export function registerProxyHandlers(proxyManager: ProxyManager): void {
+export function registerProxyHandlers(
+  proxyManager: ProxyManager,
+  configManager: ConfigManager
+): void {
   // 注：系统代理 enable/clear 已收口于 ProxyManager（start reconcile + ensureSystemProxyCleared），
   // 本 handler 不再直接持有 systemProxyManager（拆双轨，修 C1/M4）。
   // 自定义协议兼容性 probe：当前内核能否识别该 outbound/endpoint type（sing-box check 最小 config）。
@@ -113,6 +122,27 @@ export function registerProxyHandlers(proxyManager: ProxyManager): void {
     IPC_CHANNELS.PROXY_RESTART,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
       await proxyManager.restart(config);
+    }
+  );
+
+  // §2 待应用差集（pull）：差集基准取 ConfigManager 最新 config（用户意图 SoT，非 currentConfig——后者被 defer/no-op
+  // 推进会陈旧 F8），对比 ProxyManager 运行核启动快照。核未运行（无快照）→ 空差集。无入参、纯读、幂等。
+  registerIpcHandler<void, PendingNodeChanges>(
+    IPC_CHANNELS.PROXY_GET_PENDING_CHANGES,
+    async () => {
+      const config = await configManager.loadConfig();
+      return proxyManager.getPendingNodeChanges(config);
+    }
+  );
+
+  // §2 动作条「立即应用」：把 ConfigManager 最新 config force-restart 入核（applyConfigForcingRestart 内部 guard 代理未
+  // 运行/换核窗口、单飞去抖）。落盘语义不变（config 已在各 CRUD 处即时 saveConfig），此处仅触发核应用。
+  registerIpcHandler<void, { ok: boolean }>(
+    IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES,
+    async () => {
+      const config = await configManager.loadConfig();
+      proxyManager.applyConfigForcingRestart(config);
+      return { ok: true };
     }
   );
 
