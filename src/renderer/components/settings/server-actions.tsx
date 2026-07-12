@@ -51,20 +51,23 @@ export function ServerActions({
     <div className="nd-acts">
       {testable && (
         <ActionTip label={t('servers.speedTest')}>
-          <button
-            type="button"
-            className="nd-act speed"
-            aria-label={t('servers.speedTest')}
-            disabled={testingServerIds.has(server.id) || isTestingSpeed}
-            onClick={(e) => {
-              if (stopPropagation) e.stopPropagation();
-              onSingleSpeedTest(server.id, e);
-            }}
-          >
-            <Zap
-              className={testingServerIds.has(server.id) ? 'animate-pulse fill-primary/20' : ''}
-            />
-          </button>
+          {/* disabled 按钮不派发 pointer 事件 → tooltip 不弹；用 inline-flex span 承接 hover（参 unlock-inline.tsx:117）。 */}
+          <span className="inline-flex">
+            <button
+              type="button"
+              className="nd-act speed"
+              aria-label={t('servers.speedTest')}
+              disabled={testingServerIds.has(server.id) || isTestingSpeed}
+              onClick={(e) => {
+                if (stopPropagation) e.stopPropagation();
+                onSingleSpeedTest(server.id, e);
+              }}
+            >
+              <Zap
+                className={testingServerIds.has(server.id) ? 'animate-pulse fill-primary/20' : ''}
+              />
+            </button>
+          </span>
         </ActionTip>
       )}
       {/* 无分享链接的协议(ProtocolParser.generateUrl 无对应分支)隐藏复制按钮 */}

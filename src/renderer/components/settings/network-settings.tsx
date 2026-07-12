@@ -350,7 +350,10 @@ export function NetworkSettings() {
                   toast.error(t('common.saveFailed'))
                 )
               }
-              placeholder={'每行一个域名，例如：\ntime.example.com\nstun.example.com'}
+              placeholder={t(
+                'settings.advanced.fakeIpFilterPlaceholder',
+                '每行一个域名，例如：\ntime.example.com\nstun.example.com'
+              )}
               hint={t(
                 'settings.advanced.fakeIpFilterEditHint',
                 '每行一个域名；可增删，恢复默认回到内置清单。'
@@ -485,7 +488,10 @@ export function NetworkSettings() {
                 toast.error(t('common.saveFailed'))
               )
             }
-            placeholder={'每行一个 IP 段，例如：\n192.168.0.0/16\n10.0.0.0/8'}
+            placeholder={t(
+              'settings.advanced.bypassCidrPlaceholder',
+              '每行一个 IP 段，例如：\n192.168.0.0/16\n10.0.0.0/8'
+            )}
             hint={
               isWin && isTunMode
                 ? t(

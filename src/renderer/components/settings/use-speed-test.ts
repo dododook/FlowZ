@@ -33,7 +33,7 @@ export function useSpeedTest(servers: ServerConfigWithId[]) {
     fail: t('servers.speedTestFail'),
     interrupted: t('servers.speedTestInterrupted', { defaultValue: '测速中断' }),
     skippedSummary: (n: number) =>
-      t('servers.speedTestSkippedSummary', { count: n, defaultValue: '{{count}} 个节点未纳入（刷新订阅后可测）' }),
+      t('servers.speedTestSkippedSummary', { count: n, defaultValue: '{{count}} 个节点待入池（重启内核后可测）' }),
     interruptedSummary: (tested: number, total: number) =>
       t('servers.speedTestInterruptedSummary', {
         tested,

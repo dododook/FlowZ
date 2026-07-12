@@ -84,19 +84,24 @@ export function SpeedBadge({
           {t('servers.speedTestNotApplicable')}
         </span>
       );
-    // 可测未测：占位 em dash（faint），与原型 pending 卡「—」一致。§16.3.3 reason=not-in-pool（订阅新增未入池）→ 加
-    // tooltip 引导刷新订阅入池；纯未测无 tooltip。
+    // 可测未测。reason=not-in-pool（新增节点未写入运行核）→ 显性「待入池」文案替代「—」（藏在原生 title 后的解释在
+    // Electron 下常看不到）；tooltip 修正为真实入池路径（选中该节点或重启内核，**非**「刷新订阅」——纯新增走 P2-A 免重启）。
+    // 纯未测（未点测速）→ 占位 em dash「—」、无 tooltip。
     case 'untested':
+      if (badge.reason === 'not-in-pool')
+        return (
+          <span
+            className="nd-lat mono"
+            style={{ color: 'hsl(var(--fg-faint))' }}
+            title={t('servers.speedTestNodePending', {
+              defaultValue: '新增节点尚未写入运行内核；选中该节点或重启内核后纳入测速',
+            })}
+          >
+            {t('servers.speedTestPendingPool', { defaultValue: '待入池' })}
+          </span>
+        );
       return (
-        <span
-          className="nd-lat mono"
-          style={{ color: 'hsl(var(--fg-faint))' }}
-          title={
-            badge.reason === 'not-in-pool'
-              ? t('servers.speedTestNodePending', { defaultValue: '订阅新增节点，刷新订阅后纳入测速' })
-              : undefined
-          }
-        >
+        <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
           —
         </span>
       );

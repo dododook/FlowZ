@@ -123,7 +123,7 @@ function App() {
       if (payload.skipped && payload.skipped > 0) {
         description += ` · ${i18n.t('servers.speedTestSkippedSummary', {
           count: payload.skipped,
-          defaultValue: '{{count}} 个节点未纳入（刷新订阅后可测）',
+          defaultValue: '{{count}} 个节点待入池（重启内核后可测）',
         })}`;
       }
 
