@@ -1,0 +1,70 @@
+/**
+ * §2 待应用差集动作条 —— 节点页列表顶部。当节点集相对运行核启动快照存在增/改/删差集时显示汇总 +「立即应用」一键。
+ *
+ * 数据源 = store.pendingChanges（pull 模型，configChanged/proxyStarted/proxyStopped 后由 refreshPendingChanges 刷新）。
+ * 语义：restartOnNodeChange OFF（默认）下节点变更 defer 进此差集，用户点「立即应用」force-restart 入核；ON 下变更自动
+ * 重启、差集瞬态即清（本条自然隐藏）。核未运行 → 差集全空 → 不渲染。
+ *
+ * 「立即应用」= applyPendingChanges（复用 F11 applyConfigForcingRestart，去抖 ~1.5s 后整核重启）。重启完成经
+ * EVENT_PROXY_STARTED → refreshPendingChanges 自动清差集、本条卸载；applying 本地态仅防重复点击（带超时兜底复位）。
+ */
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Clock, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
+import { api } from '@/ipc';
+import { useAppStore } from '@/store/app-store';
+
+export function PendingChangesBar() {
+  const { t } = useTranslation();
+  const pending = useAppStore((s) => s.pendingChanges);
+  const [applying, setApplying] = useState(false);
+
+  const total = pending.added.length + pending.modified.length + pending.removed.length;
+
+  // 差集清空（重启已入核）→ 复位 applying（本条即将卸载，稳妥起见仍复位，防父组件缓存实例）。
+  useEffect(() => {
+    if (total === 0 && applying) setApplying(false);
+  }, [total, applying]);
+
+  if (total === 0) return null;
+
+  const handleApply = () => {
+    if (applying) return;
+    setApplying(true);
+    void api.proxy
+      .applyPendingChanges()
+      .then(() => toast.success(t('servers.pendingApplying')))
+      .catch(() => {
+        toast.error(t('servers.pendingApplyFailed'));
+        setApplying(false);
+      });
+    // 兜底复位：applyConfigForcingRestart 内部 guard 可能因代理未运行/换核窗口不实际重启（无 STARTED 事件回清）→
+    // 5s 后复位 applying，避免按钮永久禁用。差集若已清由上方 effect 复位、此处 no-op。
+    setTimeout(() => setApplying(false), 5000);
+  };
+
+  // 明细拆分（新增/修改/删除，仅非零项）供 title 悬停，主文案给总数保持简洁。
+  const parts: string[] = [];
+  if (pending.added.length) parts.push(t('servers.pendingAdded', { count: pending.added.length }));
+  if (pending.modified.length)
+    parts.push(t('servers.pendingModified', { count: pending.modified.length }));
+  if (pending.removed.length)
+    parts.push(t('servers.pendingRemoved', { count: pending.removed.length }));
+
+  return (
+    <div className="nd-batch">
+      <Clock className="h-4 w-4 shrink-0" style={{ color: 'hsl(var(--warn))' }} />
+      <span className="nd-batch-n" title={parts.join(' · ')}>
+        {t('servers.pendingChangesSummary', { count: total })}
+        {parts.length > 0 && <span className="ml-2 text-fg-faint">（{parts.join(' · ')}）</span>}
+      </span>
+      <div className="nd-batch-acts">
+        <button type="button" className="btn flow sm" disabled={applying} onClick={handleApply}>
+          <RefreshCw className={applying ? 'animate-spin' : ''} />
+          {applying ? t('servers.pendingApplying') : t('servers.pendingApplyNow')}
+        </button>
+      </div>
+    </div>
+  );
+}

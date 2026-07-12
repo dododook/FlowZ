@@ -770,6 +770,20 @@ export function NetworkSettings() {
           <Srow
             label={
               <>
+                {t('settings.advanced.restartOnNodeChange')}
+                <InfoTooltip content={t('settings.advanced.restartOnNodeChangeDescFull')} />
+              </>
+            }
+            desc={t('settings.advanced.restartOnNodeChangeDesc')}
+          >
+            <Swt
+              checked={config.restartOnNodeChange === true}
+              onChange={(c) => setBool('restartOnNodeChange', c)}
+            />
+          </Srow>
+          <Srow
+            label={
+              <>
                 {t('settings.advanced.tlsFragment')}
                 <InfoTooltip content={t('settings.advanced.tlsFragmentDescFull')} />
               </>

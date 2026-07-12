@@ -45,6 +45,7 @@ import {
 } from './server-list-helpers';
 import { useSpeedTest } from './use-speed-test';
 import { useServerFilter } from './use-server-filter';
+import { PendingChangesBar } from './pending-changes-bar';
 
 interface ServerListProps {
   servers: ServerConfigWithId[];
@@ -273,6 +274,8 @@ export function ServerList({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* §2 待应用差集动作条：节点集相对运行核有增/改/删时置顶提示 +「立即应用」；无差集/核未运行则不渲染。 */}
+      <PendingChangesBar />
       {/* 工具栏：双视图切换 + 搜索 + 协议过滤 + 排序 + 本组测速 + 多选 */}
       <div className="nd-toolbar">
         <div className="seg2 nd-view">

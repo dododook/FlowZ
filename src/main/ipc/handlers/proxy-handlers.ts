@@ -127,24 +127,18 @@ export function registerProxyHandlers(
 
   // §2 待应用差集（pull）：差集基准取 ConfigManager 最新 config（用户意图 SoT，非 currentConfig——后者被 defer/no-op
   // 推进会陈旧 F8），对比 ProxyManager 运行核启动快照。核未运行（无快照）→ 空差集。无入参、纯读、幂等。
-  registerIpcHandler<void, PendingNodeChanges>(
-    IPC_CHANNELS.PROXY_GET_PENDING_CHANGES,
-    async () => {
-      const config = await configManager.loadConfig();
-      return proxyManager.getPendingNodeChanges(config);
-    }
-  );
+  registerIpcHandler<void, PendingNodeChanges>(IPC_CHANNELS.PROXY_GET_PENDING_CHANGES, async () => {
+    const config = await configManager.loadConfig();
+    return proxyManager.getPendingNodeChanges(config);
+  });
 
   // §2 动作条「立即应用」：把 ConfigManager 最新 config force-restart 入核（applyConfigForcingRestart 内部 guard 代理未
   // 运行/换核窗口、单飞去抖）。落盘语义不变（config 已在各 CRUD 处即时 saveConfig），此处仅触发核应用。
-  registerIpcHandler<void, { ok: boolean }>(
-    IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES,
-    async () => {
-      const config = await configManager.loadConfig();
-      proxyManager.applyConfigForcingRestart(config);
-      return { ok: true };
-    }
-  );
+  registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES, async () => {
+    const config = await configManager.loadConfig();
+    proxyManager.applyConfigForcingRestart(config);
+    return { ok: true };
+  });
 
   // Phase 2 按需登录：拉起瞬态登录核（无 TUN/clash_api/监听端口，零提权）抓登录 URL → 自动开浏览器 +
   // 系统通知 + 推渲染端可关闭 toast → 轮询 state 成功后杀核。双写防护：endpoint 已在主核则不起。

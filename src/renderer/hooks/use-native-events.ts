@@ -140,11 +140,15 @@ export function useNativeEvent<K extends keyof NativeEventData>(
 function handleProcessStarted(_data: NativeEventData['processStarted']) {
   // Refresh connection status when process starts
   useAppStore.getState().refreshConnectionStatus();
+  // §2 待应用差集：起核后运行核快照刷新 → 差集应清零（原待应用变更已入核）。
+  useAppStore.getState().refreshPendingChanges();
 }
 
 function handleProcessStopped(_data: NativeEventData['processStopped']) {
   // Refresh connection status when process stops
   useAppStore.getState().refreshConnectionStatus();
+  // §2 待应用差集：停核后无运行核快照 → 差集应清空（动作条隐藏）。
+  useAppStore.getState().refreshPendingChanges();
 }
 
 function handleProcessError(data: NativeEventData['processError']) {
@@ -189,6 +193,8 @@ function handleConfigChanged(data: NativeEventData['configChanged']) {
     // 如果没有新配置数据，则重新加载；loadConfig 自带单飞，无需再用全局 isLoading 守卫
     useAppStore.getState().loadConfig();
   }
+  // §2 待应用差集：节点集/参数变更（含增删改、订阅刷新、defer 生效）→ 重算差集，动作条/徽标即时反映。
+  useAppStore.getState().refreshPendingChanges();
 }
 
 // batch3 §3.7：stats 帧改经 useStatsTopic('stats') 订阅（取代旧全局 api.stats.onUpdated）。payload 即最新
@@ -449,6 +455,11 @@ export function useNativeEventListeners() {
   useNativeEvent('coreBaselineWarning', handleCoreBaselineWarning);
   useNativeEvent('helperUpgradeable', handleHelperUpgradeable);
   useNativeEvent('meshLoginFallback', handleMeshLoginFallback);
+
+  // §2 待应用差集：挂载即拉一次（事件驱动的三触发点之外的冷启动水合；核未运行返空、无害）。
+  useEffect(() => {
+    void useAppStore.getState().refreshPendingChanges();
+  }, []);
 
   // L2 治本：挂载即主动拉一次 Tailscale 状态末帧 → 填 store（self IP + peers），不干等下一帧推送。
   // 根治「状态流 push-only-on-change、无心跳、渲染端错过那一帧即永久陈旧」（内网IP「尚未分配」/peers 拿不到）。

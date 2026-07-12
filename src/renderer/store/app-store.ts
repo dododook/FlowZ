@@ -10,6 +10,7 @@ import type {
   HelperStatus,
   IpInfoSnapshot,
   InvalidNodeInfo,
+  PendingNodeChanges,
 } from '../../shared/types';
 import type { UpdateInfo } from '../../shared/types/update';
 import type { TailscaleStatusPeer } from '../../shared/tailscale-status';
@@ -101,6 +102,10 @@ interface AppState {
   // tooltip「刷新订阅后纳入测速」（区别于恒不可测的「不支持测速」）。会话内存态；拿到真值即从集合移除（已入池）。
   speedTestNotInPool: Set<string>;
 
+  // §2 待应用差集：节点集相对运行核启动快照的增(待入池)/改(待生效)/删。pull 模型——configChanged/proxyStarted/
+  // proxyStopped 后 refreshPendingChanges 拉取。动作条汇总 + 徽标数据源。核未运行 → 全空（动作条隐藏）。
+  pendingChanges: PendingNodeChanges;
+
   // 启动前配置校验 gate 剔除的非法节点（serverId → 信息）：节点列表据此标灰 + tooltip（不禁用点击）。
   // 仅会话内存，由 EVENT_PROXY_INVALID_NODES 事件覆盖（空数组=清空）。
   invalidNodes: Record<string, InvalidNodeInfo>;
@@ -164,6 +169,9 @@ interface AppState {
   updateProxyMode: (mode: ProxyMode) => Promise<void>;
   setConfigValue: (key: keyof UserConfig, value: any) => Promise<void>;
 
+  // §2 待应用差集：拉取节点差集入 store（configChanged/proxyStarted/proxyStopped 后 + 挂载时调）。失败静默（保留旧值）。
+  refreshPendingChanges: () => Promise<void>;
+
   // Status Actions
   refreshConnectionStatus: () => Promise<void>;
   /** 手动重探出口 IP（force，绕 TTL）：状态栏检测超时/失败时的刷新按钮触发。 */
@@ -217,6 +225,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   latencyTestedAt: {},
   speedTestAttempted: false,
   speedTestNotInPool: new Set<string>(),
+  pendingChanges: { added: [], modified: [], removed: [] },
   invalidNodes: {},
   // 启动秒显：从 localStorage 缓存派生登录态初值（代理关时不再 spawn 瞬态核探针，见 use-tailscale-login-cache-store）。
   tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
@@ -444,6 +453,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (error) {
       console.error('[Store] Exception updating proxy mode:', error);
       throw error; // 调用点（原 proxy-control-card，已并入 connection-control-card）catch + toast + 本地 busy
+    }
+  },
+
+  // §2 待应用差集：拉取入 store。失败静默保留旧值（差集是提示性 UI，拉失败不该清空误报「无待应用」）。
+  refreshPendingChanges: async () => {
+    try {
+      const pc = await api.proxy.getPendingChanges();
+      set({ pendingChanges: pc });
+    } catch {
+      /* 拉取失败保留旧值 */
     }
   },
 

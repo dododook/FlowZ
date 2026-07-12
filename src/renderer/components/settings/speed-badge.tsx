@@ -32,6 +32,24 @@ export function SpeedBadge({
   const proxyBlocked = useAppStore((s) => s.ipInfo?.proxyBlocked);
   const speedTestAttempted = useAppStore((s) => s.speedTestAttempted);
   const notInPool = useAppStore((s) => s.speedTestNotInPool.has(server.id));
+  // §2 待应用差集（实时数据源，优先于延迟徽标）：改=待生效（运行核仍跑旧参数、延迟值失真），增=待入池（未入核不可测）。
+  const pendingModified = useAppStore((s) => s.pendingChanges.modified.includes(server.id));
+  const pendingAdded = useAppStore((s) => s.pendingChanges.added.includes(server.id));
+
+  // 已编辑未生效（dirty）：运行核仍是旧参数，展示的延迟属旧配置 → 显性「待生效」替代失真延迟，tooltip 给生效路径。
+  if (pendingModified) {
+    return (
+      <span
+        className="nd-lat mono"
+        style={{ color: 'hsl(var(--fg-faint))' }}
+        title={t('servers.speedTestNodeDirty', {
+          defaultValue: '节点参数已修改但内核尚未应用；重启内核或点「立即应用」后生效',
+        })}
+      >
+        {t('servers.speedTestPendingEffect', { defaultValue: '待生效' })}
+      </span>
+    );
+  }
 
   const badge = deriveLatencyBadge({
     server,
@@ -43,7 +61,8 @@ export function SpeedBadge({
     proxyRunning,
     proxyBlocked,
     speedTestAttempted,
-    notInPool,
+    // §2：pending.added（实时未入核）并入 not-in-pool → 复用既有「待入池」徽标路径，不改 deriveLatencyBadge 纯函数。
+    notInPool: notInPool || pendingAdded,
   });
 
   switch (badge.kind) {
