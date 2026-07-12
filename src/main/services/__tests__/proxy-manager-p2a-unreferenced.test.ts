@@ -140,9 +140,10 @@ describe('issue #176 P2-A — configGenerationNorm(serverIds) 过滤', () => {
   it('传 serverIds → servers 仅保留指定节点；空集 → 仅非节点字段', () => {
     const svc = makeSvc();
     const c = cfg([ss('A'), ss('B'), ss('C')], { selectedServerId: 'A' });
-    expect(
-      JSON.parse(svc.configGenerationNorm(c, new Set(['A']))).servers.map((s: any) => s.id)
-    ).toEqual(['A']);
+    // F3：servers 投影现为 serverFingerprint 串数组（复用节点序列化单一真值）→ 校验过滤留 A 且确是 A 的指纹
+    expect(JSON.parse(svc.configGenerationNorm(c, new Set(['A']))).servers).toEqual([
+      svc.serverFingerprint(ss('A')),
+    ]);
     expect(JSON.parse(svc.configGenerationNorm(c, new Set())).servers).toEqual([]); // 空集=非节点字段对比
   });
 });
@@ -319,6 +320,47 @@ describe('issue #176 P2-A — switchMode 集成（运行中）', () => {
     // 现在切到 dirty 的 Z：planHotSwitch dirty 闸门 → 退回重启（否则热切到运行核里的旧 9.9.9.9）。
     const selectDirty = cfg([ss('A'), ss('Z', '5.5.5.5')], { selectedServerId: 'Z' });
     await svc.switchMode(selectDirty);
+    expect(sched).toHaveBeenCalledTimes(1);
+  });
+
+  // review F1（Medium-High 回归）：规则目标改到 dirty 节点。selectedServerId 不变、Z 编辑后 targetServerId 出 norm →
+  //   norm 相等 → 修前被 no-op 腿误吞（不重启、规则走旧目标、不自愈）。planRuleHotSwitch dirty→null→mustRestart 修复。
+  it('§2 F1：规则目标改到「已编辑未生效」节点 → 强制重启（不被 no-op/canSkip 吞）', async () => {
+    const svc = makeSvc();
+    // 运行核起于 A(选中)+Z(9.9.9.9)，规则 r1 指向 A。快照运行核指纹。
+    const r1: Rule = {
+      id: 'r1',
+      type: 'domainSuffix',
+      values: ['x.com'],
+      action: 'proxy',
+      enabled: true,
+      targetServerId: 'A',
+    };
+    const started = cfg([ss('A'), ss('Z', '9.9.9.9')], {
+      selectedServerId: 'A',
+      customRules: [r1],
+    });
+    running(svc, started);
+    svc.runningServersFingerprint = svc.computeServersFingerprint(started.servers);
+    // 运行核起时 r1 生成 rule-sel（planRuleHotSwitch 靠此 map 识别规则目标变更；缺则短路返 []）。
+    svc.currentRuleTargetMap = new Map([
+      ['custom:r1', { selectorTag: 'rule-sel-r1', memberTag: 'tag-A' }],
+    ]);
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    // 步1 编辑未引用 Z（r1 仍指 A、选中 A → Z 未引用）→ defer，Z 变 dirty。
+    const edited = cfg([ss('A'), ss('Z', '5.5.5.5')], {
+      selectedServerId: 'A',
+      customRules: [r1],
+    });
+    await svc.switchMode(edited);
+    expect(sched).not.toHaveBeenCalled();
+    // 步2 把 r1 目标 A→Z（dirty）。selectedServerId 不变、norm 相等（targetServerId 出 norm、servers 同）→
+    //   planRuleHotSwitch dirty 拒热切 null → mustRestart → 跳过 no-op/canSkip → 重启。修前此处静默不生效。
+    const ruleToDirty = cfg([ss('A'), ss('Z', '5.5.5.5')], {
+      selectedServerId: 'A',
+      customRules: [{ ...r1, targetServerId: 'Z' }],
+    });
+    await svc.switchMode(ruleToDirty);
     expect(sched).toHaveBeenCalledTimes(1);
   });
 });

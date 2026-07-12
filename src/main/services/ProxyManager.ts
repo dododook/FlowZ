@@ -1768,6 +1768,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 且节点未变、且无规则 targetServerId 变化）→ 既无需热切换也无需重启：直接更新缓存。避免纯切「更新检查
     // 走代理」开关触发 ~1.2s 断流。注意 planHotSwitch=none 已排除规则 targetServerId 变化（那会进 rules/both）。
     if (
+      !plan.mustRestart && // §2 F1：规则目标变更无法热切 → 不落 no-op（否则 targetServerId 出 norm 被误吞），走最终重启腿
       this.currentConfig &&
       this.currentConfig.selectedServerId === newConfig.selectedServerId &&
       this.configGenerationNorm(this.currentConfig) === this.configGenerationNorm(newConfig)
@@ -1790,6 +1791,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //   可致错误直连）→ 必须重启。故只放行「纯新增未引用节点」。externalized 规则值若同窗口变了，与 no-op 分支同款经
     //   syncCustomRuleFiles 热重载（不重启）/降级则重启。
     if (
+      !plan.mustRestart && // §2 F1：规则目标变更无法热切 → 不落 canSkip defer，走最终重启腿
       this.currentConfig &&
       this.canSkipRestartForAddedUnreferenced(this.currentConfig, newConfig)
     ) {
@@ -1840,6 +1842,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private planHotSwitch(newConfig: UserConfig): {
     kind: 'none' | 'global' | 'rules' | 'both';
     puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[];
+    // §2 P2-B（review F1）：kind='none' 但**规则目标变更无法热切**（目标 dirty/不在 selector）→ 必须重启（否则规则走旧
+    //   目标、且 targetServerId 出 norm 使 no-op 腿误吞 → 静默不生效不自愈）。仅此路径置 true；其余 none 落 canSkip 正常分流。
+    mustRestart?: boolean;
   } {
     const old = this.currentConfig;
     if (!old) return { kind: 'none', puts: [] };
@@ -1903,7 +1908,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 规则目标变化：diff customRules + appRules 的 targetServerId，对每条变化的规则从 currentRuleTargetMap
     // 查 selectorTag、从 newConfig 的 idToTagMap（= 启动时映射，结构等价所以不变）解析新 memberTag。
     const rulePuts = this.planRuleHotSwitch(old, newConfig);
-    if (rulePuts === null) return { kind: 'none', puts: [] }; // 任一规则目标节点不在 selector → 整体退回重启
+    // 任一规则目标节点不在 selector（新节点未入核）或 dirty（已编辑未生效）→ 无法热切 → 必须重启（mustRestart 防被
+    // no-op/canSkip 腿吞：targetServerId 出 norm，no-op 看不到规则目标变更，会误判无变化 defer，review F1）。
+    if (rulePuts === null) return { kind: 'none', puts: [], mustRestart: true };
     puts.push(...rulePuts);
 
     if (puts.length === 0) return { kind: 'none', puts: [] };
@@ -2152,12 +2159,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       servers: [...c.servers]
         .filter((s) => !serverIds || serverIds.has(s.id)) // P2-A：传 serverIds 时仅保留被引用节点
         .sort((a, b) => a.id.localeCompare(b.id))
-        .map((s) => {
-          const copy: Record<string, unknown> = { ...s };
-          delete copy.updatedAt;
-          delete copy.createdAt;
-          return copy;
-        }),
+        // Nit F3：复用 serverFingerprint 作节点序列化单一真值（剔时间戳、键序无关），避免此处第 5 处内联副本
+        // 与 canSkip③/dirty/待应用差集漂移。norm 仅自比较、不持久化 → 表示从内联对象改为指纹串安全。
+        .map((s) => this.serverFingerprint(s)),
     });
   }
 
