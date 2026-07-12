@@ -25,6 +25,7 @@ import {
   DIRECT_SERVER_ID,
   isDirectSelection,
 } from '../../shared/direct-selection';
+import { referencedServerIds } from '../../shared/endpoint-routes';
 import { BackoffTracker } from './backoff-tracker';
 
 export class SubscriptionScheduler {
@@ -215,10 +216,14 @@ export class SubscriptionScheduler {
       // F-A（review）：仅「真实节点增/删/改」置位——304 / 内容等价的 200 不置。ON 开关据此只在真变更时 auto-apply，
       //   不在无变化的周期刷新空转重启（否则 ON 用户每个订阅更新间隔无谓断流一次）。
       let nodesChanged = false;
-      // F-C（review）：选中节点（非 direct）id——判「选中节点同 id 但连接参数被改」（轮换 reality-key/SNI 等，指纹外
-      //   字段变、reconcile 保同 id）→ 活出口须重启对齐（矩阵「改被引用/选中节点恒立即重启」）。判据复用 reconcile 自身
-      //   的变更结论：内容变的节点被写 updatedAt=nowIso（未变则保旧值）→ 循环后比选中节点 updatedAt===nowIso 即「本轮被改」，
-      //   免自造内容指纹（避 JSON 键序敏感的误报）。
+      // §2 矩阵 line 88「改/删被引用节点恒立即重启」（review 非 finding#1 扩 F14）：被引用节点=选中/规则目标/detour链/
+      //   endpoint（referencedServerIds 单一真值，与 canSkip 同口径）。循环前后各取一次引用集（refOld/refNext），
+      //   任一被引用节点被本轮刷新增/删/改 → 运行核路由陈旧 → 恒重启对齐（不受开关，同手动路径 canSkip）。判据：
+      //   删=不在最终 servers；增=新 id（不在 oldIds）；改=updatedAt===nowIso（reconcile 对内容变节点写本轮时间戳）。
+      const refOld = referencedServerIds(fresh); // 循环前 fresh=旧 config
+      const oldIds = new Set(fresh.servers.map((s) => s.id));
+      // F14 逃死节点：仅当被下架的是「选中」节点才 reselect 存活出口（规则目标等被引用节点下架无需 reselect，
+      //   重启后 generate 阶段处理悬空目标）。
       const selId =
         fresh.selectedServerId && !isDirectSelection(fresh.selectedServerId)
           ? fresh.selectedServerId
@@ -276,27 +281,29 @@ export class SubscriptionScheduler {
 
       if (updated > 0) {
         const liveIds = new Set(fresh.servers.map((s) => s.id));
-        // §2 F14：选中节点被自动刷新下架（不在最终 servers、且非 direct 哨兵）→ 流量会留在运行核里的死节点。必须
-        // reselect 一个存活出口（pickFallbackExit：无 latency 上下文时取首个候选，空则 direct 哨兵）+ 强制重启逃离死节点。
+        // §2 矩阵 line 88：任一被引用节点（refOld∪refNext，覆盖被删节点的旧引用 + 新增/改后的新引用）被本轮刷新
+        //   增/删/改 → 运行核路由陈旧 → 恒重启对齐（同手动路径 canSkip 口径，不受开关）。
+        const refNext = referencedServerIds(fresh); // 循环后 fresh=新 config（selectedServerId 仍=原 selId，reselect 在下方）
+        let referencedAffected = false;
+        for (const id of new Set([...refOld, ...refNext])) {
+          const node = fresh.servers.find((s) => s.id === id);
+          if (!node || !oldIds.has(id) || node.updatedAt === nowIso) {
+            referencedAffected = true; // 删（!node）/ 增（新 id）/ 改（本轮时间戳）
+            break;
+          }
+        }
+        // F14：被下架的若是「选中」节点 → reselect 存活出口逃死节点（pickFallbackExit：无 latency 取首个候选，空则 direct）。
         const selectedDelisted = !!selId && !liveIds.has(selId);
         if (selectedDelisted) {
           fresh.selectedServerId = pickFallbackExit([...liveIds], {}) ?? DIRECT_SERVER_ID;
         }
-        // F-C：选中节点仍在但连接参数被本轮刷新改了（同 id 内容变）→ 活出口须重启对齐（旧参数不自愈）。
-        // reconcile 对内容变的节点写 updatedAt=nowIso（本轮时间戳）→ 选中节点 updatedAt===nowIso 即本轮被改。
-        const selectedModified =
-          !!selId &&
-          !selectedDelisted &&
-          fresh.servers.find((s) => s.id === selId)?.updatedAt === nowIso;
-        const selectedAffected = selectedDelisted || selectedModified;
         // 落盘 + 通知 UI（渲染端/托盘刷新 + 差集重算）。
         await this.configManager.saveConfig(fresh);
         this.notifyConfigChanged(fresh);
-        // 变更源分流（§2 矩阵）：①选中节点被下架/改参数 = 正确性恒重启（不受开关，同「改被引用/选中节点恒立即重启」）；
-        //   ②restartOnNodeChange ON 且**真有节点变更**（nodesChanged，非 304/内容等价空转）= auto-apply 全量入核。默认
-        //   （OFF 且选中未受影响）只落盘、新节点进「待应用」差集守「不打断连接」。applyConfigForcingRestart 内部 guard
-        //   代理未运行/换核窗口（不重启）+ 单飞去抖合并。
-        if (selectedAffected || (fresh.restartOnNodeChange === true && nodesChanged)) {
+        // 变更源分流（§2 矩阵）：①被引用节点被增/删/改 = 正确性恒重启（不受开关）；②restartOnNodeChange ON 且**真有
+        //   节点变更**（nodesChanged，非 304/内容等价空转）= auto-apply 全量入核。默认（OFF 且被引用节点未受影响）只落盘、
+        //   新增未引用节点进「待应用」差集守「不打断连接」。applyConfigForcingRestart 内部 guard 代理未运行/换核窗口 + 单飞去抖。
+        if (referencedAffected || (fresh.restartOnNodeChange === true && nodesChanged)) {
           this.applyConfigForcingRestart(fresh);
         }
         this.logManager.addLog(
@@ -304,8 +311,8 @@ export class SubscriptionScheduler {
           `[${reason}] 订阅自动更新完成：成功 ${updated}，失败 ${failed}` +
             (selectedDelisted
               ? '（选中节点已下架，重选出口并重启）'
-              : selectedModified
-                ? '（选中节点参数变更，重启对齐）'
+              : referencedAffected
+                ? '（被引用节点变更，重启对齐）'
                 : ''),
           'SubScheduler'
         );

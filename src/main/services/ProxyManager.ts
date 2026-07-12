@@ -73,6 +73,7 @@ import {
   meshAlwaysRoutesSubnets,
   endpointForcedRouteCidrs,
   meshSystemSupportedOnPlatform,
+  referencedServerIds,
 } from '../../shared/endpoint-routes';
 import { resolveStartRetryBudget } from '../../shared/start-retry-policy';
 import { PROBE_POOL_SIZE, type MainCoreProbe } from '../../shared/speed-test';
@@ -2169,38 +2170,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     });
   }
 
-  /**
-   * issue #176 P2-A：「被引用节点」id 集——其定义变化会影响运行核实际行为、故必须随之重启。
-   *   = {选中节点} ∪ {所有启用规则(custom/app)目标}，按 detour（前置代理链）传递闭包展开
-   *   ＋ 保守纳入全部 endpoint 协议节点（WireGuard/Tailscale 可能 force-route 子网/mesh，独立于选中即承载流量）。
-   * 其余「纯代理」节点仅作 selector 惰性成员、不承载任何流量，增删改不改变运行核行为 → 不在此集 → 可免重启。
-   * 安全方向：**过度纳入只会多一次重启、绝不错跳**（漏纳入才会错误免重启致运行核用旧前置参数 → 流量错误/泄漏）。
-   *   故 endpoint 一律纳入、detour 取全闭包、direct 哨兵剔除、悬空 detour 忽略。
-   * 注：custom-endpoint（`customSettings.isEndpoint`）不被 isEndpointProtocol 纳入，但其 `endpointForcedRouteCidrs`
-   *   恒返 []（不 force-route）→ 不会独立于选中承载流量 → 按普通未引用节点处理即安全（新增它经 additions-only
-   *   模型放行、其 route/DNS 条目缺失无害），无需进引用集。
-   */
-  private referencedServerIds(c: UserConfig): Set<string> {
-    const byId = new Map(c.servers.map((s) => [s.id, s]));
-    const R = new Set<string>();
-    const stack: string[] = [];
-    const seed = (id?: string | null): void => {
-      if (id && !isDirectSelection(id)) stack.push(id);
-    };
-    seed(c.selectedServerId);
-    for (const r of c.customRules || []) if (r.enabled) seed(r.targetServerId);
-    for (const a of c.appRules || []) if (a.enabled) seed(a.targetServerId);
-    for (const s of c.servers) if (isEndpointProtocol(s.protocol)) stack.push(s.id); // 保守纳入全部 endpoint
-    while (stack.length) {
-      const id = stack.pop() as string;
-      if (R.has(id)) continue; // 成环/重复保护
-      R.add(id);
-      const s = byId.get(id);
-      if (s?.detour && byId.has(s.detour)) stack.push(s.detour); // detour 前置链传递闭包
-    }
-    return R;
-  }
-
   /** 节点生成指纹（剔时间戳、键序无关）：canSkip③、runningServersFingerprint 快照、待应用差集、dirty 判定**共用单一
    *  真值**——防「差集/UI 显示 vs switchMode 重启决策」用不同指纹而撕裂（§2 Fable R1）。 */
   private serverFingerprint(s: ServerConfig): string {
@@ -2227,7 +2196,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // （canSkip③/④返 false），仅在 ~1.5s 去抖窗口内因快照尚旧而瞬态出现在差集里——那不是真「待应用」（它正在重启）。
     // 按引用集过滤 added/modified，消动作条/徽标在自动重启窗口的误报闪动（review Low-1；差集语义收敛为「仅 deferrable」）。
     // removed 无法据当前 config 判旧引用（节点已不在 config）→ 不过滤；删被引用节点的瞬态窗口极窄且由 B1 重选+重启收口。
-    const ref = this.referencedServerIds(config);
+    const ref = referencedServerIds(config);
     const added: string[] = [];
     const modified: string[] = [];
     const liveIds = new Set<string>();
@@ -2275,8 +2244,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       return false;
     const oldById = new Map(old.servers.map((s) => [s.id, s]));
     const newById = new Map(next.servers.map((s) => [s.id, s]));
-    const refOld = this.referencedServerIds(old);
-    const refNext = this.referencedServerIds(next);
+    const refOld = referencedServerIds(old);
+    const refNext = referencedServerIds(next);
     // ③ P2-B：**被引用**（旧或新）的旧节点必须原样保留——删/改被引用节点影响活流量→重启；**未引用**旧节点的删/改
     //   放行（defer）。未引用节点仅作 selector 惰性成员不承载流量；被选中才连它 → 届时 planHotSwitch dirty 闸门退回重启补全。
     for (const s of old.servers) {

@@ -28,6 +28,7 @@ jest.mock('child_process', () => ({
 
 import { ProxyManager } from '../ProxyManager';
 import { DIRECT_SERVER_ID } from '../../../shared/direct-selection';
+import { referencedServerIds } from '../../../shared/endpoint-routes';
 import type { UserConfig, ServerConfig, Rule } from '../../../shared/types';
 
 afterAll(() => {
@@ -71,19 +72,17 @@ function cfg(servers: ServerConfig[], over: Partial<UserConfig> = {}): UserConfi
 
 describe('issue #176 P2-A — referencedServerIds 被引用集（含 detour 闭包 + endpoint）', () => {
   it('选中节点 + 其 detour 前置链传递闭包（A→B→C 全纳入）', () => {
-    const svc = makeSvc();
     const c = cfg(
       [ss('A', '1.1.1.1', { detour: 'B' }), ss('B', '2.2.2.2', { detour: 'C' }), ss('C'), ss('D')],
       {
         selectedServerId: 'A',
       }
     );
-    const R = svc.referencedServerIds(c);
+    const R = referencedServerIds(c);
     expect([...R].sort()).toEqual(['A', 'B', 'C']); // D 是无关纯代理，不纳入
   });
 
   it('规则目标（custom + app）及其 detour 链纳入', () => {
-    const svc = makeSvc();
     const rule: Rule = {
       id: 'r1',
       type: 'domainSuffix',
@@ -97,21 +96,19 @@ describe('issue #176 P2-A — referencedServerIds 被引用集（含 detour 闭�
       customRules: [rule],
       appRules: [{ appId: 'app1', action: 'proxy', enabled: true, targetServerId: 'D' } as any],
     });
-    const R = svc.referencedServerIds(c);
+    const R = referencedServerIds(c);
     // A(选中) + C(custom 目标)+B(C 的前置) + D(app 目标)
     expect([...R].sort()).toEqual(['A', 'B', 'C', 'D']);
   });
 
   it('所有 endpoint（WG/TS）一律保守纳入（独立于选中）', () => {
-    const svc = makeSvc();
     const c = cfg([ss('A'), ss('B'), wg('wg1')], { selectedServerId: 'A' });
-    const R = svc.referencedServerIds(c);
+    const R = referencedServerIds(c);
     expect(R.has('wg1')).toBe(true); // 未选中的 endpoint 也纳入
     expect(R.has('B')).toBe(false); // 未选中的纯代理不纳入
   });
 
   it('direct 哨兵选中 → 不 seed；禁用规则目标 / 悬空 detour / 成环均安全', () => {
-    const svc = makeSvc();
     const disabled: Rule = {
       id: 'r1',
       type: 'domainSuffix',
@@ -131,7 +128,7 @@ describe('issue #176 P2-A — referencedServerIds 被引用集（含 detour 闭�
         customRules: [disabled], // 禁用规则不 seed
       }
     );
-    const R = svc.referencedServerIds(c);
+    const R = referencedServerIds(c);
     expect(R.size).toBe(0); // 无 endpoint、选中=direct、规则禁用 → 空集（成环/悬空 detour 不死循环不抛）
   });
 });

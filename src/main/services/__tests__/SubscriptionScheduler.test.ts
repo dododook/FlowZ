@@ -208,4 +208,36 @@ describe('SubscriptionScheduler §2 自动刷新分流', () => {
     await run();
     expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1);
   });
+
+  // review 非 finding#1 扩 F14：OFF 下**规则目标（非选中）**节点被改 → 恒重启（同为被引用节点，矩阵 line 88）。
+  it('开关 OFF + 规则目标(非选中)节点被改 → 强制重启（被引用节点变更）', async () => {
+    const config = makeConfig({
+      subscriptions: [{ id: 'd', name: 'Direct', url: 'http://direct', autoUpdate: true }],
+      servers: [
+        ss({ id: 'S', name: 'S', address: '1.1.1.1', subscriptionId: 'd' }),
+        ss({ id: 'T', name: 'T', address: '2.2.2.2', subscriptionId: 'd' }),
+      ],
+      selectedServerId: 'S', // 选中 S（不变），规则指向 T
+      customRules: [
+        {
+          id: 'r1',
+          type: 'domainSuffix',
+          values: ['x'],
+          action: 'proxy',
+          enabled: true,
+          targetServerId: 'T',
+        },
+      ],
+    });
+    const { run, fetchSubscription, applyConfigForcingRestart } = makeScheduler(config, true);
+    // S 不变 + T（规则目标）改 sni（同指纹保 id）→ T 被引用被改 → referencedAffected。
+    fetchSubscription.mockResolvedValue({
+      servers: [
+        ss({ name: 'S', address: '1.1.1.1', subscriptionId: 'd' }),
+        ss({ name: 'T', address: '2.2.2.2', subscriptionId: 'd', sni: 'new.example.com' }),
+      ],
+    });
+    await run();
+    expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1); // 规则目标(被引用)被改 → 恒重启，虽 OFF
+  });
 });
