@@ -23,12 +23,14 @@ function makeScheduler(config: ReturnType<typeof makeConfig>, proxyRunning: bool
   };
   const logManager = { addLog: jest.fn() };
   const notifyConfigChanged = jest.fn();
+  const applyConfigForcingRestart = jest.fn();
   const scheduler = new SubscriptionScheduler(
     configManager as never,
     { fetchSubscription } as never,
     logManager as never,
     () => proxyRunning,
-    notifyConfigChanged as never
+    notifyConfigChanged as never,
+    applyConfigForcingRestart as never
   );
   // runDueUpdates 为 private：测试经 any 直调，等价于启动补更/周期巡检触发
   const run = () =>
@@ -37,7 +39,14 @@ function makeScheduler(config: ReturnType<typeof makeConfig>, proxyRunning: bool
     ).runDueUpdates('test', { ignoreStaleness: true });
   const pending = () =>
     (scheduler as unknown as { pendingProxyCatchup: boolean }).pendingProxyCatchup;
-  return { fetchSubscription, run, pending };
+  return {
+    fetchSubscription,
+    run,
+    pending,
+    configManager,
+    notifyConfigChanged,
+    applyConfigForcingRestart,
+  };
 }
 
 describe('SubscriptionScheduler per-sub 经代理调度', () => {
@@ -46,7 +55,10 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     await run();
     // 仅直连订阅被拉取（viaProxy=false）；经代理订阅被跳过、未拉取
     expect(fetchSubscription).toHaveBeenCalledTimes(1);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, undefined, { etag: undefined, lastModified: undefined });
+    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, undefined, {
+      etag: undefined,
+      lastModified: undefined,
+    });
     expect(pending()).toBe(true);
   });
 
@@ -54,8 +66,14 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     const { fetchSubscription, run, pending } = makeScheduler(makeConfig(), true);
     await run();
     expect(fetchSubscription).toHaveBeenCalledTimes(2);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, undefined, { etag: undefined, lastModified: undefined });
-    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, undefined, { etag: undefined, lastModified: undefined });
+    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', false, undefined, {
+      etag: undefined,
+      lastModified: undefined,
+    });
+    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, undefined, {
+      etag: undefined,
+      lastModified: undefined,
+    });
     expect(pending()).toBe(false);
   });
 
@@ -67,7 +85,10 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     await run();
     // direct 覆盖 per-sub → 两订阅都直连拉取
     expect(fetchSubscription).toHaveBeenCalledTimes(2);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', false, undefined, { etag: undefined, lastModified: undefined });
+    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', false, undefined, {
+      etag: undefined,
+      lastModified: undefined,
+    });
     expect(pending()).toBe(false);
   });
 
@@ -79,8 +100,14 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     await run();
     // proxy 覆盖 per-sub → 即便 'd' 未设 updateViaProxy 也经代理
     expect(fetchSubscription).toHaveBeenCalledTimes(2);
-    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', true, undefined, { etag: undefined, lastModified: undefined });
-    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, undefined, { etag: undefined, lastModified: undefined });
+    expect(fetchSubscription).toHaveBeenCalledWith('http://direct', 'd', true, undefined, {
+      etag: undefined,
+      lastModified: undefined,
+    });
+    expect(fetchSubscription).toHaveBeenCalledWith('http://proxy', 'p', true, undefined, {
+      etag: undefined,
+      lastModified: undefined,
+    });
     expect(pending()).toBe(false);
   });
 
@@ -93,5 +120,59 @@ describe('SubscriptionScheduler per-sub 经代理调度', () => {
     // proxy 覆盖 → 两订阅都经代理；代理未起 → 全跳过、挂起
     expect(fetchSubscription).not.toHaveBeenCalled();
     expect(pending()).toBe(true);
+  });
+});
+
+// §2 待应用差集 — 自动刷新变更源分流（F14 + toggle-gating）
+describe('SubscriptionScheduler §2 自动刷新分流', () => {
+  const ss = (over: Record<string, unknown>) => ({
+    protocol: 'shadowsocks',
+    address: '1.1.1.1',
+    port: 8388,
+    ...over,
+  });
+  // 单订阅 'd'（直连），含选中节点 S。fetchResult 决定本轮拉到的节点集。
+  const oneSubConfig = (over: Record<string, unknown> = {}) =>
+    makeConfig({
+      subscriptions: [{ id: 'd', name: 'Direct', url: 'http://direct', autoUpdate: true }],
+      servers: [ss({ id: 'S', name: 'S', address: '1.1.1.1', subscriptionId: 'd' })],
+      selectedServerId: 'S',
+      ...over,
+    });
+
+  it('F14：自动刷新下架选中节点 → 重选出口（无存活节点回退 direct）+ 强制重启', async () => {
+    const { run, configManager, applyConfigForcingRestart } = makeScheduler(oneSubConfig(), true);
+    // 默认 fetch mock 返 { servers: [] } → S 被下架、无新节点。
+    await run();
+    const saved = configManager.saveConfig.mock.calls[0][0] as { selectedServerId: string };
+    expect(saved.selectedServerId).toBe('__direct__'); // 无存活节点 → direct 哨兵（非 null）
+    expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1); // 逃死节点恒重启
+  });
+
+  it('开关 OFF + 仅新增未引用节点（选中 S 仍在）→ 只落盘不重启（defer 待应用）', async () => {
+    const { run, fetchSubscription, configManager, applyConfigForcingRestart } = makeScheduler(
+      oneSubConfig(),
+      true
+    );
+    // fetch 返 S（同指纹保留）+ 新节点 N → 无下架、纯新增。
+    fetchSubscription.mockResolvedValue({
+      servers: [ss({ name: 'S', address: '1.1.1.1' }), ss({ name: 'N', address: '2.2.2.2' })],
+    });
+    await run();
+    const saved = configManager.saveConfig.mock.calls[0][0] as { selectedServerId: string };
+    expect(saved.selectedServerId).toBe('S'); // 选中未变
+    expect(applyConfigForcingRestart).not.toHaveBeenCalled(); // OFF + 未下架 → defer
+  });
+
+  it('开关 ON + 新增节点 → auto-apply 强制重启', async () => {
+    const { run, fetchSubscription, applyConfigForcingRestart } = makeScheduler(
+      oneSubConfig({ restartOnNodeChange: true }),
+      true
+    );
+    fetchSubscription.mockResolvedValue({
+      servers: [ss({ name: 'S', address: '1.1.1.1' }), ss({ name: 'N', address: '2.2.2.2' })],
+    });
+    await run();
+    expect(applyConfigForcingRestart).toHaveBeenCalledTimes(1); // ON → auto-apply
   });
 });

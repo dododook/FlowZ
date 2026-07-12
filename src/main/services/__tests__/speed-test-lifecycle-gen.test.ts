@@ -53,6 +53,7 @@ const probeK1 = (): MainCoreProbe => ({
   tagOf: (id: string) => `tag-${id}`,
   hasTag: () => true,
   tsNodeReady: () => true,
+  isDirty: () => false,
 });
 
 const fakeProc = (): any => {
@@ -139,6 +140,7 @@ describe('§15.11 主核池 — 生成号超代', () => {
       tagOf: (id: string) => `tag-${id}`,
       hasTag: () => true,
       tsNodeReady: () => true,
+  isDirty: () => false,
     };
     const svc = new SpeedTestService(mockLog, undefined, () => probe, () => 0); // gen 恒 0（崩溃不 bump）
     const measureSpy = jest.spyOn(svc as any, 'measureViaTunnel').mockImplementation(async () => {

@@ -1631,7 +1631,9 @@ if (gotTheLock) {
         // P2-2：后台订阅更新增删节点后刷新托盘「选择服务器」子菜单（updateTrayMenuState 重载最新 config）。
         // 走 tray-only 刷新、不发 MAIN_EVENTS.CONFIG_CHANGED → 不触发 switchMode 重启，守住「不打断连接」不变量。
         void updateTrayMenuState(proxyManager?.getStatus().running ?? false);
-      }
+      },
+      // §2 自动刷新 auto-apply / F14 逃死节点强制重启入口（内部 guard 代理未运行/换核窗口 + 单飞去抖）。
+      (cfg) => proxyManager?.applyConfigForcingRestart(cfg)
     );
     subscriptionScheduler.start();
 

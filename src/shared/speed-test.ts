@@ -114,6 +114,9 @@ export interface MainCoreProbe {
   /** 该 Tailscale 节点是否已登录就绪（backendState==='Running' && !keyExpired）。§16.1.3 层3：
    *  未就绪 TS 节点波内缺席（不 select/measure/report），UI 走「未登录」徽标，绝不写假 -1。 */
   tsNodeReady(id: string): boolean;
+  /** §2：节点已编辑未生效（config 参数 ≠ 运行核启动快照）→ 波前剔除。否则测的是运行核里的旧参数出口、
+   *  latency 挂到新参数名下失真（徽标已经 pendingChanges 显「待生效」，此处再免测省槽 + 不存陈旧值）。 */
+  isDirty(id: string): boolean;
 }
 
 /** 测速本次运行结局（§16.2）：completed=本次入参全部有结果（含真实 -1 超时）；interrupted=有入参节点缺席

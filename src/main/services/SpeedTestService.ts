@@ -157,7 +157,11 @@ export class SpeedTestService {
     const caps = { mainCorePool: !!(probeForCaps?.available() && probeForCaps.isRunning()) };
     const testable = servers.filter((s) => isSpeedTestable(s, caps));
     if (testable.length === 0) {
-      return { results: new Map(), outcome: 'completed', skipped: { notInPool: [], tsNotReady: [] } };
+      return {
+        results: new Map(),
+        outcome: 'completed',
+        skipped: { notInPool: [], tsNotReady: [] },
+      };
     }
     // 并发编排（多入口各传不同子集）：按「在飞测速是否覆盖本次请求」决定复用 or 串行。
     const inFlight = this.currentTest;
@@ -681,6 +685,12 @@ export class SpeedTestService {
       if (!probe.hasTag(s.id)) {
         runCtx.skipped.notInPool.push(s.id);
         noteNodeFail('not-in-pool', s);
+        continue;
+      }
+      // §2：已编辑未生效（dirty）节点——运行核仍跑旧参数，测它得旧参数出口 latency 却挂新参数名下失真。波前剔除
+      // 免测（徽标经 pendingChanges.modified 显「待生效」，非 notInPool 的「待入池」，故不入 skipped.notInPool）。
+      if (probe.isDirty(s.id)) {
+        noteNodeFail('dirty-pending', s);
         continue;
       }
       if (s.protocol?.toLowerCase() === 'tailscale' && !probe.tsNodeReady(s.id)) {

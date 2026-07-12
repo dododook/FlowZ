@@ -6,8 +6,10 @@
  *   开了「启动时更新」就应更新，而非"距上次≥间隔阈值才更"）。
  * - 周期巡检：每 30 分钟扫一遍，更新到期（陈旧）的订阅。
  * - 退避：单个订阅失败后指数退避（5min→…→上限 6h），避免对故障源高频重试。
- * - 不打断连接：只「落盘 + 通知 UI」，绝不重启代理——运行中的 sing-box 保持其内存配置，
- *   节点增删仅在下次（重）启动或热切换时生效。配合 reconcile 保留 id/选中节点，连接零中断。
+ * - 不打断连接（默认）：restartOnNodeChange OFF 且选中节点未被下架时，只「落盘 + 通知 UI」、不重启代理——
+ *   运行中的 sing-box 保持其内存配置，新节点进「待应用」差集、下次（重）启动/被选中/一键应用时生效。
+ * - §2 例外两路（会重启）：①restartOnNodeChange ON=auto-apply 立即整核入新节点；②选中节点被自动刷新下架=
+ *   正确性必须重选出口 + 重启逃离运行核死节点（恒重启不受开关影响）。配合 reconcile 保留 id/选中节点，连接零中断。
  * - 经代理开关：全局三态策略 subscriptionProxyPolicy（follow=按 per-sub updateViaProxy / proxy=全强制经代理 /
  *   direct=全强制直连）作用于各订阅；经代理订阅若代理未运行则只跳过该订阅（冷启动鸡生蛋），挂起待代理就绪
  *   （onProxyStarted）补更，直连订阅照常更新。
@@ -18,6 +20,11 @@ import type { LogManager } from './LogManager';
 import { SubscriptionService } from './SubscriptionService';
 import type { UserConfig } from '../../shared/types';
 import { resolveSubscriptionViaProxy } from '../../shared/subscription-proxy';
+import {
+  pickFallbackExit,
+  DIRECT_SERVER_ID,
+  isDirectSelection,
+} from '../../shared/direct-selection';
 import { BackoffTracker } from './backoff-tracker';
 
 export class SubscriptionScheduler {
@@ -45,7 +52,10 @@ export class SubscriptionScheduler {
     private readonly subscriptionService: SubscriptionService,
     private readonly logManager: LogManager,
     private readonly getProxyRunning: () => boolean,
-    private readonly notifyConfigChanged: (config: UserConfig) => void
+    private readonly notifyConfigChanged: (config: UserConfig) => void,
+    // §2 待应用差集：自动刷新的 auto-apply / F14 强制重启入口（= proxyManager.applyConfigForcingRestart）。
+    // 默认路径（restartOnNodeChange OFF 且选中节点未下架）仍只 saveConfig+通知、不重启（守「不打断连接」）。
+    private readonly applyConfigForcingRestart: (config: UserConfig) => void
   ) {}
 
   start(): void {
@@ -214,11 +224,11 @@ export class SubscriptionScheduler {
           continue;
         }
         const oldServers = fresh.servers.filter((s) => s.subscriptionId === f.subId);
-        const { servers: kept, deletedIds, contentChanged } = SubscriptionService.reconcileServers(
-          oldServers,
-          f.servers,
-          nowIso
-        );
+        const {
+          servers: kept,
+          deletedIds,
+          contentChanged,
+        } = SubscriptionService.reconcileServers(oldServers, f.servers, nowIso);
         // L-5：200 但内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers（避免顺序 churn）。
         if (!contentChanged && !f.partial) {
           sub.lastUpdated = nowIso;
@@ -240,14 +250,6 @@ export class SubscriptionScheduler {
           );
           finalKept = [...kept, ...leftover];
         }
-        // selectedServerId 被删且未被 leftover 保留 → 清空
-        if (
-          fresh.selectedServerId &&
-          deletedIds.has(fresh.selectedServerId) &&
-          !finalKept.some((s) => s.id === fresh.selectedServerId)
-        ) {
-          fresh.selectedServerId = null;
-        }
         const others = fresh.servers.filter((s) => s.subscriptionId !== f.subId);
         fresh.servers = [...others, ...finalKept];
         sub.lastUpdated = nowIso;
@@ -261,12 +263,30 @@ export class SubscriptionScheduler {
       }
 
       if (updated > 0) {
-        // 仅落盘 + 通知 UI，绝不重启代理 → 不打断当前连接
+        // §2 F14：选中节点被自动刷新下架（不在最终 servers、且非 direct 哨兵）→ 流量会留在运行核里的死节点。必须
+        // reselect 一个存活出口（pickFallbackExit：无 latency 上下文时取首个候选，空则 direct 哨兵）+ 强制重启逃离死节点。
+        const liveIds = new Set(fresh.servers.map((s) => s.id));
+        const selectedDelisted =
+          !!fresh.selectedServerId &&
+          !isDirectSelection(fresh.selectedServerId) &&
+          !liveIds.has(fresh.selectedServerId);
+        if (selectedDelisted) {
+          fresh.selectedServerId = pickFallbackExit([...liveIds], {}) ?? DIRECT_SERVER_ID;
+        }
+        // 落盘 + 通知 UI（渲染端/托盘刷新 + 差集重算）。
         await this.configManager.saveConfig(fresh);
         this.notifyConfigChanged(fresh);
+        // 变更源分流（§2 矩阵）：默认（restartOnNodeChange OFF 且选中未下架）→ 只落盘不重启，新节点进「待应用」差集、
+        //   下次启动/被选中/一键应用时生效（守「不打断连接」）。ON=auto-apply 全量入核；选中被下架=正确性必须重启逃死节点
+        //   （恒重启不受开关影响，同 §2 矩阵「删被引用/选中节点恒立即重启」）。applyConfigForcingRestart 内部 guard 代理
+        //   未运行/换核窗口（不重启），且单飞去抖合并。
+        if (fresh.restartOnNodeChange === true || selectedDelisted) {
+          this.applyConfigForcingRestart(fresh);
+        }
         this.logManager.addLog(
           'info',
-          `[${reason}] 订阅自动更新完成：成功 ${updated}，失败 ${failed}`,
+          `[${reason}] 订阅自动更新完成：成功 ${updated}，失败 ${failed}` +
+            (selectedDelisted ? '（选中节点已下架，重选出口并重启）' : ''),
           'SubScheduler'
         );
       }

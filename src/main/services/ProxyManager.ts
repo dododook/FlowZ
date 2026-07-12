@@ -3340,6 +3340,10 @@ done
           this.tailscaleStatusGen.get(id) === this.lifecycleGeneration
         );
       },
+      // §2：currentConfig 被 switchMode 每腿更新为最新（含 defer/no-op）→ 与运行核快照比即「已编辑未生效」。核未
+      // 运行 currentConfig 可能为空 → false（无「运行核」概念，dirty 无意义）。
+      isDirty: (id: string): boolean =>
+        this.currentConfig ? this.isServerDirty(id, this.currentConfig) : false,
     };
   }
 
