@@ -198,6 +198,35 @@ describe('buildOutbounds — endpoint + 门控', () => {
     expect(ep!.peers![0].allowed_ips).toEqual(['10.8.0.0/24']);
   });
 
+  // R4（§14.4，回退 E2）：WG endpoint 的 domain_resolver 回 getNodeResolverTag(config,'dial')（race 多上游，仅 peer 解析）。
+  it('R4：域名-peer WG endpoint → domain_resolver=dns-node-race（race 默认；仅 peer 解析用）', () => {
+    const wg = {
+      id: 'w1',
+      name: 'WG-peerdomain',
+      protocol: 'wireguard',
+      address: 'wg.example.com', // 域名 peer → needsResolver
+      port: 51820,
+      wireguardSettings: { privateKey: 'pk', peerPublicKey: 'pub', localAddress: ['10.0.0.2/32'] },
+    } as unknown as ServerConfig;
+    const r = buildOutbounds(wg, cfg([wg]), idMap([wg]), deps());
+    const ep = r.pendingEndpoints.find((e) => e.tag === 'WG-peerdomain')!;
+    expect(ep.domain_resolver).toBe('dns-node-race'); // race on 缺省
+  });
+
+  it('R4：IP-peer WG → needsResolver=false → 无 domain_resolver', () => {
+    const wgIp = {
+      id: 'w1',
+      name: 'WG-ip',
+      protocol: 'wireguard',
+      address: '203.0.113.9',
+      port: 51820,
+      wireguardSettings: { privateKey: 'pk', peerPublicKey: 'pub', localAddress: ['10.0.0.2/32'] },
+    } as unknown as ServerConfig;
+    const r = buildOutbounds(wgIp, cfg([wgIp]), idMap([wgIp]), deps());
+    const ep = r.pendingEndpoints.find((e) => e.tag === 'WG-ip')!;
+    expect(ep.domain_resolver).toBeUndefined();
+  });
+
   it('Phase2 WG reverseMesh=true(全隧道) → endpoint.system=true + 固定名 + allowed_ips 含 0/0', () => {
     const wgSys = {
       id: 'w1',
@@ -373,5 +402,47 @@ describe('buildOutbounds — endpoint + 门控', () => {
     expect(() =>
       buildOutbounds(servers[0], cfg(servers), idMap(servers), deps({ gateInvalidNodes: gate }))
     ).toThrow();
+  });
+});
+
+describe('buildOutbounds — §15 主核测速探测池', () => {
+  it('probePoolPorts → K 个 probe-selector-k（成员=全量 nodeTags+direct，default=direct，interrupt=true）', () => {
+    const servers = [vless('s1', 'HK'), vless('s2', 'JP')];
+    const r = buildOutbounds(
+      servers[0],
+      cfg(servers),
+      idMap(servers),
+      deps({ probePoolPorts: [1, 2] })
+    );
+    for (let k = 0; k < 2; k++) {
+      const sel = r.outbounds.find((o) => o.tag === `probe-selector-${k}`);
+      expect(sel).toBeTruthy();
+      expect(sel!.type).toBe('selector');
+      expect(sel!.default).toBe('direct');
+      expect(sel!.interrupt_exist_connections).toBe(true);
+      // 成员 = proxy-selector 同款（全量 nodeTags + direct）；default ∈ 成员（sing-box 硬要求）
+      expect(sel!.outbounds).toEqual(['HK', 'JP', 'direct']);
+      expect(sel!.outbounds).toContain(sel!.default);
+    }
+    expect(r.outbounds.find((o) => o.tag === 'probe-selector-2')).toBeUndefined();
+  });
+
+  it('无 probePoolPorts → 零 probe-selector-k（回退临时核）', () => {
+    const servers = [vless('s1', 'HK')];
+    const r = buildOutbounds(servers[0], cfg(servers), idMap(servers), deps());
+    expect(r.outbounds.some((o) => o.tag?.startsWith('probe-selector-'))).toBe(false);
+  });
+
+  it('§15.11-F4：probe-selector-k 门控仅取 probePoolPorts（config falsy 的 fallback 分支也发射，防悬空引用）', () => {
+    const sel = vless('s1', 'HK');
+    // config=null → 命中 else if(selectedServer) fallback 分支；池端口存在时 probe-selector-k 仍须发射，
+    // 与 probe-in-k/route/dns-probe-exit-k 三 builder 门控一致（否则 probe-in-k→probe-selector-k 悬空 FATAL）。
+    const r = buildOutbounds(sel, null as unknown as UserConfig, idMap([sel]), deps({ probePoolPorts: [1, 2] }));
+    for (let k = 0; k < 2; k++) {
+      const s = r.outbounds.find((o) => o.tag === `probe-selector-${k}`);
+      expect(s).toBeTruthy();
+      expect(s!.default).toBe('direct');
+      expect(s!.outbounds).toContain('direct'); // fallback 下 nodeTags 空 → 成员=[direct]（default 合法）
+    }
   });
 });

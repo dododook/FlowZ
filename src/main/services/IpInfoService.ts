@@ -107,6 +107,13 @@ export function parseTrace(body: string): IpInfo | null {
 export class IpInfoService {
   private snapshot: IpInfoSnapshot = { direct: null, proxy: null, updatedAt: 0 };
   private inflight: Promise<void> | null = null;
+  /**
+   * 探测代（§12.4.3 Z2）：markProxyConnecting()（每次切节点/起代理必经）递增。refreshProxy/PostConnect 在【入队时】
+   * 捕获当时代号并透传给 doRefreshProxy——快切 N 次时被后续切换超代的陈旧任务在任务头零探测直返（不写快照），
+   * 在途任务 ≤1 attempt 边界让位；只留末次切换真正探测。后继任务必存在（每次 gen++ 同流程随后必调 refreshProxy/
+   * PostConnect），由它出真值。doRefresh（手动/TTL/停核）不接代号 → 不参与切换风暴、永不被超代。
+   */
+  private probeGeneration = 0;
 
   /**
    * @param getProbePorts 取当前探针端口（代理未运行/分配失败时 null）
@@ -138,7 +145,11 @@ export class IpInfoService {
     // TS 出口 API 直判无效（选中 TS 出口未广告出口设备 / exit peer 离线）→ 返非空则不探代理出口，直接落 proxyBlocked
     // 终态（状态栏「出口无效」），修「无效 TS 出口触发跑满退避、状态栏永久检测中空转」。缺省（undefined）→ 恒不短路，
     // 行为与旧版一致（非 TS / 未注入时保全）。风格同 getProbePorts：可选注入的探针前置 gate。
-    private readonly getProxyExitBlock?: () => ProxyExitBlock | null
+    private readonly getProxyExitBlock?: () => ProxyExitBlock | null,
+    // 代理出口探测成功（proxy 非 null、snapshot 已终写、onUpdate 已广播 IP）后 fire-and-forget 触发「出口伴测」更新节点
+    // 实际延迟——不进 enqueue 串行链、异常自吞（增益路径不污染探测链）。缺省 undefined → 不触发（保全非注入路径与单测）。
+    // ctx.manual：手动重探（doRefresh visible）为 true、切节点/首连(doRefreshProxy)为 false（供伴测节流 bypass）。
+    private readonly onProxyProbeSuccess?: (ctx: { manual: boolean }) => void
   ) {
     this.maxAttempts = options?.maxAttempts ?? MAX_PROBE_ATTEMPTS;
     this.retryDelayMs = options?.retryDelayMs ?? RETRY_DELAY_MS;
@@ -161,6 +172,8 @@ export class IpInfoService {
    * 注：仅 start/switch 路径调本方法；TTL/手动刷新不调它 → 同节点瞬态抖动仍由 doRefresh 保留旧值（不受影响）。
    */
   markProxyConnecting(): void {
+    // Z2：递增探测代——本次切节点/起代理开启一「代」；此前入队的陈旧刷新任务据此被超代（头部零探测直返 / 在途让位）。
+    this.probeGeneration++;
     // 清 proxyBlocked：切节点/重连=一次全新探测的开端（尚未直判无效），保留上一节点的 blocked 会让状态栏在探测窗口
     // 内误显陈旧「出口无效」（invalid 优先级高于 detecting）。真正是否无效由随后的探测入口 gate 重判。
     this.snapshot = { ...this.snapshot, proxy: null, loading: true, proxyBlocked: undefined };
@@ -199,7 +212,9 @@ export class IpInfoService {
   /** 取出口 IP；命中 TTL 直接返回缓存；force 排队重测，非 force 复用在途。
    *  终态（error 探测失败 / proxyBlocked 直判无效）用短 TTL(10s)：既不 60s 长缓存误导陈旧失败态，又不像旧实现
    *  「粘滞 error → TTL 恒失效 → 每次首页挂载全量重探」空转（无效 TS 出口下会跑满退避）。 */
-  async refresh(force = false): Promise<IpInfoSnapshot> {
+  //  visible=true（仅手动重探传，恒与 force 搭配）：可见流程——先清当前显示的出口（running→proxy / 否则→direct）
+  //  置「检测中…」，探测失败丢旧值显「检测超时」；被动路径（启动/切节点/停核/TTL）不传，保留旧值不闪（见 doRefresh）。
+  async refresh(force = false, visible = false): Promise<IpInfoSnapshot> {
     const ttl = this.snapshot.error || this.snapshot.proxyBlocked ? ERROR_TTL_MS : TTL_MS;
     if (!force && Date.now() - this.snapshot.updatedAt < ttl) {
       return this.getSnapshot();
@@ -209,7 +224,7 @@ export class IpInfoService {
       await this.inflight.catch(() => {});
       return this.getSnapshot();
     }
-    await this.enqueue(() => this.doRefresh());
+    await this.enqueue(() => this.doRefresh(visible));
     return this.getSnapshot();
   }
 
@@ -218,7 +233,8 @@ export class IpInfoService {
    * 链式排到在途之后（不复用，避免切节点的代理 IP 被旧的全量刷新结果吞掉）。proxy-only 也推进 updatedAt。
    */
   async refreshProxy(): Promise<IpInfoSnapshot> {
-    await this.enqueue(() => this.doRefreshProxy());
+    const gen = this.probeGeneration; // Z2：入队时捕获代号（切节点场景 markProxyConnecting 已先递增）
+    await this.enqueue(() => this.doRefreshProxy(false, gen));
     return this.getSnapshot();
   }
 
@@ -230,7 +246,8 @@ export class IpInfoService {
    * refreshProxy）会经 enqueue 链式排到本次首探之后，隧道就绪后第一时间出真值。
    */
   async refreshProxyPostConnect(): Promise<IpInfoSnapshot> {
-    await this.enqueue(() => this.doRefreshProxy(true));
+    const gen = this.probeGeneration; // Z2：入队时捕获代号
+    await this.enqueue(() => this.doRefreshProxy(true, gen));
     return this.getSnapshot();
   }
 
@@ -272,8 +289,12 @@ export class IpInfoService {
     }
   }
 
-  /** postConnect=true：首连专用更宽退避（仅探代理出口）；否则常规预算。 */
-  private async doRefreshProxy(postConnect = false): Promise<void> {
+  /** postConnect=true：首连专用更宽退避（仅探代理出口）；否则常规预算。gen：入队时的探测代（Z2 超代判据；undefined=不参与）。 */
+  private async doRefreshProxy(postConnect = false, gen?: number): Promise<void> {
+    // Z2（§12.4.3 GAP②）：陈旧代（gen 落后于当前 probeGeneration，说明入队后又切了节点）→ 零探测直返、不写快照。
+    // 后继任务必存在（每次 markProxyConnecting 的 gen++ 同流程随后必调 refreshProxy/PostConnect），由末代任务出真值/清
+    // loading，故本任务静默让位不留残态。doRefresh 路径传 undefined → 恒不超代（不参与切换风暴）。
+    if (gen !== undefined && gen !== this.probeGeneration) return;
     // TS 出口直判无效短路（置于 ports/isRunning gate 之前）：选中 TS 出口未广告出口设备 / exit peer 离线时，探测必
     // 失败/超时，跑满退避 = 状态栏永久「检测中」空转（本修复根因）。直接落 proxyBlocked 终态、零探测，状态栏显「出口无效」。
     const block = this.getProxyExitBlock?.() ?? null;
@@ -307,9 +328,11 @@ export class IpInfoService {
       () => this.queryViaProxy(ports.proxy),
       postConnect ? this.postConnectMaxAttempts : this.maxAttempts,
       postConnect ? this.postConnectRetryDelayMs : this.retryDelayMs,
-      // 在途 exit 掉线/变无效（getProxyExitBlock 转真）→ ≤一个 attempt 边界中止重试，下方按 lateBlock 落 blocked 终态。
-      () => !!this.getProxyExitBlock?.()
+      // 在途让位：出口掉线/变无效（getProxyExitBlock 转真）或本代被超代（切了新节点，gen 落后）→ ≤一个 attempt 边界中止。
+      () => (gen !== undefined && gen !== this.probeGeneration) || !!this.getProxyExitBlock?.()
     );
+    // Z2：在途期间被超代 → 让位、不写快照（避免陈旧 fetch_failed 覆盖/闪现；末代任务负责显示，pairing 保证其存在）。
+    if (gen !== undefined && gen !== this.probeGeneration) return;
     // 探测中出口变无效（lateBlock）→ 落 proxyBlocked 而非 error（区分「出口无效不该探」与「探测失败」两种终态语义）。
     const lateBlock = this.getProxyExitBlock?.() ?? null;
     this.snapshot = {
@@ -323,19 +346,34 @@ export class IpInfoService {
       proxyBlocked: p ? undefined : (lateBlock ?? undefined),
     };
     this.onUpdate(this.getSnapshot());
+    // 探测成功（proxy 出口有值）→ fire-and-forget 触发出口伴测更新节点延迟。切节点/首连(postConnect)均 manual=false。
+    // 放 onUpdate 之后保「IP 先显、延迟后到」；lateBlock/失败分支 p==null → 不触发。
+    if (p) this.onProxyProbeSuccess?.({ manual: false });
   }
 
-  private async doRefresh(): Promise<void> {
+  private async doRefresh(visible = false): Promise<void> {
+    const gen = this.probeGeneration; // S3（§13 GAP-B）：捕获探测代号，跨代终写只合并 direct 面、放弃 proxy 面
+    const running = this.isRunning(); // 提前读取：visible 清值需按其分支
+    // 可见重探（仅手动触发传 visible）：先清「当前显示的出口」（running→proxy / 否则→direct）→ 状态栏经
+    // pickStatusBarExit 的 !info 门立即进「检测中…」；探测失败保持 null 落「检测超时」——手动重探的失败必须
+    // 可见（用户拍板）。被动路径（启动/切节点/停核/TTL）不传 visible，保留旧值语义原样（不闪）。
+    // proxyBlocked 取 gate 实时值（勿盲清勿盲留）：仍无效 → invalid 即刻抢占（不闪假「检测中」）；已解除 →
+    // 清陈旧 blocked 进 detecting 真探测。updatedAt 不动（只在终写推进，同 markProxyConnecting 先例）。
+    if (visible) {
+      this.snapshot = running
+        ? { ...this.snapshot, proxy: null, proxyBlocked: this.getProxyExitBlock?.() ?? undefined }
+        : { ...this.snapshot, direct: null };
+    }
     this.snapshot = { ...this.snapshot, loading: true };
     this.onUpdate(this.getSnapshot());
 
     const ports = this.getProbePorts();
-    const running = this.isRunning();
 
     let direct = this.snapshot.direct;
     let proxy = this.snapshot.proxy;
     let failed = false;
     let proxyBlocked: ProxyExitBlock | undefined;
+    let proxyProbed = false; // 本轮代理出口是否探到有值（供函数尾触发出口伴测）
 
     if (running && ports) {
       // TS 出口直判无效 → 本次不探【代理出口】（探必失败/超时空转），proxy 置 null + 落 proxyBlocked 终态；
@@ -348,7 +386,15 @@ export class IpInfoService {
           this.directMaxAttempts,
           this.directRetryDelayMs
         ),
-        block ? Promise.resolve(null) : this.withRetry(() => this.queryViaProxy(ports.proxy)),
+        block
+          ? Promise.resolve(null)
+          : this.withRetry(
+              () => this.queryViaProxy(ports.proxy),
+              this.maxAttempts,
+              this.retryDelayMs,
+              // 在途出口掉线/变无效 → ≤1 attempt 边界中止（对齐 doRefreshProxy）；direct 腿与 TS 出口无关不传。
+              () => !!this.getProxyExitBlock?.()
+            ),
       ]);
       // 本地出口(direct)探测失败【不】污染全局 error/degraded：它走 direct 出站、与代理路径无关；direct 链改
       // 单端点 IPIP-only 后失败更频繁，旧的 direct↔全局 error 强耦合会让导流脊误显「外网降级」、即便代理出口正常。
@@ -357,10 +403,23 @@ export class IpInfoService {
       if (block) {
         proxy = null; // 直判无效：不探、清旧值、落 blocked 终态（非 error，不误染降级）。
         proxyBlocked = block;
-      } else if (p) proxy = p;
-      // 代理出口(proxy)探测失败【保留旧值】仅标记失败（黄点/降级=代理路径信号）：doRefresh 也服务同节点手动刷新/
-      // TTL 过期，瞬态抖动不清有效旧 IP（review MED）。切节点的清旧值由 doRefreshProxy（专用路径）负责，不在此泛化。
-      else failed = true;
+      } else if (p) {
+        proxy = p;
+        proxyProbed = true;
+      } else {
+        // 代理出口探测失败：区分 lateBlock（探测中 gate 由 null 转真）与真失败。lateBlock → 落 blocked 终态而非
+        // error（对齐 doRefreshProxy），proxy 置 null（并发 markProxyBlocked 已清，写回捕获旧值会复活陈旧 IP）。
+        // 修 pre-existing：旧码此处只 failed=true、终写 proxyBlocked 恒 undefined 会冲掉并发 markProxyBlocked
+        // 终态 → 误显「检测超时」且驻留（reconcile 仅跨态触发不重发）。真失败（gate 仍 null）保留旧值语义仅标 failed
+        // ——doRefresh 也服务同节点手动刷新/TTL，瞬态抖动不清有效旧 IP（visible 路径已在头部清过、此处保留的是 null）。
+        const late = this.getProxyExitBlock?.() ?? null;
+        if (late) {
+          proxy = null;
+          proxyBlocked = late;
+        } else {
+          failed = true;
+        }
+      }
     } else if (running) {
       // 核心在跑但探针端口分配失败：不能裸 fetch——TUN 下裸 fetch 会被捕获走代理出口，误标为本地出口。
       // 保留旧 direct + 旧 proxy，仅标记失败。
@@ -373,6 +432,16 @@ export class IpInfoService {
       proxy = null;
     }
 
+    // S3（§13.2 GAP-B）跨代半让位：执行期间发生 markProxyConnecting（新会话/切节点已接管 proxy 面、gen 已递增）→
+    // 终写只合并 direct 腿、保留新会话 markProxyConnecting 置的「检测中」proxy 面（不动 proxy/loading/error/proxyBlocked），
+    // 且不触发伴测（断陈旧 doRefresh → cross-attribution 第二腿）。修「快速停→启时 stopped-doRefresh 跨代把新会话
+    //「检测中」冲成 ≤1.5s 瞬时「暂不可用/检测超时」」。与 §12-Z2（doRefreshProxy 全让位）正交：doRefresh 的 direct 腿
+    // 是停核路径主产出，故半让位——保留 direct 写入、只放弃 proxy 面。
+    if (gen !== this.probeGeneration) {
+      this.snapshot = { ...this.snapshot, direct };
+      this.onUpdate(this.getSnapshot());
+      return;
+    }
     this.snapshot = {
       direct,
       proxy,
@@ -383,6 +452,9 @@ export class IpInfoService {
       proxyBlocked,
     };
     this.onUpdate(this.getSnapshot());
+    // 代理出口探测成功（running+ports 分支探到有值）→ 出口伴测更新节点延迟；manual=visible（手动重探则 bypass 节流）。
+    // onUpdate 之后触发保「IP 先显、延迟后到」；停核/直判无效/失败分支 proxyProbed 恒 false → 不触发。
+    if (proxyProbed) this.onProxyProbeSuccess?.({ manual: visible });
   }
 
   /** 经探针 HTTP 代理端口 absolute-form 请求端点，按 ep.parse 解析。 */

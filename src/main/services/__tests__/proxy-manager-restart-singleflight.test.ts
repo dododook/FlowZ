@@ -228,3 +228,81 @@ describe('issue #176 — M1 attemptAutoRestart 让位不误报', () => {
     expect(svc.isRestarting).toBe(false); // finally 复位
   });
 });
+
+// H-1（§16.3.4b force-restart 复审）：restart 停→启空窗内 force-restart 不丢 + 去抖 drain 绕开 start 腿对 currentConfig 的覆盖。
+describe('H-1 — applyConfigForcingRestart 空窗不丢 + pendingForceRestartConfig 绕覆盖', () => {
+  const cfgA = { proxyModeType: 'tun', servers: [{ id: 'a' }], selectedServerId: 'x' };
+  const cfgB = { proxyModeType: 'tun', servers: [{ id: 'b' }], selectedServerId: 'x' };
+
+  it('depth>0（restart 空窗）→ 置 pendingForceRestartConfig + restartPending，不并发 schedule', () => {
+    const svc = makeSvc();
+    armRunning(svc);
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    svc.lifecycleDepth = 1; // restart 在飞
+    svc.applyConfigForcingRestart(cfgB);
+    expect(svc.restartPending).toBe(true);
+    expect(svc.pendingForceRestartConfig).toBe(cfgB);
+    expect(sched).not.toHaveBeenCalled();
+  });
+
+  it('未运行 → 不设 pending、不 schedule（下次 start 从磁盘纳入）', () => {
+    const svc = makeSvc();
+    svc.singboxPid = null;
+    svc.singboxProcess = null;
+    const sched = jest.spyOn(svc, 'scheduleDebouncedRestart').mockImplementation(() => {});
+    svc.applyConfigForcingRestart(cfgB);
+    expect(svc.pendingForceRestartConfig).toBeNull();
+    expect(sched).not.toHaveBeenCalled();
+  });
+
+  it("stop 终态清 pendingForceRestartConfig（停止优先）", () => {
+    const svc = makeSvc();
+    svc.beginLifecycleOp();
+    svc.pendingForceRestartConfig = cfgB;
+    svc.restartPending = true;
+    svc.endLifecycleOp('stop');
+    expect(svc.pendingForceRestartConfig).toBeNull();
+    expect(svc.restartPending).toBe(false);
+  });
+
+  describe('去抖 drain 读 pending 而非被覆盖的 currentConfig', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('depth 0 直接 schedule：start 腿覆盖 currentConfig=cfgA 后，timer 仍 restart 到 cfgB', () => {
+      const svc = makeSvc();
+      armRunning(svc);
+      const restart = jest.spyOn(svc, 'restart').mockResolvedValue(undefined);
+      svc.lifecycleDepth = 0;
+      svc.applyConfigForcingRestart(cfgB); // pending=cfgB + schedule
+      svc.currentConfig = cfgA; // 模拟 in-flight start 腿覆盖
+      jest.advanceTimersByTime(DEBOUNCE + 10);
+      expect(restart).toHaveBeenCalledTimes(1);
+      expect(restart).toHaveBeenCalledWith(cfgB); // 读 pending，非被覆盖的 currentConfig
+      expect(svc.pendingForceRestartConfig).toBeNull(); // 用后即清
+    });
+
+    it('端到端死循环修复：depth>0 设 cfgB → 覆盖 currentConfig=cfgA → endLifecycleOp 排空 → restart 到 cfgB', () => {
+      const svc = makeSvc();
+      armRunning(svc);
+      const restart = jest.spyOn(svc, 'restart').mockResolvedValue(undefined);
+      svc.beginLifecycleOp(); // depth 1（restart 在飞）
+      svc.applyConfigForcingRestart(cfgB); // 空窗 → pending + restartPending，不 schedule
+      svc.currentConfig = cfgA; // start 腿覆盖
+      svc.endLifecycleOp('start'); // depth 0 → 排空 → 重新 arm timer
+      jest.advanceTimersByTime(DEBOUNCE + 10);
+      expect(restart).toHaveBeenCalledWith(cfgB); // 未丢、重启到 cfgB（非 cfgA）→ 死循环破
+    });
+
+    it('普通去抖（无 pending）→ 读 currentConfig（原语义不变）', () => {
+      const svc = makeSvc();
+      armRunning(svc);
+      const restart = jest.spyOn(svc, 'restart').mockResolvedValue(undefined);
+      svc.pendingForceRestartConfig = null;
+      svc.currentConfig = cfgA;
+      svc.scheduleDebouncedRestart();
+      jest.advanceTimersByTime(DEBOUNCE + 10);
+      expect(restart).toHaveBeenCalledWith(cfgA);
+    });
+  });
+});

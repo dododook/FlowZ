@@ -1,0 +1,44 @@
+/**
+ * 解锁检测 —— 服务清单 + 状态语义映射（渲染端）。
+ *
+ * 服务清单做成配置：检测端点会漂移（社区半年变一次），后端 checker 逻辑挂在
+ * 各 service id 上，此处只描述「展示什么 + 归哪组」。品牌字标/色为字面量（非主题 token）。
+ * 状态色**复用设计系统 Badge 语义变体**（success/warning/destructive），不自绘。
+ */
+
+// 状态枚举 / 结果结构的单一真值在 shared（main 检测引擎与本视图共用，双份必漂移）。此处 import 供本地类型标注用 + re-export 给消费方。
+import type { UnlockStatus, UnlockResult } from '../../../shared/unlock-detection';
+
+export type { UnlockStatus, UnlockResult };
+
+export type UnlockGroup = 'ai' | 'media';
+
+export interface UnlockService {
+  id: string;
+  name: string; // 全名（hover title 用）
+  short: string; // 短名（内联一行展示用，省宽）
+  mark: string; // 品牌字标
+  color: string; // 品牌色（字标底色）
+  group: UnlockGroup;
+}
+
+/* eslint-disable no-restricted-syntax -- 品牌标识色（各服务官方 logo 色），非 UI 主题色，不可 tokenize 成 Conduit 变量 */
+export const UNLOCK_SERVICES: UnlockService[] = [
+  { id: 'chatgpt', name: 'ChatGPT', short: 'ChatGPT', mark: 'G', color: '#10a37f', group: 'ai' },
+  { id: 'claude', name: 'Claude', short: 'Claude', mark: 'C', color: '#d97757', group: 'ai' },
+  { id: 'gemini', name: 'Gemini', short: 'Gemini', mark: 'G', color: '#4285f4', group: 'ai' },
+  { id: 'netflix', name: 'Netflix', short: 'Netflix', mark: 'N', color: '#e50914', group: 'media' },
+  { id: 'disney', name: 'Disney+', short: 'Disney+', mark: 'D', color: '#0063e5', group: 'media' },
+  { id: 'spotify', name: 'Spotify', short: 'Spotify', mark: 'S', color: '#1db954', group: 'media' },
+];
+/* eslint-enable no-restricted-syntax */
+
+/** 状态 → i18n key。 */
+export const STATUS_LABEL_KEY: Record<UnlockStatus, string> = {
+  ok: 'home.unlockStateOk',
+  partial: 'home.unlockStatePartial',
+  blocked: 'home.unlockStateBlocked',
+  checking: 'home.unlockStateChecking',
+  timeout: 'home.unlockStateTimeout',
+  idle: 'home.unlockStateIdle',
+};

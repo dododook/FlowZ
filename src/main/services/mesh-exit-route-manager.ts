@@ -108,6 +108,33 @@ export class MeshExitRouteManager {
     }
   }
 
+  /**
+   * 出口路由重申（TS 出口 re-advertise 恢复腿调用，R3）。修两个真缺口而**不 churn 已存路由**：
+   *  ① `installed` 为空——`resolveIface` 18s 轮询超时过（登录慢/TS 接口晚出现）→ 路由从未装成、此后无重试挂钩
+   *     → 重新 reconcile 补装；
+   *  ② macOS `installed.iface` 已消失（接口换名/停了 → 其 ifscope 路由随接口自动失效，内存 installed 却残留）
+   *     → 复位 installed 后 reconcile 重装。
+   * 其余情形（路由应仍在）不动——避免对已存 ifscope 路由重发 `route add` 的 EEXIST 噪音；纯读判定、绝不抛。
+   */
+  async reassert(config: UserConfig, enableIPv6: boolean): Promise<void> {
+    if (!meshSystemSupportedOnPlatform(process.platform)) return;
+    try {
+      const plan = planMeshExitRoute(config, enableIPv6);
+      if (!plan) return; // 无 System exit 出口 → 无路由可保
+      if (!this.installed) {
+        await this.reconcile(config, enableIPv6);
+        return;
+      }
+      if (process.platform === 'darwin' && !(await this.listUtuns()).has(this.installed.iface)) {
+        this.log('info', `出口路由重申:接口 ${this.installed.iface} 已不在 → 复位重装`);
+        this.installed = null;
+        await this.reconcile(config, enableIPv6);
+      }
+    } catch (e) {
+      this.log('warn', `出口路由重申失败(不影响代理): ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
   /** 停核 / teardown：清理已装的出口路由。 */
   async clear(): Promise<void> {
     // 禁 System 的平台（Windows）：本管理器 no-op（无装过的 OS 路由可清）。

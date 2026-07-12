@@ -37,6 +37,7 @@ message Empty {}
 service StartedService {
   rpc SubscribeTailscaleStatus(Empty) returns (stream TailscaleStatusUpdate);
   rpc TailscaleLogout(TailscaleLogoutRequest) returns (Empty);
+  rpc SetTailscaleExitNode(SetTailscaleExitNodeRequest) returns (Empty);
   rpc SubscribeStatus(SubscribeStatusRequest) returns (stream Status);
   rpc SubscribeConnections(SubscribeConnectionsRequest) returns (stream ConnectionEvents);
   rpc SelectOutbound(SelectOutboundRequest) returns (Empty);
@@ -68,6 +69,12 @@ message TailscalePeer {
   bool expired = 13;
 }
 message TailscaleLogoutRequest { string endpointTag = 1; }
+// 热重设 TS 出口节点（不重启核）：按 stableID EditPrefs{ExitNodeID}，幂等。字段号逐字对齐上游
+// daemon/started_service.proto（endpointTag=1, stableID=2）。用于 re-advertise 后强制核重解析 exit_node。
+message SetTailscaleExitNodeRequest {
+  string endpointTag = 1;
+  string stableID = 2;
+}
 
 message SubscribeStatusRequest { int64 interval = 1; }
 message Status {
@@ -206,6 +213,7 @@ export function toTailscaleStatusPeers(ep: TailscaleEndpointStatus): TailscaleSt
     exitNode: p.exitNode === true,
     exitNodeOption: p.exitNodeOption === true,
     active: p.active === true,
+    stableID: p.stableID || undefined, // 热重设 exit_node 用（UI 不消费）
   }));
 }
 
@@ -540,6 +548,14 @@ export class SingBoxApiClient {
   /** clash 等价：在 selector/urltest group 内选定出站。 */
   selectOutbound(groupTag: string, outboundTag: string): Promise<void> {
     return this.unary('SelectOutbound', { groupTag, outboundTag });
+  }
+
+  /**
+   * 热重设指定 TS endpoint 的出口节点（EditPrefs{ExitNodeID}，幂等）：re-advertise 后强制核重解析 exit_node，
+   * 免整重启核（sing-box watchState 失败后不随 netmap 重试的缺口的补丁通道）。同值为核侧 no-op。
+   */
+  setTailscaleExitNode(endpointTag: string, stableID: string): Promise<void> {
+    return this.unary('SetTailscaleExitNode', { endpointTag, stableID });
   }
 
   /** clash 等价：按 id 关闭单条连接。 */

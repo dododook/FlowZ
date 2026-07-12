@@ -83,3 +83,64 @@ export function parseHttpStatusCode(responseHead: string): number | null {
 export function isAcceptableSpeedTestStatus(code: number): boolean {
   return code >= 200 && code <= 299;
 }
+
+/**
+ * 主核测速探测池大小（§15，测速全主核化）：主核 config 注入 K 个 probe-in-k(http 入站) + K 个 probe-selector-k
+ * + K 条 route + K 个 dns-probe-exit-k，测速时按波把节点分配到 K 槽经 gRPC selectOutbound 热切、复用现成
+ * measureViaTunnel（warm-TTFB 保真）→ 同核单会话，结构性消除 WG/WARP 双会话超时（G1）。K=16 对齐
+ * PROXY_TEST_CONCURRENCY；大订阅可下调换 config 体积；=0 使池不注入（回退临时核，回滚锚点）。
+ * ProxyManager（端口分配）+ SpeedTestService（编排）+ 四个 builder（config 注入）共用单一真值。
+ */
+export const PROBE_POOL_SIZE = 16;
+
+/**
+ * 主核测速探测池句柄（ProxyManager.getSpeedTestMainCoreProbe 产出，SpeedTestService 消费）：主核运行且池就绪
+ * 时测速走主核（testServersViaMainCore），否则回退临时核（testServersViaProxy）。全部 call-time 取值。
+ */
+export interface MainCoreProbe {
+  /** 池端口已分配（allocateProbePorts 3+K 成功）→ 主核 config 已注入池。 */
+  available(): boolean;
+  /** 主核进程存活且管理 API 客户端就绪（可 selectOutbound 热切 probe-selector-k）。 */
+  isRunning(): boolean;
+  /** K 个 probe-in-k 的 http 代理端口；poolPorts[k] ↔ probe-selector-k（1:1 槽绑定）。 */
+  poolPorts: number[];
+  /** 把第 k 槽 selector（probe-selector-k）热切到给定节点出站 tag（gRPC SelectOutbound，live 生效）。 */
+  selectSlot(k: number, tag: string): Promise<void>;
+  /** 节点 id → 出站 tag（= 主 proxy-selector 成员 tag）。 */
+  tagOf(id: string): string;
+  /** 该节点 id 是否已在主核池成员（currentIdToTagMap 有此 id）。§16.3.3：非成员=订阅新增/改址未重启入池，
+   *  预筛缺席防 select-failed 假 -1（诚实性安全网）。 */
+  hasTag(id: string): boolean;
+  /** 该 Tailscale 节点是否已登录就绪（backendState==='Running' && !keyExpired）。§16.1.3 层3：
+   *  未就绪 TS 节点波内缺席（不 select/measure/report），UI 走「未登录」徽标，绝不写假 -1。 */
+  tsNodeReady(id: string): boolean;
+}
+
+/** 测速本次运行结局（§16.2）：completed=本次入参全部有结果（含真实 -1 超时）；interrupted=有入参节点缺席
+ *  （核 stop/restart/regen 跃迁或崩溃打断，保留旧值不写假 -1）。「起测即知不可测」（skipped）不产生 interrupted。 */
+export type SpeedTestOutcome = 'completed' | 'interrupted';
+
+/** 起测即知「本核不可测」而波前缺席的节点 id（§16.1.3 层3 / §16.3.3）：不入 outcome 分母（缺席≠中断），
+ *  notInPool 另供徽标 tooltip reason 信号（§16.3.3）。 */
+export interface SpeedTestSkipped {
+  /** 非主核池成员（订阅新增/改址未重启入池）→ tooltip「刷新订阅后纳入测速」。 */
+  notInPool: string[];
+  /** TS 节点未登录就绪 → 徽标走既有「未登录」态。 */
+  tsNotReady: string[];
+}
+
+/** doTestAllServers/testAllServers 收口返回（§16.2）：结果 map + 结局 + 波前缺席集。 */
+export interface SpeedTestRunResult {
+  results: Map<string, number | null>;
+  outcome: SpeedTestOutcome;
+  skipped: SpeedTestSkipped;
+}
+
+/** SERVER_SPEED_TEST invoke 返回（renderer 消费 §16.2/§16.3.3）：Record 化结果（null→-1）+ outcome + 波前缺席两列表
+ *  （notInPool→徽标 tooltip「刷新订阅后纳入测速」信号存 Set；notInPool+tsNotReady 合计=toast 副行「N 未纳入」）。 */
+export interface SpeedTestInvokeResult {
+  results: Record<string, number>;
+  outcome: SpeedTestOutcome;
+  notInPool: string[];
+  tsNotReady: string[];
+}

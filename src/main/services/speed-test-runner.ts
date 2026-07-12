@@ -8,6 +8,7 @@
  */
 import type { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import type { SpeedTestRunResult } from '../../shared/speed-test';
 import type { ConfigManager } from './ConfigManager';
 import type { SpeedTestService } from './SpeedTestService';
 import type { TrayManager } from './TrayManager';
@@ -26,12 +27,12 @@ export interface SpeedTestRunnerDeps {
 /**
  * 运行一次测速并统一传播结果。
  * @param opts.serverIds 限定测速子集（缺省=全部 servers）；不可测节点由 SpeedTestService 内部按 isSpeedTestable 剔除。
- * @returns 逐节点最终结果 Map（latency=null 表示超时/不可达）。
+ * @returns SpeedTestRunResult（结果 Map + outcome completed/interrupted + 波前缺席集 §16.2）。
  */
 export async function runSpeedTest(
   deps: SpeedTestRunnerDeps,
   opts: { serverIds?: string[]; notifyTrayToast?: boolean } = {}
-): Promise<Map<string, number | null>> {
+): Promise<SpeedTestRunResult> {
   const { configManager, speedTestService, getMainWindow, getTrayManager, logManager } = deps;
   const config = await configManager.loadConfig();
   const servers = opts.serverIds
@@ -43,7 +44,7 @@ export async function runSpeedTest(
   if (servers.length === 0) {
     logManager.addLog('info', 'Speed test skipped: no servers', 'SpeedTest');
     getTrayManager()?.setSpeedTesting(false);
-    return new Map();
+    return { results: new Map(), outcome: 'completed', skipped: { notInPool: [], tsNotReady: [] } };
   }
 
   const send = (channel: string, payload: unknown) => {
@@ -54,7 +55,7 @@ export async function runSpeedTest(
   // 任意入口触发都让托盘菜单进入「测速中」态（与 UI 一致；幂等，已是该态则 no-op）。
   getTrayManager()?.setSpeedTesting(true);
   try {
-    const results = await speedTestService.testAllServers(
+    const runResult = await speedTestService.testAllServers(
       servers,
       (serverId, latency) =>
         send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, {
@@ -66,10 +67,13 @@ export async function runSpeedTest(
     );
     // 唯一回写托盘点：合并入托盘延迟显示（不替换 → 子集/单节点测速不塌缩）+ isSpeedTesting=false + 菜单重建。
     // toast 仅托盘入口（notifyTrayToast=true）触发——渲染入口（服务器页/首页）测速由 use-speed-test 自弹，避免双 toast。
-    getTrayManager()?.updateSpeedTestResults(results, config.servers, {
+    // §16.2：outcome + 波前缺席数透传给托盘 toast（interrupted → 「测速中断」；skipped → 副行「N 未纳入」，见 App.tsx）。
+    getTrayManager()?.updateSpeedTestResults(runResult.results, config.servers, {
       toast: opts.notifyTrayToast,
+      outcome: runResult.outcome,
+      skipped: runResult.skipped.notInPool.length + runResult.skipped.tsNotReady.length,
     });
-    return results;
+    return runResult;
   } catch (error) {
     logManager.addLog(
       'error',

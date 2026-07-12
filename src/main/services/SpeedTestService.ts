@@ -23,7 +23,19 @@ import {
   parseHttpStatusCode,
   isAcceptableSpeedTestStatus,
   type SpeedTestTarget,
+  type MainCoreProbe,
+  type SpeedTestOutcome,
+  type SpeedTestSkipped,
+  type SpeedTestRunResult,
 } from '../../shared/speed-test';
+
+/** 一次测速运行的可变上下文（各路径就地填充 outcome/skipped，doTestAllServers 收口读取 §16.2）：
+ *  - outcome 缺省 completed；任一 superseded()/gen-change abort 点置 interrupted（含崩溃：superseded 含 !isRunning）。
+ *  - skipped=起测即知「本核不可测」的波前缺席节点（不入 outcome、notInPool 供徽标 tooltip 信号）。 */
+interface SpeedTestRunContext {
+  outcome: SpeedTestOutcome;
+  skipped: SpeedTestSkipped;
+}
 import { isEndpointProtocol, isSpeedTestable } from '../../shared/endpoint-routes';
 import { normalizeDuration } from '../../shared/duration';
 
@@ -88,19 +100,38 @@ export class SpeedTestService {
    */
   private buildOutboundFn?: (server: ServerConfig, tag: string) => Record<string, unknown> | null;
 
+  /**
+   * §15 主核测速探测池句柄取值器（由 index.ts 注入，call-time 懒引用 ProxyManager.getSpeedTestMainCoreProbe）：
+   * 主核运行 + 池就绪 → 测速走主核（testServersViaMainCore，同核单会话消除 WG/WARP 双会话超时）；否则回退临时核。
+   * 未注入（单测/兜底）→ 恒回退临时核路径，行为不变。
+   */
+  private getMainCoreProbe?: () => MainCoreProbe | null;
+
+  /**
+   * §15.11 核生命周期世代取值器（由 index.ts 注入，call-time 拉 ProxyManager.getLifecycleGeneration）：测速起测时
+   * 快照 gen0，逐波/每 report 前比对——超代（核 start/stop/restart 中途跃迁）即 abort，保留已测、绝不给未测节点写假
+   * -1。缺省 `() => 0`（未注入=单测/兜底）→ 恒不超代，行为与今日一致（回归保护）。
+   */
+  private getCoreGeneration: () => number;
+
   /** 进行中的测速 Promise + 其覆盖的节点 id 集：多入口并发（首页/托盘/页级全部/本组/单节点，各传不同 serverIds
    *  子集）时按「覆盖」编排——新请求 ⊆ 在飞集 → 复用同一次（零重跑、避免双临时 sing-box 端口冲突）；未覆盖 → 串行链
    *  在其后（不同分组/单节点/子集先-全量后 各自被完整测到，永不并发双 sing-box、无静默漏测）。 */
-  private currentTest: Promise<Map<string, number | null>> | null = null;
+  private currentTest: Promise<SpeedTestRunResult> | null = null;
   private currentTestIds: Set<string> | null = null;
   private lastDiagnostics: SpeedTestDiagnosticSnapshot | null = null;
 
   constructor(
     logManager: LogManager,
-    buildOutboundFn?: (server: ServerConfig, tag: string) => Record<string, unknown> | null
+    buildOutboundFn?: (server: ServerConfig, tag: string) => Record<string, unknown> | null,
+    getMainCoreProbe?: () => MainCoreProbe | null,
+    getCoreGeneration?: () => number
   ) {
     this.logManager = logManager;
     this.buildOutboundFn = buildOutboundFn;
+    this.getMainCoreProbe = getMainCoreProbe;
+    // 缺省恒返 0 → getCoreGeneration()!==gen0 恒 false → 永不超代（回归安全）。
+    this.getCoreGeneration = getCoreGeneration ?? (() => 0);
   }
 
   getLastSpeedTestDiagnostics(): SpeedTestDiagnosticSnapshot | null {
@@ -117,13 +148,16 @@ export class SpeedTestService {
     onResult?: (serverId: string, latency: number | null) => void,
     onProgress?: (tested: number, ok: number, total: number) => void,
     testUrl?: string
-  ): Promise<Map<string, number | null>> {
-    // 单一真值闸（下沉于此，UI/托盘两入口共用）：不可测节点（Tailscale / 自定义 endpoint / reverseMesh
-    // system 内核接口）不参与测速——buildSpeedTestOutbound 对它们返 null，若不在此剔除，托盘等全量入口会把
-    // 它们测出 latency:null→-1「超时」，与 UI 角标「不适用」口径冲突。isSpeedTestable 即测速排除的单一真值。
-    const testable = servers.filter(isSpeedTestable);
+  ): Promise<SpeedTestRunResult> {
+    // 单一真值闸（下沉于此，UI/托盘两入口共用）：不可测节点（自定义 endpoint / reverseMesh system 内核接口）不参与
+    // 测速——它们对任何路径都返 null→-1「超时」，与 UI 角标「不适用」口径冲突。§16.1 path-aware：TS-exit 仅在主核池
+    // 可用（代理运行+池就绪）时纳入，否则临时核口径剔除。caps 为起测冻结快照（决定 coalesce 覆盖集）；核在快照后挂 →
+    // 主核路径 superseded() 兜底（TS 缺席、无假 -1）。
+    const probeForCaps = this.getMainCoreProbe?.() ?? null;
+    const caps = { mainCorePool: !!(probeForCaps?.available() && probeForCaps.isRunning()) };
+    const testable = servers.filter((s) => isSpeedTestable(s, caps));
     if (testable.length === 0) {
-      return new Map();
+      return { results: new Map(), outcome: 'completed', skipped: { notInPool: [], tsNotReady: [] } };
     }
     // 并发编排（多入口各传不同子集）：按「在飞测速是否覆盖本次请求」决定复用 or 串行。
     const inFlight = this.currentTest;
@@ -159,35 +193,95 @@ export class SpeedTestService {
     onResult?: (serverId: string, latency: number | null) => void,
     onProgress?: (tested: number, ok: number, total: number) => void,
     testUrl?: string
-  ): Promise<Map<string, number | null>> {
-    // 生产路径（注入了出站构造器）：**所有协议**统一走临时 sing-box 经代理 urltest，真实测速。
-    if (this.buildOutboundFn) {
+  ): Promise<SpeedTestRunResult> {
+    // §15.11：起测时快照核生命周期世代——本次测速 = 绑定于 gen0 的作业，任一核 start/stop/restart/config-regen
+    // 中途跃迁 → getCoreGeneration()!==gen0 → 超代 abort（保留已测、未测节点缺席 map、绝不写假 -1）。缺省 ()=>0 恒不超代。
+    const gen0 = this.getCoreGeneration();
+    // §16.2 一次运行的可变上下文：各路径就地填 outcome（abort 点置 interrupted）+ skipped（波前缺席）。
+    const runCtx: SpeedTestRunContext = {
+      outcome: 'completed',
+      skipped: { notInPool: [], tsNotReady: [] },
+    };
+
+    // §15 主核路径（主核运行 + 池就绪）：经**已运行的主核** probe 池测全部节点——同 endpoint tag=同 WG 会话，
+    // 结构性消除临时核双会话超时（G1）。复用现成 measureViaTunnel（warm-TTFB 保真），selectOutbound 热切 probe 槽。
+    const mainCoreProbe = this.getMainCoreProbe?.();
+    if (mainCoreProbe?.available() && mainCoreProbe.isRunning()) {
       this.logManager.addLog(
         'info',
-        `开始测速: ${servers.length} 个节点（经代理 urltest）`,
+        `开始测速: ${servers.length} 个节点（经主核探测池，${mainCoreProbe.poolPorts.length} 槽）`,
         'SpeedTest'
       );
-      const results = await this.testServersViaProxy(servers, onResult, onProgress, testUrl);
+      const results = await this.testServersViaMainCore(
+        mainCoreProbe,
+        servers,
+        gen0,
+        runCtx,
+        onResult,
+        onProgress,
+        testUrl
+      );
       const ok = [...results.values()].filter((v) => v !== null).length;
-      // 仅汇总，不逐节点列明（结果由 UI 节点延迟徽标承载）。
-      this.logManager.addLog('info', `测速完成：成功 ${ok}/${servers.length}`, 'SpeedTest');
-      return results;
+      this.logManager.addLog(
+        'info',
+        runCtx.outcome === 'interrupted'
+          ? `测速中断：已测 ${ok}/${servers.length}（核生命周期跃迁，未测节点保留原值）`
+          : `测速完成：成功 ${ok}/${servers.length}`,
+        'SpeedTest'
+      );
+      return { results, outcome: runCtx.outcome, skipped: runCtx.skipped };
     }
 
-    // 兜底路径（未注入构造器，如单测）：旧的 TCP 裸 ping + UDP 代理拆分。
+    // 生产路径（注入了出站构造器）：**所有协议**统一走临时 sing-box 经代理 urltest，真实测速。
+    // 此路径 = 主核未运行/未就绪时的临时核兜底（R-b：测一半用户开代理 → 主核 start → gen++ → abort，见 §15.11）。
+    if (this.buildOutboundFn) {
+      // §16.1 漂移防护：TS-exit 只有主核路径可测（临时核建不出第二 tsnet 实例）。上游 caps 快照若在主核运行时纳入了
+      // TS-exit，而此刻主核已挂落到临时核路径（序列链竞态）→ 按临时核口径再剔 TS，防临时核对其 buildOutbound=null→假 -1。
+      const tempServers = servers.filter((s) => isSpeedTestable(s, { mainCorePool: false }));
+      // L-2：漂移剔除的 TS-exit 计入 skipped（可见性——toast 副行计数、不误算 outcome=interrupted；徽标由 renderer 派生
+      // ts-needs-core）；否则「测速完成」但被请求的 TS 既无值也无任何提示（静默无下文）。
+      for (const s of servers) {
+        if (!tempServers.some((t) => t.id === s.id)) runCtx.skipped.tsNotReady.push(s.id);
+      }
+      this.logManager.addLog(
+        'info',
+        `开始测速: ${tempServers.length} 个节点（经代理 urltest）`,
+        'SpeedTest'
+      );
+      const results = await this.testServersViaProxy(
+        tempServers,
+        gen0,
+        runCtx,
+        onResult,
+        onProgress,
+        testUrl
+      );
+      const ok = [...results.values()].filter((v) => v !== null).length;
+      // 仅汇总，不逐节点列明（结果由 UI 节点延迟徽标承载）。
+      this.logManager.addLog(
+        'info',
+        runCtx.outcome === 'interrupted'
+          ? `测速中断：已测 ${ok}/${tempServers.length}`
+          : `测速完成：成功 ${ok}/${tempServers.length}`,
+        'SpeedTest'
+      );
+      return { results, outcome: runCtx.outcome, skipped: runCtx.skipped };
+    }
+
+    // 兜底路径（未注入构造器，如单测）：旧的 TCP 裸 ping + UDP 代理拆分。无 gen 语义 → 恒 completed。
     const tcpServers = servers.filter((s) => !UDP_PROTOCOLS.has(s.protocol.toLowerCase()));
     const udpServers = servers.filter((s) => UDP_PROTOCOLS.has(s.protocol.toLowerCase()));
     const results = new Map<string, number | null>();
     const [tcpResults, udpResults] = await Promise.all([
       this.testTcpServers(tcpServers, onResult),
       udpServers.length > 0
-        ? this.testServersViaProxy(udpServers, onResult, undefined, testUrl)
+        ? this.testServersViaProxy(udpServers, gen0, runCtx, onResult, undefined, testUrl)
         : new Map<string, number | null>(),
     ]);
     for (const [id, latency] of tcpResults) results.set(id, latency);
     for (const [id, latency] of udpResults) results.set(id, latency);
     this.logManager.addLog('info', '测速完成', 'SpeedTest');
-    return results;
+    return { results, outcome: runCtx.outcome, skipped: runCtx.skipped };
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -285,11 +379,15 @@ export class SpeedTestService {
    * 经临时 sing-box 真实测速（全协议）：每个可用节点起独立 HTTP 入站 → 该节点出站，经 CONNECT 隧道发两次 GET 测速端点
    * （默认 generate_204，可经 testUrl 自配，兼容 http/https）量 warm TTFB（详见 measureViaTunnel）。不可用节点（naive
    * 缺 libcronet 等）预先剔除为 null、不进临时核。
+   * @param gen0 §15.11 起测时核生命周期世代快照：runWithLimit 内每 measure 前后比对，超代（核中途 START，R-b 瞬态
+   *   双会话）即丢弃在飞结果、不 report、不写假 -1；临时核由 finally 照常杀。缺省 0（未注入=恒不超代，回归安全）。
    * @param onResult 可选逐节点回调：每测完一个节点即回传（serverId, latency），供 UI 流式增量显示。
    * @param testUrl 可选测速端点 URL（非法回落默认 generate_204）。
    */
   private async testServersViaProxy(
     servers: ServerConfig[],
+    gen0 = 0,
+    runCtx?: SpeedTestRunContext,
     onResult?: (serverId: string, latency: number | null) => void,
     onProgress?: (tested: number, ok: number, total: number) => void,
     testUrl?: string
@@ -429,12 +527,22 @@ export class SpeedTestService {
       //    预热轮。并发上限避免大订阅 N 路握手同时打出→请求风暴假超时；小订阅(≤上限)等价全并行。
       //    每测完一个节点立即回调 onResult（UI 流式显示），不等队列。
       await this.runWithLimit(usable, SpeedTestService.PROXY_TEST_CONCURRENCY, async (u) => {
+        // §15.11 R-b：核中途 START（临时核 + 新主核瞬态双会话）→ gen 变 → 丢弃、不 report（未测节点不写假 -1）。
+        if (this.getCoreGeneration() !== gen0) {
+          if (runCtx) runCtx.outcome = 'interrupted';
+          return;
+        }
         const port = serverPortMap.get(u.server.id)!;
         const { latency, reason } = await this.measureViaTunnel(
           port,
           SpeedTestService.MEASURE_TIMEOUT_MS,
           target
         );
+        // 超代再检（measure 期间核可能刚 START）：绝不写假 -1——超代的未测 vs measureViaTunnel 真实失败(-1) 由此分流。
+        if (this.getCoreGeneration() !== gen0) {
+          if (runCtx) runCtx.outcome = 'interrupted';
+          return;
+        }
         results.set(u.server.id, latency);
         if (latency === null) {
           noteNodeFail(reason ?? 'unknown', u.server, u.tag); // ③ 记失败模式
@@ -514,6 +622,183 @@ export class SpeedTestService {
    * 由 ProxyManager.buildSpeedTestOutbound 预构造：普通协议→outbound，WireGuard→endpoint（进 endpoints[]）；
    * route 规则按 tag 指向，两者一致（endpoint tag 当 outbound 用，已实测兼容）。
    */
+  /**
+   * §15 主核测速（方案 A）：经**已运行的主核**探测池测全部节点，结构性消除临时核 WG/WARP 双会话超时（G1）。
+   * 编排（§15.5）：把 usable 按 K（池槽数）分波；每波先 gRPC selectOutbound 把 K 槽热切到本波各节点（1:1，
+   * 节点[k]→probe-selector-k），再经 probe-in-k 端口跑**现成 measureViaTunnel**（warm-TTFB 逐字复用，唯一变量=
+   * CONNECT 目标端口 poolPort[k]）。波间串行——同槽跨波复用，先测完（finish 已 destroy 隧道）再 selectOutbound
+   * 重定向，interrupt_exist_connections 清残留、无跨节点串味。report/失败分布/onResult/onProgress 与临时核路径同款。
+   * 池测结果权威（同 endpoint tag=同 WG 会话，成功真值），如实上报（含 null=真不通）；不再被临时核 null 覆盖。
+   * §15.11：绑定起测世代 gen0——逐波前 + 每 report 前比对 getCoreGeneration()，超代（核 stop/restart/regen 中途跃迁，
+   * R-a/R-c）即停发新波、丢在飞结果、return 已测部分 map（未测节点缺席 → 合并语义保留旧值，绝不写假 -1）。
+   */
+  private async testServersViaMainCore(
+    probe: MainCoreProbe,
+    servers: ServerConfig[],
+    gen0: number,
+    runCtx: SpeedTestRunContext,
+    onResult?: (serverId: string, latency: number | null) => void,
+    onProgress?: (tested: number, ok: number, total: number) => void,
+    testUrl?: string
+  ): Promise<Map<string, number | null>> {
+    const results = new Map<string, number | null>();
+    const poolPorts = probe.poolPorts;
+    const K = poolPorts.length;
+    // 进度/失败分布机制与 testServersViaProxy 同款（单一口径，UI/诊断零差异）。
+    let tested = 0;
+    let ok = 0;
+    // 进度分母=实际会被 report 的节点数（波前缺席的 not-in-pool/ts-not-ready 不 report → 剔出分母，避免进度停在 <100%）；
+    // 波前 gate 后重置为 poolTestable.length。
+    let total = servers.length;
+    const report = (id: string, latency: number | null) => {
+      onResult?.(id, latency);
+      tested++;
+      if (latency !== null) ok++;
+      onProgress?.(tested, ok, total);
+    };
+    const failReasons = new Map<string, number>();
+    const failures: SpeedTestFailureDiagnostic[] = [];
+    const resolvedIpProbes: SpeedTestResolvedIpDiagnostic[] = [];
+    const noteNodeFail = (reason: string, server: ServerConfig, tag?: string): void => {
+      failReasons.set(reason, (failReasons.get(reason) ?? 0) + 1);
+      failures.push({ serverId: server.id, serverName: server.name, tag, reason });
+    };
+    const logFailDist = () => {
+      if (failReasons.size === 0) return;
+      const dist = [...failReasons.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([r, n]) => `${r}×${n}`)
+        .join('，');
+      this.logManager.addLog('info', `测速失败原因分布：${dist}`, 'SpeedTest');
+    };
+
+    // 上游 testAllServers 已按 isSpeedTestable(caps) 过滤（含 TS-exit）；此处再波前预筛「本核不可测」→ 缺席（不
+    // select/measure/report、绝不写假 -1）：①非池成员（§16.3.3：订阅新增/改址未重启入池，tagOf 会回退裸 id →
+    // selectOutbound throw → 旧代码假 -1）；②TS 节点未登录就绪（§16.1.3 层3）。缺席节点入 runCtx.skipped，不进 outcome
+    // 分母（起测即知不可测≠中断），notInPool 另供徽标 tooltip 信号。
+    const poolTestable: ServerConfig[] = [];
+    for (const s of servers) {
+      if (!probe.hasTag(s.id)) {
+        runCtx.skipped.notInPool.push(s.id);
+        noteNodeFail('not-in-pool', s);
+        continue;
+      }
+      if (s.protocol?.toLowerCase() === 'tailscale' && !probe.tsNodeReady(s.id)) {
+        runCtx.skipped.tsNotReady.push(s.id);
+        noteNodeFail('ts-not-ready', s, probe.tagOf(s.id));
+        continue;
+      }
+      poolTestable.push(s);
+    }
+    total = poolTestable.length; // 进度分母=实际测量节点数（缺席节点已剔）
+    const target = resolveSpeedTestTarget(testUrl);
+
+    // §15.11 F1：超代 = 核生成号跃迁（start/stop/restart/regen）**或**核已不在运行（`!probe.isRunning()`）。后者覆盖
+    // 「自发崩溃」——handleProcessExit 崩溃分支不 bump lifecycleGeneration（gen 检查漏判），但崩溃后 probe.isRunning()
+    // 立即为 false，故经此把崩溃窗口的在飞 measure 失败判为「未测」而非真实失败 → 绝不写假 -1（诚实性根基）。
+    // 反之：gen 不变且核仍运行时的 measureViaTunnel null 是**真实节点超时**，照常记 -1。
+    const superseded = () => this.getCoreGeneration() !== gen0 || !probe.isRunning();
+
+    try {
+      for (let base = 0; base < poolTestable.length; base += K) {
+        // §15.11 超代①：核跃迁/崩溃 → 停发新波，return 已测部分 map（未测节点缺席，不写假 -1）。§16.2 标 interrupted。
+        if (superseded()) {
+          runCtx.outcome = 'interrupted';
+          return results;
+        }
+        const wave = poolTestable.slice(base, base + K);
+        // 1. 本波各节点按槽热切 selector（node[k] → probe-selector-k，gRPC live 生效 15.3）。逐槽记成败：
+        //    naive 缺库等被主核跳过的节点其 tag 非 selector 成员 → selectOutbound 抛错 → 记 select-failed（如实不可测）。
+        const selected = await Promise.all(
+          wave.map(async (node, k) => {
+            try {
+              await probe.selectSlot(k, probe.tagOf(node.id));
+              return true;
+            } catch {
+              return false;
+            }
+          })
+        );
+        // 2. 本波并发测量，槽 k 严格用 poolPort[k]（1:1 绑定，不经 runWithLimit worker 池——那会丢失 k↔端口对应）。
+        await Promise.all(
+          wave.map(async (node, k) => {
+            const tag = probe.tagOf(node.id);
+            // §15.11 超代（selectSlot 期间核可能已跃迁/崩溃，stale-tag selectOutbound throw → selected[k]=false）：
+            //   诚实性根基——超代导致的「未测/select 失败」绝不 report(-1)；仅 gen0 期核仍在的真实 select 失败才记 select-failed。
+            if (superseded()) {
+              runCtx.outcome = 'interrupted';
+              return;
+            }
+            if (!selected[k]) {
+              results.set(node.id, null);
+              noteNodeFail('select-failed', node, tag); // 该节点非 probe-selector 成员（被主核跳过/不可用）
+              report(node.id, null);
+              return;
+            }
+            const port = poolPorts[k];
+            const { latency, reason } = await this.measureViaTunnel(
+              port,
+              SpeedTestService.MEASURE_TIMEOUT_MS,
+              target
+            );
+            // §15.11 超代②：measure 期间核跃迁/崩溃 → 丢在飞结果、不 report、不写假 -1（超代未测 vs 真实失败 -1 分流处）。
+            if (superseded()) {
+              runCtx.outcome = 'interrupted';
+              return;
+            }
+            results.set(node.id, latency);
+            if (latency === null) {
+              noteNodeFail(reason ?? 'unknown', node, tag);
+              report(node.id, null);
+              // 端点失败结构化 DNS 探测：必须在本波内 await 完（下一波会把该槽 selector 重定向到别的节点）。
+              if (isEndpointProtocol(node.protocol)) {
+                resolvedIpProbes.push(
+                  await this.probeEndpointTargetResolvedIps(
+                    port,
+                    node,
+                    tag,
+                    target.host,
+                    SpeedTestService.DNS_PROBE_TIMEOUT_MS
+                  )
+                );
+              }
+              return;
+            }
+            report(node.id, latency);
+          })
+        );
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logManager.addLog('error', `主核测速异常: ${msg}`, 'SpeedTest');
+      // §15.11：仅非超代（核未跃迁/未崩溃）时把未测节点记 exception(-1)（真实异常）；超代下绝不写假 -1（缺席、保留旧值）。
+      if (!superseded()) {
+        for (const s of poolTestable) {
+          if (!results.has(s.id)) {
+            results.set(s.id, null);
+            noteNodeFail('exception', s, probe.tagOf(s.id));
+            report(s.id, null);
+          }
+        }
+      } else {
+        // §16.2：超代下异常 → 标 interrupted（未测节点缺席、绝不写假 -1）。
+        runCtx.outcome = 'interrupted';
+      }
+    } finally {
+      this.lastDiagnostics = {
+        generatedAt: new Date().toISOString(),
+        target,
+        total,
+        usable: poolTestable.length,
+        failures: [...failures],
+        resolvedIpProbes: [...resolvedIpProbes],
+      };
+      logFailDist();
+    }
+
+    return results;
+  }
+
   private generateProxyTestConfig(
     usable: { server: ServerConfig; tag: string; outbound: Record<string, unknown> }[],
     serverPortMap: Map<string, number>
@@ -739,6 +1024,31 @@ export class SpeedTestService {
       });
       connectReq.end();
     });
+  }
+
+  /**
+   * 出口伴测入口（IpInfoService 代理出口探测成功后调用）：经主核 probe-proxy-in 的 HTTP 代理端口，用与节点测速
+   * 完全相同的 CONNECT 隧道 + 2×GET 量 warm TTFB —— 产出口径 == latencyMap 的测速值（同端点/同算法/同 warm 语义），
+   * 故可合法写入节点延迟。返回 null = 隧道不可用/超时/非 2xx/对端过早关闭 → 调用方放弃写入（绝不写 -1）。
+   */
+  async measureWarmRttViaHttpProxy(proxyPort: number, testUrl?: string): Promise<number | null> {
+    const target = resolveSpeedTestTarget(testUrl);
+    const { latency, reason } = await this.measureViaTunnel(
+      proxyPort,
+      SpeedTestService.MEASURE_TIMEOUT_MS,
+      target
+    );
+    // 失败记 reason（connect-502/timeout/early-close/http-403 等）至 debug——伴测 runner 侧仅拿到 null，
+    // 排障（真机 V6 失败降级）须在此保留原因，否则失败静默无从区分。
+    if (latency === null) {
+      // Y1（§12.3.2）：带 target host——V37 判读 WARP 无延迟根因（early-close / http-4xx / MTU timeout）须知打的哪个目标。
+      this.logManager.addLog(
+        'debug',
+        `出口伴测失败 (${reason ?? 'unknown'}) target=${target.host}:${target.port} port=${proxyPort}`,
+        'SpeedTest'
+      );
+    }
+    return latency;
   }
 
   private async probeEndpointTargetResolvedIps(

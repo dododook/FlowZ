@@ -40,8 +40,13 @@ export interface StatusBarExit {
  * 无 info 时的三态优先级 invalid > detecting > failed：
  *  - invalid：running + proxyBlocked（TS 出口 API 直判无效、根本没探）→「出口无效」，抢占——detecting/failed 暗示
  *    「还在探/探失败」，与「已直判无效不探」矛盾，故 invalid 为真时二者恒 false；
- *  - detecting：loading 中 →「检测中…」；
+ *  - detecting：loading 中，**或启动相位 connecting 内**（见下）→「检测中…」；
  *  - failed：已探测过（updatedAt>0）非 loading 仍无 IP →「检测超时」（含 TS 出口广播失效/路由无效）。
+ *
+ * connecting（=proxyPhase==='starting'，按钮转圈）：启动瞬间 running 已翻真、但主进程 markProxyConnecting 的
+ * loading 快照尚未抵达渲染端的空窗里，旧 updatedAt 会让无 proxy IP 误判 failed → 闪「检测超时」。故启动相位内
+ * 强制归 detecting、压掉 failed —— 实际探测已就绪门控（markProxyConnecting/refreshProxyPostConnect 宽退避重试），
+ * 此空窗不是真超时，只是显示层错判。invalid 仍最高优先（真直判无效即便启动中也照显「出口无效」）。
  */
 export function pickStatusBarExit(
   running: boolean,
@@ -54,12 +59,13 @@ export function pickStatusBarExit(
         proxyBlocked?: ProxyExitBlock;
       }
     | null
-    | undefined
+    | undefined,
+  connecting = false
 ): StatusBarExit {
   const info = (running ? ipInfo?.proxy : ipInfo?.direct) ?? null;
   // invalid 抢占：running + 直判无效 + 无 info。detecting/failed 在 invalid 为真时一律 false。
   const invalid = !info && running && !!ipInfo?.proxyBlocked;
-  const detecting = !info && !invalid && !!ipInfo?.loading;
+  const detecting = !info && !invalid && (!!ipInfo?.loading || connecting);
   const failed = !info && !invalid && !detecting && !!ipInfo?.updatedAt;
   return { info, isProxy: running, invalid, detecting, failed };
 }

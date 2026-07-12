@@ -40,6 +40,8 @@ export interface InboundsDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
   updateInPort: number | null;
+  /** §15 主核测速探测池：K 个 probe-in-k http 入站的端口（allocateProbePorts 3+K 产出）。空/缺省=不注入池。 */
+  probePoolPorts?: number[];
   /** 可选日志回调（记「连入来源排除」的 mesh/fakeip/物理 LAN 剔除告警）。缺省（单测）不记。 */
   log?: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
 }
@@ -117,6 +119,19 @@ export function buildInbounds(
         listen_port: deps.probeProxyPort,
       }
     );
+  }
+
+  // §15 主核测速探测池 inbound：K 个 probe-in-k（loopback http）。测速时经 probe-in-k 端口跑现成 measureViaTunnel，
+  // route 钉死 probe-in-k → probe-selector-k（该槽热切到被测节点），dns 经 dns-probe-exit-k 穿被测节点隧道解析。
+  // 仅池端口分配成功（allocateProbePorts 3+K）时注入；空=零注入（config 与今日字节一致，分流回退临时核）。
+  // 与 probe-proxy-in 同为 loopback http，不进 TUN、无回环风险。
+  for (const [k, port] of (deps.probePoolPorts ?? []).entries()) {
+    inbounds.push({
+      type: 'http',
+      tag: `probe-in-${k}`,
+      listen: '127.0.0.1',
+      listen_port: port,
+    });
   }
 
   // 更新链路统一 inbound（socks，Phase 2）：FlowZ 应用更新检查/下载（UpdateService）+ 规则资源下载

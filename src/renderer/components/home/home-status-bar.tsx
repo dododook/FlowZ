@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '@/store/app-store';
 import { formatBytes } from '@/lib/format';
 import { getLatencyColor } from '@/components/settings/server-list-helpers';
+import { STALE_MS } from '@/lib/latency-badge';
 import { cn } from '@/lib/utils';
 import { ArrowDown, ArrowUp, Activity, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -43,6 +44,9 @@ export function HomeStatusBar() {
   const selectedLatency = useAppStore((s) =>
     selectedServerId ? s.latencyMap[selectedServerId] : undefined
   );
+  const selectedTestedAt = useAppStore((s) =>
+    selectedServerId ? s.latencyTestedAt[selectedServerId] : undefined
+  );
 
   const running = connectionStatus?.proxyCore?.running ?? false;
   const status = deriveConnectionStatus(
@@ -55,10 +59,11 @@ export function HomeStatusBar() {
     },
     t
   );
-  const exit = pickStatusBarExit(running, ipInfo);
+  const exit = pickStatusBarExit(running, ipInfo, proxyPhase === 'starting');
   const region = localizeRegion(exit.info?.country ?? exit.info?.countryCode, i18n.language);
 
-  // 手动重探：检测超时/出口无效终态下点刷新图标，force 重探出口 IP（绕 TTL）。in-flight 去重 + 转圈。
+  // 手动重探：检测超时/出口无效终态下点刷新图标，force+visible 重探出口 IP（可见流程：检测中…→结果/超时；
+  // 中间态经 EVENT_IP_INFO_UPDATED 事件链回流，reprobeExitIp 不回写 invoke 终值）。in-flight 去重 + 转圈。
   const handleReprobe = async () => {
     if (reprobing) return;
     setReprobing(true);
@@ -121,8 +126,12 @@ export function HomeStatusBar() {
         )}
       </span>
 
-      {/* 检测超时 / 出口无效 终态 → 状态后刷新图标：手动 force 重探出口 IP（用户反馈：失败态给重试入口）。 */}
-      {running && (exit.failed || exit.invalid) && (
+      {/* 检测超时（failed）终态 → 状态后刷新图标：手动重探出口 IP（用户反馈：瞬态失败给重试入口）。
+          exit.invalid（TS 出口 API 直判无效）**不**显刷新钮：reprobe 对 invalid 是结构性 no-op
+          （doRefreshProxy 入口即 gate 短路、零探测），恢复靠 reconcileTsExitBlock 每帧翻转对账自动重探，
+          按钮暗示「重试可解」反误导——正确行动是修 TS 侧（ts-exit-warning 警示条已给指引）。detecting 期间
+          本钮随 failed 消失属预期——状态栏「检测中…」文案即点击反馈。 */}
+      {running && exit.failed && (
         <button
           type="button"
           onClick={handleReprobe}
@@ -135,11 +144,21 @@ export function HomeStatusBar() {
         </button>
       )}
 
-      {/* 当前节点延迟 */}
-      {selectedLatency !== undefined && (
+      {/* 当前节点延迟（Q4：与 flapping 的 exit.info 解耦）：info（探测成功）或 failed（检测超时/flap）态都显——延迟是伴测
+          真实测得的历史量、有独立信息价值，flap 下恒显消除「有→无→有」闪烁；detecting（切节点/启动中，旧值突兀）/
+          invalid（结构性无效期旧值误导）/停代理 不显。陈旧（>30min 未重测）半透明兜误导（P10）。 */}
+      {running && selectedLatency !== undefined && (exit.info || exit.failed) && (
         <>
           <span className="sb-sep">·</span>
-          <span className={cn('mono tnum', getLatencyColor(selectedLatency))}>
+          <span
+            className={cn(
+              'mono tnum',
+              getLatencyColor(selectedLatency),
+              selectedTestedAt !== undefined &&
+                Date.now() - selectedTestedAt > STALE_MS &&
+                'opacity-50'
+            )}
+          >
             {selectedLatency === -1 ? t('servers.timeout', '超时') : `${selectedLatency} ms`}
           </span>
         </>

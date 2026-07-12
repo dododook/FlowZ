@@ -18,9 +18,14 @@ import {
 const item = (over: Partial<NodePickerItem> & { id: string; name: string }): NodePickerItem => over;
 
 describe('latencyTone', () => {
-  it('未测 / N/A → idle', () => {
+  it('未测 → idle（含不可测 na 且无值）', () => {
     expect(latencyTone(undefined)).toBe('idle');
-    expect(latencyTone(50, true)).toBe('idle');
+    expect(latencyTone(undefined, true)).toBe('idle');
+  });
+  it('不可测 na 有值 → 按数值上色（出口伴测为当前 TS/组网出口写入延迟后显真实色档）', () => {
+    expect(latencyTone(50, true)).toBe('good');
+    expect(latencyTone(120, true)).toBe('medium');
+    expect(latencyTone(500, true)).toBe('bad');
   });
   it('超时(-1) → bad', () => expect(latencyTone(-1)).toBe('bad'));
   it('阈值边界 <100 good / <300 medium / >=300 bad', () => {

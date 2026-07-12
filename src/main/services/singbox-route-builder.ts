@@ -83,6 +83,8 @@ export interface RouteConfigDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
   updateInPort: number | null;
+  // §15 主核测速探测池：K 个 probe-in-k → probe-selector-k 钉死路由的端口数（allocateProbePorts 3+K）。空/缺省=不注入池。
+  probePoolPorts?: number[];
   lanResolverForDns: string | null;
   pendingEndpoints: SingBoxEndpoint[];
   log: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
@@ -201,6 +203,13 @@ export function buildRouteConfig(
       { inbound: ['probe-direct-in'], action: 'route', outbound: 'direct' },
       { inbound: ['probe-proxy-in'], action: 'route', outbound: selectedServerTag }
     );
+  }
+
+  // A2b. 主核测速探测池钉死路由（§15，紧随 A2 探针钉死、先于一切分流）：probe-in-k → probe-selector-k，
+  //   使经 probe-in-k 端口的测速流量恒走该槽当前热切到的被测节点（selectOutbound live 生效，15.3）。任意接管/
+  //   分流/代理模式一致（不依赖用户选中/分流）。仅池端口就绪时注入；空=零注入（回退临时核）。
+  for (let k = 0; k < (deps.probePoolPorts?.length ?? 0); k++) {
+    rules.push({ inbound: [`probe-in-${k}`], action: 'route', outbound: `probe-selector-${k}` });
   }
 
   // A3. update-in 钉死路由（更新链路统一 inbound，紧随探针、先于一切分流，Phase 2）：

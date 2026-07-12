@@ -858,3 +858,108 @@ describe('parseSingboxOutbounds — snell review 边界补测', () => {
     ).toMatch(/缺 psk/);
   });
 });
+
+describe('§16.3.4 reconcileServers contentChanged（手动 force-restart / 渲染刷新的判据）', () => {
+  // uuid=指纹凭据（serverFingerprint 用之）；id 独立（reconcile 保留旧 id）；name 只入 contentKey 不入指纹。
+  const node = (uuid: string, addr: string, name = uuid, id = `id-${uuid}`): ServerConfig =>
+    ({ id, name, protocol: 'vless', address: addr, port: 443, uuid }) as ServerConfig;
+
+  it('新增节点 → contentChanged=true', () => {
+    const r = SubscriptionService.reconcileServers(
+      [node('u1', '1.1.1.1')],
+      [node('u1', '1.1.1.1'), node('u2', '2.2.2.2')],
+      'NOW'
+    );
+    expect(r.added).toBe(1);
+    expect(r.contentChanged).toBe(true);
+  });
+
+  it('删除节点 → contentChanged=true', () => {
+    const r = SubscriptionService.reconcileServers(
+      [node('u1', '1.1.1.1'), node('u2', '2.2.2.2')],
+      [node('u1', '1.1.1.1')],
+      'NOW'
+    );
+    expect(r.deleted).toBe(1);
+    expect(r.contentChanged).toBe(true);
+  });
+
+  it('命中节点内容变（同指纹改名 → contentKey 含 name）→ contentChanged=true', () => {
+    const r = SubscriptionService.reconcileServers(
+      [node('u1', '1.1.1.1', 'old')],
+      [node('u1', '1.1.1.1', 'new')],
+      'NOW'
+    );
+    expect(r.added).toBe(0);
+    expect(r.deleted).toBe(0);
+    expect(r.contentChanged).toBe(true);
+  });
+
+  it('完全无变化（同指纹同内容，仅顺序）→ contentChanged=false', () => {
+    const old = [node('u1', '1.1.1.1', 'a'), node('u2', '2.2.2.2', 'b')];
+    // 抓取顺序颠倒 + 无内容差异 → 恒 false（norm/reconcile 双保险的内容级判据）。
+    const r = SubscriptionService.reconcileServers(
+      old,
+      [node('u2', '2.2.2.2', 'b'), node('u1', '1.1.1.1', 'a')],
+      'NOW'
+    );
+    expect(r.added).toBe(0);
+    expect(r.deleted).toBe(0);
+    expect(r.contentChanged).toBe(false);
+  });
+});
+
+describe('§16.3.4 条件 GET / 304 短路', () => {
+  it('带 etag 拉取 → 请求含 If-None-Match；304 → notModified、servers 空、不 parse', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    mockFetch.mockResolvedValue(makeResponse({ status: 304 }));
+    const r = await svc.fetchSubscription('https://sub.example.com/x', SUB_ID, false, undefined, {
+      etag: 'W/"abc"',
+    });
+    expect(r.notModified).toBe(true);
+    expect(r.servers).toEqual([]);
+    const init = mockFetch.mock.calls[0][1] as { headers: Record<string, string> };
+    expect(init.headers['If-None-Match']).toBe('W/"abc"');
+  });
+
+  it('200 带 ETag/Last-Modified → 回传 validators 供回写；正常解析节点', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const body = JSON.stringify({
+      proxies: [{ name: 'n', type: 'vless', server: '1.1.1.1', port: 443, uuid: 'a' }],
+    });
+    mockFetch.mockResolvedValue(
+      makeResponse({
+        body,
+        headers: { etag: 'W/"v2"', 'last-modified': 'Wed, 01 Jan 2025 00:00:00 GMT' },
+      })
+    );
+    const r = await svc.fetchSubscription('https://sub.example.com/x', SUB_ID);
+    expect(r.notModified).toBeFalsy();
+    expect(r.etag).toBe('W/"v2"');
+    expect(r.lastModified).toBe('Wed, 01 Jan 2025 00:00:00 GMT');
+    expect(r.servers.length).toBe(1);
+  });
+
+  it('无 conditional → 不发条件头（现状全量 GET，零回归）', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    const body = JSON.stringify({
+      proxies: [{ name: 'n', type: 'vless', server: '1.1.1.1', port: 443, uuid: 'a' }],
+    });
+    mockFetch.mockResolvedValue(makeResponse({ body }));
+    await svc.fetchSubscription('https://sub.example.com/x', SUB_ID);
+    const init = mockFetch.mock.calls[0][1] as { headers: Record<string, string> };
+    expect(init.headers['If-None-Match']).toBeUndefined();
+    expect(init.headers['If-Modified-Since']).toBeUndefined();
+  });
+
+  it('M-2 fail-safe：无 conditional 时服务端违规返 304 → throw（不误判 notModified→空 servers→删节点）', async () => {
+    const log = new FakeLog();
+    const svc = newService(log);
+    mockFetch.mockResolvedValue(makeResponse({ status: 304 }));
+    // 未传 conditional（如 provider 拉取路径）→ 304 不认 notModified，维持「304 非 ok → throw」→ transient。
+    await expect(svc.fetchSubscription('https://sub.example.com/x', SUB_ID)).rejects.toThrow(/304/);
+  });
+});

@@ -291,6 +291,26 @@ describe('IpInfoService 传输层', () => {
     return { svc, snapshots };
   }
 
+  /** 按 host 路由 responder（多 host 交错场景，如 direct+proxy 并测）：reset mock，每 host 一个 responder。 */
+  function routeByHost(map: Record<string, Responder>): void {
+    mockGet.mockReset();
+    mockGet.mockImplementation(
+      (options: http.RequestOptions, cb?: (res: FakeRes) => void): FakeReq => {
+        const req = new FakeReq();
+        const res = new FakeRes();
+        const call: Call = { options, req, res };
+        calls.push(call);
+        const responder = map[hostOf(options) ?? ''];
+        if (responder) res.statusCode = responder.statusCode;
+        process.nextTick(() => {
+          if (cb) cb(res);
+          if (responder) responder.drive(call);
+        });
+        return req;
+      }
+    );
+  }
+
   const IPIP_OK = JSON.stringify({
     ret: 'ok',
     data: { ip: '1.2.3.4', location: ['中国', '北京'] },
@@ -302,6 +322,7 @@ describe('IpInfoService 传输层', () => {
     countryCode: 'US',
   });
   const TRACE_OK = 'ip=104.28.210.15\nloc=US\ncolo=LAX';
+  const TRACE_OK2 = 'ip=5.5.5.5\nloc=JP\ncolo=NRT'; // 第二出口样本：验 visible 重探探到「新」proxy IP
 
   beforeEach(() => {
     installHttp();
@@ -326,6 +347,102 @@ describe('IpInfoService 传输层', () => {
       expect(snap.proxy).toBeNull();
       expect(snap.loading).toBe(false);
       expect(snap.error).toBeUndefined();
+    });
+  });
+
+  describe('出口伴测 hook（onProxyProbeSuccess：代理出口探测成功后触发，供伴测更新节点延迟）', () => {
+    /** 注入 onProxyProbeSuccess 的 service；hook 记录 manual + 触发时刻可见的 proxy 快照（验「onUpdate 之后」）。 */
+    function hookHarness(opts?: {
+      running?: boolean;
+      proxyExitBlock?: () => ProxyExitBlock | null;
+    }) {
+      const snapshots: IpInfoSnapshot[] = [];
+      const hookCalls: Array<{ manual: boolean; proxyAtCall: IpInfoSnapshot['proxy'] }> = [];
+      const svc = new IpInfoService(
+        () => ({ direct: 18080, proxy: 18081 }),
+        () => opts?.running ?? true,
+        (s) => snapshots.push(s),
+        {
+          maxAttempts: 1,
+          retryDelayMs: 0,
+          postConnectMaxAttempts: 1,
+          postConnectRetryDelayMs: 0,
+          directMaxAttempts: 1,
+          directRetryDelayMs: 0,
+        },
+        opts?.proxyExitBlock,
+        (ctx) =>
+          hookCalls.push({
+            manual: ctx.manual,
+            proxyAtCall: snapshots[snapshots.length - 1]?.proxy,
+          })
+      );
+      return { svc, hookCalls };
+    }
+
+    it('refreshProxy 成功 → hook 调用一次(manual=false)，且在 onUpdate 之后（proxy IP 已在快照）', async () => {
+      const { svc, hookCalls } = hookHarness();
+      routeByHost({ 'cloudflare.com': respondOk(TRACE_OK) });
+      await svc.refreshProxy();
+      expect(hookCalls).toHaveLength(1);
+      expect(hookCalls[0].manual).toBe(false);
+      expect(hookCalls[0].proxyAtCall).toEqual({ ip: '104.28.210.15', countryCode: 'US' });
+    });
+
+    it('refreshProxy 探测失败 → hook 不调用（p==null 分支）', async () => {
+      const { svc, hookCalls } = hookHarness();
+      // 三个代理端点均 503 失败（须显式映射：未映射 host 的 FakeRes 默认 200 不 emit end 会挂死）。
+      routeByHost({
+        'cloudflare.com': respondStatus(503),
+        'ip-api.com': respondStatus(503),
+        'api.ipify.org': respondStatus(503),
+      });
+      await svc.refreshProxy();
+      expect(hookCalls).toHaveLength(0);
+    });
+
+    it('refreshProxy 直判无效(blocked) → 短路、hook 不调用', async () => {
+      const { svc, hookCalls } = hookHarness({ proxyExitBlock: () => 'ts-no-exit-device' });
+      routeByHost({ 'cloudflare.com': respondOk(TRACE_OK) });
+      await svc.refreshProxy();
+      expect(hookCalls).toHaveLength(0);
+    });
+
+    it('doRefresh(visible=true) proxy 腿成功 → hook 调用(manual=true)', async () => {
+      const { svc, hookCalls } = hookHarness();
+      routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+      await svc.refresh(true, true);
+      expect(hookCalls).toHaveLength(1);
+      expect(hookCalls[0].manual).toBe(true);
+    });
+
+    it('doRefresh proxy 腿失败(保留旧值) → hook 不调用', async () => {
+      const { svc, hookCalls } = hookHarness();
+      // direct(ipip) 成功、三个代理端点 503 失败 → proxyProbed=false（须显式映射失败，未映射会挂死）。
+      routeByHost({
+        'myip.ipip.net': respondOk(IPIP_OK),
+        'cloudflare.com': respondStatus(503),
+        'ip-api.com': respondStatus(503),
+        'api.ipify.org': respondStatus(503),
+      });
+      await svc.refresh(true, false);
+      expect(hookCalls).toHaveLength(0);
+    });
+
+    it('S3（§13.2 GAP-B）：doRefresh 期间 markProxyConnecting（gen 递增）→ 跨代半让位：只合并 direct、保留检测中 proxy 面、不触发伴测', async () => {
+      const { svc, hookCalls } = hookHarness();
+      routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+      const p = svc.refresh(true); // doRefresh 起、两链 http.get 已同步发出、await 中
+      svc.markProxyConnecting(); // 跨代：probeGeneration++ + 置 proxy=null/loading=true（新会话接管 proxy 面）
+      await p;
+      const snap = svc.getSnapshot();
+      // 半让位：保留 markProxyConnecting 的「检测中」proxy 面，不写探到的 proxy IP（TRACE_OK 104.28.210.15）
+      expect(snap.loading).toBe(true);
+      expect(snap.proxy).toBeNull();
+      // direct 腿仍合并（停核路径主产出，不被让位丢弃）
+      expect(snap.direct).toEqual({ ip: '1.2.3.4', country: '中国 北京', countryCode: 'cn' });
+      // 伴测不触发（断陈旧 doRefresh → cross-attribution 第二腿）
+      expect(hookCalls).toHaveLength(0);
     });
   });
 
@@ -582,6 +699,28 @@ describe('IpInfoService 传输层', () => {
     expect(snap.error).toBeUndefined(); // ★ direct 失败【不】触发全局 error → 导流脊不误显降级
   });
 
+  it('#361：running 下【非 visible/被动】刷新代理出口探测失败 → 保留旧 proxy 值 + error（同节点手刷/TTL 不清有效旧 IP）', async () => {
+    // 非 visible 路径（被动 TTL/同节点刷新）复用 refresh(true)→doRefresh 保留旧值语义（L361-363），与 visible 手动
+    // 重探（头部清出口→失败落检测超时，见 §9 / V2）及 doRefreshProxy 切节点语义（清旧值）均不同。被动路径不闪、保留旧值。
+    const { svc } = makeService(); // running + ports，direct/proxy 默认单跳
+    // 1) seed：direct + proxy 均成功 → 旧 proxy = {104.28.210.15, US}
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+    const seed = await svc.refresh(true);
+    expect(seed.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' });
+    expect(seed.error).toBeUndefined();
+    // 2) 二次手刷：proxy 链 3 端点全 503（探测失败）、direct(ipip) 仍成功
+    routeByHost({
+      'myip.ipip.net': respondOk(IPIP_OK),
+      'cloudflare.com': respondStatus(503),
+      'ip-api.com': respondStatus(503),
+      'api.ipify.org': respondStatus(503),
+    });
+    const snap = await svc.refresh(true);
+    expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // ★ 保留旧值（doRefresh 不清）
+    expect(snap.error).toBe('fetch_failed'); // 代理失败 → 标降级
+    expect(snap.direct).toEqual({ ip: '1.2.3.4', country: '中国 北京', countryCode: 'cn' }); // direct 不受影响
+  });
+
   it('queryViaProxy：PROXY_CHAIN 首跳 trace 成功即返回，不再试 ip-api/ipify', async () => {
     const { svc } = makeService();
     responders = [respondOk(TRACE_OK)];
@@ -589,6 +728,39 @@ describe('IpInfoService 传输层', () => {
     expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' });
     expect(calls.length).toBe(1); // 首跳成功即短路
     expect(hostOf(calls[0].options)).toBe('cloudflare.com');
+  });
+
+  // Z2（§12.4.3 GAP②）：probeGeneration supersede——markProxyConnecting 递增代号，入队时捕获的陈旧代任务被超代后
+  // 让位（在途不写快照 / 排队者头部零探测直返），只留末次切换真正探测，杜绝快切 N 次的串行冗余探测。
+  describe('Z2：探测代 supersede（快切防串行冗余）', () => {
+    it('在飞刷新被超代 → 让位不写快照，末代真值胜出（不被陈旧结果覆盖）', async () => {
+      const { svc, snapshots } = makeService({ maxAttempts: 1 });
+      responders = [respondOk(TRACE_OK), respondOk(TRACE_OK2)];
+      svc.markProxyConnecting(); // gen=1
+      const pA = svc.refreshProxy(); // taskA 捕获 gen=1，同步跑到 http.get 挂起（shift TRACE_OK）
+      svc.markProxyConnecting(); // gen=2 → taskA 被超代
+      const pB = svc.refreshProxy(); // taskB 捕获 gen=2，排在 taskA 后
+      await Promise.all([pA, pB]);
+      // taskA 探到 TRACE_OK 但因超代让位不写；末快照 = taskB 的 TRACE_OK2 出口
+      expect(svc.getSnapshot().proxy).toEqual({ ip: '5.5.5.5', countryCode: 'JP' });
+      // 全程无任一快照写入 taskA 的 104.28.210.15（陈旧 in-flight 结果被让位丢弃）
+      expect(snapshots.some((s) => s.proxy?.ip === '104.28.210.15')).toBe(false);
+    });
+
+    it('排在超代之后的陈旧任务头部零探测直返（不新增 http.get）', async () => {
+      const { svc } = makeService({ maxAttempts: 1 });
+      responders = [respondOk(TRACE_OK), respondOk(TRACE_OK2)];
+      svc.markProxyConnecting(); // gen=1
+      const pBlock = svc.refreshProxy(); // taskBlock gen=1 → 在飞（shift TRACE_OK）
+      svc.markProxyConnecting(); // gen=2
+      const pStale = svc.refreshProxy(); // taskStale gen=2 排 taskBlock 后
+      svc.markProxyConnecting(); // gen=3 → taskStale 将被超代
+      const pFinal = svc.refreshProxy(); // taskFinal gen=3 排 taskStale 后
+      await Promise.all([pBlock, pStale, pFinal]);
+      // taskStale 头部 gen(2)!==3 → 零 http.get；总调用 = taskBlock(1) + taskFinal(1)，taskStale 贡献 0
+      expect(calls.length).toBe(2);
+      expect(svc.getSnapshot().proxy).toEqual({ ip: '5.5.5.5', countryCode: 'JP' }); // 末代 taskFinal 写入
+    });
   });
 
   it('重试：代理首轮全失败、次轮成功 → 取到 IP 不报错，且过程出现「获取中」(loading)', async () => {
@@ -657,5 +829,137 @@ describe('IpInfoService 传输层', () => {
     expect(snap.proxy).toBeNull();
     expect(snap.error).toBe('fetch_failed');
     expect(calls.length).toBe(3); // 只探了 1 轮（3 端点），未走宽预算的多轮重试
+  });
+
+  // --- §9 可见「检测中」重探（visible 档：清当前出口→检测中→结果/超时/出口无效）------------------
+  const PROXY_HOSTS = ['cloudflare.com', 'ip-api.com', 'api.ipify.org'];
+
+  it('V1：visible+running 成功 → 首广播清 proxy(检测中)+保留 direct+updatedAt 不推进；终广播探到新 proxy', async () => {
+    const { svc, snapshots } = makeService(); // running + ports
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+    await svc.refresh(true); // seed 旧 direct+proxy
+    const seededUpdatedAt = svc.getSnapshot().updatedAt;
+    const base = snapshots.length;
+    // 可见重探：proxy 探到「新」出口 5.5.5.5、direct 不变
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK2) });
+    await svc.refresh(true, true);
+    const first = snapshots[base];
+    expect(first.proxy).toBeNull(); // 清出口 → pickStatusBarExit !info → 检测中
+    expect(first.loading).toBe(true);
+    expect(first.direct).toEqual({ ip: '1.2.3.4', country: '中国 北京', countryCode: 'cn' }); // direct 保留
+    expect(first.updatedAt).toBe(seededUpdatedAt); // 清值不推 updatedAt（同 markProxyConnecting）
+    const last = snapshots[snapshots.length - 1];
+    expect(last.proxy).toEqual({ ip: '5.5.5.5', countryCode: 'JP' }); // 探到新出口
+    expect(last.loading).toBe(false);
+  });
+
+  it('V2：visible+running 探测全失败 → 检测超时（终态 proxy:null+error，旧 proxy 已丢）；direct 保留', async () => {
+    const { svc, snapshots } = makeService();
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+    await svc.refresh(true); // seed
+    const base = snapshots.length;
+    routeByHost({
+      'myip.ipip.net': respondOk(IPIP_OK),
+      'cloudflare.com': respondStatus(503),
+      'ip-api.com': respondStatus(503),
+      'api.ipify.org': respondStatus(503),
+    });
+    const snap = await svc.refresh(true, true);
+    expect(snapshots[base].proxy).toBeNull(); // 首广播已清（检测中）
+    expect(snapshots[base].loading).toBe(true);
+    expect(snap.proxy).toBeNull(); // 终态：旧 proxy 丢（不保留）= 用户要的可见失败
+    expect(snap.error).toBe('fetch_failed');
+    expect(snap.direct).toEqual({ ip: '1.2.3.4', country: '中国 北京', countryCode: 'cn' }); // direct 不受影响
+  });
+
+  it('V3a：visible+!running direct 成功 → 首广播清 direct(检测中)、终广播探到新 direct', async () => {
+    const { svc, snapshots } = makeService({ running: false });
+    responders = [respondOk(IPIP_OK)];
+    await svc.refresh(true); // seed direct（裸 fetch ipip）
+    const base = snapshots.length;
+    responders = [
+      respondOk(JSON.stringify({ ret: 'ok', data: { ip: '8.8.8.8', location: ['中国', '上海'] } })),
+    ];
+    const snap = await svc.refresh(true, true);
+    expect(snapshots[base].direct).toBeNull(); // 清 direct → 检测中
+    expect(snapshots[base].loading).toBe(true);
+    expect(snap.direct?.ip).toBe('8.8.8.8'); // 探到新 direct
+    expect(snap.proxy).toBeNull();
+  });
+
+  it('V3b：visible+!running direct 失败 → 检测超时（direct:null+error，旧值丢）', async () => {
+    const { svc, snapshots } = makeService({ running: false });
+    responders = [respondOk(IPIP_OK)];
+    await svc.refresh(true); // seed
+    const base = snapshots.length;
+    responders = [respondStatus(503)];
+    const snap = await svc.refresh(true, true);
+    expect(snapshots[base].direct).toBeNull();
+    expect(snap.direct).toBeNull();
+    expect(snap.error).toBe('fetch_failed');
+  });
+
+  it('V4：visible+gate blocked → 首广播 proxyBlocked 保持(invalid 抢占、不闪检测中)+proxy 腿零请求+终态 blocked', async () => {
+    const { svc, snapshots } = makeService({ proxyExitBlock: () => 'ts-no-exit-device' }); // running + ports
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK) }); // 只 direct；proxy 腿不该被打
+    const base = snapshots.length;
+    const snap = await svc.refresh(true, true);
+    expect(snapshots[base].proxy).toBeNull();
+    expect(snapshots[base].proxyBlocked).toBe('ts-no-exit-device'); // 清值取 gate 实时值 → invalid，不闪假检测中
+    const proxyCalls = calls.filter((c) => PROXY_HOSTS.includes(hostOf(c.options) ?? '')).length;
+    expect(proxyCalls).toBe(0); // proxy 腿零请求（block 短路）
+    expect(snap.proxyBlocked).toBe('ts-no-exit-device');
+    expect(snap.proxy).toBeNull();
+    expect(snap.error).toBeUndefined();
+  });
+
+  it('V5：visible+gate 已解除但快照残留 blocked → 首广播清 proxyBlocked(可进检测中真探测)', async () => {
+    const { svc, snapshots } = makeService({ proxyExitBlock: () => null }); // gate 已解除
+    svc.markProxyBlocked('ts-no-exit-device'); // 快照残留陈旧 blocked
+    const base = snapshots.length;
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+    const snap = await svc.refresh(true, true);
+    expect(snapshots[base].proxyBlocked).toBeUndefined(); // 实时读 gate=null → 清陈旧 blocked
+    expect(snapshots[base].proxy).toBeNull();
+    expect(snapshots[base].loading).toBe(true); // → detecting
+    expect(snap.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // 正常探到
+  });
+
+  it('V6：doRefresh lateBlock（探测中 gate 翻非空）→ shouldAbort 中止 + 落 blocked 终态(非 error，不冲掉并发 markProxyBlocked)', async () => {
+    let n = 0;
+    // 前 2 次 null（L343 block 读 + attempt0 shouldAbort），第 3 次起非空（attempt1 shouldAbort 中止）
+    const gate = (): 'ts-exit-device-offline' | null =>
+      ++n >= 3 ? 'ts-exit-device-offline' : null;
+    const { svc } = makeService({
+      maxAttempts: 2,
+      retryDelayMs: 0,
+      directMaxAttempts: 1,
+      proxyExitBlock: gate,
+    });
+    routeByHost({
+      'myip.ipip.net': respondOk(IPIP_OK),
+      'cloudflare.com': respondStatus(503),
+      'ip-api.com': respondStatus(503),
+      'api.ipify.org': respondStatus(503),
+    });
+    const snap = await svc.refresh(true); // 非 visible：lateBlock 修复对任意 doRefresh 生效
+    expect(snap.proxyBlocked).toBe('ts-exit-device-offline'); // 落 blocked 终态
+    expect(snap.error).toBeUndefined(); // 非 error（区分「出口无效」与「探测失败」）
+    expect(snap.proxy).toBeNull();
+    const proxyCalls = calls.filter((c) => PROXY_HOSTS.includes(hostOf(c.options) ?? '')).length;
+    expect(proxyCalls).toBe(3); // 仅 attempt0 的 3 端点；attempt1 被 shouldAbort 中止（未发起）
+  });
+
+  it('V7：非 visible refresh(true) 回归锚 → 首广播 direct/proxy 均保留旧值(被动不闪；防清值泛化到被动路径)', async () => {
+    const { svc, snapshots } = makeService();
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK) });
+    await svc.refresh(true); // seed
+    const base = snapshots.length;
+    routeByHost({ 'myip.ipip.net': respondOk(IPIP_OK), 'cloudflare.com': respondOk(TRACE_OK2) });
+    await svc.refresh(true); // 非 visible
+    const first = snapshots[base];
+    expect(first.loading).toBe(true);
+    expect(first.direct).toEqual({ ip: '1.2.3.4', country: '中国 北京', countryCode: 'cn' }); // 保留
+    expect(first.proxy).toEqual({ ip: '104.28.210.15', countryCode: 'US' }); // 保留旧 proxy（不清）
   });
 });

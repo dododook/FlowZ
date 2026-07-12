@@ -347,3 +347,25 @@ describe('SpeedTestService.measureViaTunnel（warm RTT，对齐 mihomo unified-d
     }
   });
 });
+
+describe('SpeedTestService.measureWarmRttViaHttpProxy（出口伴测薄包装：resolveSpeedTestTarget + 8000 超时 + 透传 latency）', () => {
+  it('默认 URL → 解析默认端点、超时 8000、透传 latency', async () => {
+    const s = new SpeedTestService(mockLog);
+    const spy = jest
+      .spyOn(s as unknown as Measurable, 'measureViaTunnel')
+      .mockResolvedValue({ latency: 55 });
+    const rtt = await s.measureWarmRttViaHttpProxy(6001);
+    expect(rtt).toBe(55);
+    expect(spy).toHaveBeenCalledWith(6001, 8000, resolveSpeedTestTarget(undefined));
+  });
+
+  it('自配 URL → 解析该端点；隧道失败 null 透传（调用方据此放弃写入、不写 -1）', async () => {
+    const s = new SpeedTestService(mockLog);
+    const spy = jest
+      .spyOn(s as unknown as Measurable, 'measureViaTunnel')
+      .mockResolvedValue({ latency: null });
+    const rtt = await s.measureWarmRttViaHttpProxy(6002, 'https://x.example/y');
+    expect(rtt).toBeNull();
+    expect(spy).toHaveBeenCalledWith(6002, 8000, resolveSpeedTestTarget('https://x.example/y'));
+  });
+});

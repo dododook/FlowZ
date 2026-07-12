@@ -47,12 +47,24 @@ function ProtoPill({ protocol }: { protocol?: string }) {
   );
 }
 
-/** 延迟徽标（数值 + 色档 / 超时 / N/A）；未测且非 N/A → 不渲染（与 SpeedBadge 口径一致）。 */
+/** 延迟徽标（异常态文案 / 数值 + 色档 / 超时 / N/A）；未测且非 N/A → 不渲染（与 SpeedBadge 口径一致）。 */
 function LatencyLabel({ item, className }: { item: NodePickerItem; className?: string }) {
   const { t } = useTranslation();
-  if (item.latencyNA) {
+  // 异常态（出口无效/未登录）优先：warn 文案替代假延迟（由 deriveLatencyBadge 构建期预算写入 statusLabel）。
+  if (item.statusLabel) {
     return (
-      <span className={cn('shrink-0 text-xs text-muted-foreground', className)}>
+      <span className={cn('shrink-0 text-xs font-medium text-warning', className)}>
+        {item.statusLabel}
+      </span>
+    );
+  }
+  // 不可测节点仅在「无值」时显 N/A；出口伴测给当前 TS/组网出口写入真实延迟后，照常显数值+色档。
+  if (item.latencyNA && item.latency === undefined) {
+    return (
+      <span
+        className={cn('shrink-0 text-xs text-muted-foreground', className)}
+        title={t('servers.exitProbeHint')}
+      >
         {t('servers.speedTestNotApplicable', 'N/A')}
       </span>
     );
@@ -188,9 +200,10 @@ export function NodePicker({
                 {current.address}
               </span>
             )}
-            {/* 延迟+角标包进恒渲染的 ms-auto 组：无延迟值时 LatencyLabel 返 null 也不丢右锚，角标恒贴最右。 */}
+            {/* 延迟+角标包进恒渲染的 ms-auto 组：无延迟值时 LatencyLabel 返 null 也不丢右锚，角标恒贴最右。
+                异常态文案（statusLabel）即便 hideTriggerLatency 也显——「出口无效/未登录」比延迟数值更该在 trigger 可见。 */}
             <span className="ms-auto flex shrink-0 items-center gap-1">
-              {!hideTriggerLatency && <LatencyLabel item={current} />}
+              {(current.statusLabel || !hideTriggerLatency) && <LatencyLabel item={current} />}
               <ChevronDown className="h-4 w-4 opacity-50" />
             </span>
           </>

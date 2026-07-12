@@ -161,6 +161,12 @@ export interface SubscriptionConfig {
     total?: number; // 总流量字节
     expire?: number; // 到期时间（Unix timestamp）
   };
+  // §16.3.4 条件 GET 验证器（上次 200 响应的 ETag / Last-Modified）：下次拉取带 If-None-Match / If-Modified-Since，
+  // 服务端 304 → 短路 parse/reconcile（零节点扰动、省流省渲染）。缺省=首次/无 validator 源，全量 GET（零回归）。
+  etag?: string;
+  lastModified?: string;
+  // 上次解析含 proxy-providers（Clash provider 型订阅）→ 主正文 304 会掩盖 provider 子资源独立变化 → 不发条件头（保守豁免）。
+  hasProviders?: boolean;
 }
 
 // ============================================================================

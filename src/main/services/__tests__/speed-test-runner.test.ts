@@ -44,10 +44,14 @@ describe('runSpeedTest', () => {
     expect(tray.setSpeedTesting).toHaveBeenCalledWith(true);
     // 关键：渲染入口也回写托盘（历史漏点），传同一份结果 Map + 全量 servers
     expect(tray.updateSpeedTestResults).toHaveBeenCalledTimes(1);
-    expect(tray.updateSpeedTestResults.mock.calls[0][0]).toBe(results);
+    expect(tray.updateSpeedTestResults.mock.calls[0][0]).toBe(results.results);
     expect(tray.updateSpeedTestResults.mock.calls[0][1]).toBe(servers);
-    // 渲染入口默认不弹托盘完成 toast（避免与 use-speed-test 自弹的 toast 重复）
-    expect(tray.updateSpeedTestResults.mock.calls[0][2]).toEqual({ toast: undefined });
+    // 渲染入口默认不弹托盘完成 toast（避免与 use-speed-test 自弹的 toast 重复）；§16.2 透传 outcome。
+    expect(tray.updateSpeedTestResults.mock.calls[0][2]).toEqual({
+      toast: undefined,
+      outcome: 'completed',
+      skipped: 0,
+    });
     // 逐节点广播（不可用→null→-1）
     expect(resultSends(send)).toEqual([
       { serverId: 's1', latency: -1 },
@@ -76,13 +80,17 @@ describe('runSpeedTest', () => {
   it('notifyTrayToast=true（托盘入口）：回写托盘并请求完成 toast', async () => {
     const { deps, tray } = makeDeps([makeServer('s1')]);
     await runSpeedTest(deps, { notifyTrayToast: true });
-    expect(tray.updateSpeedTestResults.mock.calls[0][2]).toEqual({ toast: true });
+    expect(tray.updateSpeedTestResults.mock.calls[0][2]).toEqual({
+      toast: true,
+      outcome: 'completed',
+      skipped: 0,
+    });
   });
 
   it('0 节点：复位托盘测速态（托盘入口已先置 true，否则永久卡「测速中」）+ 不回写结果', async () => {
     const { deps, tray } = makeDeps([]);
     const results = await runSpeedTest(deps);
-    expect(results.size).toBe(0);
+    expect(results.results.size).toBe(0);
     expect(tray.setSpeedTesting).toHaveBeenCalledWith(false);
     expect(tray.updateSpeedTestResults).not.toHaveBeenCalled();
   });

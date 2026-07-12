@@ -9,6 +9,7 @@
  */
 
 const TYPE_A = 0x0001;
+const TYPE_AAAA = 0x001c;
 const CLASS_IN = 0x0001;
 
 /**
@@ -95,6 +96,45 @@ export function decodeDnsAnswers(resp: Uint8Array): string[] {
       if (rdata + rdlength > resp.length) throw new RangeError('rdata out of bounds');
       if (type === TYPE_A && klass === CLASS_IN && rdlength === 4) {
         ips.push(`${resp[rdata]}.${resp[rdata + 1]}.${resp[rdata + 2]}.${resp[rdata + 3]}`);
+      }
+      off = rdata + rdlength;
+    }
+    return ips;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 从 DNS 响应抽出全部 A(4 字节)/AAAA(16 字节) 记录的 rdata **原始网络字节**（供 R3 decoy 段匹配，§14.4）。
+ * 任何异常/截断/RCODE!=0 → []。按报文出现顺序返回。
+ */
+export function extractAnswerIpBytes(resp: Uint8Array): Uint8Array[] {
+  try {
+    if (resp.length < 12) return [];
+    const view = new DataView(resp.buffer, resp.byteOffset, resp.byteLength);
+    if ((view.getUint16(2) & 0x000f) !== 0) return []; // RCODE != 0
+    const qd = view.getUint16(4);
+    const an = view.getUint16(6);
+    let off = 12;
+    for (let i = 0; i < qd; i++) {
+      off = skipName(resp, off);
+      off += 4;
+    }
+    const ips: Uint8Array[] = [];
+    for (let i = 0; i < an; i++) {
+      off = skipName(resp, off);
+      if (off + 10 > resp.length) throw new RangeError('answer header out of bounds');
+      const type = view.getUint16(off);
+      const klass = view.getUint16(off + 2);
+      const rdlength = view.getUint16(off + 8);
+      const rdata = off + 10;
+      if (rdata + rdlength > resp.length) throw new RangeError('rdata out of bounds');
+      if (
+        klass === CLASS_IN &&
+        ((type === TYPE_A && rdlength === 4) || (type === TYPE_AAAA && rdlength === 16))
+      ) {
+        ips.push(resp.slice(rdata, rdata + rdlength));
       }
       off = rdata + rdlength;
     }

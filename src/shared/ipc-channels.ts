@@ -87,6 +87,10 @@ export const IPC_CHANNELS = {
   // 出口 IP 信息（本地直连出口 / 代理出口）
   IP_INFO_GET: 'ipinfo:get',
 
+  // 解锁检测（AI/流媒体，经当前代理出口）：run 触发一轮检测（force 绕 TTL）；get 纯读最近快照（水合）
+  UNLOCK_RUN: 'unlock:run',
+  UNLOCK_GET: 'unlock:get',
+
   // 系统进程枚举（路由规则的进程快速选择器）
   SYSTEM_LIST_PROCESSES: 'system:listProcesses',
 
@@ -159,6 +163,8 @@ export const IPC_CHANNELS = {
   EVENT_AUTO_NODE_SWITCHED: 'event:autoNodeSwitched', // 自动换节点成功通知
   EVENT_PROXY_INVALID_NODES: 'proxy:invalid-nodes', // 启动 gate 剔除的非法节点（空数组=清陈旧标灰）
   EVENT_IP_INFO_UPDATED: 'event:ipInfoUpdated', // 出口 IP 信息更新
+  EVENT_UNLOCK_PROGRESS: 'event:unlockProgress', // 解锁检测：单个服务 settle 逐个点亮
+  EVENT_UNLOCK_INVALIDATED: 'event:unlockInvalidated', // 解锁检测：切节点/起停代理 → 缓存失效，渲染端复位重跑
   EVENT_RULE_RESOURCE_PROGRESS: 'event:ruleResourceProgress', // 规则资源下载进度
   EVENT_SPEED_TEST_RESULT: 'event:speedTestResult', // 测速单个节点完成（流式增量显示，payload={serverId,latency}）
   EVENT_SPEED_TEST_RESULT_LIST: 'speedTestResult', // 测速全部完成的结果列表（托盘→渲染端汇总 toast，payload=数组）——与逐节点 EVENT_SPEED_TEST_RESULT 为不同通道，勿合并

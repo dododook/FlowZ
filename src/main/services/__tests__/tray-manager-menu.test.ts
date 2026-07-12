@@ -132,4 +132,26 @@ describe('TrayManager 菜单状态映射 (#75)', () => {
     // getTrayIconPath(connected=true)
     expect(getTrayIconPath).toHaveBeenCalledWith(true);
   });
+
+  describe('updateSpeedTestResults keepTestingState（出口伴测合并不复位在飞测速态）', () => {
+    it('keepTestingState:true → isSpeedTesting 不复位、结果仍合并', () => {
+      const tm = makeTray();
+      const priv = tm as unknown as {
+        isSpeedTesting: boolean;
+        speedTestResults: Map<string, number | null>;
+      };
+      tm.setSpeedTesting(true);
+      tm.updateSpeedTestResults(new Map([['a', 42]]), [], { keepTestingState: true });
+      expect(priv.isSpeedTesting).toBe(true); // 未复位（在飞全量测速托盘态不被伴测熄灭）
+      expect(priv.speedTestResults.get('a')).toBe(42); // 仍合并入延迟表
+    });
+
+    it('缺省（无 keepTestingState）→ isSpeedTesting 复位（既有测速入口行为不变）', () => {
+      const tm = makeTray();
+      const priv = tm as unknown as { isSpeedTesting: boolean };
+      tm.setSpeedTesting(true);
+      tm.updateSpeedTestResults(new Map([['b', 7]]), []);
+      expect(priv.isSpeedTesting).toBe(false);
+    });
+  });
 });

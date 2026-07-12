@@ -62,7 +62,7 @@ describe('SpeedTestService 进度与流式回调', () => {
         progressCalled = true;
       }
     );
-    expect(r.size).toBe(0);
+    expect(r.results.size).toBe(0);
     expect(resultCalled).toBe(false);
     expect(progressCalled).toBe(false);
   });

@@ -198,6 +198,56 @@ describe('raceForward 三态 race', () => {
   });
 });
 
+describe('R3（§14.4）POISONED：decoy 答案不抢跑，first-clean-wins', () => {
+  it('decoy IP 的 HIT 弃之，干净上游胜出（即便 decoy 更快）', async () => {
+    const q = makeQ();
+    const resp = await raceForward(
+      q,
+      { tier1: [U('ali'), U('dnspod')], tier2: [] },
+      {
+        query: mockQuery(q, {
+          ali: { kind: 'HIT', delayMs: 5, ip: '31.13.95.169' }, // decoy（Facebook 31.13/16）→ POISONED 弃
+          dnspod: { kind: 'HIT', delayMs: 30, ip: '142.251.1.1' }, // 干净 → 胜出
+        }),
+      }
+    );
+    expect(classifyDnsResponse(resp, 1)).toBe('HIT');
+    expect(Array.from(resp.slice(-4))).toEqual([142, 251, 1, 1]); // 干净答案，非 decoy
+  });
+
+  it('全 POISONED → SERVFAIL（fail-safe：宁失败重试不连 decoy）', async () => {
+    const q = makeQ();
+    const resp = await raceForward(
+      q,
+      { tier1: [U('ali'), U('dnspod')], tier2: [] },
+      {
+        query: mockQuery(q, {
+          ali: { kind: 'HIT', ip: '31.13.95.169' }, // decoy
+          dnspod: { kind: 'HIT', ip: '162.125.1.1' }, // decoy（Dropbox 162.125/16）
+        }),
+      }
+    );
+    const view = new DataView(resp.buffer, resp.byteOffset, resp.byteLength);
+    expect(view.getUint16(2) & 0x000f).toBe(2); // SERVFAIL（非 HIT）
+  });
+
+  it('decoy 在 Tier1、干净在 Tier2 → Tier2 兜底胜出', async () => {
+    const q = makeQ();
+    const resp = await raceForward(
+      q,
+      { tier1: [U('ali')], tier2: [U('system', 2)] },
+      {
+        query: mockQuery(q, {
+          ali: { kind: 'HIT', ip: '157.240.17.35' }, // decoy → Tier1 无干净 HIT
+          system: { kind: 'HIT', ip: '142.251.2.2' }, // Tier2 干净胜出
+        }),
+      }
+    );
+    expect(classifyDnsResponse(resp, 1)).toBe('HIT');
+    expect(Array.from(resp.slice(-4))).toEqual([142, 251, 2, 2]);
+  });
+});
+
 describe('classifyDnsResponse 边界（review 修复）', () => {
   const q = makeQ();
   it('TC=1 截断（NOERROR + 含 A）→ FAIL（不把部分 A 当权威转发）', () => {

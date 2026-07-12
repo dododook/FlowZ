@@ -18,6 +18,7 @@ export * from './backup-handlers';
 export * from './diagnostic-handlers';
 export * from './helper-handlers';
 export * from './ipinfo-handlers';
+export * from './unlock-handlers';
 export * from './system-handlers';
 export * from './rule-resource-handlers';
 export * from './stats-subscription-handlers';

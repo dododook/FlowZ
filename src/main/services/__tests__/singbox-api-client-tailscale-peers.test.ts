@@ -97,6 +97,7 @@ describe('toTailscaleStatusPeers', () => {
       exitNode: true,
       exitNodeOption: true,
       active: true,
+      stableID: 'nGK', // 热重设 exit_node 用（field 12 透传）
     });
   });
 

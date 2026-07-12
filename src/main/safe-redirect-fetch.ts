@@ -42,6 +42,9 @@ export interface SafeRedirectFetchOptions<R extends MinimalResponse> {
   /** 起始 URL，调用方已保证为 http(s)。 */
   url: string;
   userAgent: string;
+  /** 附加请求头（§16.3.4 条件 GET 的 If-None-Match / If-Modified-Since，缓存验证器非凭据，逐跳携带无泄漏面）。
+   *  与 User-Agent 合并（同名以本字段为准）；缺省不加。 */
+  headers?: Record<string, string>;
   /** 仅实际经代理（proxied socks 出口、本机内网不可达）时豁免 FlowZ FakeIP；直连/端口回退传 false。 */
   exemptFakeIp: boolean;
   /** 重定向上限（含首跳之外的跳数），默认 5。 */
@@ -88,7 +91,7 @@ export async function safeRedirectFetch<R extends MinimalResponse>(
   let response: R | null = null;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     response = await opts.fetchImpl(currentUrl, {
-      headers: { 'User-Agent': opts.userAgent },
+      headers: { 'User-Agent': opts.userAgent, ...opts.headers },
       redirect: 'manual',
       ...(opts.signal ? { signal: opts.signal } : {}),
     });

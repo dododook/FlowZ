@@ -512,3 +512,41 @@ describe('tailscaleSlotTaken（Tailscale 单节点硬限：纯函数，UI 拦截
     expect(tailscaleSlotTaken(servers)).toBe(false);
   });
 });
+
+describe('isSpeedTestable path-aware（§16.1：TS-exit 仅主核池路径可测）', () => {
+  const custom = (isEndpoint: boolean): ServerConfig =>
+    ({ id: 'c', name: 'c', protocol: 'custom', customSettings: { isEndpoint } }) as any;
+
+  it('普通 WireGuard（非 reverseMesh）：任何 caps 恒可测', () => {
+    expect(isSpeedTestable(wg())).toBe(true);
+    expect(isSpeedTestable(wg(), { mainCorePool: false })).toBe(true);
+    expect(isSpeedTestable(wg(), { mainCorePool: true })).toBe(true);
+  });
+
+  it('WG reverseMesh（system 内核接口）：恒不可测（假好值风险）', () => {
+    expect(isSpeedTestable(wg(undefined, true, true), { mainCorePool: true })).toBe(false);
+  });
+
+  it('TS-exit（exitNode 非空 + 非 reverseMesh）：仅 mainCorePool=true 可测', () => {
+    const tsExit = ts(undefined, true, false);
+    expect(isSpeedTestable(tsExit)).toBe(false); // 缺省 caps（临时核口径）
+    expect(isSpeedTestable(tsExit, { mainCorePool: false })).toBe(false);
+    expect(isSpeedTestable(tsExit, { mainCorePool: true })).toBe(true);
+  });
+
+  it('TS-mesh-only（无 exitNode）：恒不可测（公网黑洞必假超时）', () => {
+    const tsMesh = ts(undefined, false);
+    expect(isSpeedTestable(tsMesh, { mainCorePool: true })).toBe(false);
+    expect(isSpeedTestable(tsMesh, { mainCorePool: false })).toBe(false);
+  });
+
+  it('TS-reverseMesh（system_interface）：恒不可测（非选中时测直连假好值）', () => {
+    const tsRev = ts(undefined, true, true);
+    expect(isSpeedTestable(tsRev, { mainCorePool: true })).toBe(false);
+  });
+
+  it('custom endpoint：恒不可测（无 gate 真值）；非 endpoint custom 可测', () => {
+    expect(isSpeedTestable(custom(true), { mainCorePool: true })).toBe(false);
+    expect(isSpeedTestable(custom(false), { mainCorePool: true })).toBe(true);
+  });
+});

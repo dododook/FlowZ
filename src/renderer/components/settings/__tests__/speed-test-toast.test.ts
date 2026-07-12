@@ -30,6 +30,7 @@ const labels = {
   running: (tested: number, total: number) => `RUN:${tested}/${total}`,
   done: 'DONE',
   fail: 'FAIL',
+  interrupted: 'INTERRUPTED',
 };
 const ID = { id: 'speedtest-aggregate' };
 const result = (serverId: string) => resultCb?.({ serverId, latency: 10 });

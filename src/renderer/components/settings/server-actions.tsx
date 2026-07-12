@@ -17,6 +17,7 @@ import {
 import { Edit, Trash2, Copy, CopyPlus, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { isSpeedTestable, isEndpointProtocol } from '../../../shared/endpoint-routes';
+import { useAppStore } from '../../store/app-store';
 import {
   hasShareLink,
   type ServerConfigWithId,
@@ -41,9 +42,10 @@ export function ServerActions({
   onDelete,
 }: ServerActionsProps) {
   const { t } = useTranslation();
-  // 不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：**隐藏 ⚡**（不再 disabled 占位致歧义）+ 测速徽标显
-  // 「不支持测速」，与后端 buildSpeedTestOutbound / 统一测速排除同口径（isSpeedTestable 单一真值）。
-  const testable = isSpeedTestable(server);
+  // 不可测节点（reverseMesh / 自定义 endpoint / 无 exitNode 或未登录 TS）：**隐藏 ⚡** + 测速徽标显「不支持测速」，与
+  // 后端口径同（isSpeedTestable path-aware 单一真值）。§16.1：TS-exit 仅代理运行（主核池可用）时可 ⚡。
+  const proxyRunning = useAppStore((s) => !!s.connectionStatus?.proxyCore?.running);
+  const testable = isSpeedTestable(server, { mainCorePool: proxyRunning });
   return (
     <div className="nd-acts">
       {testable && (

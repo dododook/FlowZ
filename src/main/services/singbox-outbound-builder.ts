@@ -664,6 +664,8 @@ export interface OutboundsDeps {
   // Phase 2：本次启动 sing-box 是否会以提权运行（内核接口可创建）= TUN 模式 + helper。缺省 undefined/false
   // （preflight/speedtest/snapshot/系统代理路径）→ reverseMesh 节点不发射（system:true 需提权，否则启动 FATAL）。
   systemInterfaceAvailable?: boolean;
+  // §15 主核测速探测池：K 个 probe-selector-k selector 的端口数（allocateProbePorts 3+K 产出）。空/缺省=不注入池。
+  probePoolPorts?: number[];
 }
 
 /**
@@ -847,7 +849,10 @@ export function buildOutbounds(
           continue;
         }
         try {
-          // #58：域名 server 的 WG endpoint 需 dial 级 domain_resolver，与普通协议同档（getNodeResolverTag dial）。
+          // #58：域名 server 的 WG endpoint 需 dial 级 domain_resolver（**仅用于 peer 地址解析**，与普通协议同档）。
+          // R4（§14.4，回退 E2）：peer 解析回 getNodeResolverTag(config,'dial')（race 多上游）。E2 曾改 dns-bootstrap 治
+          // WARP 目的域名投毒——已证伪：endpoint domain_resolver 结构上只喂 peer 解析、碰不到目的域名 dial 解析（§14.3
+          // 官方源码 endpoint.go L94-100 vs L229-247）。目的域名投毒的真修在 dns-builder 的 FakeIP 影子规则（R1，§14.4）。
           const ep = buildWireGuardEndpoint(server, tag, getNodeResolverTag(config, 'dial'));
           if (downgradeMeshToGvisor) {
             ep.system = false; // 非 TUN：降级 userspace gVisor 栈（零提权可跑）
@@ -1026,6 +1031,24 @@ export function buildOutbounds(
     type: 'block',
     tag: 'block',
   });
+
+  // §15 主核测速探测池 selector：K 个 probe-selector-k，成员 = proxy-selector 同款全量 nodeTags + direct。
+  // default=direct（sing-box 要求 default ∈ outbounds 成员，direct 恒为成员）；测速时按波 gRPC selectOutbound 把该槽
+  // 热切到被测节点（15.3 命门已证 live 生效）。interrupt_exist_connections:true 清在飞连接——同槽跨波重定向前断残留、
+  // 防跨节点串味。与主 proxy-selector 独立 groupTag → 切 probe 池零扰用户出口（隔离）。
+  // §15.11-F4：门控仅取 probePoolPorts.length（与 probe-in-k/route/dns-probe-exit-k 三 builder 一致），**独立于
+  //   config/selectedServer 分支**——保「有池端口 ⟺ 池 selector 恒发射」，杜绝 fallback 分支下 probe-in-k→probe-selector-k
+  //   悬空引用 FATAL（今日 config 恒真、不可达；此为未来分支健壮性对齐）。fallback 分支 nodeTags 空 → 成员=[direct]、
+  //   default=direct（合法）。置于 direct/block 之后：成员引用的 direct 已在 outbounds 中（tag 解析，序无关，稳妥）。
+  for (let k = 0; k < (deps.probePoolPorts?.length ?? 0); k++) {
+    outbounds.push({
+      type: 'selector',
+      tag: `probe-selector-${k}`,
+      outbounds: [...nodeTags, 'direct'],
+      default: 'direct',
+      interrupt_exist_connections: true,
+    });
+  }
 
   // Shadow-TLS 后处理：如果主节点或任意辅助节点使用了 Shadow-TLS，
   // 为每个使用 Shadow-TLS 的节点插入内层 SS outbound

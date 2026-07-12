@@ -1,14 +1,28 @@
 /**
  * 节点域名解析 race 转发核心（issue #147 §4/§5）。纯逻辑 + 注入上游查询（单测零网络）。
  *
- * 三态 race：
+ * 四态 race（R3 §14.4 加 POISONED）：
  *  - HIT 抢跑：任一上游返回 NOERROR+含 qtype 记录 → 立即取该上游【完整响应 wire】透传（回填内核 query id），取消其余；
+ *  - POISONED（first-clean-wins）：HIT 但答案 IP ∈ GFW decoy 段（gfw-decoy-ips）→ 弃之、不抢跑、按 FAIL 递减
+ *    （等干净上游胜出）；全 settle 仅剩 POISONED → 当 FAIL 走 SERVFAIL（fail-safe：宁可失败重试，不连 decoy）；
  *  - EMPTY 不抢跑：上游返回空解析（NODATA/NXDOMAIN）不立即用 → 等本层所有上游 settle 才下「空」结论；
  *  - FAIL≠EMPTY：上游故障（SERVFAIL/超时/畸形）不算答案；全 FAIL → buildServfail。
  * Tier 分层：先 Tier1 抢跑；Tier1 全无 HIT 才查 Tier2（兜底，不与 Tier1 抢跑）。整体受 totalBudgetMs 硬约束。
  */
-import { decodeDnsQuestion, classifyDnsResponse, setDnsMessageId, buildServfail } from './dns-wire';
+import {
+  decodeDnsQuestion,
+  classifyDnsResponse,
+  setDnsMessageId,
+  buildServfail,
+  extractAnswerIpBytes,
+} from './dns-wire';
+import { isDecoyIp } from './gfw-decoy-ips';
 import type { ResolveUpstream } from './node-resolver-upstreams';
+
+/** R3：HIT 响应的答案 IP 是否含 GFW decoy 段（→ 判 POISONED，弃之）。 */
+function isPoisonedResponse(resp: Uint8Array): boolean {
+  return extractAnswerIpBytes(resp).some((ip) => isDecoyIp(ip));
+}
 
 /** 注入：对一个上游发 query wire，返回响应 wire；FAIL（超时/网络错/拒绝）→ reject。signal 触发即中断。 */
 export type UpstreamQueryFn = (
@@ -39,7 +53,8 @@ function raceTier(
   qtype: number,
   upstreams: readonly ResolveUpstream[],
   fn: UpstreamQueryFn,
-  budgetSignal: AbortSignal
+  budgetSignal: AbortSignal,
+  log?: (level: 'debug' | 'info' | 'warn', message: string) => void
 ): Promise<TierResult> {
   if (upstreams.length === 0) return Promise.resolve({});
   return new Promise<TierResult>((resolve) => {
@@ -65,7 +80,15 @@ function raceTier(
         (resp) => {
           if (settled) return;
           const cls = classifyDnsResponse(resp, qtype);
-          if (cls === 'HIT') return finish({ hit: resp });
+          if (cls === 'HIT') {
+            // R3（§14.4）first-clean-wins：HIT 但答案含 GFW decoy → POISONED，弃之、按 FAIL 递减（不抢跑，等干净上游）。
+            if (isPoisonedResponse(resp)) {
+              log?.('warn', 'dns-race: 上游返回 decoy 答案，判 POISONED 丢弃（first-clean-wins）');
+              if (--pending === 0) finish({ empty });
+              return;
+            }
+            return finish({ hit: resp });
+          }
           if (cls === 'EMPTY' && !empty) empty = resp;
           if (--pending === 0) finish({ empty });
         },
@@ -94,13 +117,27 @@ export async function raceForward(
   const timer = setTimeout(() => budgetCtrl.abort(), opts.totalBudgetMs ?? DEFAULT_RACE_BUDGET_MS);
   try {
     // 阶段 1：Tier1 抢跑
-    const r1 = await raceTier(query, q.qtype, upstreams.tier1, opts.query, budgetCtrl.signal);
+    const r1 = await raceTier(
+      query,
+      q.qtype,
+      upstreams.tier1,
+      opts.query,
+      budgetCtrl.signal,
+      opts.log
+    );
     if (r1.hit) return setDnsMessageId(r1.hit, q.id);
     let empty = r1.empty;
 
     // 阶段 2：Tier1 无 HIT 且预算未尽 → Tier2 兜底（不与 Tier1 抢跑）
     if (!budgetCtrl.signal.aborted && upstreams.tier2.length > 0) {
-      const r2 = await raceTier(query, q.qtype, upstreams.tier2, opts.query, budgetCtrl.signal);
+      const r2 = await raceTier(
+        query,
+        q.qtype,
+        upstreams.tier2,
+        opts.query,
+        budgetCtrl.signal,
+        opts.log
+      );
       if (r2.hit) return setDnsMessageId(r2.hit, q.id);
       empty = empty ?? r2.empty;
     }

@@ -483,3 +483,35 @@ describe('buildRouteConfig — update-in 钉死路由（Phase 2）', () => {
     expect(updateInRule(rc).outbound).toBe('direct');
   });
 });
+
+describe('buildRouteConfig — §15 主核测速探测池', () => {
+  const hasProbeIn = (r: { inbound?: string | string[] }, tag: string): boolean =>
+    Array.isArray(r.inbound) ? r.inbound.includes(tag) : r.inbound === tag;
+
+  it('probePoolPorts → K 条 probe-in-k → probe-selector-k 钉死路由（紧随 A2、先于分流 hijack-dns）', () => {
+    const rc = buildRouteConfig(
+      cfg([]),
+      idMap([]),
+      deps([], { probePoolPorts: [1, 2, 3], probeDirectPort: 21001, probeProxyPort: 21002 })
+    );
+    for (let k = 0; k < 3; k++) {
+      const rule = rc.rules.find((r) => hasProbeIn(r, `probe-in-${k}`));
+      expect(rule).toBeTruthy();
+      expect(rule!.action).toBe('route');
+      expect(rule!.outbound).toBe(`probe-selector-${k}`);
+    }
+    const poolIdx = rc.rules.findIndex((r) => hasProbeIn(r, 'probe-in-0'));
+    const hijackIdx = rc.rules.findIndex((r) => r.action === 'hijack-dns');
+    expect(poolIdx).toBeGreaterThanOrEqual(0);
+    expect(hijackIdx).toBeGreaterThan(poolIdx); // 先于分流
+  });
+
+  it('无 probePoolPorts → 零 probe-in-k 路由（回退临时核）', () => {
+    const rc = buildRouteConfig(cfg([]), idMap([]), deps([]));
+    expect(
+      rc.rules.some(
+        (r) => Array.isArray(r.inbound) && r.inbound.some((i) => i.startsWith('probe-in-'))
+      )
+    ).toBe(false);
+  });
+});

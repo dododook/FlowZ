@@ -12,6 +12,7 @@
 import { toast } from 'sonner';
 // 相对路径（非 @/ 别名）：jest 无 @/ moduleNameMapper，别名会致本模块单测无法解析/mock。
 import { api } from '../../ipc/api-client';
+import type { SpeedTestOutcome } from '../../../shared/speed-test';
 
 const TOAST_ID = 'speedtest-aggregate';
 
@@ -23,15 +24,25 @@ export interface AggSpeedToastLabels {
   done: string;
   /** 全部结束、有失败。 */
   fail: string;
+  /** 全部结束、被核生命周期跃迁打断（§16.2 interrupted）。 */
+  interrupted: string;
+  /** done 副行：n 个节点未纳入本轮（波前缺席，§16 Layer2）。缺省不显副行。 */
+  skippedSummary?: (n: number) => string;
+  /** interrupted 副行：已完成 tested/total 节点，其余保留原值。 */
+  interruptedSummary?: (tested: number, total: number) => string;
 }
 
 // 模块级共享态：active=在跑+排队的测速次数；union=全部请求节点并集（去重）；tested=已测唯一节点（result 去重）。
 let active = 0;
 let anyFailed = false;
+// §16.2：任一次测速 outcome=interrupted（核跃迁/崩溃打断）→ 归零时按优先级 fail>interrupted>done 弹 warning。
+let anyInterrupted = false;
 let lastError: string | undefined;
 let labels: AggSpeedToastLabels | null = null;
 const union = new Set<string>();
 const tested = new Set<string>();
+// §16 Layer2：本聚合窗口内「波前缺席」节点并集（not-in-pool + ts-not-ready），归零时 done toast 副行「N 未纳入」。
+const skipped = new Set<string>();
 let unsubResult: (() => void) | null = null;
 
 function render(): void {
@@ -44,9 +55,11 @@ export function beginAggSpeedTest(serverIds: string[], l: AggSpeedToastLabels): 
   labels = l;
   if (active === 0) {
     anyFailed = false;
+    anyInterrupted = false;
     lastError = undefined;
     union.clear();
     tested.clear();
+    skipped.clear();
     // 首个测速：订阅 result 事件（每测完一个节点回 serverId），去重累计已测唯一节点。
     unsubResult = api.server.onSpeedTestResult(({ serverId }) => {
       tested.add(serverId);
@@ -58,25 +71,42 @@ export function beginAggSpeedTest(serverIds: string[], l: AggSpeedToastLabels): 
   render();
 }
 
-/** 一次测速结束：引用计数--；归零则一次 success/error + 复位并退订，否则更新进度、保持 loading。 */
-export function endAggSpeedTest(failed: boolean, error?: string): void {
+/** 一次测速结束：引用计数--；归零则一次 success/warning/error + 复位并退订，否则更新进度、保持 loading。
+ *  skippedIds（§16 Layer2）：本次波前缺席节点 id（not-in-pool + ts-not-ready），并入 skipped 集供 done 副行。 */
+export function endAggSpeedTest(
+  failed: boolean,
+  error?: string,
+  outcome?: SpeedTestOutcome,
+  skippedIds?: string[]
+): void {
   if (failed) {
     anyFailed = true;
     lastError = error ?? lastError;
   }
+  if (outcome === 'interrupted') anyInterrupted = true;
+  for (const id of skippedIds ?? []) skipped.add(id);
   active = Math.max(0, active - 1);
   if (active > 0) {
     render();
     return;
   }
-  // 全部结束：一次 success/error + 复位 + 退订。
+  // 全部结束：一次 toast + 复位 + 退订。优先级 fail > interrupted > done（§16.2）：真实异常最高，核跃迁打断次之
+  // （已测保留、未测原值），全成功最低。interrupted/done 带 §16 Layer2 副行（已完成 x/y / N 未纳入）。
   if (labels) {
-    if (anyFailed) toast.error(labels.fail, { id: TOAST_ID, description: lastError });
-    else toast.success(labels.done, { id: TOAST_ID });
+    if (anyFailed) {
+      toast.error(labels.fail, { id: TOAST_ID, description: lastError });
+    } else if (anyInterrupted) {
+      const desc = labels.interruptedSummary?.(tested.size, union.size);
+      toast.warning(labels.interrupted, { id: TOAST_ID, ...(desc ? { description: desc } : {}) });
+    } else {
+      const desc = skipped.size > 0 ? labels.skippedSummary?.(skipped.size) : undefined;
+      toast.success(labels.done, { id: TOAST_ID, ...(desc ? { description: desc } : {}) });
+    }
   }
   labels = null;
   union.clear();
   tested.clear();
+  skipped.clear();
   unsubResult?.();
   unsubResult = null;
 }
@@ -85,7 +115,9 @@ export function endAggSpeedTest(failed: boolean, error?: string): void {
 export function __resetAggSpeedTestForTest(): void {
   active = 0;
   anyFailed = false;
+  anyInterrupted = false;
   lastError = undefined;
+  skipped.clear();
   labels = null;
   union.clear();
   tested.clear();

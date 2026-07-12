@@ -292,7 +292,20 @@ function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
   // 「需登录」角标；tailscaleIPs（self.tailscaleIPs）入 store 供节点卡「组网信息」popover 展示内网 IP。
   // backendState 仅本地驱动登录 toast（不入 store）；authURL 除驱动 toast 外，NeedsLogin 时【入 store】（缺陷4，下方），
   // 是主核 always-emit 路径取消后恢复登录 URL 的可靠来源。
-  useAppStore.getState().setTailscaleLoginState(data.serverId, data.loggedIn);
+  // W1 登录判决门（§12.1）：仅 definitive 帧写登录态。启动早期过渡帧（NoState/Stopped 等 backendState 未达
+  // Running/Starting）被主进程 emitTailscaleStatus 折叠成 loggedIn=false——那是「后端尚未启完」而非「凭据无效」，
+  // 若无条件覆写会把缓存里的 true 翻 false → 徽标闪「未登录」+ 写穿 localStorage 毒化缓存（P5 根因）。过渡态对凭据
+  // 没有判决 → 跳过（不动登录态/缓存）；definitive-in（loggedIn=true，主进程已算 Running/Starting && !expired）与
+  // definitive-out（NeedsLogin/NeedsMachineAuth/expired）才写。不触碰主进程 tailscaleStatusCache.loggedIn（§9 M-gate
+  // 依赖它做 exit-block gating，过渡帧折叠 false 在主进程侧保守安全，原样保留）。真 NeedsLogin/expired 照常即时判决。
+  const definitiveOut =
+    data.backendState === 'NeedsLogin' ||
+    data.backendState === 'NeedsMachineAuth' ||
+    data.expired === true;
+  const definitiveIn = data.loggedIn === true;
+  if (definitiveIn || definitiveOut) {
+    useAppStore.getState().setTailscaleLoginState(data.serverId, definitiveIn);
+  }
   // 内网 IP（self.tailscaleIPs）入 store，组网卡 popover 据此显示。
   useAppStore.getState().setTailscaleIps(data.serverId, data.tailscaleIPs || []);
   // L4：对端列表入 store，供出口节点下拉 + 组网信息 popover（peers 已排除 self，由 userGroups 摊平）。
@@ -451,6 +464,26 @@ export function useNativeEventListeners() {
         for (const st of snap.statuses) {
           store.setTailscaleIps(st.serverId, st.tailscaleIPs || []);
           store.setTailscalePeers(st.serverId, st.peers || []);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // G-peek：窗口内存回收重建后 renderer store 全空 → 状态栏丢「出口无效/IP」显示直到下次主进程广播。挂载时若
+  // store.ipInfo 为空，纯读（peek，零探测）水合一次。**不**用 get(false)：proxyBlocked/error 终态 TTL 仅 10s，
+  // 过期即触发真探测——正是无效出口下要消灭的挂载触发面。普通 hide→show 不 remount、store 保留，本 effect 不空跑。
+  useEffect(() => {
+    if (useAppStore.getState().ipInfo) return; // 已有快照（普通挂载）→ 不覆盖
+    let cancelled = false;
+    void api.ipInfo
+      .peek()
+      .then((snap) => {
+        if (cancelled || useAppStore.getState().ipInfo) return; // 期间已被事件填充 → 不覆盖
+        if (snap && (snap.direct || snap.proxy || snap.updatedAt)) {
+          useAppStore.setState({ ipInfo: snap });
         }
       })
       .catch(() => {});

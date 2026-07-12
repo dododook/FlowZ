@@ -123,6 +123,11 @@ export class SubscriptionScheduler {
         userInfo: (typeof subs)[number]['userInfo'];
         partial?: boolean;
         failedProviders?: string[];
+        // §16.3.4：条件 GET 结果——notModified 时跳过 reconcile（仅刷元数据）；validators 回写供下次条件 GET。
+        etag?: string;
+        lastModified?: string;
+        hasProviders?: boolean;
+        notModified?: boolean;
       }> = [];
       for (const sub of subs) {
         if (!sub.autoUpdate) continue;
@@ -154,11 +159,16 @@ export class SubscriptionScheduler {
         }
 
         try {
+          // §16.3.4：条件 GET——provider 型订阅豁免；否则带上次 validator（304 → notModified 短路）。
+          const conditional = sub.hasProviders
+            ? undefined
+            : { etag: sub.etag, lastModified: sub.lastModified };
           const result = await this.subscriptionService.fetchSubscription(
             sub.url,
             sub.id,
             subViaProxy,
-            sub.userAgent ?? config.subscriptionUserAgent
+            sub.userAgent ?? config.subscriptionUserAgent,
+            conditional
           );
           fetched.push({
             subId: sub.id,
@@ -167,6 +177,10 @@ export class SubscriptionScheduler {
             userInfo: result.userInfo,
             partial: result.partial,
             failedProviders: result.failedProviders,
+            etag: result.etag,
+            lastModified: result.lastModified,
+            hasProviders: result.hasProviders,
+            notModified: result.notModified,
           });
           this.backoff.recordSuccess(sub.id);
         } catch (e: any) {
@@ -191,12 +205,30 @@ export class SubscriptionScheduler {
       for (const f of fetched) {
         const sub = fresh.subscriptions?.find((x) => x.id === f.subId);
         if (!sub) continue; // 订阅在此期间被删除 → 跳过
+        // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile（零节点扰动、绝不误删）。
+        if (f.notModified) {
+          sub.lastUpdated = nowIso;
+          if (f.etag) sub.etag = f.etag;
+          if (f.lastModified) sub.lastModified = f.lastModified;
+          updated++;
+          continue;
+        }
         const oldServers = fresh.servers.filter((s) => s.subscriptionId === f.subId);
-        const { servers: kept, deletedIds } = SubscriptionService.reconcileServers(
+        const { servers: kept, deletedIds, contentChanged } = SubscriptionService.reconcileServers(
           oldServers,
           f.servers,
           nowIso
         );
+        // L-5：200 但内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers（避免顺序 churn）。
+        if (!contentChanged && !f.partial) {
+          sub.lastUpdated = nowIso;
+          if (f.userInfo) sub.userInfo = f.userInfo;
+          sub.etag = f.etag;
+          sub.lastModified = f.lastModified;
+          sub.hasProviders = f.hasProviders;
+          updated++;
+          continue;
+        }
         // partial（Clash provider 部分失败）→ merge-only：M1 provider 级精确——只保留失败 provider 名下的
         // 下架节点，成功 provider 的真下架正常删除。
         let finalKept = kept;
@@ -220,6 +252,11 @@ export class SubscriptionScheduler {
         fresh.servers = [...others, ...finalKept];
         sub.lastUpdated = nowIso;
         if (f.userInfo) sub.userInfo = f.userInfo;
+        // §16.3.4：回写验证器 + hasProviders（下次条件 GET / provider 豁免）。自动路径**不 force-restart**（§16.3.4b③ 不变量）。
+        // L-3：200 路径无条件写 etag/lastModified（含清除），服务端撤 validator 后不残留旧值致伪 304。
+        sub.etag = f.etag;
+        sub.lastModified = f.lastModified;
+        sub.hasProviders = f.hasProviders;
         updated++;
       }
 

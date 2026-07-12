@@ -24,6 +24,9 @@ export interface NodePickerItem {
   latency?: number;
   /** 不可测节点（Tailscale / endpoint 组网）→ 显 N/A，不显延迟数值。 */
   latencyNA?: boolean;
+  /** 异常态文案（「出口无效」/「未登录」）：有值时 LatencyLabel 优先渲染为 warn 文案，压过 latency/latencyNA
+   *  （由 deriveLatencyBadge 在 buildServerPickerModel 处预算——纯项无 store 访问，态须构建期喂入）。 */
+  statusLabel?: string;
   /** 地址（触发器副文本 + 参与搜索）。 */
   address?: string;
   /** 分组 id（映射到 groups 顺序）；缺省 → 归「无分组」桶（如直连哨兵恒置顶）。 */
@@ -52,8 +55,10 @@ export interface NodePickerSection {
 }
 
 /** 延迟数值 → 色档（阈值单一真值：server-list-helpers 的 getLatencyColor / getLatencyBg 均由此派生）。 */
-export function latencyTone(latency: number | undefined, na?: boolean): LatencyTone {
-  if (na) return 'idle';
+export function latencyTone(latency: number | undefined, _na?: boolean): LatencyTone {
+  // _na（不可测标记）不再影响色档：无值→idle 灰（未测/不可测且伴测未写入），有值即按数值上色。出口伴测
+  // （exit-probe-latency）会给「当前 TS/组网出口」写入真实延迟，那时该显真实色档；组网身份由 dotToneOf 的 mesh
+  // 青点单独标识，不靠这里的灰。保留 _na 入参仅为调用点签名兼容。
   if (latency === undefined) return 'idle';
   if (latency < 0) return 'bad'; // 超时（-1）
   if (latency < 100) return 'good';

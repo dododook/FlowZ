@@ -171,10 +171,19 @@ byteDiffDescribe(
           (r.server === 'dns-domestic' &&
             Array.isArray(r.domain_keyword) &&
             (r.domain_keyword as string[]).includes('stun'));
-        const curRules = allCurRules.filter((r) => !isFakeIpFilter(r));
+        // R1（§14.4）：FakeIP 分支的境内/境外「影子规则」（S0 geosite-cn→境内 / S1 dns-remote catch-all 经隧道），
+        // 均 query_type:[A,AAAA] 且 server≠fakeip——治 endpoint 目的域名 dial 解析被投毒。与 fake-ip-filter 同理从
+        // 逐字节对比剥离、单独断言条数。基线（frozen 于 R1 前）FakeIP 档仅 fakeip 一条 query_type 规则。
+        const isShadowRule = (r: AnyCfg) =>
+          Array.isArray(r.query_type) &&
+          (r.query_type as string[]).includes('A') &&
+          r.server !== 'fakeip';
+        const curRules = allCurRules.filter((r) => !isFakeIpFilter(r) && !isShadowRule(r));
         const hasFakeIp = (cur.dns.servers as AnyCfg[]).some((s) => s.tag === 'fakeip');
         expect(allCurRules.filter(isFakeIpFilter).length).toBe(hasFakeIp ? 2 : 0);
-        expect(curRules.length).toBe(baseRules.length); // 规则条数不变（rule1 原位替换，filter 已剥离）
+        // FakeIP 档 S0(geosite srs 齐)+S1 = 2；无 FakeIP 档 0。srs 缺失时 S0 跳过（1），本测试环境 srs 齐全故 2。
+        expect(allCurRules.filter(isShadowRule).length).toBe(hasFakeIp ? 2 : 0);
+        expect(curRules.length).toBe(baseRules.length); // 规则条数不变（rule1 原位替换，fake-ip-filter/影子规则已剥离）
         // 基线 rule1：含 node-a 域名的那条
         const baseR1Idx = baseRules.findIndex(
           (r) =>

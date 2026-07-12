@@ -27,10 +27,12 @@ import type {
   InvalidNodeInfo,
   ImportParseResult,
 } from '../../shared/types';
+import type { UnlockSnapshot, UnlockProgress } from '../../shared/unlock-detection';
 import type { SubscriptionPreviewResult } from '../../shared/subscription-preview';
 import type { WarpWireGuardDraft } from '../../shared/warp';
 import type { BackupCategory } from '../../shared/backup-categories';
 import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
+import type { SpeedTestInvokeResult } from '../../shared/speed-test';
 
 /**
  * 代理控制 API
@@ -395,7 +397,7 @@ export const serverApi = {
   /**
    * 测试指定服务器延迟，不传则测试所有服务器
    */
-  async speedTest(serverIds?: string[]): Promise<Record<string, number>> {
+  async speedTest(serverIds?: string[]): Promise<SpeedTestInvokeResult> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_SPEED_TEST, { serverIds });
   },
 
@@ -581,14 +583,41 @@ export const ruleResourcesApi = {
  * 出口 IP 信息 API
  */
 export const ipInfoApi = {
-  /** 获取出口 IP 快照（force 强制重测） */
-  async get(force = false): Promise<IpInfoSnapshot> {
-    return ipcClient.invoke(IPC_CHANNELS.IP_INFO_GET, { force });
+  /** 获取出口 IP 快照。force=强制重测（绕 TTL）；visible=手动重探可见流程（清当前出口→检测中→结果/超时，仅与 force 搭配）。 */
+  async get(force = false, visible = false): Promise<IpInfoSnapshot> {
+    return ipcClient.invoke(IPC_CHANNELS.IP_INFO_GET, { force, visible });
+  },
+
+  /** 纯读当前快照（零探测）：窗口重建后 store 为空时水合状态栏，避免丢「出口无效/IP」显示。绝不触发探测（区别于 get）。 */
+  async peek(): Promise<IpInfoSnapshot> {
+    return ipcClient.invoke(IPC_CHANNELS.IP_INFO_GET, { peek: true });
   },
 
   /** 监听出口 IP 更新事件 */
   onUpdated(listener: (snap: IpInfoSnapshot) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_IP_INFO_UPDATED, listener);
+  },
+};
+
+/**
+ * 解锁检测 API（AI/流媒体，经当前代理出口）。照 ipInfoApi 范式（invoke + on），preload 零改。
+ */
+export const unlockApi = {
+  /** 跑一轮检测（force 绕 TTL，仍受 15s 硬下限约束）。返回完整快照。 */
+  async run(force = false): Promise<UnlockSnapshot> {
+    return ipcClient.invoke(IPC_CHANNELS.UNLOCK_RUN, { force });
+  },
+  /** 纯读最近快照（页面挂载水合，零网络）；无则 null。 */
+  async get(): Promise<UnlockSnapshot | null> {
+    return ipcClient.invoke(IPC_CHANNELS.UNLOCK_GET);
+  },
+  /** 单个服务 settle 逐个点亮。 */
+  onProgress(listener: (p: UnlockProgress) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_UNLOCK_PROGRESS, listener);
+  },
+  /** 切节点/起停代理 → 缓存失效，渲染端复位重跑。 */
+  onInvalidated(listener: () => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_UNLOCK_INVALIDATED, listener);
   },
 };
 
@@ -879,6 +908,8 @@ export const subscriptionApi = {
     updatedServers: number;
     deletedServers: number;
     error?: string;
+    /** §16.3.4：304/无内容变化 → true（UI 弹「订阅无变化」toast）。 */
+    unchanged?: boolean;
   }> {
     return ipcClient.invoke(IPC_CHANNELS.SUBSCRIPTION_UPDATE_SERVERS, { subscriptionId });
   },

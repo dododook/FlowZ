@@ -199,3 +199,94 @@ describe('buildServerPickerModel — 地址 / 延迟 / 排序', () => {
     expect(items.map((i) => i.id)).toEqual(['c', 'b', 'a']);
   });
 });
+
+describe('buildServerPickerModel — badge 异常态文案（statusLabel）', () => {
+  const tsI = srv({ id: 'ts', protocol: 'tailscale', tailscaleSettings: {} });
+  const BADGE = {
+    exitInvalidLabel: 'EXIT-INVALID',
+    notLoggedInLabel: 'NOT-LOGGED-IN',
+  };
+
+  it('不传 badge → 所有 item 无 statusLabel（向后兼容）', () => {
+    const { items } = buildServerPickerModel({
+      servers: [srv({ id: 'a' }), tsI],
+      subscriptions: [],
+      latencyMap: {},
+      ...LABELS,
+    });
+    expect(items.every((i) => i.statusLabel === undefined)).toBe(true);
+  });
+
+  it('TS 交互未登录 → statusLabel = 未登录文案', () => {
+    const { items } = buildServerPickerModel({
+      servers: [tsI],
+      subscriptions: [],
+      latencyMap: {},
+      ...LABELS,
+      badge: { tsLoggedIn: { ts: false }, proxyRunning: true, ...BADGE },
+    });
+    expect(items.find((i) => i.id === 'ts')!.statusLabel).toBe('NOT-LOGGED-IN');
+  });
+
+  it('选中 TS + running + 出口无效 → statusLabel = 出口无效文案（压过未登录判定）', () => {
+    const { items } = buildServerPickerModel({
+      servers: [tsI],
+      subscriptions: [],
+      latencyMap: {},
+      ...LABELS,
+      badge: {
+        tsLoggedIn: { ts: true },
+        selectedServerId: 'ts',
+        proxyRunning: true,
+        proxyBlocked: 'ts-no-exit-device',
+        ...BADGE,
+      },
+    });
+    expect(items.find((i) => i.id === 'ts')!.statusLabel).toBe('EXIT-INVALID');
+  });
+
+  it('普通节点 / 有效已登录 TS → 无 statusLabel（走既有 latency/latencyNA 渲染）', () => {
+    const { items } = buildServerPickerModel({
+      servers: [srv({ id: 'a' }), tsI],
+      subscriptions: [],
+      latencyMap: { a: 50 },
+      ...LABELS,
+      badge: { tsLoggedIn: { ts: true }, proxyRunning: true, ...BADGE },
+    });
+    expect(items.find((i) => i.id === 'a')!.statusLabel).toBeUndefined();
+    expect(items.find((i) => i.id === 'ts')!.statusLabel).toBeUndefined();
+  });
+});
+
+describe('buildServerPickerModel — speedTestAttempted 控制不可测节点 latencyNA（Q3）', () => {
+  const tsI = srv({ id: 'ts', protocol: 'tailscale', tailscaleSettings: {} });
+  it('缺省（不传）→ latencyNA=true（既有行为，规则/分流页调用方不变）', () => {
+    const { items } = buildServerPickerModel({
+      servers: [tsI],
+      subscriptions: [],
+      latencyMap: {},
+      ...LABELS,
+    });
+    expect(items.find((i) => i.id === 'ts')!.latencyNA).toBe(true);
+  });
+  it('未点过全量测速（false）→ latencyNA=false（显「—」同未测）', () => {
+    const { items } = buildServerPickerModel({
+      servers: [tsI],
+      subscriptions: [],
+      latencyMap: {},
+      ...LABELS,
+      speedTestAttempted: false,
+    });
+    expect(items.find((i) => i.id === 'ts')!.latencyNA).toBe(false);
+  });
+  it('点过全量测速（true）→ latencyNA=true（显「不支持测速」）', () => {
+    const { items } = buildServerPickerModel({
+      servers: [tsI],
+      subscriptions: [],
+      latencyMap: {},
+      ...LABELS,
+      speedTestAttempted: true,
+    });
+    expect(items.find((i) => i.id === 'ts')!.latencyNA).toBe(true);
+  });
+});

@@ -54,6 +54,11 @@ export interface SingBoxDnsRule {
   action?: string;
   // preferred_by 规则下 server 可省（由 action 决定），故放宽为可选。
   server?: string;
+  // inbound 键控 DNS 规则（1.13+；§15 主核测速探测池 dns-probe-exit-k）：经 probe-in-k 入站的 dial 解析
+  // 继承此上下文 → 路由到穿被测节点隧道的 dns server。镜像临时核 inbound 键控 dns-exit（已真机 proven）。
+  inbound?: string | string[];
+  // disable_cache（§15）：探测池槽跨节点轮换，缓存的 geo 答案会污染下一节点，故该规则禁缓存。
+  disable_cache?: boolean;
 }
 
 export interface SingBoxFakeIPConfig {
@@ -357,6 +362,9 @@ export interface SingBoxExperimental {
   cache_file?: {
     enabled: boolean;
     path: string;
+    // cache_id（1.11+）：缓存命名空间。bump 一次即令旧命名空间条目（含 store_dns 持久化的投毒 DNS）不可达，
+    // 相当于逻辑清库（bbolt 文件不缩）。R2（§14.4）用它清 P6 修复前的 decoy DNS 缓存。
+    cache_id?: string;
     store_fakeip?: boolean;
     store_dns?: boolean; // sing-box 1.14：取代 1.13 的 store_rdrc（全量 DNS 缓存持久化）
   };

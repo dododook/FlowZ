@@ -113,6 +113,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -160,6 +175,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -764,6 +780,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -812,6 +843,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -1383,6 +1415,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -1434,6 +1481,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -1993,6 +2041,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -2040,6 +2103,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -2623,6 +2687,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -2668,6 +2747,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -3201,6 +3281,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -3248,6 +3343,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -3802,6 +3898,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -4356,6 +4453,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -4917,6 +5015,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -5465,6 +5564,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -5512,6 +5626,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -6090,6 +6205,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -6137,6 +6267,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -6714,6 +6845,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -6761,6 +6907,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -7351,6 +7498,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -7423,6 +7585,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     ],
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -7962,6 +8125,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -8009,6 +8187,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -8627,6 +8806,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -8674,6 +8868,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -9198,6 +9393,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -9245,6 +9455,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -9793,6 +10004,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -9840,6 +10066,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -10361,6 +10588,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -10408,6 +10650,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -10964,6 +11207,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -11011,6 +11269,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -11472,6 +11731,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       "final": "dns-domestic",
       "rules": [
         {
+          "action": "route",
+          "disable_cache": true,
+          "inbound": [
+            "probe-proxy-in",
+          ],
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-probe-exit-proxy",
+        },
+        {
           "domain": [
             "a.example.com",
           ],
@@ -11566,6 +11837,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -11604,6 +11890,14 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "type": "https",
         },
         {
+          "detour": "proxy-selector",
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-probe-exit-proxy",
+          "type": "https",
+        },
+        {
           "inet4_range": "198.18.0.0/15",
           "tag": "fakeip",
           "type": "fakeip",
@@ -11613,6 +11907,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -12187,6 +12482,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -12234,6 +12544,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -12782,6 +13093,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -12829,6 +13155,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -13406,6 +13733,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -13453,6 +13795,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -14010,6 +14353,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -14057,6 +14415,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -14605,6 +14964,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -14652,6 +15026,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -15266,6 +15641,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -15630,6 +16006,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -15677,6 +16068,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -16241,6 +16633,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -16288,6 +16695,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -16880,6 +17288,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -16927,6 +17350,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -17501,6 +17925,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -17548,6 +17987,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -18123,6 +18563,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-remote",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-domestic",
+        },
       ],
       "servers": [
         {
@@ -18170,6 +18625,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -18718,6 +19174,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-category-ir",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -18765,6 +19236,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -19320,6 +19792,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-category-ru",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -19367,6 +19854,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -19922,6 +20410,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -19969,6 +20472,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -20490,6 +20994,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -20537,6 +21056,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -21201,6 +21721,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -21248,6 +21783,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,
@@ -21807,6 +22343,21 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           ],
           "server": "fakeip",
         },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
       ],
       "servers": [
         {
@@ -21854,6 +22405,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
     },
     "experimental": {
       "cache_file": {
+        "cache_id": "flowz-dns-v2",
         "enabled": true,
         "path": "/fake/userData/cache.db",
         "store_dns": true,

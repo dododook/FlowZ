@@ -379,3 +379,43 @@ describe('缺陷1 登录期出口让位对账（reconcileLoginFallback，经 han
     expect(svc.bootstrapFallbackEngaged).toBe(false);
   });
 });
+
+describe('S1（§13.2）selector-settled 门：whenSelectorSettled', () => {
+  it('无在跑 deferred（未 reset）→ 即时 resolve（零成本放行）', async () => {
+    const { svc } = makeSvc();
+    await expect(svc.whenSelectorSettled(5000)).resolves.toBeUndefined();
+  });
+
+  it('reset 后 pending → markSelectorSettled 即 resolve（reassert 完成放行首探）', async () => {
+    const { svc } = makeSvc();
+    svc.resetSelectorSettled();
+    let resolved = false;
+    const p = svc.whenSelectorSettled(5000).then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false); // 未 mark、超时远 → 仍 pending
+    svc.markSelectorSettled('test');
+    await p;
+    expect(resolved).toBe(true);
+  });
+
+  it('reset 后未 mark → 超时兜底 resolve（恒不 hang，reassert 失败降级）', async () => {
+    jest.useFakeTimers();
+    try {
+      const { svc } = makeSvc();
+      svc.resetSelectorSettled();
+      let resolved = false;
+      const p = svc.whenSelectorSettled(4000).then(() => {
+        resolved = true;
+      });
+      await Promise.resolve();
+      expect(resolved).toBe(false);
+      jest.advanceTimersByTime(4000);
+      await p;
+      expect(resolved).toBe(true); // 超时 race 兜底 resolve
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

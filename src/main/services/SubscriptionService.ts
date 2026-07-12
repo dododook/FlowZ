@@ -44,6 +44,8 @@ export interface SubscriptionUpdateResult {
   deletedServers: number;
   error?: string;
   userInfo?: SubscriptionConfig['userInfo'];
+  /** §16.3.4：304/无内容变化 → true（UI 可弹「订阅无变化」toast，不 force-restart）。 */
+  unchanged?: boolean;
 }
 
 // ── Sing-box outbound types we support ──────────────────────────────────────
@@ -234,7 +236,19 @@ export class SubscriptionService {
     updated: number;
     deleted: number;
     deletedIds: Set<string>;
+    /** §16.3.4b：节点集是否真变化（added>0 ‖ deleted>0 ‖ 任一命中节点内容变）——手动订阅刷新据此决定是否 force-restart
+     *  入池、渲染层据此决定是否全量刷新。顺序重排/时间戳刷新等无实质变化恒 false（与 configGenerationNorm 双保险）。 */
+    contentChanged: boolean;
   } {
+    // 内容键（忽略 id/时间戳/归属元数据）：判「无变化更新」保 updatedAt 不投毒 + 聚合 contentChanged。
+    const contentKey = (s: ServerConfig) => {
+      const copy: Record<string, unknown> = { ...s };
+      delete copy.id;
+      delete copy.createdAt;
+      delete copy.updatedAt;
+      delete copy.providerName; // M1：归属元数据非节点连接内容，不计入比较（否则加该字段会让存量节点首次升级误刷 updatedAt）
+      return JSON.stringify(copy);
+    };
     const oldBuckets = new Map<string, ServerConfig[]>();
     for (const s of oldServers) {
       const key = SubscriptionService.serverFingerprint(s);
@@ -246,25 +260,20 @@ export class SubscriptionService {
     const kept: ServerConfig[] = [];
     let added = 0;
     let updated = 0;
+    let anyContentChanged = false;
     for (const ns of fetchedServers) {
       const key = SubscriptionService.serverFingerprint(ns);
       const bucket = oldBuckets.get(key);
       const old = bucket && bucket.length > 0 ? bucket.shift() : undefined;
       if (old) {
         // 内容相同（忽略 id/时间戳）则保留 old.updatedAt，避免无变化也刷新 updatedAt「投毒」纯切节点热切换
-        const contentKey = (s: ServerConfig) => {
-          const copy: Record<string, unknown> = { ...s };
-          delete copy.id;
-          delete copy.createdAt;
-          delete copy.updatedAt;
-          delete copy.providerName; // M1：归属元数据非节点连接内容，不计入比较（否则加该字段会让存量节点首次升级误刷 updatedAt）
-          return JSON.stringify(copy);
-        };
+        const same = contentKey(ns) === contentKey(old);
+        if (!same) anyContentChanged = true;
         kept.push({
           ...ns,
           id: old.id,
           createdAt: old.createdAt,
-          updatedAt: contentKey(ns) === contentKey(old) ? old.updatedAt : now,
+          updatedAt: same ? old.updatedAt : now,
         });
         updated++;
       } else {
@@ -276,7 +285,8 @@ export class SubscriptionService {
     const leftover: ServerConfig[] = [];
     for (const bucket of oldBuckets.values()) leftover.push(...bucket);
     const deletedIds = new Set(leftover.map((s) => s.id));
-    return { servers: kept, added, updated, deleted: leftover.length, deletedIds };
+    const contentChanged = added > 0 || leftover.length > 0 || anyContentChanged;
+    return { servers: kept, added, updated, deleted: leftover.length, deletedIds, contentChanged };
   }
 
   /**
@@ -652,8 +662,17 @@ export class SubscriptionService {
     url: string,
     viaProxy: boolean,
     userAgent: string,
-    signal?: AbortSignal
-  ): Promise<{ text: string; userInfo?: SubscriptionConfig['userInfo'] }> {
+    signal?: AbortSignal,
+    conditional?: { etag?: string; lastModified?: string }
+  ): Promise<{
+    text: string;
+    userInfo?: SubscriptionConfig['userInfo'];
+    /** §16.3.4：本次 200 响应的验证器（回写 sub，下次条件 GET 用）。 */
+    etag?: string;
+    lastModified?: string;
+    /** §16.3.4：304 Not Modified（条件 GET 命中）→ text 空、调用方短路 parse/reconcile。 */
+    notModified?: boolean;
+  }> {
     // 解析初始 URL：限 http(s)。
     const parse = (u: string): URL => {
       let urlObj: URL | null = null;
@@ -698,13 +717,29 @@ export class SubscriptionService {
     // 本机内网不可达）；直连/端口回退不豁免，防域名真实解析到本机内网的 SSRF。helper 的安全拒绝（含「重定向
     // 次数超过上限」「本机/内网」）按原文案冒泡给 UI。
     parse(url); // 初始 URL 协议校验（http/https）
+    // §16.3.4 条件 GET：带上次 validator（If-None-Match / If-Modified-Since，缓存验证器非凭据，逐跳携带无泄漏面）。
+    const condHeaders: Record<string, string> = {};
+    if (conditional?.etag) condHeaders['If-None-Match'] = conditional.etag;
+    if (conditional?.lastModified) condHeaders['If-Modified-Since'] = conditional.lastModified;
     const response = await safeRedirectFetch<GlobalResponse>({
       fetchImpl: (u, init) => fetchImpl(u, init),
       url,
       userAgent,
       exemptFakeIp: viaProxiedSession,
+      ...(Object.keys(condHeaders).length ? { headers: condHeaders } : {}),
       ...(signal ? { signal } : {}),
     });
+    // §16.3.4：304 Not Modified → 短路，不读 body、不 parse/reconcile（零节点扰动、省流省渲染）。
+    // **仅当本次确实发了条件头才认 304**（M-2 fail-safe）：provider 拉取从不带条件头，若某 CDN/缓存对无验证器请求
+    // 违规返 304，认它会得空 body→0 节点→permanent 删节点；此时应维持原「304 非 ok → throw」→ transient → merge-only 保留。
+    if (response.status === 304 && Object.keys(condHeaders).length > 0) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // ignore
+      }
+      return { text: '', notModified: true };
+    }
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
     }
@@ -726,9 +761,12 @@ export class SubscriptionService {
     }
 
     const userInfo = this.parseUserInfo(response.headers.get('subscription-userinfo'));
+    // §16.3.4：回传本次 200 的验证器供回写 sub（下次条件 GET）。
+    const etag = response.headers.get('etag') ?? undefined;
+    const lastModified = response.headers.get('last-modified') ?? undefined;
     // M2：流式读取并按字节累计上限（content-length 可缺失/撒谎，读取侧硬校验兜底）。
     const text = await this.readBodyCapped(response);
-    return { text, userInfo };
+    return { text, userInfo, etag, lastModified };
   }
 
   /**
@@ -1040,12 +1078,19 @@ export class SubscriptionService {
     url: string,
     subscriptionId: string,
     viaProxy: boolean = false,
-    userAgent?: string
+    userAgent?: string,
+    conditional?: { etag?: string; lastModified?: string }
   ): Promise<{
     servers: ServerConfig[];
     userInfo?: SubscriptionConfig['userInfo'];
     partial?: boolean;
     failedProviders?: string[];
+    /** §16.3.4：本次 200 响应验证器 + 是否含 provider（供调用方回写 sub）。 */
+    etag?: string;
+    lastModified?: string;
+    hasProviders?: boolean;
+    /** §16.3.4：304 命中 → servers 空、调用方短路 reconcile（仅刷元数据）。 */
+    notModified?: boolean;
   }> {
     try {
       // M6：url 常含 ?token=，日志脱敏（去 query）防 token 落 app.log。
@@ -1057,17 +1102,36 @@ export class SubscriptionService {
 
       const ua = userAgent?.trim() || defaultSubscriptionUserAgent();
       // M3：主订阅 fetch 加超时（30s，比 provider 15s 宽）→ 防 slow-loris 挂死 scheduler.isRunning 永真。
-      const { text, userInfo } = await this.fetchSubscriptionText(
+      // §16.3.4：conditional 由调用方决定是否传（provider 型订阅豁免——见 subscription-handlers/scheduler）。
+      const {
+        text,
+        userInfo,
+        etag,
+        lastModified,
+        notModified,
+      } = await this.fetchSubscriptionText(
         url,
         viaProxy,
         ua,
-        AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS)
+        AbortSignal.timeout(SubscriptionService.MAIN_FETCH_TIMEOUT_MS),
+        conditional
       );
+      // §16.3.4：304 → 内容无变化，短路 parse/reconcile（零节点扰动）。
+      if (notModified) {
+        this.logManager.addLog('info', '订阅无变化（304），跳过解析', 'Subscription');
+        return { servers: [], notModified: true, etag, lastModified };
+      }
       if (userInfo) {
         this.logManager.addLog('info', '订阅流量信息已获取', 'Subscription');
       }
 
       const trimmed = text.trim();
+      // §16.3.4：hasProviders=含 Clash proxy-providers → 回写 sub，下次豁免条件 GET（主正文 304 会掩盖 provider 独立变化）。
+      // M-1：兼容 YAML（行首 `proxy-providers:`）与 JSON 形态（`"proxy-providers":`，同支持路径 handleClashDoc）两种键形，
+      // 避免 JSON 型 provider 订阅漏检 → 误发条件头 → 主正文恒 304 掩盖 provider 变化 → 节点无限期陈旧。宁可误判 true
+      //（多一次全量拉取，零回归）不可漏判。
+      const hasProviders =
+        /(^|\n)\s*proxy-providers\s*:/.test(trimmed) || /"proxy-providers"\s*:/.test(trimmed);
       const { servers, partial, failedProviders } = await this.parseSubscriptionContent(
         trimmed,
         subscriptionId,
@@ -1078,7 +1142,7 @@ export class SubscriptionService {
         }
       );
 
-      return { servers, userInfo, partial, failedProviders };
+      return { servers, userInfo, partial, failedProviders, etag, lastModified, hasProviders };
     } catch (error: any) {
       // M6：失败日志同样脱敏 url。
       this.logManager.addLog(

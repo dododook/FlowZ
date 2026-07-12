@@ -15,6 +15,7 @@ import { sortServersByLatency } from '../../shared/server-latency-sort';
 import { mt } from '../i18n';
 import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import type { SpeedTestOutcome } from '../../shared/speed-test';
 
 // 托盘菜单状态圆点（macOS 系统色，18px 抗锯齿）——替代旧的 emoji 大圆圈，更克制现代。
 const STATUS_DOT_PNG: Record<'connected' | 'disconnected' | 'error', string> = {
@@ -741,16 +742,23 @@ export class TrayManager implements ITrayManager {
   updateSpeedTestResults(
     results: Map<string, number | null>,
     servers: ServerConfig[],
-    opts: { toast?: boolean } = {}
+    opts: {
+      toast?: boolean;
+      keepTestingState?: boolean;
+      outcome?: SpeedTestOutcome;
+      skipped?: number;
+    } = {}
   ): void {
     this.speedTestResults = new Map([...this.speedTestResults, ...results]);
-    this.isSpeedTesting = false;
+    // 出口伴测（keepTestingState）合并单节点结果时不复位「测速中」态——否则在飞的全量测速托盘态被伴测提前熄灭。
+    if (!opts.keepTestingState) this.isSpeedTesting = false;
     this.updateTrayMenu(this.isProxyRunning);
 
     if (!opts.toast) return;
 
-    // 仅列本次实际测速的节点：不可测节点（Tailscale/reverseMesh/custom-endpoint）经 isSpeedTestable 已不在 results，
-    // 与 buildServerItem 的 undefined→无徽标 同口径，避免 toast 把「不适用」误报成「超时」。
+    // 仅列本次实际测速的节点：恒不可测节点（reverseMesh/custom-endpoint/无 exitNode 或未登录的 TS）经 isSpeedTestable
+    // 及波前 gate 已不在 results（§16.1 path-aware：TS-exit 主核路径可在 results），与 buildServerItem 的 undefined→无徽标
+    // 同口径，避免 toast 把「不适用/待入池」误报成「超时」。
     const resultList = servers
       .filter((s) => results.has(s.id))
       .map((s) => ({
@@ -766,13 +774,19 @@ export class TrayManager implements ITrayManager {
 
     // 发送 toast 事件（仅当窗口可见）：托盘触发的测速若窗口隐藏，结果已在托盘子菜单延迟徽标呈现，
     // 不再经此弹 in-app toast——否则用户稍后打开窗口才弹出已滞后的陈旧提示。空结果/不可测也不弹。
+    // L-1：interrupted 即便 0 已测（起测即被打断）也须通知——否则托盘入口「测速中断」永不呈现。
     if (
-      resultList.length > 0 &&
+      (resultList.length > 0 || opts.outcome === 'interrupted') &&
       this.mainWindow &&
       !this.mainWindow.isDestroyed() &&
       this.mainWindow.isVisible()
     ) {
-      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, resultList);
+      // §16.2：payload 从数组升级为 { outcome, items, skipped }——App.tsx 据 outcome 分「完成/中断」toast + 副行未纳入数。
+      this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, {
+        outcome: opts.outcome ?? 'completed',
+        items: resultList,
+        skipped: opts.skipped ?? 0,
+      });
     }
   }
 

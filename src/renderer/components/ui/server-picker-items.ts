@@ -6,11 +6,32 @@
  * 本模块是「ServerConfig → NodePickerItem」的映射层，依赖 shared 分组/协议谓词。纯函数（无 react/store）——
  * 调用方喂 servers/subscriptions/latencyMap + 各处差异开关，供 .test.ts 直接覆盖等价矩阵。
  */
-import type { ServerConfig, SubscriptionConfig } from '../../../shared/types';
+import type { ServerConfig, SubscriptionConfig, ProxyExitBlock } from '../../../shared/types';
 import { groupServersBySubscription } from '../../../shared/server-grouping';
 import { isEndpointProtocol, isSpeedTestable } from '../../../shared/endpoint-routes';
 import { isWarpServer } from '../../../shared/warp';
+import { deriveLatencyBadge } from '../../lib/latency-badge';
 import type { NodePickerGroup, NodePickerItem } from './node-picker-logic';
+
+/**
+ * 徽标异常态输入（可选）：调用方（首页出口下拉）传入 TS 登录态 / 选中出口 / 出口直判无效 + 已本地化的文案，
+ * 使下拉里 TS/组网节点也显「出口无效 / 未登录」warn 文案（与 SpeedBadge 同 deriveLatencyBadge 口径）。
+ * 缺省（不传）→ 行为不变（规则页/分流页等调用方无需登录/出口态，可后续增量接入）。纯函数（labels 已本地化传入）。
+ */
+export interface ServerPickerBadgeOptions {
+  /** store.tailscaleLoginStates：节点 id → 综合登录态。 */
+  tsLoggedIn: Record<string, boolean>;
+  /** config.selectedServerId（proxyBlocked 仅对选中出口有语义）。 */
+  selectedServerId?: string;
+  /** connectionStatus.proxyCore.running。 */
+  proxyRunning: boolean;
+  /** store.ipInfo?.proxyBlocked（TS 出口 API 直判无效）。 */
+  proxyBlocked?: ProxyExitBlock;
+  /** 已本地化「出口无效」文案（t('home.exitInvalid')）。 */
+  exitInvalidLabel: string;
+  /** 已本地化「未登录」文案（t('servers.tsNotLoggedIn')）。 */
+  notLoggedInLabel: string;
+}
 
 /** 节点显示地址（触发器副文本 + 参与搜索）：无地址回退 undefined。 */
 export function nodeAddress(s: ServerConfig): string | undefined {
@@ -59,12 +80,41 @@ export interface BuildServerPickerModelOptions {
   withAddress?: boolean;
   /** 组内节点排序（如首页按延迟排序）；缺省保序。 */
   sortServers?: (servers: ServerConfig[]) => ServerConfig[];
+  /** 徽标异常态输入（首页出口下拉传入使 TS 显「出口无效/未登录」）；缺省不显异常态文案。 */
+  badge?: ServerPickerBadgeOptions;
+  /** 本会话是否点过全量测速（store.speedTestAttempted）：未点过则不可测节点 latencyNA=false（显「—」同未测），
+   *  点过才 latencyNA=true（显「不支持测速」）。**缺省 true = 既有行为**（规则/分流页调用方无需登录态，保持原样）。 */
+  speedTestAttempted?: boolean;
 }
 
 /**
  * 构建 NodePicker 数据模型：groupServersBySubscription 分组 → 多来源(>1 组)才显分组头 → 哨兵置顶 → 延迟徽标，
  * 按开关叠加地址 / 排除自身或组网 / 组内排序。groupId 仅在多来源时写（单一来源平铺，与各页口径一致）。
  */
+/**
+ * 单节点异常态文案（出口无效/未登录）→ 已本地化字符串；正常态返 undefined（走既有 latency/latencyNA 渲染）。
+ * 复用 deriveLatencyBadge 口径（与 SpeedBadge 一致）；testedAt/now 对这两 kind 无关（P1/P2 分支不读），传 0。
+ */
+function statusLabelFor(
+  s: ServerConfig,
+  latency: number | undefined,
+  badge: ServerPickerBadgeOptions
+): string | undefined {
+  const b = deriveLatencyBadge({
+    server: s,
+    latency,
+    testedAt: undefined,
+    now: 0,
+    tsLoggedIn: badge.tsLoggedIn[s.id],
+    isSelectedExit: badge.selectedServerId === s.id,
+    proxyRunning: badge.proxyRunning,
+    proxyBlocked: badge.proxyBlocked,
+  });
+  if (b.kind === 'exit-invalid') return badge.exitInvalidLabel;
+  if (b.kind === 'not-logged-in') return badge.notLoggedInLabel;
+  return undefined;
+}
+
 export function buildServerPickerModel(opts: BuildServerPickerModelOptions): {
   items: NodePickerItem[];
   groups: NodePickerGroup[];
@@ -80,6 +130,8 @@ export function buildServerPickerModel(opts: BuildServerPickerModelOptions): {
     excludeEndpoint,
     withAddress,
     sortServers,
+    badge,
+    speedTestAttempted = true,
   } = opts;
 
   const filtered = servers.filter((s) => isPickerCandidate(s, excludeId, excludeEndpoint));
@@ -104,7 +156,11 @@ export function buildServerPickerModel(opts: BuildServerPickerModelOptions): {
       protocol: isWarpServer(s) ? 'warp' : s.protocol,
       address: withAddress ? nodeAddress(s) : undefined,
       latency: latencyMap[s.id],
-      latencyNA: !isSpeedTestable(s),
+      // 不可测节点：未点过全量测速时 latencyNA=false（显「—」同未测，口径同步）；点过才 true（显「不支持测速」）。
+      // §16.1 path-aware：TS-exit 仅主核池可用（badge.proxyRunning）时可测；badge 缺省（规则/分流页）→ proxyRunning=false。
+      latencyNA: !isSpeedTestable(s, { mainCorePool: badge?.proxyRunning ?? false }) && speedTestAttempted,
+      // 异常态文案（仅传 badge 时）：出口无效/未登录 → warn 文案压过延迟。这两 kind 时间无关，statusLabelFor 内 now:0 无害。
+      statusLabel: badge ? statusLabelFor(s, latencyMap[s.id], badge) : undefined,
       groupId: multi ? g.id : undefined,
     }));
   });

@@ -630,3 +630,23 @@ describe('buildInbounds — Windows bypassLAN engaged-mesh carve (gap #1)', () =
     expect(w2).not.toContain('192.168.50.0/24'); // 被 /16 包含的子条目：移除它 no-op，不误列
   });
 });
+
+describe('buildInbounds — §15 主核测速探测池', () => {
+  it('probePoolPorts=[a,b,c] → 注入 3 个 probe-in-k http 入站（端口按 k 1:1）', () => {
+    const ibs = withPlatform('linux', () =>
+      buildInbounds(cfg({}), undefined, deps({ probePoolPorts: [30000, 30001, 30002] }))
+    );
+    for (let k = 0; k < 3; k++) {
+      const ib = byTag(ibs, `probe-in-${k}`);
+      expect(ib.type).toBe('http');
+      expect(ib.listen).toBe('127.0.0.1');
+      expect(ib.listen_port).toBe(30000 + k);
+    }
+    expect(ibs.find((i) => i.tag === 'probe-in-3')).toBeUndefined();
+  });
+
+  it('无 probePoolPorts → 零 probe-in-k 注入（回退临时核，字节不变）', () => {
+    const ibs = withPlatform('linux', () => buildInbounds(cfg({}), undefined, deps()));
+    expect(ibs.some((i) => i.tag?.startsWith('probe-in-'))).toBe(false);
+  });
+});

@@ -43,6 +43,7 @@ import {
   registerDiagnosticHandlers,
   registerHelperHandlers,
   registerIpInfoHandlers,
+  registerUnlockHandlers,
   registerSystemHandlers,
   registerRuleResourceHandlers,
   registerStatsSubscriptionHandlers,
@@ -64,6 +65,9 @@ import { StatsSimulator } from './services/StatsSimulator';
 import { StatsSubscriptionRegistry } from './services/StatsSubscriptionRegistry';
 import { PlatformPrivilegeService } from './services/PlatformPrivilegeService';
 import { IpInfoService } from './services/IpInfoService';
+import { createExitProbeLatencyRunner } from './services/exit-probe-latency';
+import { UnlockDetectionService } from './services/unlock/UnlockDetectionService';
+import { localProxyPort } from '../shared/proxy-ports';
 import { RuleResourceManager } from './services/RuleResourceManager';
 import { UpdateNetwork } from './services/UpdateNetwork';
 import { seedBuiltinRuleSets } from './services/builtin-geo-rulesets';
@@ -334,6 +338,7 @@ let subscriptionScheduler: SubscriptionScheduler;
 let coreUpdateScheduler: CoreUpdateScheduler | null = null;
 let statsService: StatsHost | null = null;
 let ipInfoService: IpInfoService | null = null;
+let unlockService: UnlockDetectionService | null = null;
 let ruleResourceManager: RuleResourceManager | null = null;
 let ruleResourceScheduler: RuleResourceScheduler | null = null;
 let helperManager: IPrivilegedHelper | null = null;
@@ -1147,10 +1152,18 @@ if (gotTheLock) {
     coreUpdateService = new CoreUpdateService(logManager);
     subscriptionService = new SubscriptionService(protocolParser, logManager);
     // 注入全协议出站构造器（懒引用 proxyManager，测速时才调用、此时其已就绪）：测速统一走经代理 urltest 真实测速。
-    speedTestService = new SpeedTestService(logManager, (s, tag) =>
-      proxyManager
-        ? (proxyManager.buildSpeedTestOutbound(s, tag) as Record<string, unknown> | null)
-        : null
+    // §15：另注入主核测速探测池句柄取值器（call-time 懒引用，对齐 exitProbeLatencyRunner 装配风格）——主核运行 +
+    // 池就绪时测速走主核（同核单会话消除 WG/WARP 双会话超时），否则回退临时核（buildSpeedTestOutbound 路径）。
+    // §15.11：另注入核生命周期世代取值器（call-time 拉 getLifecycleGeneration）——测速起测快照 gen0，核 start/stop/
+    // restart/config-regen 中途跃迁即超代 abort（保留已测、未测节点不写假 -1）。缺省不注入=恒不超代（回归安全）。
+    speedTestService = new SpeedTestService(
+      logManager,
+      (s, tag) =>
+        proxyManager
+          ? (proxyManager.buildSpeedTestOutbound(s, tag) as Record<string, unknown> | null)
+          : null,
+      () => proxyManager?.getSpeedTestMainCoreProbe() ?? null,
+      () => proxyManager?.getLifecycleGeneration() ?? 0
     );
     // 批次 B：把日志 sink 注入「原本裸 console、不进 app.log」的服务，补排障盲区（系统代理/配置/资源/协议）
     configManager.setLogManager(logManager);
@@ -1476,6 +1489,40 @@ if (gotTheLock) {
       statsService?.stop();
     });
 
+    // 出口伴测 runner：代理出口探测成功后测「当前出口」warm TTFB（== 节点测速口径）写回 latencyMap[当前出口 id]，
+    // 使 IP 类 / TS / 组网出口的实际延迟跟随出口探测更新。五重守卫全过才测/才写（见 exit-probe-latency + 设计 §2.4）。
+    // deps 全部 call-time 取值（trayManager 稍后才构造、closure 引用 module 变量、firing 时已就绪，规避初始化顺序）。
+    const exitProbeLatencyRunner = createExitProbeLatencyRunner({
+      getSelectedExit: () => {
+        const pm = proxyManager;
+        if (!pm) return null;
+        const status = pm.getStatus();
+        if (!status.running || !status.currentServer) return null; // G1 running / G2 有实际出口节点
+        const mode = (configManager.get<string>('proxyMode') ?? 'smart').toLowerCase();
+        if (mode === 'direct') return null; // G3 非全局直连（直连模式探针量的是直连路径）
+        if (pm.isLoginFallbackEngaged()) return null; // G4 登录让位未生效（让位期 selector 实指 direct）
+        if (pm.selectedTsExitBlock()) return null; // G5 TS gate 未命中（纵深防御 lateBlock 边缘）
+        const ports = pm.getProbePorts();
+        if (!ports) return null; // 探针端口就绪
+        return { serverId: status.currentServer.id, probeProxyPort: ports.proxy };
+      },
+      measureWarmRtt: (port) =>
+        speedTestService.measureWarmRttViaHttpProxy(
+          port,
+          configManager.get<string>('speedTestUrl')
+        ),
+      publish: (serverId, latency) => {
+        // 复用测速结果既有传播管道：逐节点广播 EVENT_SPEED_TEST_RESULT → applyLatencyResults(latencyMap + 时间戳)；
+        // 托盘合并入延迟表（keepTestingState：不复位在飞全量测速的「测速中」态）。渲染端零改动。
+        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, { serverId, latency });
+        trayManager?.updateSpeedTestResults(new Map([[serverId, latency]]), [], {
+          toast: false,
+          keepTestingState: true,
+        });
+      },
+      log: (message) => logManager.addLog('debug', message, 'ExitProbeLatency'),
+    });
+
     // 出口 IP 信息：经探针 inbound 测本地直连出口 / 代理出口，事件驱动刷新（无周期轮询）
     ipInfoService = new IpInfoService(
       () => proxyManager?.getProbePorts() ?? null,
@@ -1483,12 +1530,63 @@ if (gotTheLock) {
       (snap) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_IP_INFO_UPDATED, snap),
       undefined,
       // TS 出口 API 直判无效（选中 TS 出口未广告出口设备 / exit peer 离线）→ 出口探测前置 gate 短路，不空转退避。
-      () => proxyManager?.selectedTsExitBlock() ?? null
+      () => proxyManager?.selectedTsExitBlock() ?? null,
+      // 代理出口探测成功 → fire-and-forget 触发出口伴测更新节点延迟（IpInfoService 在 onUpdate 之后调，保 IP 先显）。
+      (ctx) => {
+        void exitProbeLatencyRunner(ctx);
+        // G-flip2（§10 D5 / §11 B3）：代理出口探测成功 = egress 实测已通。unlock 若卡 notReady/lowConfidence 失败终态
+        // （成因正是 egress 不通）→ 该成功即「可达性 failed→ok 翻转」证据 → invalidate 触发自动重检。限频靠「事件驱动
+        //（IpInfo 无后台轮询）+ 跨态 gate（reconcileTsExitBlock）+ 渲染端 1.5s 防抖」，非伴测 30s 节流（那在写侧）。
+        // 过滤后仅 lastSnapshot 为失败终态才 invalidate：有结果/S0(null 快照) 时 no-op；不成环（unlock 重检不反向触发
+        // ipInfo 探测）。边角：notReady 后手动 force-run 在飞期 lastSnapshot 仍为 notReady → 可能打断在飞轮，收敛良性
+        //（egress 已恢复本就要重检、cache 空无实质差异）。
+        const s = unlockService?.getSnapshot();
+        if (s?.notReady || s?.lowConfidence) unlockService?.invalidate();
+      }
     );
     // ProxyManager 翻转对账（STATUS 帧上 none↔blocked 跨态）时即时通知出口探测层落终态/重探。
     proxyManager.setIpInfoService(ipInfoService);
     // 启动后拉一次本地直连出口 IP 初值
     setTimeout(() => void ipInfoService?.refresh(true), 2000);
+
+    // 解锁检测（AI/流媒体）：经 mixed inbound（走用户真实分流出口）跑 checker。端口取 localProxyPort 单一真值；
+    // gating/单飞/缓存/节流在 service 内。progress 逐个点亮、invalidate（切节点/起停代理）广播给渲染端。
+    // GAP-1（方案A）：解锁检测的**发起**唯一入口本是 renderer home 页 hook 的 IPC——「启动代理→<1.5s 内切页」时 renderer
+    // 防抖定时器随组件卸载被取消 → invalidate 后的重跑 IPC 从未发出 → 检测从未开始（伴测/出口 IP 主进程自驱不受影响，唯
+    // unlock 触发链 renderer-gated）。故在主进程装配层对 invalidate 追加**同款防抖 self-run**：合并启动风暴多条 invalidate
+    // （started+unlock-invalidate+tailscale-selected-running）为一次 run；所有 gate（isRunning/exitBlock/S-gate/TTL/单飞
+    // join）已在 service 内单点收口，run(false) 幂等（stopped 触发撞 isRunning 短路=零网络 no-op；home 挂载时 renderer 的
+    // auto-run 撞主进程在飞轮=单飞 join，不双跑）。触发策略属装配层，不改 service 本体。
+    const UNLOCK_SELF_RUN_DEBOUNCE_MS = 1500;
+    let unlockSelfRunTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleUnlockSelfRun = (): void => {
+      if (unlockSelfRunTimer) clearTimeout(unlockSelfRunTimer);
+      unlockSelfRunTimer = setTimeout(() => {
+        unlockSelfRunTimer = null;
+        void unlockService?.run(false);
+      }, UNLOCK_SELF_RUN_DEBOUNCE_MS);
+    };
+    unlockService = new UnlockDetectionService({
+      getMixedPort: () =>
+        localProxyPort({
+          mixedPort: configManager.get<number>('mixedPort'),
+          httpPort: configManager.get<number>('httpPort'),
+        }),
+      isRunning: () => proxyManager?.getStatus().running ?? false,
+      // 选中 TS 出口 API 直判无效 → 短路检测（不空转死出口就绪门）。call-time 取值，规避构造顺序。
+      getExitBlock: () => proxyManager?.selectedTsExitBlock() ?? null,
+      onProgress: (p) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_PROGRESS, p),
+      onInvalidated: () => {
+        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_INVALIDATED, {});
+        // GAP-1：invalidate 后主进程侧防抖自跑（不依赖 home 页挂载着的 renderer hook 发 IPC）。
+        scheduleUnlockSelfRun();
+      },
+      // X2（§12.2）：per-leg 传输失败逐条 debug（host/err/phase/bytes/elapsed）→ 真机 V36 分诊 WARP 下 checker「超时」根因。
+      log: (message) => logManager.addLog('debug', message, 'Unlock'),
+    });
+    // G-flip：TS 出口 none↔blocked 翻转即令解锁检测失效（翻 blocked 清陈旧绿点；翻 none 触发有效出口重检）。
+    // 闭包 call-time 取 unlockService（模块级 let），规避此接线早于/晚于其构造的顺序问题。
+    proxyManager.setOnTsExitBlockFlip(() => unlockService?.invalidate());
 
     // 规则资源管理：下载 .srs / 动态 catalog / GitHub 加速；进度经事件推渲染端
     ruleResourceManager = new RuleResourceManager(
@@ -1606,6 +1704,8 @@ if (gotTheLock) {
       // 出口 IP：start 瞬间即置「获取中」，消除「running 已 true 但下方延迟 1.5s 刷新尚未开始」窗口内
       // 代理出口闪「代理出口暂不可用」。随后的延迟 refresh(true) 接力真正探测（带重试）。
       ipInfoService?.markProxyConnecting();
+      // 解锁检测失效：代理起 = 出口将变，清缓存 + 广播（渲染端复位、待 running 稳定后重跑）。
+      unlockService?.invalidate();
       // stats 订阅【不】在此发起：emit('started') 早于 ProxyManager 创建 api client（startInternal 末尾）约 0.5s，
       // 此刻 getApiClient()=null、subscribe* 早退（首页 stats 全 0 根因）。改挂 'api-client-ready'（见下）。
       subscriptionScheduler?.onProxyStarted(); // 代理就绪 → 补跑因 viaProxy 跳过的启动订阅更新
@@ -1616,20 +1716,27 @@ if (gotTheLock) {
         logManager.addLog('warn', `记录内核基线版本失败: ${e}`, 'Main');
       }
 
-      // 代理就绪后延迟刷新出口 IP（等 selector / 探针 inbound 起来）。direct 走常规 refresh(true)；
-      // proxy 出口改走 refreshProxyPostConnect（首连专用更宽退避，覆盖 TS/组网首连隧道未就绪的几秒窗口，
-      // 全程转圈不闪「暂不可用」）。隧道一就绪由下方 'tailscale-selected-running' 事件链式 refreshProxy 抢先出真值。
-      setTimeout(() => {
+      // 代理就绪后刷新出口 IP（direct 走常规 refresh(true)；proxy 出口走 refreshProxyPostConnect 首连宽退避）。
+      // S1（§13.2）：原 setTimeout(1500) 固定延时改为 **await selector 校正完成**（whenSelectorSettled）再发首探——
+      // 防首探落在「核起→reassertSelectorSelection 完成」窗口内，经 cache_file 携带的陈旧 selector 从**上一节点**
+      // 出网、拿到上一节点出口 IP（P18 陈旧出口 IP 尾巴：WARP→停→切 TS→启，状态栏先显 WARP IP 再显 TS IP）。
+      // race 4s 超时恒 resolve（reassert 慢/失败降级为今日行为）；markProxyConnecting 仍在 'started' 即刻（上方），
+      // 「检测中」UX 不变。隧道一就绪由下方 'tailscale-selected-running' 链式 refreshProxy 抢先出真值。
+      void proxyManager?.whenSelectorSettled(4000)?.then(() => {
         void ipInfoService?.refresh(true);
         void ipInfoService?.refreshProxyPostConnect();
-      }, 1500);
+      });
     });
 
     // item 1 事件驱动出口 re-probe：选中的账号制（TS）节点隧道翻 Running（就绪）→ 立即重测代理出口，
     // 不等首连退避耗尽。ProxyManager 在 STATUS 流上升沿去重发射，故此处无需再防抖；refreshProxy 经 enqueue
     // 链式排到在途首探之后，隧道一就绪即取到真出口 IP（消除「转圈直到退避耗尽」的长盲等）。
     proxyManager.on('tailscale-selected-running', () => {
-      void ipInfoService?.refreshProxy();
+      // S1：STATUS Running 首帧可能抢在 reassert 前 → 经陈旧 selector 探测。等 selector 校正（settle 后即时返回、
+      // 零成本；超时 2.5s 兜底）再 refreshProxy，保「探测=选中节点出口」。
+      void proxyManager?.whenSelectorSettled(2500)?.then(() => ipInfoService?.refreshProxy());
+      // TS 隧道就绪 → 出口才真正生效/可能变化 → 解锁缓存失效重测。
+      unlockService?.invalidate();
     });
 
     // 修复（首页 stats 全 0 根因）：Status/Connections 订阅必须等 api client 就绪。emit('started')（runStartWithRetry
@@ -1646,6 +1753,8 @@ if (gotTheLock) {
     // refreshProxyPostConnect（与 'started' 首连路径同治）；IP 类节点即起即通仍走常规 refreshProxy。
     proxyManager.on('node-hot-switched', (accountBased?: boolean) => {
       ipInfoService?.markProxyConnecting();
+      // 解锁缓存失效不在此挂：改由 'unlock-invalidate' 独立事件覆盖（含纯规则热切换 kind=rules，那不发
+      // node-hot-switched），避免规则变更漏失效（M1）。
       if (accountBased) {
         void ipInfoService?.refreshProxyPostConnect();
       } else {
@@ -1653,11 +1762,19 @@ if (gotTheLock) {
       }
     });
 
+    // 解锁检测失效（M1）：任何热切换（切全局节点 / 改规则目标节点 / 两者）→ 解锁出口或分流可能变 → 失效重测。
+    // 与 node-hot-switched 分开：本事件**只失效解锁、不触发 IpInfo 重测**（纯规则变更全局出口 IP 未变，无谓重测）。
+    proxyManager.on('unlock-invalidate', () => {
+      unlockService?.invalidate();
+    });
+
     proxyManager.on('stopped', () => {
       statsService?.stop();
 
       // 停止后重测出口 IP（proxy 置 null，direct 走主进程裸直连）
       void ipInfoService?.refresh(true);
+      // 代理停 → 解锁检测无出口可测，清缓存 + 广播（渲染端复位 idle，gating 拦住重跑）。
+      unlockService?.invalidate();
 
       // 正常停止时，重置错误状态
       updateTrayMenuState(false, false);
@@ -1685,6 +1802,7 @@ if (gotTheLock) {
     // batch3 §3.7：STATS_SUBSCRIBE/STATS_UNSUBSCRIBE（渲染端 useStatsTopic 声明/撤销 topic 订阅）。
     registerStatsSubscriptionHandlers(statsSubscriptionRegistry);
     registerIpInfoHandlers(ipInfoService);
+    registerUnlockHandlers(unlockService);
     registerSystemHandlers();
     registerRuleResourceHandlers(ruleResourceManager);
     registerVersionHandlers(coreUpdateService);
@@ -1698,8 +1816,10 @@ if (gotTheLock) {
     // 注册自启动处理器
     registerAutoStartHandlers();
 
-    // 注册订阅处理器
-    registerSubscriptionHandlers(subscriptionService, configManager);
+    // 注册订阅处理器。§16.3.4b：手动更新节点集变化 → force-restart 入池（call-time 取 proxyManager，防循环依赖）。
+    registerSubscriptionHandlers(subscriptionService, configManager, (cfg) =>
+      proxyManager?.applyConfigForcingRestart(cfg)
+    );
 
     // 注册备份与恢复处理器（注入 ruleResourceManager：恢复后补缺失的规则资源 .srs）
     registerBackupHandlers(configManager, ruleResourceManager);

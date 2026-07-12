@@ -2,7 +2,7 @@ import { IpcMainInvokeEvent, dialog } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
-import type { SubscriptionConfig, ImportParseResult } from '../../../shared/types';
+import type { SubscriptionConfig, ImportParseResult, UserConfig } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { SubscriptionService, SubscriptionUpdateResult } from '../../services/SubscriptionService';
 import type { SubscriptionPreviewResult } from '../../../shared/subscription-preview';
@@ -12,11 +12,14 @@ import { mt } from '../../i18n';
 import { randomUUID } from 'crypto';
 
 /**
- * 注册订阅管理相关的 IPC 处理器
+ * 注册订阅管理相关的 IPC 处理器。
+ * @param applyConfigForcingRestart §16.3.4b：手动订阅更新（节点集变化）→ 强制核去抖重启入池（绕 P2-A）。call-time 取
+ *   proxyManager（对齐 scheduler 装配、防循环依赖）；缺省=不重启（如单测/无代理实例）。
  */
 export function registerSubscriptionHandlers(
   subscriptionService: SubscriptionService,
-  configManager: ConfigManager
+  configManager: ConfigManager,
+  applyConfigForcingRestart?: (config: UserConfig) => void
 ): void {
   // 添加订阅
   registerIpcHandler<
@@ -107,12 +110,33 @@ export function registerSubscriptionHandlers(
       }
 
       try {
+        // §16.3.4：条件 GET——provider 型订阅豁免（主正文 304 会掩盖 provider 独立变化）；否则带上次 validator。
+        const conditional = subscription.hasProviders
+          ? undefined
+          : { etag: subscription.etag, lastModified: subscription.lastModified };
         const result = await subscriptionService.fetchSubscription(
           subscription.url,
           subscription.id,
           resolveSubscriptionViaProxy(config.subscriptionProxyPolicy, subscription.updateViaProxy),
-          subscription.userAgent ?? config.subscriptionUserAgent
+          subscription.userAgent ?? config.subscriptionUserAgent,
+          conditional
         );
+
+        // §16.3.4：304 无变化 → 仅刷元数据（lastUpdated + validators），不 reconcile、不 force-restart（零节点扰动）。
+        if (result.notModified) {
+          subscription.lastUpdated = new Date().toISOString();
+          if (result.etag) subscription.etag = result.etag;
+          if (result.lastModified) subscription.lastModified = result.lastModified;
+          await configManager.saveConfig(config);
+          return {
+            success: true,
+            addedServers: 0,
+            updatedServers: 0,
+            deletedServers: 0,
+            unchanged: true,
+          };
+        }
+
         const fetchedServers = result.servers;
 
         // 获取原来的该订阅下的节点，按稳定指纹对账（不依赖显示名）
@@ -123,11 +147,30 @@ export function registerSubscriptionHandlers(
           updated,
           deleted,
           deletedIds,
+          contentChanged,
         } = SubscriptionService.reconcileServers(
           oldServers,
           fetchedServers,
           new Date().toISOString()
         );
+
+        // L-5：200 但节点集内容等价（contentChanged=false，非 partial）→ 仅刷元数据 + validators，不替换 servers
+        // （避免顺序 churn）、返回 unchanged（toast 显「订阅无变化」而非「更新 N 个」，与 304 口径一致）。
+        if (!contentChanged && !result.partial) {
+          subscription.lastUpdated = new Date().toISOString();
+          if (result.userInfo) subscription.userInfo = result.userInfo;
+          subscription.etag = result.etag;
+          subscription.lastModified = result.lastModified;
+          subscription.hasProviders = result.hasProviders;
+          await configManager.saveConfig(config);
+          return {
+            success: true,
+            addedServers: 0,
+            updatedServers: 0,
+            deletedServers: 0,
+            unchanged: true,
+          };
+        }
 
         // partial（Clash provider 部分失败）→ merge-only 防穿仓：M1 改为 provider 级精确——只保留「失败 provider
         // 名下」的下架节点（防某 provider 临时 503 误删其托管存量，FlowZ 无本地 path 缓存兜底），成功 provider
@@ -160,8 +203,22 @@ export function registerSubscriptionHandlers(
         if (result.userInfo) {
           subscription.userInfo = result.userInfo;
         }
+        // §16.3.4：回写验证器 + hasProviders（下次条件 GET / provider 豁免）。
+        // L-3：200 路径**无条件**写 etag/lastModified（含清除）——服务端撤 validator 后不残留旧值，避免内容回滚伪 304。
+        subscription.etag = result.etag;
+        subscription.lastModified = result.lastModified;
+        subscription.hasProviders = result.hasProviders;
 
         await configManager.saveConfig(config);
+
+        // §16.3.4b：手动更新 + 节点集真变化 → 强制核去抖重启，把新增/改址节点纳入主核（及测速池）→ 立即可测。
+        // applyConfigForcingRestart 内部 guard 代理未运行/换核窗口（不重启）；无变化不调（省一次重启抖动）。
+        // M-3：partial（provider 瞬时失败）下 leftoverToKeep 会全量恢复被判「删除」的节点 → 最终 config.servers 可能
+        // 与刷新前等价，但 contentChanged（reconcile 在 merge-back 前求值）仍为 true → 会误触整核重启（断连+打断测速）。
+        // 保守：partial 时不 force-restart（违反「无变化恒不重启」不划算）；真变化随下次成功刷新/结构性变更纳入。
+        if (contentChanged && !result.partial) {
+          applyConfigForcingRestart?.(config);
+        }
 
         return {
           success: true,

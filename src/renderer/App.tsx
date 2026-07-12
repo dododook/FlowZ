@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { PrivacyOverlay } from './components/layout/privacy-overlay';
 import { api } from './ipc/api-client';
 import { IPC_CHANNELS } from '../shared/ipc-channels';
+import type { SpeedTestOutcome } from '../shared/speed-test';
 import i18n, { initialLanguageChoice } from './i18n';
 
 function App() {
@@ -97,21 +98,38 @@ function App() {
 
   // Listen to speed test results
   useEffect(() => {
-    const unsubscribe = ipcClient.on<
-      Array<{ name: string; protocol: string; latency: number | null }>
-    >(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, (results) => {
-      // 延迟明细已在各节点卡 ⚡ 徽标显示；此处只报完成 + 一行摘要（节点数 + 最快），不再 dump 全列表压垮注意力。
-      // resultList 已按延迟升序（TrayManager），首个非 null 即最快可测节点。
-      const fastest = results.find((r) => r.latency !== null);
-      const description = fastest
+    const unsubscribe = ipcClient.on<{
+      outcome: SpeedTestOutcome;
+      items: Array<{ name: string; protocol: string; latency: number | null }>;
+      skipped?: number;
+    }>(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT_LIST, (payload) => {
+      // 延迟明细已在各节点卡 ⚡ 徽标显示；此处只报完成/中断 + 一行摘要（节点数 + 最快），不再 dump 全列表压垮注意力。
+      // items 已按延迟升序（TrayManager），首个非 null 即最快可测节点。
+      const items = payload.items;
+      const fastest = items.find((r) => r.latency !== null);
+      let description = fastest
         ? i18n.t('home.speedTestSummary', {
-            count: results.length,
+            count: items.length,
             name: fastest.name,
             ms: fastest.latency,
           })
-        : i18n.t('home.speedTestNoResult', { count: results.length });
+        : i18n.t('home.speedTestNoResult', { count: items.length });
+      // §16 Layer2：波前缺席节点数副行（not-in-pool/未登录 TS）——追加到摘要，与页面聚合 toast 口径一致。
+      if (payload.skipped && payload.skipped > 0) {
+        description += ` · ${i18n.t('servers.speedTestSkippedSummary', {
+          count: payload.skipped,
+          defaultValue: '{{count}} 个节点未纳入（刷新订阅后可测）',
+        })}`;
+      }
 
-      toast.success(i18n.t('home.speedTestDone'), { description });
+      // §16.2：interrupted（核 stop/restart/regen 打断，已测保留、未测原值）→ warning「测速中断」；否则 success「测速完成」。
+      if (payload.outcome === 'interrupted') {
+        toast.warning(i18n.t('home.speedTestInterrupted', { defaultValue: '测速中断' }), {
+          description,
+        });
+      } else {
+        toast.success(i18n.t('home.speedTestDone'), { description });
+      }
     });
 
     return () => unsubscribe();

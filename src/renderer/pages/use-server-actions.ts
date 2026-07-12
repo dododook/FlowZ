@@ -186,11 +186,23 @@ export function useServerActions() {
     editingSub: SubscriptionConfig | undefined
   ): Promise<SaveSubscriptionResult> => {
     if (editingSub) {
+      // L-4：编辑保存重建对象须保留非表单字段——userInfo（流量）恒保留；条件 GET validators + hasProviders 仅 URL
+      // 未变时保留（URL 变=不同资源，旧 validator 无意义、旧 hasProviders 可能错 → 丢弃走全量拉取）。否则 #92 新字段
+      // 连同既有 userInfo 被全量替换抹掉（损失一次 304 优化）。
+      const urlUnchanged = subData.url === editingSub.url;
       const updatedSub: SubscriptionConfig = {
         ...subData,
         id: editingSub.id,
         createdAt: editingSub.createdAt,
         lastUpdated: editingSub.lastUpdated,
+        ...(editingSub.userInfo ? { userInfo: editingSub.userInfo } : {}),
+        ...(urlUnchanged && editingSub.etag ? { etag: editingSub.etag } : {}),
+        ...(urlUnchanged && editingSub.lastModified
+          ? { lastModified: editingSub.lastModified }
+          : {}),
+        ...(urlUnchanged && editingSub.hasProviders !== undefined
+          ? { hasProviders: editingSub.hasProviders }
+          : {}),
       };
       const res = await updateSubscription(updatedSub);
       // 失败（api-wrapper 已 toast）返回 ok:false → 对话框不关、留住用户输入。

@@ -71,7 +71,15 @@ export function buildDnsConfig(
   raceServerPort = 0,
   // 根治 §3.5：本轮实际发射的 endpoint（buildOutbounds 产出）。tailnet 按名解析 gate 用它确认目标 TS endpoint 已发射，
   // 避免引用未发射 endpoint 致 FATAL。缺省 []（snapshot/preflight 等无 endpoint 上下文 → tailnet 解析不生成）。
-  pendingEndpoints: SingBoxEndpoint[] = []
+  pendingEndpoints: SingBoxEndpoint[] = [],
+  // §15 主核测速探测池：K 个 dns-probe-exit-k server + K 条 inbound 键控 rule 的端口数（allocateProbePorts 3+K）。
+  // 空/缺省=不注入池（FakeIP/R1 路径字节不变，回退临时核）。
+  probePoolPorts: number[] = [],
+  // V37 出口伴测 / 出口 IP 探测（probe-proxy-in）端口（>0=就绪）：生成 dns-probe-exit-proxy server(223.5.5.5 DoH:443,
+  // detour=proxy-selector) + inbound 键控 rule，把探测目标域名解析绕过 S0/S1、穿当前出口隧道解析（解析视角=出口 geo 正确），
+  // 且 transport(DoH/TCP)+resolver(China-reachable) 全栈通（治 WG/WARP 伴测无值 · 不踩 TS-exit UDP 弱腿 · 不踩大陆出口
+  // dns.google 超时）。null/缺省=不注入（无 probe-proxy-in）。
+  probeProxyPort: number | null = null
 ): SingBoxDnsConfig {
   const proxyMode = (config.proxyMode || 'smart').toLowerCase();
 
@@ -166,6 +174,43 @@ export function buildDnsConfig(
     // 否则在境内直接发起会因 GFW 拦截/污染导致 FakeIP 映射失败或 TTL 极短产生大量无效解析。
     buildUserDns('dns-remote', foreign, selectedServerTag),
   ];
+
+  // §15 主核测速探测池 DNS server：K 个 dns-probe-exit-k（**223.5.5.5 over DoH:443**，detour=probe-selector-k）。端点
+  // （WG/WARP/TS）经 probe-in-k 测速时目标域名 dial 解析穿被测节点隧道 → AliDNS ECS 按出口地理返 IP（geo 正确）。
+  // §17.6：transport 从 udp:53 换 DoH:443——与伴测 dns-probe-exit-proxy(§17.5) 同解，治 **TS 池测速超时**（udp 出 tsnet
+  //   userspace gVisor 是弱腿，真机实证 TS 卡片/分组/全部测速全超时；DoH/TCP 穿 tsnet 可达，D1 伴测已证）。223.5.5.5
+  //   China-reachable + DoH 对 WG/WARP 亦通（D3 WARP 伴测 DoH 已证），取代原 udp（镜像临时核 dns-exit，仅 WG/WARP proven、
+  //   死 TS）。恒加进 servers（仅池就绪时），未被引用的 server 核不主动连接、零成本；被引用由下方 inbound 键控 rule 承担。
+  for (let k = 0; k < probePoolPorts.length; k++) {
+    dnsServers.push({
+      tag: `dns-probe-exit-${k}`,
+      type: 'https',
+      server: '223.5.5.5',
+      server_port: 443,
+      path: '/dns-query',
+      detour: `probe-selector-${k}`,
+    });
+  }
+
+  // V37 出口伴测 / 出口 IP 探测专用出口 DNS（§17.5）：**223.5.5.5 over DoH:443**，detour=selectedServerTag(proxy-selector，
+  // 随热切换跟当前节点)。使探测目标域名穿当前出口隧道解析、AliDNS ECS 按出口 geo 返可达 IP。选 223.5.5.5-DoH 的第一性：
+  //   · China-reachable：治大陆出口（Dalutone 等，真机实证 dns.google 8.8.4.4:443 穿大陆 context deadline exceeded 16s → 检测超时）；
+  //   · TCP/DoH：穿 tsnet userspace gVisor 可达（治 TS-exit——udp 53 出 tsnet 是弱腿；DoH:443/TCP 真机实证 75ms 通）；
+  //   · 与 dns-bootstrap 同为 IP-DoH proven 形态（server 已是 IP、无需 domain_resolver）。
+  // 取代历史两个半解：§17.1 udp-223.5.5.5(死 TS) 与 §17.4 段A dns-remote=dns.google(死大陆)。仅 probe-proxy-in 就绪时注入。
+  // 门控依赖不变量：此 server + 下方 rule 引用 probe-proxy-in 入站，而该入站由 inbounds/route builder 以 (probeDirectPort
+  //   && probeProxyPort) 双门控创建。二者恒 co-assigned（allocateProbePorts 对 3 端口原子赋值/清空）→ 单查 probeProxyPort
+  //   足够、不会 emit 引用不存在入站的 rule。若未来解耦端口分配，此处须同步改双门控。
+  if (probeProxyPort) {
+    dnsServers.push({
+      tag: 'dns-probe-exit-proxy',
+      type: 'https',
+      server: '223.5.5.5',
+      server_port: 443,
+      path: '/dns-query',
+      detour: selectedServerTag,
+    });
+  }
 
   // issue #147：race on + server 就绪 → 本地 race DNS server。节点域名 domain_resolver / rule1 经 getNodeResolverTag
   // 指 dns-node-race；多上游并发 race 在 server 内部，内核经它拿多 A → DialSerial 逐 IP 重试。127.0.0.1 loopback
@@ -436,6 +481,40 @@ export function buildDnsConfig(
         query_type: ['A', 'AAAA'],
         server: 'fakeip',
       } as SingBoxDnsRule);
+      // R1（§14.4，P6/P7 ROOT）：FakeIP 分支补回境内/境外分类的「影子规则」。上游语义：app 侧查询 Exchange 命中
+      // fakeip 即停（到不了下面这些规则 → 字节不变）；endpoint（WARP/WG/TS，必须本机解析目的域名 IP 才能灌进隧道）
+      // dial 的 Lookup 跳过 fakeip 继续走这些规则 → **天然只作用于 dial-time 目的解析**。修根因：endpoint 目的域名原
+      // 落 dns.final=dns-domestic（境内递归被 GFW 分钟级间歇投毒 → decoy IP → 隧道打向 Facebook → Meta 证书；P7 gstatic
+      // geo 错位）。镜像非 FakeIP 分支（下方 else）的 region/localGeo/reverse 单一真值。
+      const fakeipRegion = effectiveRegionRouting(config);
+      const fakeipRuntimeDir = getRuntimeRulesDir();
+      // fail-closed：引用 region geo rule_set 前镜像 else 分支——本地 .srs 缺失即跳过 S0（悬空 rule_set 会 FATAL）。
+      const fakeipLocalGeo = REGION_LOCAL_GEO[fakeipRegion.region].geosite.filter((tag) => {
+        const fileName = findBuiltin(tag)?.fileName ?? `${tag}.srs`;
+        return isValidSrsFile(path.join(fakeipRuntimeDir, fileName));
+      });
+      const fakeipLocalResolver = fakeipRegion.reverse
+        ? 'dns-remote'
+        : getDomesticResolverTag(config, 'dns-domestic');
+      const fakeipFallthroughResolver = fakeipRegion.reverse ? 'dns-domestic' : 'dns-remote';
+      // S0 境内内容（geosite-cn 等）→ 境内解析器（零延迟，与 route 侧 geosite-cn→direct 对齐）。
+      if (fakeipLocalGeo.length > 0) {
+        dnsRules.push({
+          query_type: ['A', 'AAAA'],
+          rule_set: fakeipLocalGeo.length === 1 ? fakeipLocalGeo[0] : fakeipLocalGeo,
+          server: fakeipLocalResolver,
+        } as SingBoxDnsRule);
+      }
+      // S1 境外（A/AAAA catch-all）→ dns-remote（dns.google，detour=proxy-selector，经当前出口隧道解析）= native-WARP
+      // 等价：恒干净（GFW/境内审查触不到）+ geo 最优（解析视角=出口位置）。治 endpoint 目的域名 dial 解析被投毒（P6/P7）。
+      // 注：§14.4 原设计的 ip_accept_any「error-fallthrough」经 sing-box check（1.14.0-alpha.43）**证伪**——ip_accept_any
+      // 是 Response Match Field（需 match_response + 前置 evaluate action），用于**过滤响应**非**错误回退**，且平凡 server
+      // 规则已通过 check。故改平凡 catch-all、去 S2（S1 catch-all 后 S2 不可达）。退化语义：China-exit / 隧道未热时
+      // dns-remote 失败 → SERVFAIL（该场景今天经 dns-domestic 拿真 IP 但 China exit 也连不上，不劣化；R25 等价）。
+      dnsRules.push({
+        query_type: ['A', 'AAAA'],
+        server: fakeipFallthroughResolver,
+      } as SingBoxDnsRule);
     } else {
       // 如果实在没开 FakeIP（比如系统代理模式），那就用 geosite 规则让它各自拿正确的 IP 吧（但也容易被墙污染）
       if (proxyMode === 'smart') {
@@ -535,6 +614,44 @@ export function buildDnsConfig(
     } else {
       log('warn', 'Tailscale 按名解析已开启，但未能定位选中节点的 endpoint tag，已跳过');
     }
+  }
+
+  // §15 主核测速探测池 DNS 规则（§15.11-F3 修：unshift 到 dns.rules **绝对最前**——先于 preferred_by/tailscale/
+  //   节点域名/bootstrap/captive/NTP/fakeip 等一切规则）：inbound 键控（probe-in-k），仅匹配探测流量、对其取绝对优先，
+  //   故对 app 流量逐字节 no-op（无 app 入站为 probe-in-k）。防病态自配测速目标（captive/含 ntp/stun 域名）被 inbound
+  //   无关的 fakeip-filter 规则先命中→WG/WARP 走错解析器 geo 错位。端点（WG/WARP）经 probe-in-k 测速时目标域名 dial
+  //   解析继承该入站上下文 → dns-probe-exit-k（穿被测节点隧道，AliDNS ECS 按出口 geo 返 IP，镜像临时核 dns-exit）。
+  //   disable_cache 必需（槽跨节点轮换，缓存 geo 答案污染下一节点）。proxy 协议目标域名 ATYP=domain 透传出口远端解析
+  //   （不碰本机 DNS），此规则对其为 no-op → 透传不变量保持。仅池就绪时注入；空=零注入（各模式路径逐字节不变）。
+  if (probePoolPorts.length > 0) {
+    const probeRules: SingBoxDnsRule[] = [];
+    for (let k = 0; k < probePoolPorts.length; k++) {
+      probeRules.push({
+        inbound: [`probe-in-${k}`],
+        query_type: ['A', 'AAAA'],
+        action: 'route',
+        server: `dns-probe-exit-${k}`,
+        disable_cache: true,
+      } as SingBoxDnsRule);
+    }
+    dnsRules.unshift(...probeRules);
+  }
+
+  // V37 出口伴测 / 出口 IP 探测 inbound 键控 DNS 规则（unshift 到最前，仅匹配 probe-proxy-in 探测流量、对 app 逐字节 no-op）。
+  // 探测目标恒被 route 钉死走当前出口（route-builder probe-proxy-in → proxy-selector），故其 dial 解析必须「以出口视角」
+  // （geo 正确）且 transport 须任意隧道栈（WG/WARP gVisor · tsnet gVisor · proxy）皆可承载。
+  // → 指专用 dns-probe-exit-proxy（223.5.5.5 DoH:443，detour=proxy-selector，见上方 server 定义 §17.5）：China-reachable
+  // 治大陆出口 + TCP/DoH 穿 tsnet 治 TS-exit。同时绕过 S0/S1 地区分类（把探测当独立路径，避免 www.gstatic.com 落 geosite-cn
+  // → dns-domestic → 隧道拨 CN geo IP 失败=V37 原病）。取代历史两半解：§17.1 udp-223.5.5.5(死 TS) 与 §17.4 dns-remote(死大陆)。
+  // disable_cache：proxy-selector 随热切换跨节点，缓存 geo 答案污染下一节点。仅 probe-proxy-in 就绪时注入。
+  if (probeProxyPort) {
+    dnsRules.unshift({
+      inbound: ['probe-proxy-in'],
+      query_type: ['A', 'AAAA'],
+      action: 'route',
+      server: 'dns-probe-exit-proxy',
+      disable_cache: true,
+    } as SingBoxDnsRule);
   }
 
   dnsConfig.rules = dnsRules;

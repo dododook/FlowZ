@@ -1,15 +1,20 @@
 /**
- * 测速结果徽标（延迟 ms / 超时 / 不可测 N/A）—— Conduit `.nd-lat` 形态，卡首行右上角展示（与原型一致）。
- * 卡片视图与列表视图共用同一组件；测速态/不可测口径与 ServerActions 一致（isSpeedTestable 单一真值 + latencyMap），
- * 纯展示无副作用。色档委托 latToneClass（与 getLatencyColor 同阈值单一真值）。
+ * 测速结果徽标（延迟 ms / 超时 / 不可测 N/A / 出口无效 / 未登录）—— Conduit `.nd-lat` 形态，卡首行右上角展示。
+ * 卡片视图与列表视图共用同一组件；态由 deriveLatencyBadge 单一真值派生（含 TS 出口态/登录态输入），纯展示无副作用。
+ * 色档委托 latToneClass（与 getLatencyColor 同阈值单一真值）；异常态（出口无效/未登录）用 --warn 文案替代假延迟。
  */
 import { useTranslation } from 'react-i18next';
-import { isSpeedTestable } from '../../../shared/endpoint-routes';
 import { latToneClass, type ServerConfigWithId } from './server-list-helpers';
 import { useAppStore } from '../../store/app-store';
+import { deriveLatencyBadge } from '../../lib/latency-badge';
+import type { ProxyExitBlock } from '../../../shared/types';
 
-/** 陈旧阈值：会话内超此时长未重测视为旧值 → dim 提示需重测（延迟仅会话内存态，重启清空）。 */
-const STALE_MS = 30 * 60 * 1000;
+/** TS 出口无效三原因 → title 文案键（复用首页 ts-exit-warning 长句，给悬停行动指引）。 */
+const EXIT_BLOCK_TITLE_KEY: Record<ProxyExitBlock, string> = {
+  'ts-no-exit-device': 'home.tsExitNoDeviceWarn',
+  'ts-exit-device-offline': 'home.tsExitDeviceOfflineWarn',
+  'ts-exit-not-advertised': 'home.tsExitNotAdvertisedWarn',
+};
 
 export function SpeedBadge({
   server,
@@ -19,43 +24,102 @@ export function SpeedBadge({
   latencyMap: Record<string, number>;
 }) {
   const { t } = useTranslation();
-  // 该节点最近测速时间戳（自读 store，使列表/下拉/详情各处徽标一致获得陈旧标识，无需逐层透传 prop）。
+  // 徽标态的全部输入自读 store（testedAt/登录态/选中/运行/出口直判无效），使列表/下拉/详情各处徽标口径一致，无需逐层透传。
   const testedAt = useAppStore((s) => s.latencyTestedAt[server.id]);
-  // 不可测节点（Tailscale / 自定义 endpoint / reverseMesh）：显不可测占位（faint），与 ServerActions ⚡ 隐藏同口径。
-  const testable = isSpeedTestable(server);
-  if (!testable) {
-    return (
-      <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
-        {t('servers.speedTestNotApplicable')}
-      </span>
-    );
+  const tsLoggedIn = useAppStore((s) => s.tailscaleLoginStates[server.id]);
+  const isSelectedExit = useAppStore((s) => s.config?.selectedServerId === server.id);
+  const proxyRunning = useAppStore((s) => !!s.connectionStatus?.proxyCore?.running);
+  const proxyBlocked = useAppStore((s) => s.ipInfo?.proxyBlocked);
+  const speedTestAttempted = useAppStore((s) => s.speedTestAttempted);
+  const notInPool = useAppStore((s) => s.speedTestNotInPool.has(server.id));
+
+  const badge = deriveLatencyBadge({
+    server,
+    latency: latencyMap[server.id],
+    testedAt,
+    now: Date.now(),
+    tsLoggedIn,
+    isSelectedExit,
+    proxyRunning,
+    proxyBlocked,
+    speedTestAttempted,
+    notInPool,
+  });
+
+  switch (badge.kind) {
+    // 结构性不可用 → --warn 文案替代假延迟（用户诉求）。出口无效 title 按原因细分给行动指引。
+    case 'exit-invalid':
+      return (
+        <span
+          className="nd-lat mono"
+          style={{ color: 'hsl(var(--warn))' }}
+          title={t(EXIT_BLOCK_TITLE_KEY[badge.reason])}
+        >
+          {t('home.exitInvalid', '出口无效')}
+        </span>
+      );
+    case 'not-logged-in':
+      return (
+        <span className="nd-lat mono" style={{ color: 'hsl(var(--warn))' }}>
+          {t('servers.tsNotLoggedIn', '未登录')}
+        </span>
+      );
+    // 不可测且无值：faint 占位。§16.1 reason=ts-needs-core（TS-exit 代理关）→ 显「—」+ tooltip「连接代理后可测速」
+    //（它可测，只是缺主核）；否则恒不可测三类 → 「不支持测速」+ exitProbeHint（选为出口后伴测得真值，非永远测不了）。
+    case 'na':
+      return badge.reason === 'ts-needs-core' ? (
+        <span
+          className="nd-lat mono"
+          style={{ color: 'hsl(var(--fg-faint))' }}
+          title={t('servers.speedTestTsNeedsCore', { defaultValue: '连接代理后可测速' })}
+        >
+          —
+        </span>
+      ) : (
+        <span
+          className="nd-lat mono"
+          style={{ color: 'hsl(var(--fg-faint))' }}
+          title={t('servers.exitProbeHint')}
+        >
+          {t('servers.speedTestNotApplicable')}
+        </span>
+      );
+    // 可测未测：占位 em dash（faint），与原型 pending 卡「—」一致。§16.3.3 reason=not-in-pool（订阅新增未入池）→ 加
+    // tooltip 引导刷新订阅入池；纯未测无 tooltip。
+    case 'untested':
+      return (
+        <span
+          className="nd-lat mono"
+          style={{ color: 'hsl(var(--fg-faint))' }}
+          title={
+            badge.reason === 'not-in-pool'
+              ? t('servers.speedTestNodePending', { defaultValue: '订阅新增节点，刷新订阅后纳入测速' })
+              : undefined
+          }
+        >
+          —
+        </span>
+      );
+    // 陈旧（会话内久未重测）→ 半透明提示「需重测」，title 给绝对测速时间；新鲜则正常显色。
+    case 'timeout': {
+      const title = testedAt ? new Date(testedAt).toLocaleString() : undefined;
+      return (
+        <span className={`nd-lat err mono ${badge.stale ? 'opacity-50' : ''}`} title={title}>
+          {t('servers.timeout')}
+        </span>
+      );
+    }
+    case 'value': {
+      const title = testedAt ? new Date(testedAt).toLocaleString() : undefined;
+      return (
+        <span
+          className={`nd-lat ${latToneClass(badge.latency)} mono tnum ${badge.stale ? 'opacity-50' : ''}`}
+          title={title}
+        >
+          {badge.latency}
+          <i>ms</i>
+        </span>
+      );
+    }
   }
-  const latency = latencyMap[server.id];
-  // 未测速：占位 em dash（faint），与原型 pending 卡「—」一致（不隐藏，保持卡首行右侧对齐）。
-  if (latency === undefined) {
-    return (
-      <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
-        —
-      </span>
-    );
-  }
-  // 陈旧（会话内久未重测）→ 半透明提示「需重测」，title 给绝对测速时间；新鲜则正常显色。
-  const stale = testedAt !== undefined && Date.now() - testedAt > STALE_MS;
-  const title = testedAt ? new Date(testedAt).toLocaleString() : undefined;
-  if (latency === -1) {
-    return (
-      <span className={`nd-lat err mono ${stale ? 'opacity-50' : ''}`} title={title}>
-        {t('servers.timeout')}
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`nd-lat ${latToneClass(latency)} mono tnum ${stale ? 'opacity-50' : ''}`}
-      title={title}
-    >
-      {latency}
-      <i>ms</i>
-    </span>
-  );
 }

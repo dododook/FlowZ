@@ -217,18 +217,24 @@ export async function updateSubscriptionServers(subscriptionId: string): Promise
     addedServers: number;
     updatedServers: number;
     deletedServers: number;
+    unchanged?: boolean;
   }>
 > {
   try {
     const result = await api.subscription.updateServers(subscriptionId);
     if (result.success) {
-      ErrorHandler.showSuccess(
-        i18n.t('apiToast.subServersUpdated', {
-          added: result.addedServers,
-          updated: result.updatedServers,
-          deleted: result.deletedServers,
-        })
-      );
+      // §16.3.4：304/无内容变化 → 「订阅无变化」（否则计数=0/0/0 会误显「已更新」）；有变化照旧显新增/更新/删除计数。
+      if (result.unchanged) {
+        ErrorHandler.showSuccess(i18n.t('apiToast.subNoChange', { defaultValue: '订阅无变化' }));
+      } else {
+        ErrorHandler.showSuccess(
+          i18n.t('apiToast.subServersUpdated', {
+            added: result.addedServers,
+            updated: result.updatedServers,
+            deleted: result.deletedServers,
+          })
+        );
+      }
       return { success: true, data: result };
     } else {
       ErrorHandler.showError(i18n.t('apiToast.subServersUpdateFailed', { error: result.error }));

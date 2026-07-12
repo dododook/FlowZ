@@ -31,6 +31,7 @@ import type { ProxyMode, ProxyModeType, ServerConfig } from '@/bridge/types';
 import { cn } from '@/lib/utils';
 import { deriveConnectionStatus } from './connection-status';
 import { deriveConnectButtonState } from './connect-button-state';
+import { UnlockInline } from './unlock-inline';
 import { TsExitWarning } from './ts-exit-warning';
 import { DIRECT_SERVER_ID, isDirectSelection } from '@shared/direct-selection';
 import { sortServersByLatency } from '@shared/server-latency-sort';
@@ -59,9 +60,14 @@ function ExitNodePicker({
   const subscriptions = useAppStore((s) => s.config?.subscriptions || []);
   const latencyMap = useAppStore((s) => s.latencyMap);
   const sortByLatency = useNodeSortStore((s) => s.sortByLatency);
+  // 徽标异常态输入：使下拉里 TS/组网出口显「出口无效 / 未登录」warn 文案（与 SpeedBadge 同 deriveLatencyBadge 口径）。
+  const tailscaleLoginStates = useAppStore((s) => s.tailscaleLoginStates);
+  const proxyRunning = useAppStore((s) => !!s.connectionStatus?.proxyCore?.running);
+  const proxyBlocked = useAppStore((s) => s.ipInfo?.proxyBlocked);
+  const speedTestAttempted = useAppStore((s) => s.speedTestAttempted);
 
   // 直连哨兵（#73）恒置顶；组内按延迟排序开关；共享映射与规则/应用分流/detour 口径统一。
-  // memo 对齐 rule-dialog / app-rules-card：仅在输入（节点/订阅/延迟/排序开关/i18n）变化时重算，测速广播不空跑。
+  // memo 对齐 rule-dialog / app-rules-card：仅在输入（节点/订阅/延迟/排序开关/i18n/登录·出口态）变化时重算，测速广播不空跑。
   const { items, groups } = useMemo(
     () =>
       buildServerPickerModel({
@@ -74,8 +80,28 @@ function ExitNodePicker({
         withAddress: true,
         sortServers: (arr) =>
           sortByLatency ? sortServersByLatency(arr, (id) => latencyMap[id]) : arr,
+        speedTestAttempted,
+        badge: {
+          tsLoggedIn: tailscaleLoginStates,
+          selectedServerId,
+          proxyRunning,
+          proxyBlocked,
+          exitInvalidLabel: t('home.exitInvalid', '出口无效'),
+          notLoggedInLabel: t('servers.tsNotLoggedIn', '未登录'),
+        },
       }),
-    [servers, subscriptions, latencyMap, sortByLatency, t]
+    [
+      servers,
+      subscriptions,
+      latencyMap,
+      sortByLatency,
+      t,
+      tailscaleLoginStates,
+      selectedServerId,
+      proxyRunning,
+      proxyBlocked,
+      speedTestAttempted,
+    ]
   );
 
   return (
@@ -298,7 +324,13 @@ export function ConnectionControlCard() {
       <div className="card conn-card">
         {/* 出口节点：一步选下拉 + 测速/排序 + 连接圆钮三态 */}
         <div className="field">
-          <div className="field-lbl">{t('home.exitNode', '出口节点')}</div>
+          {/* 出口节点标签行：右侧内联解锁检测（解锁态 ↔ 出口节点强绑，零挤占垂直空间） */}
+          <div className="flex items-center gap-3">
+            <div className="field-lbl shrink-0">{t('home.exitNode', '出口节点')}</div>
+            <div className="ml-auto min-w-0">
+              <UnlockInline />
+            </div>
+          </div>
           {isEmptyState ? (
             // 空态引导：无节点 → 添加节点/订阅（连接圆钮同排但置灰）。
             <div className="cc-node-row">

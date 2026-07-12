@@ -193,13 +193,30 @@ export function meshSystemSupportedOnPlatform(
   return (platform || '').toLowerCase() !== 'win32';
 }
 
+/** 测速可行性能力位（path-aware）：主核 probe 池是否可用（=代理运行且池就绪）。 */
+export interface SpeedTestCaps {
+  mainCorePool?: boolean;
+}
+
 /**
- * 节点是否参与测速。不可测=tailscale / 自定义 endpoint / reverseMesh(system 内核接口)。
- * 与 ProxyManager.buildSpeedTestOutbound 的 null 分支同口径(单一真值);WireGuard 仍可测。
+ * 节点是否参与测速（path-aware，§16.1）。
+ *  - TS-exit（exitNode 非空 && 非 reverseMesh）：**仅主核池路径**可测（caps.mainCorePool）——主核 tsnet 认证态活着、
+ *    TS tag 已是 probe-selector 成员；临时核路径建不出第二 tsnet 实例，维持排除。
+ *  - TS-mesh-only（无 exitNode）：meshAllowsInternet=false → 公网黑洞必假超时 → 恒排除。
+ *  - reverseMesh(system 内核接口)：非选中时 dial 走 OS default = 测出直连假好值 → 恒排除。
+ *  - custom endpoint：raw-JSON 无 gate 真值 → 恒排除。
+ * 缺省 caps（不传/临时核口径）：TS 一律不可测——与 ProxyManager.buildSpeedTestOutbound 的 null 分支同口径。
+ * WireGuard（非 reverseMesh）仍可测。
  */
-export function isSpeedTestable(server: ServerConfig): boolean {
+export function isSpeedTestable(server: ServerConfig, caps?: SpeedTestCaps): boolean {
   const p = server.protocol?.toLowerCase();
-  if (p === 'tailscale') return false;
+  if (p === 'tailscale') {
+    return (
+      caps?.mainCorePool === true &&
+      meshAllowsInternet(server) && // ⟺ !!exitNode（本文件 :92）
+      !meshUsesSystemInterface(server) // reverseMesh 排除（假好值）
+    );
+  }
   if (meshUsesSystemInterface(server)) return false;
   if (p === 'custom' && server.customSettings?.isEndpoint) return false;
   return true;

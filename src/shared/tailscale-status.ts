@@ -20,6 +20,9 @@ export interface TailscaleStatusPeer {
   exitNodeOption: boolean;
   /** 近期是否有活跃直连/流量。 */
   active: boolean;
+  /** peer 的 tailnet stableID（节点稳定标识，proto field 12）——主进程热重设 exit_node
+   *  （SetTailscaleExitNode RPC）用；UI 不消费，可缺（旧核/无 ID 时 undefined）。 */
+  stableID?: string;
 }
 
 /** 单个 Tailscale endpoint 的状态事件（serverId 维度，与 EVENT_TAILSCALE_STATUS 载荷一致）。 */
