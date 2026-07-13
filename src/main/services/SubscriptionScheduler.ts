@@ -20,11 +20,8 @@ import type { LogManager } from './LogManager';
 import { SubscriptionService } from './SubscriptionService';
 import type { UserConfig } from '../../shared/types';
 import { resolveSubscriptionViaProxy } from '../../shared/subscription-proxy';
-import {
-  pickFallbackExit,
-  DIRECT_SERVER_ID,
-  isDirectSelection,
-} from '../../shared/direct-selection';
+import { DIRECT_SERVER_ID, isDirectSelection } from '../../shared/direct-selection';
+import { pickViableFallbackExit } from '../../shared/fallback-exit';
 import { referencedServerIds } from '../../shared/endpoint-routes';
 import { BackoffTracker } from './backoff-tracker';
 
@@ -295,7 +292,10 @@ export class SubscriptionScheduler {
         // F14：被下架的若是「选中」节点 → reselect 存活出口逃死节点（pickFallbackExit：无 latency 取首个候选，空则 direct）。
         const selectedDelisted = !!selId && !liveIds.has(selId);
         if (selectedDelisted) {
-          fresh.selectedServerId = pickFallbackExit([...liveIds], {}) ?? DIRECT_SERVER_ID;
+          // 候选须过可用性谓词（排 subnet-only 组网节点，防静默直连，#291 review Med）；空则 DIRECT 哨兵。
+          fresh.selectedServerId =
+            pickViableFallbackExit(fresh.servers.filter((s) => liveIds.has(s.id))) ??
+            DIRECT_SERVER_ID;
         }
         // 落盘 + 通知 UI（渲染端/托盘刷新 + 差集重算）。
         await this.configManager.saveConfig(fresh);

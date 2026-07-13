@@ -1581,7 +1581,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         return;
       }
       // 窗口内可能已被 stop()/quit 清掉（且无在飞操作）：仅在仍运行时重启
-      if (!this.singboxProcess && !this.singboxPid) return;
+      // H-1：核已停（crash/拆窗终态）→ 一并清掉待决 force-restart 快照，否则残留快照会被后续无关去抖重启误消费成陈旧重启。
+      if (!this.singboxProcess && !this.singboxPid) {
+        this.pendingForceRestartConfig = null;
+        return;
+      }
       // H-1：force-restart 专用配置优先（in-flight start 腿覆盖 currentConfig 时它未被覆盖）；用后即清，普通去抖读 currentConfig。
       const cfg = this.pendingForceRestartConfig ?? this.currentConfig;
       this.pendingForceRestartConfig = null;
@@ -1723,9 +1727,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * currentConfig 先赋值 → scheduleDebouncedRestart 在 trailing 读到新 servers；restart=stop+start 全量重生成（含新节点
    * outbound/nodeTags/池成员/currentIdToTagMap），无半状态风险。
    */
-  applyConfigForcingRestart(newConfig: UserConfig): void {
+  applyConfigForcingRestart(newConfig: UserConfig): 'applied' | 'deferred' | 'skipped' {
     this.currentConfig = newConfig;
-    if (this.coreSwapInProgress) return; // 换核窗口：缓存已更新、随下次重启生效，不撞半替换核
+    if (this.coreSwapInProgress) return 'deferred'; // 换核窗口：缓存已更新、随下次重启生效，不撞半替换核
     // H-1：restart 的 stop→start 空窗内句柄（singboxProcess/singboxPid）暂空——若以句柄判空早退，本次强制重启会被
     // 静默丢弃，且用户按 UI 指引重试订阅刷新时遇 304/contentChanged=false → 不再触发 force-restart → 死循环。故有
     // lifecycle 操作在飞（depth>0）时置 restartPending，由 endLifecycleOp 在 depth 归 0 时排空一次。**且写 pending 专用
@@ -1734,11 +1738,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (this.lifecycleDepth > 0) {
       this.pendingForceRestartConfig = newConfig;
       this.restartPending = true;
-      return;
+      return 'deferred'; // 有 lifecycle 在飞：排入 drain，由 endLifecycleOp 归零时重启
     }
-    if (!this.singboxProcess && !this.singboxPid) return; // 真未运行（无在飞操作）：下次 start 从磁盘纳入新节点
+    if (!this.singboxProcess && !this.singboxPid) return 'skipped'; // 真未运行：下次 start 从磁盘纳入新节点
     this.pendingForceRestartConfig = newConfig; // depth 0 运行中：直接去抖重启，drain 亦读专用字段绕开潜在覆盖
     this.scheduleDebouncedRestart();
+    return 'applied';
   }
 
   /**
@@ -1779,6 +1784,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // norm 已移出 selectedServerId/targetServerId → 仅这俩值变不翻转 norm → 可经此热切换路径。
     const plan = this.planHotSwitch(newConfig);
     if (plan.kind !== 'none') {
+      // Low-3：hotSwitchSelector 有 await（PUT 在飞）——期间可能有更新的 applyConfigForcingRestart(cfgC) 置 pending。
+      //   捕获 await 前的 pending 引用，await 后仅当它未变（无更新 force 抢入）才刷新到 newConfig，避免把 cfgC 降级回旧值。
+      const pendingBeforeSwitch = this.pendingForceRestartConfig;
       let allOk = true;
       for (const p of plan.puts) {
         if (!(await this.hotSwitchSelector(p.selectorTag, p.memberTag))) {
@@ -1788,6 +1796,16 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
       if (allOk) {
         this.currentConfig = newConfig;
+        // H-1：热切不重启，但若有待决 force-restart（applyConfigForcingRestart 已排程去抖）→ 刷新其快照到 newConfig，
+        //   否则 timer 触发时消费旧 cfgA、重启回旧 selectedServerId（栈式 stale 快照）。刷新保留 force-restart 意图（不清 null）
+        //   而值不回退——switchMode 恒收 ConfigManager 最新全量 config。三处非结构腿（热切/no-op/defer）同治。
+        // 仅当 pending 在 await 期间未被更新的 force 抢占（=== 捕获值）才刷新，否则保留后来者 cfgC（Low-3）。
+        if (
+          this.pendingForceRestartConfig !== null &&
+          this.pendingForceRestartConfig === pendingBeforeSwitch
+        ) {
+          this.pendingForceRestartConfig = newConfig;
+        }
         // 精准断连：pair（含旧成员 tag）已在 planHotSwitch 阶段（currentConfig 尚旧时）算好，此处直接消费 plan。
         this.closeOldNodeConnectionsAfterHotSwitch(newConfig, plan);
         // L3：norm 排除了外化规则的值 → 「切节点 + 改外化规则值」同一次 save 会通过 planHotSwitch 检查，
@@ -1832,6 +1850,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       this.configGenerationNorm(this.currentConfig) === this.configGenerationNorm(newConfig)
     ) {
       this.currentConfig = newConfig;
+      // H-1：no-op 更新 currentConfig 后同样刷新待决 force-restart 快照，防 timer 消费旧值重启回退（见热切腿说明）。
+      if (this.pendingForceRestartConfig !== null) this.pendingForceRestartConfig = newConfig;
       // L3 值热更主路径：norm 结构相等但外化规则的值可能变了 ⇔ 文件内容 diff → 原子替换 + fswatch 热重载、零重启。
       // 降级桥：上次有外化规则未落盘走 inline（文件无消费者）→ 改走重启重落盘，防「写了没人消费」的值陈旧。
       if (this.customRuleFilesDegraded) this.scheduleDebouncedRestart();
@@ -1859,6 +1879,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         '仅新增未引用节点（订阅刷新等），免重启应用（新节点下次启动/被选中时生效）'
       );
       this.currentConfig = newConfig;
+      // H-1：defer 更新 currentConfig 后同样刷新待决 force-restart 快照，防 timer 重启回退到旧节点（见热切腿说明）。
+      if (this.pendingForceRestartConfig !== null) this.pendingForceRestartConfig = newConfig;
       if (this.customRuleFilesDegraded) this.scheduleDebouncedRestart();
       else await this.syncCustomRuleFiles(newConfig);
       return;
@@ -2233,6 +2255,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     const c: Record<string, unknown> = { ...s };
     delete c.updatedAt;
     delete c.createdAt;
+    // Nit：providerName 是归属元数据（provider 改名不改连接内容）→ 剔除，对齐 SubscriptionService.contentKey 的排除集，
+    //   否则改名会让 reconcile 判「无变化」而指纹却变 → 节点误标 modified/「待生效」+ 被 dirty 闸拖入整核重启。保留
+    //   name（= outbound tag/显示名，改名确需重启）与 subscriptionId。
+    delete c.providerName;
     return this.stableStringify(c);
   }
 
@@ -7649,6 +7675,11 @@ exit 0
         code,
         signal,
       });
+
+      // 崩溃终态（重启被抑制/达上限）仅发 'error'、不发 'stopped'——而 unlock 失效仅挂在 'started'/'stopped'/
+      // 'unlock-invalidate' 上（index.ts），故死核会残留陈旧解锁快照挂在 UI 上。服务端自持地补发 unlock-invalidate
+      //（不依赖 index.ts 另加 'error' 监听）→ 使解锁缓存失效，避免 mount 时展示已死出口的旧解锁结果。
+      this.emit('unlock-invalidate');
     } else {
       // 正常退出 / 被信号终止（SIGTERM/SIGKILL）：触发停止事件
       this.emit('stopped');

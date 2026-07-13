@@ -149,13 +149,13 @@ export class SpeedTestService {
     onProgress?: (tested: number, ok: number, total: number) => void,
     testUrl?: string
   ): Promise<SpeedTestRunResult> {
-    // 单一真值闸（下沉于此，UI/托盘两入口共用）：不可测节点（自定义 endpoint / reverseMesh system 内核接口）不参与
-    // 测速——它们对任何路径都返 null→-1「超时」，与 UI 角标「不适用」口径冲突。§16.1 path-aware：TS-exit 仅在主核池
-    // 可用（代理运行+池就绪）时纳入，否则临时核口径剔除。caps 为起测冻结快照（决定 coalesce 覆盖集）；核在快照后挂 →
-    // 主核路径 superseded() 兜底（TS 缺席、无假 -1）。
-    const probeForCaps = this.getMainCoreProbe?.() ?? null;
-    const caps = { mainCorePool: !!(probeForCaps?.available() && probeForCaps.isRunning()) };
-    const testable = servers.filter((s) => isSpeedTestable(s, caps));
+    // 单一真值闸（下沉于此，UI/托盘两入口共用）：此处仅剔「**永久**不可测」节点（自定义 endpoint / reverseMesh system
+    // 内核接口 / mesh-only 无出口）——它们对任何路径都返 null→-1「超时」，与 UI 角标「不适用」口径冲突。
+    // §16.1 path-aware 的 TS-exit（仅主核池可用时可测）是**瞬态**判定，**不在此按入队瞬刻的 caps 冻结**：本次请求可能
+    // 串在在飞测速之后，doTestAllServers 数十秒后才真正执行——入队时核停冻结掉 TS 会致「排队期间核起来了却仍被剔、既不
+    // 测也不进 skipped 静默漏测」。故用恒真 caps（mainCorePool:true）只筛掉永久不可测，把 TS-exit 的真实取舍下沉到
+    // doTestAllServers 执行侧按 runtime caps 决定（主核路径测之 / 临时核路径按 mainCorePool:false 剔入 tsNotReady 出信号）。
+    const testable = servers.filter((s) => isSpeedTestable(s, { mainCorePool: true }));
     if (testable.length === 0) {
       return {
         results: new Map(),

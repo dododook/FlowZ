@@ -185,6 +185,10 @@ export const checkDisney: Checker = async (fetch) => {
     },
     body: DISNEY.graphqlBodyTemplate.replace(DISNEY.refreshTokenPlaceholder, () => refreshToken),
   });
+  // graphql 传输失败必落 timeout（对齐其余 leg 与 §4「网络失败→timeout，绝不误 block」）：漏此判则 body='' →
+  // region=undefined → 下方 `if(!region) return blocked`，把传输失败误判成高置信 blocked 缓存 30min，且 settle/partial
+  // 补测只重跑 timeout（非 blocked）→ 错误结果卡死 30min。故须先于 region 映射兜底。
+  if (!reachable(gRes)) return { status: 'timeout' };
   const region = /"countryCode"\s*:\s*"([A-Za-z]{2})"/.exec(gRes.body)?.[1]?.toUpperCase();
   const inSupported = /"inSupportedLocation"\s*:\s*(true|false)/.exec(gRes.body)?.[1];
 

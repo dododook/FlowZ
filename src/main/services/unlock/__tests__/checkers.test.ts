@@ -359,6 +359,23 @@ describe('checkDisney（bamgrid 三段 devices→token→graphql + disneyplus pr
     ]);
     expect(await checkDisney(f)).toEqual({ status: 'timeout' });
   });
+  it('timeout：graphql（leg3）传输失败 → 不误判 blocked（body 空→region undefined，网络失败必落 timeout）', async () => {
+    const f = fakeFetch([
+      [DISNEY.devicesUrl, devOk],
+      [DISNEY.tokenUrl, tokOk],
+      [DISNEY.graphqlUrl, res({ status: 0, error: 'x' })],
+    ]);
+    expect(await checkDisney(f)).toEqual({ status: 'timeout' });
+  });
+  it('ok：preview（leg5）传输失败不误 block（pv 失败→finalUrl=previewUrl 无 marker→落 inSupportedLocation:true）', async () => {
+    const f = fakeFetch([
+      [DISNEY.devicesUrl, devOk],
+      [DISNEY.tokenUrl, tokOk],
+      [DISNEY.graphqlUrl, graphql('{"inSupportedLocation":true,"countryCode":"US"}')],
+      [DISNEY.previewUrl, res({ status: 0, error: 'x' })],
+    ]);
+    expect(await checkDisney(f)).toEqual({ status: 'ok', region: 'US' });
+  });
 });
 
 describe('checkSpotify', () => {

@@ -16,7 +16,9 @@ import {
   meshForceRoutedServers,
   isSpeedTestable,
   tailscaleSlotTaken,
+  customEndpointCarriesTraffic,
 } from '../endpoint-routes';
+import { isViableFallbackExit, pickViableFallbackExit } from '../fallback-exit';
 import type { ServerConfig, UserConfig } from '../types';
 
 const wg = (allowedIPs?: string[], allowInternet?: boolean, reverseMesh?: boolean): ServerConfig =>
@@ -548,5 +550,45 @@ describe('isSpeedTestable path-aware（§16.1：TS-exit 仅主核池路径可测
   it('custom endpoint：恒不可测（无 gate 真值）；非 endpoint custom 可测', () => {
     expect(isSpeedTestable(custom(true), { mainCorePool: true })).toBe(false);
     expect(isSpeedTestable(custom(false), { mainCorePool: true })).toBe(true);
+  });
+});
+
+describe('customEndpointCarriesTraffic（承流语义键，#291 review Med-2）', () => {
+  it('WG system:true / allowed_ips（含 peers[] 嵌套）命中', () => {
+    expect(customEndpointCarriesTraffic({ system: true })).toBe(true);
+    expect(customEndpointCarriesTraffic({ peers: [{ allowed_ips: ['0.0.0.0/0'] }] })).toBe(true);
+  });
+  it('Tailscale system_interface / accept_routes / advertise_routes / exit_node 命中（Med-2 修复）', () => {
+    expect(customEndpointCarriesTraffic({ system_interface: true })).toBe(true);
+    expect(customEndpointCarriesTraffic({ accept_routes: true })).toBe(true);
+    expect(customEndpointCarriesTraffic({ advertise_routes: ['10.0.0.0/24'] })).toBe(true);
+    expect(customEndpointCarriesTraffic({ exit_node: '100.64.0.1' })).toBe(true);
+  });
+  it('通用路由键命中', () => {
+    expect(customEndpointCarriesTraffic({ routes: ['1.1.1.0/24'] })).toBe(true);
+    expect(customEndpointCarriesTraffic({ route_address: ['x'] })).toBe(true);
+  });
+  it('无承流键 → false（含数组/字符串/空对象）', () => {
+    expect(customEndpointCarriesTraffic({ type: 'wireguard', tag: 'x', server: 'h' })).toBe(false);
+    expect(customEndpointCarriesTraffic({})).toBe(false);
+    expect(customEndpointCarriesTraffic('str')).toBe(false);
+    expect(customEndpointCarriesTraffic(null)).toBe(false);
+  });
+});
+
+describe('isViableFallbackExit / pickViableFallbackExit（兜底出口过滤，#291 review Med-1）', () => {
+  const goodMesh: ServerConfig = { ...wg([], true), id: 'good' }; // 承载全隧道（allowInternet）
+  const subnetOnly: ServerConfig = { ...wg(['10.0.0.0/24'], false), id: 'bad' }; // 子网-only：不承载公网 → 排除
+  const tsExit: ServerConfig = { ...ts(undefined, true), id: 'tsx' }; // TS 有 exitNode → 承载
+
+  it('子网-only 组网节点不作兜底出口（防静默直连）', () => {
+    expect(isViableFallbackExit(subnetOnly)).toBe(false);
+    expect(isViableFallbackExit(goodMesh)).toBe(true);
+    expect(isViableFallbackExit(tsExit)).toBe(true);
+  });
+  it('pickViableFallbackExit 跳过不承载节点选可用者；全不可用 → null（→direct）', () => {
+    expect(pickViableFallbackExit([subnetOnly, goodMesh])).toBe('good');
+    expect(pickViableFallbackExit([subnetOnly])).toBeNull();
+    expect(pickViableFallbackExit([])).toBeNull();
   });
 });

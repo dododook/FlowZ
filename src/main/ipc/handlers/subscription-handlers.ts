@@ -8,6 +8,8 @@ import { SubscriptionService, SubscriptionUpdateResult } from '../../services/Su
 import type { SubscriptionPreviewResult } from '../../../shared/subscription-preview';
 import { ConfigManager } from '../../services/ConfigManager';
 import { resolveSubscriptionViaProxy } from '../../../shared/subscription-proxy';
+import { DIRECT_SERVER_ID } from '../../../shared/direct-selection';
+import { pickViableFallbackExit } from '../../../shared/fallback-exit';
 import { mt } from '../../i18n';
 import { randomUUID } from 'crypto';
 
@@ -186,17 +188,22 @@ export function registerSubscriptionHandlers(
           finalKeep = [...newServersToKeep, ...leftover];
           finalDeleted = deleted - leftover.length;
         }
-        // selectedServerId 被删且未被 leftover 保留 → 清空（partial 精确删除后也可能删掉选中节点）
+        const otherServers = config.servers.filter((s) => s.subscriptionId !== subscription.id);
+        config.servers = [...otherServers, ...finalKeep];
+
+        // selectedServerId 被删且未被 leftover 保留（partial 精确删除后也可能删掉选中节点）→ 与 auto 路径 F14
+        // （SubscriptionScheduler ~:296-300）严格对称：reselect 存活出口逃死节点（pickFallbackExit 无 latency 取
+        // 首个候选），空则 DIRECT_SERVER_ID 哨兵。**不可置 null**：下方新增的 applyConfigForcingRestart 会让该 null
+        // 选择立即入核 → resolveGlobalExitTag(null) → proxy-selector default='direct' → 用户刚点「更新订阅」流量即
+        // 静默直连（traffic-leak），无任何提示。原实现置 null 与 auto 路径不对称，此处补齐。
         if (
           config.selectedServerId &&
           deletedIds.has(config.selectedServerId) &&
-          !finalKeep.some((s) => s.id === config.selectedServerId)
+          !config.servers.some((s) => s.id === config.selectedServerId)
         ) {
-          config.selectedServerId = null;
+          // 候选过可用性谓词（排 subnet-only 组网节点，防静默直连，#291 review Med）；空则 DIRECT 哨兵。
+          config.selectedServerId = pickViableFallbackExit(config.servers) ?? DIRECT_SERVER_ID;
         }
-
-        const otherServers = config.servers.filter((s) => s.subscriptionId !== subscription.id);
-        config.servers = [...otherServers, ...finalKeep];
 
         // 更新订阅的最后更新时间和流量信息
         subscription.lastUpdated = new Date().toISOString();

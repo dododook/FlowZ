@@ -141,8 +141,13 @@ export function registerServerHandlers(
       // 删当前选中 → 兜底出口（渲染端最快剩余节点）；无剩余(null/undefined) → DIRECT_SERVER_ID 哨兵（干净直连，
       // proxy-selector default='direct'）。**不可置 null**：null 非哨兵 → 0 节点时 buildOutbounds `nodeTags.length===0
       // && !isDirect` throw「没有可用节点」→ 重启失败（设计 D4：0 剩余→direct）。
+      // 服务端二次校验 fallbackSelectedId：渲染端 store 可能陈旧（并发订阅刷新在批删途中下架了该兜底节点）→ 传入的是
+      // 悬空 id。悬空 id 直接赋给 selectedServerId 会被 saveConfig→validateConfig 静默置 null（非哨兵）→ 复现 0 节点
+      // 重启 throw / 静默直连。故仅当兜底 id 仍存在于剩余 servers 时采用，否则回退 DIRECT_SERVER_ID 哨兵。
       if (wasSelected) {
-        config.selectedServerId = args.fallbackSelectedId ?? DIRECT_SERVER_ID;
+        const fb = args.fallbackSelectedId;
+        config.selectedServerId =
+          fb && config.servers.some((s) => s.id === fb) ? fb : DIRECT_SERVER_ID;
       }
 
       await configManager.saveConfig(config);
@@ -150,7 +155,7 @@ export function registerServerHandlers(
 
       // F-1：恒双播（对齐 CONFIG_SAVE）。重启分类归 switchMode canSkip；渲染端差集/store 即时刷新（原删除零 sendToAll →
       // 徽标要等下个无关触发点才冒出、观感随机）。未引用删除仍 defer 不重启（不多重启）。
-      ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
+      ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONFIG_CHANGED, { newValue: config });
       mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
     }
   );
@@ -176,8 +181,12 @@ export function registerServerHandlers(
 
       // 选中节点在删除集合内（'__direct__' 哨兵不是真实 id，不会命中）→ 置兜底节点（渲染端最快剩余节点）；
       // 无剩余 → DIRECT_SERVER_ID（同单删：null 会致 0 节点重启 throw）。
+      // 同单删：服务端二次校验 fallbackSelectedId 仍在剩余 servers 内（防渲染端 store 陈旧传入悬空 id → validateConfig
+      // 静默置 null → 0 节点重启 throw / 静默直连）；悬空则回退 DIRECT_SERVER_ID 哨兵。
       if (selectedDeleted) {
-        config.selectedServerId = args.fallbackSelectedId ?? DIRECT_SERVER_ID;
+        const fb = args.fallbackSelectedId;
+        config.selectedServerId =
+          fb && config.servers.some((s) => s.id === fb) ? fb : DIRECT_SERVER_ID;
       }
 
       await configManager.saveConfig(config);
@@ -186,7 +195,7 @@ export function registerServerHandlers(
       }
 
       // F-1：恒双播（同单删；重启分类归 switchMode canSkip，含 detour 闭包/endpoint 保守集）。
-      ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
+      ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_CONFIG_CHANGED, { newValue: config });
       mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
       return removed.length;
     }

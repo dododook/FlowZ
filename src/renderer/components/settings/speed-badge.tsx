@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { latToneClass, type ServerConfigWithId } from './server-list-helpers';
 import { useAppStore } from '../../store/app-store';
 import { deriveLatencyBadge } from '../../lib/latency-badge';
+import { ActionTip } from '../ui/tooltip';
 import type { ProxyExitBlock } from '../../../shared/types';
 
 /** TS 出口无效三原因 → title 文案键（复用首页 ts-exit-warning 长句，给悬停行动指引）。 */
@@ -39,15 +40,15 @@ export function SpeedBadge({
   // 已编辑未生效（dirty）：运行核仍是旧参数，展示的延迟属旧配置 → 显性「待生效」替代失真延迟，tooltip 给生效路径。
   if (pendingModified) {
     return (
-      <span
-        className="nd-lat mono"
-        style={{ color: 'hsl(var(--fg-faint))' }}
-        title={t('servers.speedTestNodeDirty', {
+      <ActionTip
+        label={t('servers.speedTestNodeDirty', {
           defaultValue: '节点参数已修改但内核尚未应用；重启内核或点「立即应用」后生效',
         })}
       >
-        {t('servers.speedTestPendingEffect', { defaultValue: '待生效' })}
-      </span>
+        <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
+          {t('servers.speedTestPendingEffect', { defaultValue: '待生效' })}
+        </span>
+      </ActionTip>
     );
   }
 
@@ -69,13 +70,11 @@ export function SpeedBadge({
     // 结构性不可用 → --warn 文案替代假延迟（用户诉求）。出口无效 title 按原因细分给行动指引。
     case 'exit-invalid':
       return (
-        <span
-          className="nd-lat mono"
-          style={{ color: 'hsl(var(--warn))' }}
-          title={t(EXIT_BLOCK_TITLE_KEY[badge.reason])}
-        >
-          {t('home.exitInvalid', '出口无效')}
-        </span>
+        <ActionTip label={t(EXIT_BLOCK_TITLE_KEY[badge.reason])}>
+          <span className="nd-lat mono" style={{ color: 'hsl(var(--warn))' }}>
+            {t('home.exitInvalid', '出口无效')}
+          </span>
+        </ActionTip>
       );
     case 'not-logged-in':
       return (
@@ -87,21 +86,17 @@ export function SpeedBadge({
     //（它可测，只是缺主核）；否则恒不可测三类 → 「不支持测速」+ exitProbeHint（选为出口后伴测得真值，非永远测不了）。
     case 'na':
       return badge.reason === 'ts-needs-core' ? (
-        <span
-          className="nd-lat mono"
-          style={{ color: 'hsl(var(--fg-faint))' }}
-          title={t('servers.speedTestTsNeedsCore', { defaultValue: '连接代理后可测速' })}
-        >
-          —
-        </span>
+        <ActionTip label={t('servers.speedTestTsNeedsCore', { defaultValue: '连接代理后可测速' })}>
+          <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
+            —
+          </span>
+        </ActionTip>
       ) : (
-        <span
-          className="nd-lat mono"
-          style={{ color: 'hsl(var(--fg-faint))' }}
-          title={t('servers.exitProbeHint')}
-        >
-          {t('servers.speedTestNotApplicable')}
-        </span>
+        <ActionTip label={t('servers.exitProbeHint')}>
+          <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
+            {t('servers.speedTestNotApplicable')}
+          </span>
+        </ActionTip>
       );
     // 可测未测。reason=not-in-pool（新增节点未写入运行核）→ 显性「待入池」文案替代「—」（藏在原生 title 后的解释在
     // Electron 下常看不到）；tooltip 修正为真实入池路径（选中该节点或重启内核，**非**「刷新订阅」——纯新增走 P2-A 免重启）。
@@ -109,15 +104,15 @@ export function SpeedBadge({
     case 'untested':
       if (badge.reason === 'not-in-pool')
         return (
-          <span
-            className="nd-lat mono"
-            style={{ color: 'hsl(var(--fg-faint))' }}
-            title={t('servers.speedTestNodePending', {
+          <ActionTip
+            label={t('servers.speedTestNodePending', {
               defaultValue: '新增节点尚未写入运行内核；选中该节点或重启内核后纳入测速',
             })}
           >
-            {t('servers.speedTestPendingPool', { defaultValue: '待入池' })}
-          </span>
+            <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>
+              {t('servers.speedTestPendingPool', { defaultValue: '待入池' })}
+            </span>
+          </ActionTip>
         );
       return (
         <span className="nd-lat mono" style={{ color: 'hsl(var(--fg-faint))' }}>

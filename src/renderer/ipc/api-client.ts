@@ -100,7 +100,10 @@ export const proxyApi = {
   /**
    * §2 动作条「立即应用」：把最新 config force-restart 入核（应用全部待应用变更）。
    */
-  async applyPendingChanges(): Promise<{ ok: boolean }> {
+  async applyPendingChanges(): Promise<{
+    ok: boolean;
+    status: 'applied' | 'deferred' | 'skipped';
+  }> {
     return ipcClient.invoke(IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES);
   },
 

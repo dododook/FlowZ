@@ -21,7 +21,9 @@ import {
   loadTailscaleLoginStatesFromCache,
   useTailscaleLoginCacheStore,
 } from './use-tailscale-login-cache-store';
-import { pickFallbackExit } from '../../shared/direct-selection';
+import { pickFallbackExit, isDirectSelection } from '../../shared/direct-selection';
+import { isServerComplete } from '../../shared/server-completeness';
+import { meshNodeCarriesFullTunnel } from '../../shared/endpoint-routes';
 import {
   SERVICE_IDS,
   type UnlockResult,
@@ -75,6 +77,32 @@ let loadConfigGeneration = 0;
 function invalidateLoadConfig(): void {
   loadConfigGeneration++;
   loadConfigInflight = null;
+}
+
+/**
+ * D4 删选中节点时的兜底出口候选（按列表序）：只纳入「可作真实全隧道出口」的剩余节点——
+ *   ① isServerComplete（配置齐备、协议受支持、非空发射；已内含 !isMeshNodeUnroutable）；
+ *   ② meshNodeCarriesFullTunnel（承载全出网流量：非组网节点恒真；WG allowInternet / TS 有 exitNode 才真）；
+ *   ③ 不在 pendingChanges.added（未写入运行核，不可即刻承载流量）。
+ * 剔除「子网-only 组网节点」（①真②假：如 allowInternet=off 但有网段的 WG / 无 exitNode 的 TS）是关键——
+ * 选它作兜底出口会使公网流量静默走直连，而 toast 谎称「已切换到 X」（review Med：silent direct leak）。
+ * 候选为空 → 调用方传 pickFallbackExit 得 null → selectedServerId=null → 显式直连（可见/审慎态，非静默泄漏）。
+ */
+function fallbackExitCandidateIds(
+  servers: UserConfig['servers'],
+  excludeIds: ReadonlySet<string>,
+  pendingAdded: readonly string[]
+): string[] {
+  const added = new Set(pendingAdded);
+  return servers
+    .filter(
+      (s) =>
+        !excludeIds.has(s.id) &&
+        !added.has(s.id) &&
+        isServerComplete(s) &&
+        meshNodeCarriesFullTunnel(s)
+    )
+    .map((s) => s.id);
 }
 
 interface ConnectionStatus {
@@ -233,7 +261,9 @@ interface AppState {
   // Server Management Actions
   // 返回删选中节点的兜底出口（undefined=非删选中；null=无剩余→direct；string=兜底节点 id），供调用点 toast「已切换到 X」。
   deleteServer: (serverId: string) => Promise<string | null | undefined>;
-  deleteServers: (serverIds: string[]) => Promise<{ count: number; fallback: string | null | undefined }>;
+  deleteServers: (
+    serverIds: string[]
+  ) => Promise<{ count: number; fallback: string | null | undefined }>;
 
   // Custom Rules Actions
   addCustomRule: (rule: Rule) => Promise<void>;
@@ -303,7 +333,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         for (const id of notInPool) speedTestNotInPool.add(id);
         for (const id of Object.keys(results)) speedTestNotInPool.delete(id);
       }
-      return { latencyMap: { ...state.latencyMap, ...results }, latencyTestedAt, speedTestNotInPool };
+      return {
+        latencyMap: { ...state.latencyMap, ...results },
+        latencyTestedAt,
+        speedTestNotInPool,
+      };
     }),
   setAvailableAppUpdate: (info) => set({ availableAppUpdate: info }),
   setAvailableCoreUpdate: (info) => set({ availableCoreUpdate: info }),
@@ -534,27 +568,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     if (snap.blockedReason) {
       // gating 短路（proxy-not-running / exit-invalid）→ idle，不打 lastRunAt（M-gate 毫秒响应，允许反复点，无冷却）。
-      set({ unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null } });
+      set({
+        unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null },
+      });
     } else if (snap.notReady) {
       // 就绪门未过 → idle 但后端已置 lastRunAt（force 15s 下限生效）→ 打戳，冷却据此镜像。
       set({
-        unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: Date.now() },
+        unlock: {
+          results: {},
+          running: false,
+          checkedAt: null,
+          egress: null,
+          lastRunAt: Date.now(),
+        },
       });
     } else {
-      // 真检测落定 → results/checkedAt/egress + 打 lastRunAt（冷却镜像后端 force-min）。
+      // 真检测落定 → results/checkedAt/egress。lastRunAt 取 snap.checkedAt（后端真跑一轮 checker 的完成时刻）而非
+      // Date.now()：cache-hit 广播（A→B→A 命中缓存的 self-run，后端**不更新**自身 lastRunAt）回放的是旧 checkedAt，
+      // 用它派生冷却 → 早于 15s 前的旧检测不再误禁刷新钮（Nit：over-disabled ~15s）；恰镜像后端 force-min（按真跑时刻计）。
+      // checkedAt 理论上本分支必非空（gating/notReady 已分流），?? Date.now() 仅作类型兜底。
       set({
         unlock: {
           results: snap.results,
           running: false,
           checkedAt: snap.checkedAt,
           egress: snap.egress,
-          lastRunAt: Date.now(),
+          lastRunAt: snap.checkedAt ?? Date.now(),
         },
       });
     }
   },
   resetUnlock: () =>
-    set({ unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null } }),
+    set({
+      unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null },
+    }),
 
   // Status Actions
   refreshConnectionStatus: async () => {
@@ -698,7 +745,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const fallback =
         cfg && cfg.selectedServerId === serverId
           ? pickFallbackExit(
-              cfg.servers.filter((s) => s.id !== serverId).map((s) => s.id),
+              fallbackExitCandidateIds(cfg.servers, new Set([serverId]), st.pendingChanges.added),
               st.latencyMap
             )
           : undefined;
@@ -711,8 +758,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       invalidateLoadConfig();
       // Reload config to get updated server list（Tailscale 登录态由 api STATUS 流实时驱动，无需在此刷新）。
       await get().loadConfig();
-      // 返回兜底出口（供调用点 toast「已切换到 X」）：undefined=非删选中；null=删选中但无剩余→direct；string=兜底节点 id。
-      return fallback;
+      // 返回**生效后**的出口（loadConfig 后 config.selectedServerId 是后端实际所置——可能因兜底 id 悬空被后端校验回退
+      // DIRECT，与渲染端预算的 fallback 不同，review Nit-4）：undefined=非删选中；null=切直连（含 DIRECT 哨兵归一）；string=兜底节点 id。
+      if (fallback === undefined) return undefined;
+      const eff = get().config?.selectedServerId ?? null;
+      return isDirectSelection(eff) ? null : eff;
     } catch (error) {
       console.error('[Store] Exception deleting server:', error);
       throw error; // 调用点 catch + toast
@@ -728,7 +778,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const fallback =
         cfg && cfg.selectedServerId && delSet.has(cfg.selectedServerId)
           ? pickFallbackExit(
-              cfg.servers.filter((s) => !delSet.has(s.id)).map((s) => s.id),
+              fallbackExitCandidateIds(cfg.servers, delSet, st.pendingChanges.added),
               st.latencyMap
             )
           : undefined;
@@ -739,8 +789,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 代际护栏：同 deleteServer，作废在飞旧 load，防批量删后旧快照复活已删节点。
       invalidateLoadConfig();
       await get().loadConfig();
-      // fallback 同 deleteServer 语义（供调用点分流 toast「已切换 X/直连」）；count 保留供其它调用方。
-      return { count, fallback };
+      // fallback 同 deleteServer：返回生效后的实际出口（后端校验可能把悬空兜底回退 DIRECT，review Nit-4）；count 保留。
+      if (fallback === undefined) return { count, fallback: undefined };
+      const eff = get().config?.selectedServerId ?? null;
+      return { count, fallback: isDirectSelection(eff) ? null : eff };
     } catch (error) {
       console.error('[Store] Exception batch-deleting servers:', error);
       throw error; // 调用点 catch + toast

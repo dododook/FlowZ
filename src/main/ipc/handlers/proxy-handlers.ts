@@ -134,11 +134,19 @@ export function registerProxyHandlers(
 
   // §2 动作条「立即应用」：把 ConfigManager 最新 config force-restart 入核（applyConfigForcingRestart 内部 guard 代理未
   // 运行/换核窗口、单飞去抖）。落盘语义不变（config 已在各 CRUD 处即时 saveConfig），此处仅触发核应用。
-  registerIpcHandler<void, { ok: boolean }>(IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES, async () => {
-    const config = await configManager.loadConfig();
-    proxyManager.applyConfigForcingRestart(config);
-    return { ok: true };
-  });
+  // 回传应用结果状态，避免「无论是否真重启一律 ok:true」的死信息（用户点「立即应用」但内部 no-op → 徽标不清、无反馈）：
+  //   'applied'  去抖重启已排程（核运行、非换核窗口）→ 差集将随 EVENT_PROXY_STARTED 自动清、徽标消失。
+  //   'deferred' 换核窗口 / lifecycle 在飞 → 缓存已更、随下次重启生效（无 STARTED 回清，渲染端应保留徽标并提示稍后生效）。
+  //   'skipped'  代理未运行 → 下次 start 从磁盘纳入（徽标本不应出现，属核在点击间隙停止的竞态兜底）。
+  // 渲染端（pending-changes-bar）据 status 分流 toast——本处把 ProxyManager 精确三态铺到 wire。
+  registerIpcHandler<void, { ok: boolean; status: 'applied' | 'deferred' | 'skipped' }>(
+    IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES,
+    async () => {
+      const config = await configManager.loadConfig();
+      const status = proxyManager.applyConfigForcingRestart(config);
+      return { ok: status !== 'skipped', status };
+    }
+  );
 
   // Phase 2 按需登录：拉起瞬态登录核（无 TUN/clash_api/监听端口，零提权）抓登录 URL → 自动开浏览器 +
   // 系统通知 + 推渲染端可关闭 toast → 轮询 state 成功后杀核。双写防护：endpoint 已在主核则不起。

@@ -141,14 +141,47 @@ export function collectRuleTargetedServerIds(
 }
 
 /**
+ * custom-endpoint（`customSettings.isEndpoint`）的 raw JSON（`customSettings.outbound`）是否含「独立承载流量」语义键：
+ *   - `system` / `system_interface`：绑内核接口（WG system:true / Tailscale system_interface），广播路由入内核，独立于选中即导流。
+ *   - `allowed_ips`：WireGuard cryptokey routing（常嵌于 peers[]），broad / 0.0.0.0/0 = 全隧道。
+ *   - `routes` / `route_address` / `route_exclude_address`：路由 / 排除段（tailscale-ish 及通用路由键）。
+ *   - `accept_routes` / `advertise_routes` / `exit_node`：Tailscale 承流/子网路由键（装 tailnet/子网路由入内核）。
+ * 深度扫（递归任意嵌套，含 peers[].allowed_ips），命中任一即真。保守方向：过度纳入只多一次重启、绝不错跳——
+ * 漏纳入才致其 edit/delete 被免重启、旧参数残留继续导流 → 泄漏。纯只读、无副作用，可离线单测。
+ */
+const CARRY_TRAFFIC_KEYS = new Set<string>([
+  'system',
+  'system_interface',
+  'allowed_ips',
+  'routes',
+  'route_address',
+  'route_exclude_address',
+  'accept_routes',
+  'advertise_routes',
+  'exit_node',
+]);
+export function customEndpointCarriesTraffic(raw: unknown): boolean {
+  if (Array.isArray(raw)) return raw.some((v) => customEndpointCarriesTraffic(v));
+  if (raw && typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (CARRY_TRAFFIC_KEYS.has(k)) return true;
+      if (customEndpointCarriesTraffic(v)) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * issue #176 P2-A：「被引用节点」id 集——其定义变化会影响运行核实际行为、故必须随之重启（或订阅自动刷新须 apply）。
  *   = {选中节点} ∪ {所有启用规则(custom/app)目标}，按 detour（前置代理链）传递闭包展开
  *   ＋ 保守纳入全部 endpoint 协议节点（WireGuard/Tailscale 可能 force-route 子网/mesh，独立于选中即承载流量）。
  * 其余「纯代理」节点仅作 selector 惰性成员、不承载任何流量，增删改不改变运行核行为 → 不在此集 → 可免重启。
  * 安全方向：**过度纳入只会多一次重启、绝不错跳**（漏纳入才会错误免重启致运行核用旧前置参数 → 流量错误/泄漏）。
  *   故 endpoint 一律纳入、detour 取全闭包、direct 哨兵剔除、悬空 detour 忽略。
- * 注：custom-endpoint（`customSettings.isEndpoint`）不被 isEndpointProtocol 纳入，但其 `endpointForcedRouteCidrs`
- *   恒返 []（不 force-route）→ 不会独立于选中承载流量 → 按普通未引用节点处理即安全，无需进引用集。
+ * 注：custom-endpoint（`customSettings.isEndpoint`）不被 isEndpointProtocol 纳入，其 `endpointForcedRouteCidrs`
+ *   恒返 []（route-builder 不为其发 force-route）——但 raw JSON 会原样进运行核 endpoints[]，若含 `system` / broad
+ *   `allowed_ips` / route-ish 键（customEndpointCarriesTraffic 命中），该端点即便未被选中也独立承载流量 → 其
+ *   edit/delete 必须 force-restart（否则被 defer、旧参数残留继续导流=泄漏）→ 保守纳入引用集。无此类键者仍按未引用免重启。
  * 单一真值：ProxyManager（canSkip/getPendingNodeChanges）与 SubscriptionScheduler（自动刷新被引用节点变更判定）共用。
  */
 export function referencedServerIds(c: UserConfig): Set<string> {
@@ -161,7 +194,16 @@ export function referencedServerIds(c: UserConfig): Set<string> {
   seed(c.selectedServerId);
   for (const r of c.customRules || []) if (r.enabled) seed(r.targetServerId);
   for (const a of c.appRules || []) if (a.enabled) seed(a.targetServerId);
-  for (const s of c.servers) if (isEndpointProtocol(s.protocol)) stack.push(s.id); // 保守纳入全部 endpoint
+  for (const s of c.servers) {
+    if (isEndpointProtocol(s.protocol)) {
+      stack.push(s.id); // 保守纳入全部原生 endpoint 协议（WireGuard/Tailscale）
+    } else if (
+      s.customSettings?.isEndpoint &&
+      customEndpointCarriesTraffic(s.customSettings?.outbound)
+    ) {
+      stack.push(s.id); // custom-endpoint raw JSON 带承载流量语义键 → 保守纳入（见函数头注）
+    }
+  }
   while (stack.length) {
     const id = stack.pop() as string;
     if (R.has(id)) continue; // 成环/重复保护

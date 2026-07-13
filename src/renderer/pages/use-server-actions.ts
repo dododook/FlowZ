@@ -17,7 +17,7 @@ import {
 import type { ServerConfig, SubscriptionConfig } from '@/bridge/types';
 import type { SubscriptionErrorKind } from '@shared/subscription-preview';
 import { buildSavedServers, buildClonedServer, type NewServerData } from './server-mutations';
-import { tailscaleSlotTaken, collectRuleTargetedServerIds } from '../../shared/endpoint-routes';
+import { tailscaleSlotTaken, referencedServerIds } from '../../shared/endpoint-routes';
 import { isWarpServer, warpSlotTaken } from '../../shared/warp';
 
 // saveSubscription 的可判定返回：ok=false 让对话框保留不关、留住用户输入（原全吞错致失败仍关窗丢输入）。
@@ -37,15 +37,17 @@ export function useServerActions() {
   const deleteServerStore = useAppStore((s) => s.deleteServer);
   const deleteServersStore = useAppStore((s) => s.deleteServers);
   const loadConfig = useAppStore((s) => s.loadConfig);
+  // 「删了会不会触发整核重启/重新生效」的判定输入：核未运行则无核可重启（下方 restart 谓词据此闸掉「配置已重新生效」谎报）。
+  const proxyRunning = useAppStore((s) => !!s.connectionStatus?.proxyCore?.running);
   // 单槽 string|null → 多槽 Set：并发更新多个订阅时后发者会覆盖前者的 subId，导致前者 spinner 提前熄灭。
   // 用 Set 让每个在更新的订阅各自持有独立 spinner；不可变更新（new Set）保证 React 感知引用变化。
   const [updatingSubIds, setUpdatingSubIds] = useState<Set<string>>(new Set());
 
   const servers = config?.servers || [];
 
-  // 删除成功三态 toast（单删/批删共用）：fallback≠undefined=删了选中节点（null→切直连 / string→切到兜底节点显名）；
-  // 否则 ruleTargeted=删了被规则指向的节点（触发重启，提示配置已重新生效）；否则普通删除（defer 不重启）。
-  const showDeleteToast = (fallback: string | null | undefined, ruleTargeted: boolean) => {
+  // 删除成功三态 toast（单删/批删共用）：fallback≠undefined=删了选中节点（null→切直连 / string→切到兜底节点显名，
+  // 该切换本身已隐含重启）；否则 restarted=删了「被引用」节点且核在运行（后端整核重启、配置重新生效）；否则普通删除（defer 不重启）。
+  const showDeleteToast = (fallback: string | null | undefined, restarted: boolean) => {
     if (fallback !== undefined) {
       if (fallback === null) {
         toast.success(t('servers.deleteSelectedToDirect'));
@@ -53,22 +55,28 @@ export function useServerActions() {
         const name = servers.find((s) => s.id === fallback)?.name ?? fallback;
         toast.success(t('servers.deleteSelectedSwitched', { name }));
       }
-    } else if (ruleTargeted) {
+    } else if (restarted) {
       toast.success(t('servers.deleteRestarted'));
     } else {
       toast.success(t('servers.deleteSuccess'));
     }
   };
 
-  // 删的节点是否被 enabled+proxy 规则显式指向（后端据此触发重启，前端据此给「配置已生效」提示；口径与后端同源）。
-  const ruleTargetedSet = () =>
-    collectRuleTargetedServerIds([...(config?.customRules ?? []), ...(config?.appRules ?? [])]);
+  // 删该节点是否触发后端整核重启：口径与主进程重启真值（ProxyManager.canSkip / getPendingNodeChanges）同源 =
+  // referencedServerIds（{选中}∪{启用规则目标}∪detour 前置链闭包∪全部 endpoint 节点）——而非旧的 collectRuleTargetedServerIds
+  // （仅 enabled+proxy 规则直接目标，漏 detour 前驱/endpoint/选中 → 会漏报重启）。**须 && proxyRunning**：核未运行时删任何
+  // 节点都不重启、无「配置重新生效」可言（旧逻辑不看 proxyRunning → 停核时删被引用节点仍谎报「已重新生效」）。
+  const willRestartOnDelete = (ids: string[]): boolean => {
+    if (!proxyRunning || !config) return false;
+    const ref = referencedServerIds(config);
+    return ids.some((id) => ref.has(id));
+  };
 
   const deleteServer = async (serverId: string) => {
-    const ruleTargeted = ruleTargetedSet().has(serverId);
+    const restarted = willRestartOnDelete([serverId]);
     try {
       const fallback = await deleteServerStore(serverId);
-      showDeleteToast(fallback, ruleTargeted);
+      showDeleteToast(fallback, restarted);
     } catch (error) {
       toast.error(t('servers.deleteFail'), {
         description: error instanceof Error ? error.message : t('servers.deleteFailDesc'),
@@ -79,11 +87,10 @@ export function useServerActions() {
   // 批量删除（一次后端配置写，避免并发单删竞态致只删 1 个）。订阅节点的过滤在调用方（server-list）完成。
   const deleteServers = async (serverIds: string[]) => {
     if (serverIds.length === 0) return;
-    const ruleSet = ruleTargetedSet();
-    const ruleTargeted = serverIds.some((id) => ruleSet.has(id));
+    const restarted = willRestartOnDelete(serverIds);
     try {
       const { fallback } = await deleteServersStore(serverIds);
-      showDeleteToast(fallback, ruleTargeted);
+      showDeleteToast(fallback, restarted);
     } catch (error) {
       toast.error(t('servers.deleteFail'), {
         description: error instanceof Error ? error.message : t('servers.deleteFailDesc'),

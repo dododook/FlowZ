@@ -50,7 +50,10 @@ const FORCE_MIN_MS = 15_000;
  * 零延迟），失败按此退避重试。总预算 ≈ (ATTEMPTS-1)*BACKOFF + 各探测耗时 ≈ 3.6s+，覆盖典型启动窗口。
  */
 // 就绪门退避 schedule（D3，M1 重试内化主进程）：前 3 攻 1.2s（冷启动常态 <4s 就绪，零回归），后 3 攻拉长
-// （+4/+4/+8s，末攻 ≈ 触发后 ~20s）吸收原渲染端 M1 覆盖窗。attempt n 的退避 = schedule[n-1]；总攻数 = length+1。
+// （+4/+4/+8s）吸收原渲染端 M1 覆盖窗。attempt n 的退避 = schedule[n-1]；总攻数 = length+1。
+// 死线主导（important）：schedule 全长累加 ≈19.6s，但生产默认 **TOTAL_DETECTION_BUDGET_MS=10s 才是硬上限**——probeReady
+// 每攻退避前判 deadline，默认预算下累进退避在第 5 攻（cumulative 11.6s）即越界收口，故末段 +4/+8s 尾在默认预算下不可达，
+// 仅作 headroom 保留供预算调大时启用（budget 需真机调）。单测以冻结注入时钟绕过 deadline 验证全 7 攻仍可达。
 export const READINESS_BACKOFF_SCHEDULE_MS = [1200, 1200, 1200, 4000, 4000, 8000];
 export const READINESS_MAX_ATTEMPTS = READINESS_BACKOFF_SCHEDULE_MS.length + 1; // 7
 // B1 自适应就绪确认：疑似 flap（曾失败过）时，成功探测后追加 1 次确认（此间隔后连续 2 成才判就绪）；
@@ -227,12 +230,16 @@ export class UnlockDetectionService {
     const task = this.doRun(force, startEpoch);
     this.inflight = task;
     this.inflightEpoch = startEpoch;
-    void task.finally(() => {
-      if (this.inflight === task) {
-        this.inflight = null;
-        this.inflightEpoch = -1;
-      }
-    });
+    // .catch 兜 finally 派生 promise 的 rejection：task 各路径现皆自吞异常，但未来若有 throw，.finally 会原样透传
+    // 拒因 → 悬挂 promise 变 unhandledRejection。附 .catch(noop) 防御（cleanup 仍由 finally 无条件执行）。
+    void task
+      .finally(() => {
+        if (this.inflight === task) {
+          this.inflight = null;
+          this.inflightEpoch = -1;
+        }
+      })
+      .catch(() => {});
     return task;
   }
 
@@ -243,12 +250,15 @@ export class UnlockDetectionService {
     const task = prev.then(() => this.doRun(force, startEpoch));
     this.inflight = task;
     this.inflightEpoch = startEpoch;
-    void task.finally(() => {
-      if (this.inflight === task) {
-        this.inflight = null;
-        this.inflightEpoch = -1;
-      }
-    });
+    // .catch 兜 finally 派生 promise 的 rejection（同 launchRun）：防未来 throw 透传成 unhandledRejection。
+    void task
+      .finally(() => {
+        if (this.inflight === task) {
+          this.inflight = null;
+          this.inflightEpoch = -1;
+        }
+      })
+      .catch(() => {});
     return task;
   }
 
@@ -346,7 +356,9 @@ export class UnlockDetectionService {
       const c = this.cache.get(egress.ip);
       // R3：TTL 挂置信度——含 timeout 的快照（partial-timeout 补测轮写入）用短 TTL（2min）自然重检；全高置信 30min。
       // issue 7：受限出口的 timeout 是高置信结构性终态 → 用正常 30min TTL（不走 2min churn）。
-      const hasTimeout = c ? Object.values(c.snap.results).some((r) => r.status === 'timeout') : false;
+      const hasTimeout = c
+        ? Object.values(c.snap.results).some((r) => r.status === 'timeout')
+        : false;
       if (c && this.now() - c.at < (hasTimeout && !restricted ? TIMEOUT_TTL_MS : TTL_MS)) {
         this.lastSnapshot = c.snap;
         return c.snap;
@@ -444,12 +456,15 @@ export class UnlockDetectionService {
       const task = this.doRecheck(ids, egress, startEpoch);
       this.inflight = task;
       this.inflightEpoch = startEpoch;
-      void task.finally(() => {
-        if (this.inflight === task) {
-          this.inflight = null;
-          this.inflightEpoch = -1;
-        }
-      });
+      // .catch 兜 finally 派生 promise 的 rejection（同 launchRun）：防未来 throw 透传成 unhandledRejection。
+      void task
+        .finally(() => {
+          if (this.inflight === task) {
+            this.inflight = null;
+            this.inflightEpoch = -1;
+          }
+        })
+        .catch(() => {});
     }, RECHECK_DELAY_MS);
   }
 
@@ -466,6 +481,12 @@ export class UnlockDetectionService {
     const fetch = await this.ensureFetch();
     const base = this.lastSnapshot;
     if (!fetch || !base) {
+      return this.getSnapshot() ?? { results: {}, checkedAt: null, egress: null };
+    }
+    // ensureFetch 内 await setProxy 是又一 invalidate 竞态窗口：切节点/停代理落于此窗则渲染端已 onInvalidated 复位，
+    // 下方 'checking' progress 会点亮 spinner，而本轮后续所有终态 progress 均被 epoch 守卫丢弃 → 灯永转。故广播前再守一次
+    // （对齐 doRun fetch-null 守卫与 settle-retry 翻 spinner 前的 epoch 判）。
+    if (startEpoch !== this.epoch) {
       return this.getSnapshot() ?? { results: {}, checkedAt: null, egress: null };
     }
     const deadline = this.now() + TOTAL_DETECTION_BUDGET_MS; // 补测轮自身同受整轮硬上限

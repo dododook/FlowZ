@@ -1,5 +1,5 @@
 /**
- * §2 待应用差集动作条 —— 节点页列表顶部。当节点集相对运行核启动快照存在增/改/删差集时显示汇总 +「立即应用」一键。
+ * §2 待应用差集动作条 —— 节点页列表顶部。当节点集相对运行核启动快照存在增/改差集时显示汇总 +「立即应用」一键（F-2：removed 已移除）。
  *
  * 数据源 = store.pendingChanges（pull 模型，configChanged/proxyStarted/proxyStopped 后由 refreshPendingChanges 刷新）。
  * 语义：restartOnNodeChange OFF（默认）下节点变更 defer 进此差集，用户点「立即应用」force-restart 入核；ON 下变更自动
@@ -44,7 +44,13 @@ export function PendingChangesBar() {
     setApplying(true);
     void api.proxy
       .applyPendingChanges()
-      .then(() => toast.success(t('servers.pendingApplying')))
+      .then((res) => {
+        // 据实际应用状态分流反馈，避免「无论是否真重启一律成功」的死信息（review #291 finding 4）。
+        if (res.status === 'applied') toast.success(t('servers.pendingApplying'));
+        else if (res.status === 'deferred')
+          toast.info(t('servers.pendingApplyDeferred')); // 换核/操作中 → 稍后自动生效
+        else toast.info(t('servers.pendingApplySkipped')); // 代理未运行 → 下次启动生效
+      })
       .catch(() => {
         toast.error(t('servers.pendingApplyFailed'));
         setApplying(false);
@@ -55,7 +61,8 @@ export function PendingChangesBar() {
     applyTimerRef.current = setTimeout(() => setApplying(false), 5000);
   };
 
-  // 明细拆分（新增/修改，仅非零项）供 title 悬停，主文案给总数保持简洁。（F-2：removed 已移除）
+  // 明细拆分（新增/修改，仅非零项）。用中点 ` · ` 连接（locale-neutral），不再用全角括号「（…）」硬编码
+  // （en/ru/fa 下 CJK 标点突兀）；也不再重复到原生 title（可见 span 已呈现，Electron title 本就不稳）。
   const parts: string[] = [];
   if (pending.added.length) parts.push(t('servers.pendingAdded', { count: pending.added.length }));
   if (pending.modified.length)
@@ -64,9 +71,9 @@ export function PendingChangesBar() {
   return (
     <div className="nd-batch">
       <Clock className="h-4 w-4 shrink-0" style={{ color: 'hsl(var(--warn))' }} />
-      <span className="nd-batch-n" title={parts.join(' · ')}>
+      <span className="nd-batch-n">
         {t('servers.pendingChangesSummary', { count: total })}
-        {parts.length > 0 && <span className="ml-2 text-fg-faint">（{parts.join(' · ')}）</span>}
+        {parts.length > 0 && <span className="ms-2 text-fg-faint">{parts.join(' · ')}</span>}
       </span>
       <div className="nd-batch-acts">
         <button type="button" className="btn flow sm" disabled={applying} onClick={handleApply}>

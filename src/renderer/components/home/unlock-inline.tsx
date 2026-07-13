@@ -15,10 +15,10 @@ import {
 } from './unlock-service-config';
 
 /**
- * 解锁检测内联行 —— 嵌进拓扑卡标题行右侧（`连接拓扑` 那行的空白处）。
+ * 解锁检测内联行 —— 嵌进「连接控制卡」出口节点标签行右侧（`出口节点` 那行的空白处，见 connection-control-card）。
  *
- * 为何内联而非独立块：任何独立卡/条都会把拓扑 hero 往下挤、吃画布高。塞进已有的标题行
- * 则**零挤占**——标题行本就占一行，拓扑画布高度不变。
+ * 为何内联而非独立块：任何独立卡/条都会把卡片内容往下挤、吃垂直空间。塞进已有的标签行
+ * 则**零挤占**——标签行本就占一行，卡片高度不变。
  * 一行到底：短名 + 状态色点（绿解锁/琥珀仅自制/红未解锁），分组 AI/流媒体，无计数；
  * 窄窗横向滚动保证不折行。区域/状态文案落 hover title。数据源 useUnlockDetection（真实检测引擎，
  * 经当前代理出口跑 AI/流媒体解锁 checker）。
@@ -64,10 +64,19 @@ export function UnlockInline() {
   const renderItem = (s: UnlockService) => {
     const r = results[s.id];
     const status = r?.status ?? 'idle';
+    // partial 的 per-service 文案覆盖默认；单一真值供 hover 内容 + aria-label 复用。
+    const statusText = t(
+      status === 'partial' && s.partialLabelKey ? s.partialLabelKey : STATUS_LABEL_KEY[status]
+    );
     return (
       <HoverCard key={s.id} openDelay={500} closeDelay={40}>
         <HoverCardTrigger asChild>
-          <span className="inline-flex cursor-default items-center gap-1 whitespace-nowrap">
+          {/* Low-4 a11y：状态原本仅靠色点 + hover-only HoverCard（非可聚焦 span）传达，键盘/屏阅不可达。
+              补 aria-label「服务名: 状态」，配合下方滚动容器 role=group + tabIndex 使其可被读到。 */}
+          <span
+            className="inline-flex cursor-default items-center gap-1 whitespace-nowrap"
+            aria-label={`${s.name}: ${statusText}`}
+          >
             <span className="text-[11.5px] font-medium text-fg-dim">{s.short}</span>
             <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', DOT_CLASS[status])} />
           </span>
@@ -80,11 +89,7 @@ export function UnlockInline() {
           <span className="font-medium text-fg">{s.name}</span>
           <span className="text-fg-dim">
             {' · '}
-            {t(
-              status === 'partial' && s.partialLabelKey
-                ? s.partialLabelKey
-                : STATUS_LABEL_KEY[status]
-            )}
+            {statusText}
             {r?.region ? ` · ${r.region}` : ''}
           </span>
           {/* X3（§12.2 P12）：timeout 且出口本身连通（egress 非空）→ 诚实提示「服务经该出口不可达（可能被服务方网络层
@@ -111,7 +116,13 @@ export function UnlockInline() {
   return (
     // 刷新按钮钉死在滚动区外（shrink-0），只有中段服务点分组随窄窗横向滚动 —— 保证刷新永不被挤出。
     <div className="flex min-w-0 items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto">
+      {/* Low-4 a11y：滚动容器补 role=group + tabIndex + aria-label——键盘可 Tab 聚焦、屏阅可作为一组解锁状态读出。 */}
+      <div
+        className="flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto"
+        role="group"
+        tabIndex={0}
+        aria-label={t('home.unlockSection')}
+      >
         {renderGroup(ai)}
         <span className="h-3 w-px shrink-0 bg-line" />
         {renderGroup(media)}

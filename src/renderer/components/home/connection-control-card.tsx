@@ -142,7 +142,6 @@ export function ConnectionControlCard() {
   const updateProxyMode = useAppStore((s) => s.updateProxyMode);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setServerPageAction = useAppStore((s) => s.setServerPageAction);
-  const pendingChanges = useAppStore((s) => s.pendingChanges);
   const sortByLatency = useNodeSortStore((s) => s.sortByLatency);
   const toggleSortByLatency = useNodeSortStore((s) => s.toggleSortByLatency);
 
@@ -209,7 +208,8 @@ export function ConnectionControlCard() {
     if (!config) return;
     // issue 3：选中「待入池/待生效」节点将使其变被引用 → 触发自动整核重启、待应用动作条随即消失。
     // 先判后 save（save 成功即触发重启清差集），成功后给一次性提示，解释「动作条为何消失」。
-    const willRestart = willRestartOnSelect(pendingChanges, serverId);
+    // pendingChanges 在 handler 内即时读取（getState），不订阅——否则每次 configChanged 广播都重渲整卡（Nit-11）。
+    const willRestart = willRestartOnSelect(useAppStore.getState().pendingChanges, serverId);
     try {
       await saveConfig({ ...config, selectedServerId: serverId });
       // 选节点不弹「已切换」成功 toast（用户反馈：picker 即时反映选择即为反馈、无需提醒；同接管方式 toast 移除理由）。
@@ -333,7 +333,7 @@ export function ConnectionControlCard() {
           {/* 出口节点标签行：右侧内联解锁检测（解锁态 ↔ 出口节点强绑，零挤占垂直空间） */}
           <div className="flex items-center gap-3">
             <div className="field-lbl shrink-0">{t('home.exitNode', '出口节点')}</div>
-            <div className="ml-auto min-w-0">
+            <div className="ms-auto min-w-0">
               <UnlockInline />
             </div>
           </div>
