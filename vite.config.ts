@@ -12,6 +12,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.join(__dirname, 'src/renderer/index.html'),
+        // 独立更新弹窗入口（Conduit mini 更新窗，UpdateService.createUpdatePopup 加载）——与主窗共享 index.css token/字体。
+        updatePopup: path.join(__dirname, 'src/renderer/update-popup.html'),
       },
     },
   },

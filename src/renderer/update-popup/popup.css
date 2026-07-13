@@ -1,0 +1,267 @@
+/*
+ * 更新弹窗布局（窗口即卡片，全出血）。颜色一律走 index.css 的 Conduit token（吃 renderer eslint 禁裸 hex 护栏），
+ * 复用 conduit.css 的 .bar / .btn / .pill。仅在此补弹窗特有的容器与元素布局。
+ */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  font-family:
+    'IBM Plex Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei',
+    'Noto Sans CJK SC',
+    sans-serif;
+}
+
+.upop {
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 14px 16px;
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--line));
+  color: hsl(var(--fg));
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  /* 整窗可拖拽（frameless）；交互元素在下方置 no-drag。 */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* 入场动画仅首帧（.enter 只在首次 render 加；相变会重建 .upop，不带 .enter → 不重播）。reduced-motion 关停见文末。 */
+.upop.enter {
+  animation: upop-in 160ms ease-out;
+}
+
+/* 版本号是数据 → mono（对齐 §4.2「数据一律 mono」；.pill.proto 只给配色/尺寸）。 */
+.upop .pill.proto {
+  font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+@keyframes upop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.upop button,
+.upop a {
+  -webkit-app-region: no-drag;
+}
+
+.upop-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.upop-chip {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--flow));
+  color: #fff;
+}
+
+.upop-chip svg {
+  width: 15px;
+  height: 15px;
+}
+
+.upop-chip.ok {
+  background: hsl(var(--ok));
+}
+
+.upop-chip.err {
+  background: hsl(var(--err-weak));
+  color: hsl(var(--err));
+}
+
+.upop-title {
+  font-size: 13px;
+  font-weight: 660;
+  letter-spacing: -0.005em;
+}
+
+.upop-x {
+  margin-left: auto;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  /* 静息即可辨识：弱填充 surface-3 + hair 边框 + fg-dim 图标（此前 transparent/fg-faint 融进 surface）。 */
+  color: hsl(var(--fg-dim));
+  border: 1px solid hsl(var(--hair));
+  background: hsl(var(--surface-3));
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.upop-x:hover {
+  background: hsl(var(--err-weak));
+  border-color: hsl(var(--err) / 0.4);
+  color: hsl(var(--err));
+}
+
+.upop-x:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.upop-x svg {
+  width: 13px;
+  height: 13px;
+}
+
+.upop-sub {
+  font-size: 11.5px;
+  color: hsl(var(--fg-dim));
+}
+
+.upop-notes {
+  font-size: 11.5px;
+  color: hsl(var(--fg-dim));
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.upop-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.upop-bytes {
+  font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: hsl(var(--fg-faint));
+}
+
+.upop-pct {
+  font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  color: hsl(var(--flow-hi));
+}
+
+.upop-pct.ok {
+  color: hsl(var(--ok));
+}
+
+.upop-err {
+  font-size: 11.5px;
+  color: hsl(var(--err));
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 动作行贴底（margin-top:auto 把它推到卡片底部，remind/error 高度固定时视觉稳定）。 */
+.upop-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.upop-links {
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+}
+
+.upop-links button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  color: hsl(var(--fg-faint));
+}
+
+.upop-links button:hover {
+  color: hsl(var(--flow-hi));
+  text-decoration: underline;
+}
+
+.upop-links button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.upop .bar {
+  margin-top: 2px;
+}
+
+/* 完成态填充切 --ok（live 绿=完成语义）。 */
+.upop .bar > i.ok {
+  background: hsl(var(--ok));
+}
+
+/* 下载中填充覆流动 sheen（Conduit「流动」签名的克制引用）。 */
+.upop .bar > i.dl {
+  position: relative;
+  overflow: hidden;
+}
+
+.upop .bar > i.dl::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, hsl(var(--flow-hi) / 0.35), transparent);
+  animation: upop-sheen 2.2s linear infinite;
+}
+
+@keyframes upop-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upop.enter {
+    animation: none;
+  }
+  .upop .bar > i {
+    transition: none;
+  }
+  .upop .bar > i.dl::after {
+    animation: none;
+    opacity: 0;
+  }
+}

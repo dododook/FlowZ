@@ -7,7 +7,20 @@ import { app, shell, BrowserWindow, dialog, net, type Session } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { LogManager } from './LogManager';
-import type { UpdateInfo, UpdateCheckResult, UpdateProgress } from '../../shared/types/update';
+import type {
+  UpdateInfo,
+  UpdateCheckResult,
+  UpdateProgress,
+  UpdatePopupState,
+  UpdatePopupAction,
+  UpdatePopupLabels,
+} from '../../shared/types/update';
+import {
+  UPDATE_POPUP_WIDTH,
+  popupHeightFor,
+  popupPosition,
+  previewReleaseNotes,
+} from './update-popup-layout';
 import { APP_USER_AGENT } from '../../shared/constants';
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { getUserDataPath } from '../utils/paths';
@@ -35,10 +48,30 @@ const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 const GITHUB_OWNER = 'dododook';
 const GITHUB_REPO = 'FlowZ';
 
+/**
+ * 单次下载的取消 token（per-call，非实例共享）：弹窗流持有自己的 token，取消只作用于它；关于页手动下载
+ * 不传 token（不可取消、天然隔离）。避免两流并发时共享实例态互相误取消 / 吞镜像重试（#292 review Med-1）。
+ */
+interface DownloadControl {
+  cancelled: boolean;
+  /** 由 downloadWithHardening 在建请求后填入（abort 当前在途请求 + 显式 reject）；镜像/重定向递归时更新为最新请求。 */
+  abort: (() => void) | null;
+}
+
 export class UpdateService {
   private logManager: LogManager;
   private mainWindow: BrowserWindow | null = null;
-  private progressWindow: BrowserWindow | null = null;
+  // 独立 Conduit mini 更新窗（remind/progress/done/error 四态），取代旧的白底进度窗 + 原生 messagebox。
+  private updatePopupWindow: BrowserWindow | null = null;
+  // 当前更新信息（供弹窗动作 manualDownload 取 downloadUrl、进度镜像取 version）。
+  private currentUpdateInfo: UpdateInfo | null = null;
+  // 在途弹窗动作 awaiter（remind：update/later/skip；error：retry/manualDownload/close；关窗解为 '__closed__'）。
+  private popupActionResolver: ((action: UpdatePopupAction | '__closed__') => void) | null = null;
+  private popupActionListenerBound = false;
+  // 上次弹窗内容高度：仅态切换（高度变）时 setContentSize+重定位，避免进度每帧重设致抖动。
+  private lastPopupHeight = 0;
+  // 弹窗流当前下载的取消 token（progress 态 × / OS 关窗时取消它；仅弹窗流持有，与手动下载隔离）。
+  private popupDownloadControl: DownloadControl | null = null;
   private downloadProgress: UpdateProgress = {
     status: 'idle',
     percentage: 0,
@@ -217,6 +250,7 @@ export class UpdateService {
    * 下载更新
    */
   async downloadUpdate(updateInfo: UpdateInfo): Promise<string | null> {
+    // 手动下载不传 cancel token → 不可取消、与弹窗流的取消 token 完全隔离（无跨流污染）。
     try {
       this.logManager.addLog('info', `开始下载更新: ${updateInfo.version}`, 'UpdateService');
       this.updateProgress({ status: 'downloading', percentage: 0, message: '正在下载更新...' });
@@ -458,41 +492,30 @@ export class UpdateService {
   }
 
   /**
-   * 显示更新对话框
+   * 发现新版本提醒：弹 Conduit mini 更新窗 remind 态，等用户动作。取代原生 dialog.showMessageBox。
+   * 不再依赖 mainWindow（弹窗独立）→ 修「主窗销毁/托盘轻量态时提醒不弹」缺陷。签名与返回语义不变 → call site 零改。
+   * action==='update' 时保留弹窗，交由 downloadUpdateWithProgress 续进 progress 态（一窗四态无缝）。
    */
   async showUpdateDialog(updateInfo: UpdateInfo): Promise<'update' | 'later' | 'skip'> {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+    // 已有活跃更新流（弹窗在：remind 等待 / 下载中 / error）→ 不打断、不覆盖 resolver，本次检查按「稍后」处理。
+    // 防 startup 自动检查与托盘手动检查并发时第二个 showUpdateDialog 覆盖 resolver 致首个 awaiter 泄漏 + 双下载。
+    if (this.updatePopupWindow && !this.updatePopupWindow.isDestroyed()) {
       return 'later';
     }
-
-    const currentVersion = app.getVersion();
-    // releaseNotes 按行截前 10 行（比定长 substring(0,500) 更整齐，避免半行截断撑乱 dialog）；完整日志走「查看更新日志」。
-    const noteLines = (updateInfo.releaseNotes || '').split('\n');
-    const notes = noteLines.slice(0, 10).join('\n');
-    const notesSuffix = noteLines.length > 10 ? '\n…' : '';
-    const result = await dialog.showMessageBox(this.mainWindow, {
-      type: 'info',
-      title: '发现新版本',
-      message: `发现新版本 ${updateInfo.version}`,
-      detail: `当前版本: v${currentVersion}\n新版本: ${updateInfo.version}\n\n${notes}${notesSuffix}`,
-      buttons: ['立即更新', '稍后提醒', '跳过此版本', '查看更新日志'],
-      defaultId: 0,
-      cancelId: 1,
+    this.currentUpdateInfo = updateInfo;
+    this.createUpdatePopup({
+      phase: 'remind',
+      theme: this.resolvedTheme(),
+      version: updateInfo.version,
+      currentVersion: `v${app.getVersion()}`,
+      notes: previewReleaseNotes(updateInfo.releaseNotes || ''),
+      labels: this.popupLabels(),
     });
 
-    switch (result.response) {
-      case 0:
-        return 'update';
-      case 2:
-        return 'skip';
-      case 3:
-        // 查看更新日志：打开 GitHub Releases 完整日志（复用 openReleasesPage，URL 用 GITHUB_OWNER/GITHUB_REPO 常量），
-        // dialog 随之关闭按「稍后」处理（不更新、不跳过，下次检查再弹）。
-        this.openReleasesPage();
-        return 'later';
-      default:
-        return 'later';
-    }
+    const action = await this.awaitPopupAction(['update', 'later', 'skip']);
+    if (action === 'update') return 'update'; // 保留弹窗，进度态由 downloadUpdateWithProgress 续
+    this.closeUpdatePopup();
+    return action === 'skip' ? 'skip' : 'later'; // later / __closed__（关窗）
   }
 
   /**
@@ -502,222 +525,293 @@ export class UpdateService {
     return { ...this.downloadProgress };
   }
 
+  /** 生效主题（= nativeTheme.shouldUseDarkColors，themeSource 已由 index.ts 按 uiTheme 设）。弹窗首帧即用。 */
+  private resolvedTheme(): 'dark' | 'light' {
+    const { nativeTheme } = require('electron') as typeof import('electron');
+    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  }
+
+  /** 弹窗静态文案（按当前语言 mt 渲染进载荷；弹窗页无 i18n runtime，E5）。 */
+  private popupLabels(): UpdatePopupLabels {
+    return {
+      remindTitle: mt('updRemindTitle'),
+      progressTitle: mt('updProgressTitle'),
+      doneTitle: mt('updDoneTitle'),
+      errorTitle: mt('updErrorTitle'),
+      currentPrefix: mt('updCurrentPrefix'),
+      installing: mt('updInstalling'),
+      tryingMirror: mt('updTryingMirror'),
+      update: mt('updBtnUpdate'),
+      later: mt('updBtnLater'),
+      skip: mt('updBtnSkip'),
+      viewLog: mt('updBtnViewLog'),
+      cancel: mt('updBtnCancel'),
+      retry: mt('updBtnRetry'),
+      manualDownload: mt('updBtnManualDownload'),
+      close: mt('updBtnClose'),
+    };
+  }
+
   /**
-   * 创建下载进度窗口
+   * 创建（或复用）独立 Conduit mini 更新窗并推初始状态。已有存活弹窗 → 复用（remind→progress 无缝续态）。
+   * frameless + 非 transparent（E2：Win/Linux 透明窗鼠标穿透）+ 主题化实色底防白闪 + 角落 showInactive 不抢焦点。
+   * 加载打包 HTML 入口（dev 走 vite dev server），与主窗共享 index.css token/字体（E3，非 data:URL 复制值）。
    */
-  private createProgressWindow(): BrowserWindow {
-    // 如果已存在进度窗口，先关闭
-    if (this.progressWindow && !this.progressWindow.isDestroyed()) {
-      this.progressWindow.close();
+  private createUpdatePopup(state: UpdatePopupState): BrowserWindow {
+    if (this.updatePopupWindow && !this.updatePopupWindow.isDestroyed()) {
+      this.sendPopupState(state);
+      return this.updatePopupWindow;
     }
 
-    const progressWindow = new BrowserWindow({
-      width: 360,
-      height: 100,
+    const { nativeTheme } = require('electron') as typeof import('electron');
+    const isDark = nativeTheme.shouldUseDarkColors;
+    const width = UPDATE_POPUP_WIDTH;
+    const height = popupHeightFor(state.phase);
+
+    const win = new BrowserWindow({
+      width,
+      height,
       resizable: false,
       minimizable: false,
       maximizable: false,
-      closable: true,
       frame: false,
       transparent: false,
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
-      backgroundColor: '#ffffff',
+      // 防白闪：按生效主题给实色底（= index.css --surface；主进程 hex 不受 renderer eslint 约束）。
+      backgroundColor: isDark ? '#161C24' : '#FFFFFF',
       webPreferences: {
-        nodeIntegration: false,
+        preload: path.join(app.getAppPath(), 'dist/main/main/preload-update-popup.js'),
         contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
       },
     });
+    if (process.platform !== 'darwin') win.setMenu(null);
 
-    // 加载进度页面 HTML
-    const html = this.getProgressWindowHtml();
-    progressWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-
-    progressWindow.once('ready-to-show', () => {
-      progressWindow.show();
+    const isDev = process.env.NODE_ENV === 'development';
+    const loaded = isDev
+      ? win.loadURL('http://localhost:5173/update-popup.html')
+      : win.loadFile(path.join(app.getAppPath(), 'dist/renderer/update-popup.html'));
+    loaded.catch((err: Error) => {
+      this.logManager.addLog('error', `更新弹窗加载失败: ${err.message}`, 'UpdateService');
+      // 加载失败弹窗永不 ready-to-show/无按钮 → 关窗并解 awaiter，避免 showUpdateDialog/下载流永挂（旧实现降级 later）。
+      if (this.updatePopupWindow === win) {
+        this.closeUpdatePopup();
+        this.popupActionResolver?.('__closed__');
+      }
     });
 
-    progressWindow.on('closed', () => {
-      this.progressWindow = null;
+    win.once('ready-to-show', () => {
+      this.positionPopup(win, width, popupHeightFor(state.phase));
+      win.showInactive(); // 不抢键盘焦点（角落 toast 语义，非打断式 dialog）
+    });
+    // 内容就绪后补推状态（防弹窗 onState 监听注册晚于首次 send）。
+    win.webContents.once('did-finish-load', () => this.sendPopupState(state));
+
+    win.on('closed', () => {
+      // 仅当关闭的是当前活跃弹窗才复位 + 解 awaiter：防 close→closed 异步间隙内已被新流程替换时，
+      // 旧窗 closed 误清新窗引用 / 误 resolve 新 awaiter（Low：竞态僵尸窗）。
+      if (this.updatePopupWindow !== win) return;
+      this.updatePopupWindow = null;
+      this.lastPopupHeight = 0;
+      // Med-2：progress 态经 OS 关窗（Alt+F4/Cmd+W）视同取消——中断在途下载，防「关了窗仍静默下完 + 杀 app 装更新」。
+      // 与「×」取消收敛到同一 token 收尾；无在途下载（remind/error）时 control 为 null，此段 no-op。
+      if (this.popupDownloadControl) {
+        this.popupDownloadControl.cancelled = true;
+        this.popupDownloadControl.abort?.();
+      }
+      // 用户直接关窗（Alt+F4 等）→ 解掉在途 awaiter，避免 Promise 永挂。
+      this.popupActionResolver?.('__closed__');
     });
 
-    this.progressWindow = progressWindow;
-    return progressWindow;
+    this.updatePopupWindow = win;
+    this.registerPopupActionListener();
+    return win;
+  }
+
+  /** 向弹窗整帧下发状态；态切换（高度变）时才 setContentSize + 保角锚点重定位。 */
+  private sendPopupState(state: UpdatePopupState): void {
+    const win = this.updatePopupWindow;
+    if (!win || win.isDestroyed()) return;
+    const height = popupHeightFor(state.phase);
+    if (height !== this.lastPopupHeight) {
+      win.setContentSize(UPDATE_POPUP_WIDTH, height);
+      this.positionPopup(win, UPDATE_POPUP_WIDTH, height);
+      this.lastPopupHeight = height;
+    }
+    win.webContents.send(IPC_CHANNELS.UPDATE_POPUP_STATE, state);
+  }
+
+  /** 角落停靠（纯计算在 update-popup-layout.popupPosition；workArea 由 screen 注入）。 */
+  private positionPopup(win: BrowserWindow, width: number, height: number): void {
+    const { screen } = require('electron') as typeof import('electron');
+    const { x, y } = popupPosition(
+      screen.getPrimaryDisplay().workArea,
+      width,
+      height,
+      process.platform
+    );
+    win.setPosition(x, y);
+  }
+
+  /** 关闭并复位弹窗状态。 */
+  private closeUpdatePopup(): void {
+    this.lastPopupHeight = 0;
+    if (this.updatePopupWindow && !this.updatePopupWindow.isDestroyed()) {
+      this.updatePopupWindow.close();
+    }
+    this.updatePopupWindow = null;
+  }
+
+  /** 注册弹窗动作监听（进程生命周期内一次；仅一个弹窗，按 sender 甄别本窗口）。 */
+  private registerPopupActionListener(): void {
+    if (this.popupActionListenerBound) return;
+    const { ipcMain } = require('electron') as typeof import('electron');
+    ipcMain.on(IPC_CHANNELS.UPDATE_POPUP_ACTION, this.onPopupAction);
+    this.popupActionListenerBound = true;
+  }
+
+  /** 弹窗动作路由：viewLog/manualDownload 就地开外链，cancel 中断下载；其余交 awaiter 决策（update/later/skip/retry/close）。 */
+  private onPopupAction = (event: Electron.IpcMainEvent, action: UpdatePopupAction): void => {
+    if (!this.updatePopupWindow || this.updatePopupWindow.isDestroyed()) return;
+    if (event.sender !== this.updatePopupWindow.webContents) return; // 只认本弹窗
+    if (action === 'viewLog') {
+      this.openReleasesPage(); // 打开 releases，弹窗保留在 remind 态（不 resolve）
+      return;
+    }
+    if (action === 'cancel') {
+      // progress 态取消：只作用于弹窗流自己的 token（不碰关于页手动下载）→ downloadFile reject → 下载循环静默收尾。
+      const ctl = this.popupDownloadControl;
+      if (ctl) {
+        ctl.cancelled = true;
+        ctl.abort?.();
+      }
+      return;
+    }
+    if (action === 'manualDownload' && this.currentUpdateInfo) {
+      shell.openExternal(this.currentUpdateInfo.downloadUrl);
+    }
+    this.popupActionResolver?.(action);
+  };
+
+  /** 等弹窗回传合法动作（或关窗 '__closed__'）；非法/副作用动作（viewLog）不 resolve。 */
+  private awaitPopupAction(valid: UpdatePopupAction[]): Promise<UpdatePopupAction | '__closed__'> {
+    return new Promise((resolve) => {
+      // 弹窗已不在（如 progress 态被用户关窗后才走到 error 态 await）→ 立即解，避免无人可 resolve 致永挂。
+      if (!this.updatePopupWindow || this.updatePopupWindow.isDestroyed()) {
+        resolve('__closed__');
+        return;
+      }
+      this.popupActionResolver = (a) => {
+        if (a === '__closed__' || valid.includes(a as UpdatePopupAction)) {
+          this.popupActionResolver = null;
+          resolve(a);
+        }
+      };
+    });
   }
 
   /**
-   * 更新进度窗口
-   */
-  private updateProgressWindow(percentage: number, message: string): void {
-    if (this.progressWindow && !this.progressWindow.isDestroyed()) {
-      this.progressWindow.webContents
-        .executeJavaScript(
-          `
-        document.getElementById('progress-bar').style.width = '${percentage}%';
-        document.getElementById('progress-text').textContent = '${message}';
-        document.getElementById('progress-percent').textContent = '${percentage}%';
-      `
-        )
-        .catch(() => {
-          // 忽略执行错误
-        });
-    }
-  }
-
-  /**
-   * 关闭进度窗口
-   */
-  private closeProgressWindow(): void {
-    if (this.progressWindow && !this.progressWindow.isDestroyed()) {
-      this.progressWindow.close();
-      this.progressWindow = null;
-    }
-  }
-
-  /**
-   * 获取进度窗口 HTML
-   */
-  private getProgressWindowHtml(): string {
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: white;
-      height: 100vh;
-      padding: 24px;
-      -webkit-app-region: drag;
-    }
-    .title {
-      font-size: 16px;
-      font-weight: 600;
-      color: #1a1a2e;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .title svg {
-      width: 20px;
-      height: 20px;
-      animation: bounce 1s infinite;
-    }
-    @keyframes bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-4px); }
-    }
-    .progress-container {
-      background: #e5e7eb;
-      border-radius: 8px;
-      height: 8px;
-      overflow: hidden;
-      margin-bottom: 12px;
-    }
-    .progress-bar {
-      height: 100%;
-      background: #3b82f6;
-      border-radius: 8px;
-      transition: width 0.3s ease;
-      width: 0%;
-    }
-    .progress-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .progress-text {
-      font-size: 13px;
-      color: #6b7280;
-    }
-    .progress-percent {
-      font-size: 14px;
-      font-weight: 600;
-      color: #3b82f6;
-    }
-  </style>
-</head>
-<body>
-  <div class="title">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-      <polyline points="7 10 12 15 17 10"/>
-      <line x1="12" y1="15" x2="12" y2="3"/>
-    </svg>
-    正在下载更新
-  </div>
-  <div class="progress-container">
-    <div class="progress-bar" id="progress-bar"></div>
-  </div>
-  <div class="progress-info">
-    <span class="progress-text" id="progress-text">准备下载...</span>
-    <span class="progress-percent" id="progress-percent">0%</span>
-  </div>
-</body>
-</html>
-    `.trim();
-  }
-
-  /**
-   * 带进度窗口的下载更新（用于托盘触发的更新）
+   * 托盘/启动触发的下载：Conduit 弹窗承载 progress→done/error 态。error 态支持「重试」循环。
+   * 下载走统一 downloadFile（mirrorToPopup=true → 进度只镜像弹窗，不打扰关于页；与旧 downloadFileWithProgressWindow
+   * 的「不触碰 mainWindow 进度」语义一致）。
    */
   async downloadUpdateWithProgress(updateInfo: UpdateInfo): Promise<string | null> {
-    // 创建进度窗口
-    this.createProgressWindow();
-    this.updateProgressWindow(0, '准备下载...');
+    this.currentUpdateInfo = updateInfo;
+    const downloadDir = app.getPath('temp');
+    const filePath = path.join(downloadDir, updateInfo.fileName);
 
-    try {
-      this.logManager.addLog('info', `开始下载更新: ${updateInfo.version}`, 'UpdateService');
+    // 复用 remind 弹窗续进 progress，或新建 progress 态弹窗。
+    this.createUpdatePopup({
+      phase: 'progress',
+      theme: this.resolvedTheme(),
+      version: updateInfo.version,
+      percentage: 0,
+      bytesText: '',
+      labels: this.popupLabels(),
+    });
 
-      const downloadDir = app.getPath('temp');
-      const filePath = path.join(downloadDir, updateInfo.fileName);
+    // 失败可重试循环：error 态「重试」→ 重下；「手动下载/关闭/关窗」→ 收尾返回 null。
+    for (;;) {
+      // 每轮独立 cancel token（清上一轮 / 异步迟到的取消）；挂到实例供「×」/OS 关窗只取消本弹窗流。
+      const ctl: DownloadControl = { cancelled: false, abort: null };
+      this.popupDownloadControl = ctl;
+      try {
+        this.logManager.addLog('info', `开始下载更新: ${updateInfo.version}`, 'UpdateService');
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        await this.downloadFile(
+          updateInfo.downloadUrl,
+          filePath,
+          updateInfo.fileSize,
+          false,
+          true,
+          ctl
+        );
 
-      // 如果文件已存在，先删除
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+        // 竞态：取消恰在下载完成瞬间到达（download 已 resolve）→ 仍按取消处理，不进 done/不安装。
+        if (ctl.cancelled) return this.finishPopupCancel(filePath, '（完成瞬间）');
 
-      await this.downloadFileWithProgressWindow(
-        updateInfo.downloadUrl,
-        filePath,
-        updateInfo.fileSize
-      );
-
-      this.logManager.addLog('info', `更新下载完成: ${filePath}`, 'UpdateService');
-      this.updateProgressWindow(100, '下载完成');
-
-      // 延迟关闭进度窗口
-      setTimeout(() => {
-        this.closeProgressWindow();
-      }, 500);
-
-      return filePath;
-    } catch (error: any) {
-      const errorMessage = error?.message || '下载更新失败';
-      this.logManager.addLog('error', `下载更新失败: ${errorMessage}`, 'UpdateService');
-      this.closeProgressWindow();
-
-      // 显示错误对话框
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        dialog.showMessageBox(this.mainWindow, {
-          type: 'error',
-          title: '下载失败',
-          message: '更新下载失败',
-          detail: errorMessage,
-          buttons: ['确定'],
+        this.popupDownloadControl = null;
+        this.logManager.addLog('info', `更新下载完成: ${filePath}`, 'UpdateService');
+        this.sendPopupState({
+          phase: 'done',
+          theme: this.resolvedTheme(),
+          version: updateInfo.version,
+          percentage: 100,
+          labels: this.popupLabels(),
         });
-      }
+        // 捕获当前窗引用：800ms 后仅当仍是这个弹窗才关（防期间被新流程复用后误关新窗，Low 竞态）。
+        const doneWin = this.updatePopupWindow;
+        setTimeout(() => {
+          if (this.updatePopupWindow === doneWin) this.closeUpdatePopup();
+        }, 800);
+        return filePath;
+      } catch (error: any) {
+        // 用户取消（progress 态 × / OS 关窗）：abort 触发的 reject 不是真错误 → 静默关窗、不显 error 态、不安装、删残件。
+        if (ctl.cancelled) return this.finishPopupCancel(filePath, '');
 
-      return null;
+        this.popupDownloadControl = null;
+        const errorMessage = error?.message || '下载更新失败';
+        this.logManager.addLog('error', `下载更新失败: ${errorMessage}`, 'UpdateService');
+        this.sendPopupState({
+          phase: 'error',
+          theme: this.resolvedTheme(),
+          version: updateInfo.version,
+          errorText: errorMessage,
+          labels: this.popupLabels(),
+        });
+
+        const action = await this.awaitPopupAction(['retry', 'manualDownload', 'close']);
+        if (action === 'retry') {
+          this.sendPopupState({
+            phase: 'progress',
+            theme: this.resolvedTheme(),
+            version: updateInfo.version,
+            percentage: 0,
+            bytesText: '',
+            labels: this.popupLabels(),
+          });
+          continue;
+        }
+        this.closeUpdatePopup(); // manualDownload（已外链）/ close / __closed__
+        return null;
+      }
     }
+  }
+
+  /** 取消下载的统一收尾：清 token + 删残件 + 关窗 + 返回 null（不安装）。 */
+  private finishPopupCancel(filePath: string, note: string): null {
+    this.popupDownloadControl = null;
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch {
+      /* 残件清理失败无害（temp 目录 OS 自清） */
+    }
+    this.logManager.addLog('info', `用户取消更新下载${note}`, 'UpdateService');
+    this.closeUpdatePopup();
+    return null;
   }
 
   // ========== 私有方法 ==========
@@ -814,53 +908,78 @@ export class UpdateService {
     return compareSemver(latest, current) > 0;
   }
 
+  /**
+   * mirrorToPopup 决定进度归属，避免跨流串扰：
+   * - false（关于页手动 downloadUpdate）：进度发 mainWindow（EVENT_UPDATE_PROGRESS，about 页订阅）。
+   * - true（downloadUpdateWithProgress，托盘/启动）：进度只镜像弹窗，不触碰 mainWindow（旧 downloadFileWithProgressWindow 语义）。
+   *   否则关于页正手动下载时若托盘流并发，两流都写 mainWindow 进度会互相串入；且弹窗被无关流劫持成 progress 态。
+   */
   private async downloadFile(
     url: string,
     destPath: string,
     totalSize: number,
-    isRetry = false
+    isRetry = false,
+    mirrorToPopup = false,
+    ctl?: DownloadControl
   ): Promise<void> {
-    return this.downloadWithHardening(url, destPath, totalSize, isRetry, {
-      onMirror: () =>
-        this.updateProgress({
-          status: 'downloading',
-          percentage: 0,
-          message: '正在尝试通过镜像下载...',
-        }),
-      onProgress: (downloaded, total) => {
-        if (total > 0) {
-          const percentage = Math.round((downloaded / total) * 100);
-          this.updateProgress({
-            status: 'downloading',
-            percentage,
-            message: `正在下载更新... ${percentage}%`,
-          });
-        }
+    return this.downloadWithHardening(
+      url,
+      destPath,
+      totalSize,
+      isRetry,
+      {
+        onMirror: () => {
+          if (mirrorToPopup) {
+            this.mirrorProgressToPopup(0, undefined, true);
+          } else {
+            this.updateProgress({
+              status: 'downloading',
+              percentage: 0,
+              message: '正在尝试通过镜像下载...',
+            });
+          }
+        },
+        onProgress: (downloaded, total) => {
+          if (total > 0) {
+            const percentage = Math.round((downloaded / total) * 100);
+            if (mirrorToPopup) {
+              const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
+              const totalMB = (total / 1024 / 1024).toFixed(1);
+              this.mirrorProgressToPopup(percentage, `${downloadedMB} MB / ${totalMB} MB`, false);
+            } else {
+              this.updateProgress({
+                status: 'downloading',
+                percentage,
+                message: `正在下载更新... ${percentage}%`,
+              });
+            }
+          }
+        },
       },
-    });
+      ctl
+    );
   }
 
-  private async downloadFileWithProgressWindow(
-    url: string,
-    destPath: string,
-    totalSize: number,
-    isRetry = false
-  ): Promise<void> {
-    return this.downloadWithHardening(url, destPath, totalSize, isRetry, {
-      onMirror: () => this.updateProgressWindow(0, '正在尝试通过镜像下载...'),
-      onProgress: (downloaded, total) => {
-        if (total > 0) {
-          const percentage = Math.round((downloaded / total) * 100);
-          const downloadedMB = (downloaded / 1024 / 1024).toFixed(1);
-          const totalMB = (total / 1024 / 1024).toFixed(1);
-          this.updateProgressWindow(percentage, `${downloadedMB} MB / ${totalMB} MB`);
-        }
-      },
+  /** 把下载进度镜像成弹窗 progress 态（仅 downloadUpdateWithProgress 调用；弹窗已销毁则 no-op）。 */
+  private mirrorProgressToPopup(
+    percentage: number,
+    bytesText: string | undefined,
+    mirror: boolean
+  ): void {
+    if (!this.updatePopupWindow || this.updatePopupWindow.isDestroyed()) return;
+    this.sendPopupState({
+      phase: 'progress',
+      theme: this.resolvedTheme(),
+      version: this.currentUpdateInfo?.version ?? '',
+      percentage,
+      bytesText,
+      mirror,
+      labels: this.popupLabels(),
     });
   }
 
   /**
-   * App 安装包下载的共享实现：两个进度展现（主窗进度 / 独立进度窗）仅 onProgress/onMirror 回调不同，主体复用。
+   * App 安装包下载的共享实现：主窗进度 + 弹窗镜像仅 onProgress/onMirror 回调不同，主体复用。
    * 对齐 CoreUpdateService.downloadFile 的三项加固：
    *   ① idle/stall 停滞超时——30s 无 data 即 abort，防网络中断/被拦截致永久挂起、更新永不 resolve（转圈不退）。
    *   ② Content-Length 完整性校验——end 时比对实收字节与响应头 totalSize，被截断的下载 reject（github 链接自动换镜像重试）。
@@ -875,7 +994,8 @@ export class UpdateService {
     cb: {
       onMirror: () => void;
       onProgress: (downloadedBytes: number, totalSize: number) => void;
-    }
+    },
+    ctl?: DownloadControl
   ): Promise<void> {
     // #60：先解析用户 ghProxyPrefix（async），供 handleError 兜底镜像拼接用——与 CoreDownloader.downloadFile 同口径
     // （在 Promise executor 外 await 配置，闭包内用解析后的同步值）。未配置 → undefined（ghMirrorUrl 回落内置 preset[0]）。
@@ -905,6 +1025,12 @@ export class UpdateService {
         file.close();
         if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
 
+        // 用户取消（abort 触发）：不走镜像重试，直接 reject → downloadUpdateWithProgress 按取消收尾。
+        if (ctl?.cancelled) {
+          reject(err);
+          return;
+        }
+
         if (!isRetry && url.includes('github.com')) {
           this.logManager.addLog(
             'warn',
@@ -914,7 +1040,7 @@ export class UpdateService {
           cb.onMirror();
           // #60：兜底镜像优先用用户配置的 ghProxyPrefix（应用内核/资源下载同一加速前缀），缺失才回落内置 preset[0]。
           const mirrorUrl = ghMirrorUrl(url, ghPrefix);
-          this.downloadWithHardening(mirrorUrl, destPath, totalSize, true, cb)
+          this.downloadWithHardening(mirrorUrl, destPath, totalSize, true, cb, ctl)
             .then(resolve)
             .catch(reject);
           return;
@@ -928,6 +1054,25 @@ export class UpdateService {
         session: sess,
       });
       request.setHeader('User-Agent', APP_USER_AGENT);
+      // 暴露中断钩子给「取消」动作（progress 态 × / OS 关窗）；递归镜像/重定向时更新为最新在途请求（同时仅一个活跃）。
+      // 与 idle 看门狗同款：abort 后**显式** handleError 驱动 settle，不依赖 abort 是否 emit 'error'
+      // （守 download-hardening「abort 之后必须自己 reject」约定；ctl.cancelled 已置位 → handleError 走 reject、跳镜像）。
+      if (ctl) {
+        ctl.abort = () => {
+          try {
+            request.abort();
+          } catch {
+            /* ignore */
+          }
+          handleError(new Error('下载已取消'));
+        };
+        // Low-3：取消可能落在建请求前的 await 间隙（resolveGhPrefix/updateSession，含端口探测）——彼时 ctl.abort 尚为
+        // null、abort() 是 no-op。到此请求已建、abort 钩子已装，若期间已置取消则立即收尾，避免白下整包才被完成后检查丢弃。
+        if (ctl.cancelled) {
+          handleError(new Error('下载已取消'));
+          return;
+        }
+      }
 
       request.on('response', (response) => {
         if (response.statusCode === 302 || response.statusCode === 301) {
@@ -944,7 +1089,8 @@ export class UpdateService {
               destPath,
               totalSize,
               isRetry,
-              cb
+              cb,
+              ctl
             )
               .then(resolve)
               .catch(reject);

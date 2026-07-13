@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FlowZ</title>
+    <script>
+      // 早期主题（消除 FOUC 白闪）：主进程已设 nativeTheme.themeSource=uiTheme，故此处 prefers-color-scheme
+      // 即等于 app 生效主题。同步给根元素上 .dark；main.ts 随后监听 matchMedia 变化实时联动。
+      (function () {
+        try {
+          if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          /* matchMedia 不可用时默认浅色，由状态载荷的 theme 兜底 */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="update-root"></div>
+    <script type="module" src="./update-popup/main.ts"></script>
+  </body>
+</html>

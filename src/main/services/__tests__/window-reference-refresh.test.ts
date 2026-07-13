@@ -1,7 +1,12 @@
 /**
  * 关窗默认销毁重建后，构造时只捕获一次的 mainWindow 引用会永久指向已销毁窗口——ProxyManager 的
- * sendEventToRenderer（代理启停/错误、Tailscale 认证、失效节点告警等）与 UpdateService 的更新对话框
- * 会因此静默失效。本测覆盖两者新增的 setMainWindow 刷新 + UpdateService 补的 isDestroyed 判断。
+ * sendEventToRenderer（代理启停/错误、Tailscale 认证、失效节点告警等）会因此静默失效。本测覆盖其
+ * setMainWindow 刷新。
+ *
+ * 注：UpdateService 的「更新提醒」已从原生 dialog（依赖 mainWindow）改为独立 Conduit mini 更新窗
+ * （UpdateService.createUpdatePopup，不依赖 mainWindow）——原先「mainWindow 销毁→showUpdateDialog 返回
+ * later 不弹」的判断已随架构移除（弹窗独立即修了该缺陷），故此处不再测 showUpdateDialog 的窗口有效性；
+ * 弹窗布局纯逻辑见 update-popup-layout.test.ts，弹窗创建/定位/焦点为真机项。
  */
 import * as os from 'os';
 import * as path from 'path';
@@ -25,7 +30,6 @@ jest.mock('electron', () => ({
 }));
 
 import { ProxyManager } from '../ProxyManager';
-import { UpdateService } from '../UpdateService';
 
 function freshPm(): any {
   const pm: any = new ProxyManager(
@@ -59,22 +63,5 @@ describe('ProxyManager.setMainWindow', () => {
     const pm = freshPm();
     pm.setMainWindow(null);
     expect(() => pm.sendEventToRenderer('test:channel', {})).not.toThrow();
-  });
-});
-
-describe('UpdateService.showUpdateDialog 窗口有效性判断', () => {
-  const log = { addLog: () => {} } as any;
-  const updateInfo = { version: '1.0.0', releaseNotes: '' } as any;
-
-  it('mainWindow 已销毁（非 null）→ 返回 later，不弹窗（原先只判 !mainWindow，销毁但非 null 时漏判）', async () => {
-    const svc = new UpdateService(log);
-    svc.setMainWindow({ isDestroyed: () => true } as any);
-    await expect(svc.showUpdateDialog(updateInfo)).resolves.toBe('later');
-  });
-
-  it('mainWindow 为 null → 返回 later', async () => {
-    const svc = new UpdateService(log);
-    svc.setMainWindow(null);
-    await expect(svc.showUpdateDialog(updateInfo)).resolves.toBe('later');
   });
 });
