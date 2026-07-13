@@ -69,8 +69,10 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
       const isRunning = proxyManager?.getStatus().running ?? false;
       updateTrayMenuState(isRunning);
 
-      // 2. 如果代理正在运行，应用新配置：仅切节点走 clash_api 热切换（不断流），其余重启（见 switchMode）
-      if (isRunning && proxyManager) {
+      // 2. 代理运行中【或 lifecycle 在飞】都交给 switchMode——重启执行窗口（stop→spawn，pid 尚无）内 isRunning=false，
+      //    旧闸门把变更静默丢弃：删选中节点触发 fallback 重启，其窗口内完成克隆+选中 → 核 selector 永停 fallback 节点
+      //    而 UI 显新节点（bug#5 真机实证）。busy 时 switchMode 内部暂存、settle 后重放对账。
+      if (proxyManager && (isRunning || proxyManager.isLifecycleBusy())) {
         try {
           // 重新加载配置以确保使用最新值
           const latestConfig = await configManager.loadConfig();

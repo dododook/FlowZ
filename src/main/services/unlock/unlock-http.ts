@@ -22,6 +22,8 @@ export interface UnlockRequest {
   body?: string;
   /** 覆盖默认最大重定向跳数（默认 MAX_REDIRECTS）。 */
   maxRedirects?: number;
+  /** 覆盖默认单请求超时（默认 REQ_TIMEOUT_MS）。供整轮检测总预算（issue 1）按剩余时间收紧就绪门探测，防单探测冲破 wall-clock 上限。 */
+  timeoutMs?: number;
 }
 
 export interface RedirectHop {
@@ -88,7 +90,8 @@ export function fetchUnlock(session: Session, req: UnlockRequest): Promise<Unloc
       });
     };
 
-    // 兜底超时：net.request 在连接被静默吞掉时可能长时间不触发任何事件 → 8s 后 abort + 落 timeout。
+    // 兜底超时：net.request 在连接被静默吞掉时可能长时间不触发任何事件 → 超时后 abort + 落 timeout。
+    // 默认 REQ_TIMEOUT_MS；调用方可经 req.timeoutMs 按整轮总预算收紧（issue 1，防单探测冲破 wall-clock 上限）。
     const timer = setTimeout(() => {
       try {
         request?.abort();
@@ -96,7 +99,7 @@ export function fetchUnlock(session: Session, req: UnlockRequest): Promise<Unloc
         /* ignore */
       }
       done({ status: 0, error: 'timeout' });
-    }, REQ_TIMEOUT_MS);
+    }, req.timeoutMs ?? REQ_TIMEOUT_MS);
 
     try {
       request = net.request({

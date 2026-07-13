@@ -285,6 +285,7 @@
     "addServer": "Add Server",
     "addSubscription": "Add Subscription",
     "selectServerHint": "Select a server to enable proxy",
+    "selectPendingNodeRestartHint": "Selected node has pending changes — restarting the core to apply, ready in a moment",
     "modeGlobalDesc": "All traffic goes through the proxy",
     "modeSmartDesc": "Direct connection for domestic, proxy for foreign",
     "modeDirectDesc": "All traffic goes directly, without proxy",
@@ -349,6 +350,7 @@
     "unlockStateChecking": "Checking",
     "unlockStateTimeout": "Timeout",
     "unlockStateIdle": "Not checked",
+    "unlockRestrictedEgressHint": "Current exit is in a restricted network region — overseas services being unreachable is expected, not a node or detection fault",
     "unlockTimeoutHint": "This service is unreachable via the current exit (possibly blocked by the provider at the network layer); not a detection failure"
   },
   "settings": {
@@ -823,7 +825,6 @@
     "pendingChangesSummary": "{{count}} node change(s) awaiting apply",
     "pendingAdded": "{{count}} added",
     "pendingModified": "{{count}} modified",
-    "pendingRemoved": "{{count}} removed",
     "pendingApplyNow": "Apply Now",
     "pendingApplying": "Applying…",
     "pendingApplyFailed": "Failed to apply changes",

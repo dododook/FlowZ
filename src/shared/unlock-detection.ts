@@ -34,6 +34,16 @@ export interface UnlockEgress {
 }
 
 /**
+ * 国家级网络封锁地区：出口位于其中时，海外服务 checker 的 timeout 是**结构性预期**（出口侧远端解析被 GFW 投毒
+ * + 连接层 SNI/IP 拦截，用户真实流量同路径同死）——非低置信瞬态。据此按高置信终态收敛（正常 TTL 缓存、免 warm
+ * 补测/settle-retry churn、G-flip2 不循环 invalidate），UI 显精确提示而非误判故障。checker 域名走 socks5 ATYP=domain
+ * 透传出口远端解析、不经本机 DNS → 无「换 clean 解析器」可修（大陆视角无干净解析源）。最小集起步（本次故障面仅 CN）。
+ */
+export const RESTRICTED_EGRESS_REGIONS: ReadonlySet<string> = new Set(['CN']);
+export const isRestrictedEgressRegion = (region?: string): boolean =>
+  !!region && RESTRICTED_EGRESS_REGIONS.has(region.toUpperCase());
+
+/**
  * gating 短路原因：
  * - `proxy-not-running`：代理核未运行。
  * - `exit-invalid`：选中 TS 出口 API 直判无效（未选出口设备 / 出口离线 / 未广告）——经无效出口检测必死出口空转，
@@ -69,4 +79,16 @@ export interface UnlockSnapshot {
 export interface UnlockProgress {
   serviceId: string;
   result: UnlockResult;
+}
+
+/**
+ * EVENT_UNLOCK_INVALIDATED 载荷（issue 2 review 修）：由**主进程**在 invalidate 时带上核真态，供渲染端决定
+ * 「显示检测中(beginUnlockCheck) vs 复位 idle(resetUnlock)」——不再用渲染端可能陈旧的 connectionStatus/proxyBlocked
+ * （invalidate 常先于 EVENT_PROXY_STARTED / IP_INFO_UPDATED 抵达，陈旧视图会误判分支）。
+ */
+export interface UnlockInvalidatedPayload {
+  /** invalidate 时核是否在运行。 */
+  running: boolean;
+  /** invalidate 时选中出口是否直判无效（R-gate）：true 则不显检测中 spinner。 */
+  exitBlocked: boolean;
 }

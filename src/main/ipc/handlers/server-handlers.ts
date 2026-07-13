@@ -10,7 +10,7 @@ import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { ServerConfig } from '../../../shared/types';
 import { registerIpcHandler } from '../ipc-handler';
 import { mainEventEmitter, MAIN_EVENTS } from '../main-events';
-import { collectRuleTargetedServerIds } from '../../../shared/endpoint-routes';
+import { ipcEventEmitter } from '../ipc-events';
 import { DIRECT_SERVER_ID } from '../../../shared/direct-selection';
 import { ProtocolParser } from '../../services/ProtocolParser';
 import { ConfigManager } from '../../services/ConfigManager';
@@ -115,10 +115,11 @@ export function registerServerHandlers(
   );
 
   // 删除服务器
-  // D4（flowz-node-change-restart）：删「当前选中 / 被规则指向」节点 → emit CONFIG_CHANGED 触发一次去抖重启
-  //   （servers 变→P2-A 兜底重启，把已删节点彻底移出运行核 selector）；删「纯未引用」节点 → 不 emit（defer，惰性
-  //   成员无流量、无害，下次结构性重启清）。删选中时 selectedServerId 置**渲染端传入的兜底节点**（最快剩余节点，
-  //   pickFallbackExit，latency 在渲染端），而非 null——避免删当前出口后无选中兜底（原 null → default nodeTags[0]）。
+  // D4/F-1（flowz-node-change-restart）：删除**恒双播** event:configChanged（renderer 差集刷新）+ MAIN_EVENTS.CONFIG_CHANGED
+  //   （主进程 switchMode）。重启与否**单一真值**归 switchMode.canSkipRestartForAddedUnreferenced（refOld∪refNext 含 detour
+  //   闭包 + endpoint 保守集）：删被引用节点（含 detour 前置/未选中 endpoint）恒重启、删纯未引用节点 canSkip③ defer 不重启。
+  //   原 handler 用 `wasSelected‖ruleTargeted` 残缺复刻判据、漏 detour/endpoint → 删它们不重启、活流量继续经已删节点（缺口）。
+  //   删选中时 selectedServerId 置**渲染端传入的兜底节点**（pickFallbackExit），而非 null（避免 0 节点重启 throw）。
   registerIpcHandler<{ serverId: string; fallbackSelectedId?: string | null }, void>(
     IPC_CHANNELS.SERVER_DELETE,
     async (
@@ -136,11 +137,6 @@ export function registerServerHandlers(
       config.servers.splice(index, 1);
 
       const wasSelected = config.selectedServerId === args.serverId;
-      // 被 enabled+proxy 规则显式指向（custom/app）：删它须重启清运行核陈旧引用（口径与 route-builder/UI 同源）。
-      const ruleTargeted = collectRuleTargetedServerIds([
-        ...(config.customRules ?? []),
-        ...(config.appRules ?? []),
-      ]).has(args.serverId);
 
       // 删当前选中 → 兜底出口（渲染端最快剩余节点）；无剩余(null/undefined) → DIRECT_SERVER_ID 哨兵（干净直连，
       // proxy-selector default='direct'）。**不可置 null**：null 非哨兵 → 0 节点时 buildOutbounds `nodeTags.length===0
@@ -152,9 +148,10 @@ export function registerServerHandlers(
       await configManager.saveConfig(config);
       await runServerRemovalSideEffects(removed);
 
-      if (wasSelected || ruleTargeted) {
-        mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
-      }
+      // F-1：恒双播（对齐 CONFIG_SAVE）。重启分类归 switchMode canSkip；渲染端差集/store 即时刷新（原删除零 sendToAll →
+      // 徽标要等下个无关触发点才冒出、观感随机）。未引用删除仍 defer 不重启（不多重启）。
+      ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
+      mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
     }
   );
 
@@ -174,13 +171,8 @@ export function registerServerHandlers(
 
       config.servers = config.servers.filter((s) => !idSet.has(s.id));
 
-      // D4：删除集合是否含「当前选中 / 被规则指向」节点 → 决定是否触发重启（同单删语义）。
+      // F-1：删除集合是否含选中节点 → 决定兜底出口（重启分类归 switchMode canSkip，不再在此复刻规则目标判据）。
       const selectedDeleted = !!config.selectedServerId && idSet.has(config.selectedServerId);
-      const ruleTargetedIds = collectRuleTargetedServerIds([
-        ...(config.customRules ?? []),
-        ...(config.appRules ?? []),
-      ]);
-      const ruleTargetedDeleted = args.serverIds.some((id) => ruleTargetedIds.has(id));
 
       // 选中节点在删除集合内（'__direct__' 哨兵不是真实 id，不会命中）→ 置兜底节点（渲染端最快剩余节点）；
       // 无剩余 → DIRECT_SERVER_ID（同单删：null 会致 0 节点重启 throw）。
@@ -193,9 +185,9 @@ export function registerServerHandlers(
         await runServerRemovalSideEffects(r);
       }
 
-      if (selectedDeleted || ruleTargetedDeleted) {
-        mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
-      }
+      // F-1：恒双播（同单删；重启分类归 switchMode canSkip，含 detour 闭包/endpoint 保守集）。
+      ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
+      mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
       return removed.length;
     }
   );

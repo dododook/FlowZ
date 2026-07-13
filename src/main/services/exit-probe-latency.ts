@@ -22,6 +22,11 @@ export interface ExitProbeLatencyDeps {
   measureWarmRtt: (probeProxyPort: number) => Promise<number | null>;
   /** 发布延迟：广播 EVENT_SPEED_TEST_RESULT + 合并入托盘（keepTestingState，不复位在飞测速态）。 */
   publish: (serverId: string, latency: number) => void;
+  /**
+   * W1 warm-gate：in-app 并发源（unlock 检测轮）settle 后 resolve；cap 兜底恒 resolve。缺省=不等待。
+   * 治「切节点后伴测采样撞连接 flush 重连风暴 + unlock checker 齐射窗口 → TTFB 虚高 + event-loop 忙拖慢计时」。
+   */
+  whenQuiet?: (capMs: number) => Promise<void>;
   /** 调试日志（可选）。 */
   log?: (message: string) => void;
 }
@@ -31,6 +36,12 @@ export interface ExitProbeLatencyOptions {
   minIntervalMs?: number;
   /** 取当前时间（单测注入定桩控制节流窗口）。默认 Date.now。 */
   now?: () => number;
+  /** W1：非手动触发的测前 settle 延时（盖过连接 flush 1.5s + 重连风暴头部；也保证 unlock self-run 1.5s 防抖已开跑）。默认 2500ms。**需真机抓时序定稿**。 */
+  settleMs?: number;
+  /** W1：unlock idle 等待 cap。默认 12_000ms（unlock 轮预算 10s + 余量）。 */
+  quietCapMs?: number;
+  /** 睡眠注入（单测 fake timers）。默认 setTimeout 包装。 */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -47,6 +58,9 @@ export function createExitProbeLatencyRunner(
 ): (ctx: { manual: boolean }) => Promise<void> {
   const minIntervalMs = options.minIntervalMs ?? 30_000;
   const now = options.now ?? Date.now;
+  const settleMs = options.settleMs ?? 2500;
+  const quietCapMs = options.quietCapMs ?? 12_000;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let inFlight = false;
   let pendingCtx: { manual: boolean } | null = null; // Y2：在飞期被吞的最新触发（settle 后补跑一次）
   const lastAt = new Map<string, number>();
@@ -67,16 +81,29 @@ export function createExitProbeLatencyRunner(
       if (!ctx.manual && now() - (lastAt.get(exit.serverId) ?? 0) < minIntervalMs) return; // 节流（手动 bypass）
       inFlight = true;
       try {
-        const rtt = await deps.measureWarmRtt(exit.probeProxyPort); // ≤8s，失败 null
+        // W1 warm-gate：非手动先让过切换后瞬态负载窗口——①固定 settle（连接 flush 1.5s + 重连风暴头部；也保证 unlock
+        // self-run 1.5s 防抖已开跑，②的 idle 等待不空放行）→ ②等 unlock 轮 settle（cap 兜底恒 resolve）。手动 bypass
+        // （用户要即时值，且手动天然发生在风暴外）。等待期仍持 inFlight → 新触发进 pendingCtx（Y2）语义不变；零新增探测。
+        let effExit = exit;
+        if (!ctx.manual) {
+          await sleep(settleMs);
+          await (deps.whenQuiet?.(quietCapMs) ?? Promise.resolve());
+          const still = deps.getSelectedExit(); // 等待期间出口被切走 → 本轮放弃（Y2 pending 补跑新出口）
+          if (!still || still.serverId !== exit.serverId) return;
+          // review#3：用等待后的最新 target——probeProxyPort 每次 start `listen(0)` 动态分配，等待窗（≤~14.5s）内核重启
+          // 后旧端口已死；仅比 serverId 通过却用旧端口测 → CONNECT 失败丢样。以 still 整体替换参与测量。
+          effExit = still;
+        }
+        const rtt = await deps.measureWarmRtt(effExit.probeProxyPort); // ≤8s，失败 null
         if (rtt === null) {
-          deps.log?.(`exit-probe latency miss -> ${exit.serverId}`); // Y1：失败带 serverId（配 SpeedTest 侧 reason+target）
+          deps.log?.(`exit-probe latency miss -> ${effExit.serverId}`); // Y1：失败带 serverId（配 SpeedTest 侧 reason+target）
           return; // 失败不写、不写 -1、保留旧值
         }
         const after = deps.getSelectedExit(); // 守卫②（测量后）：双点捕获
-        if (!after || after.serverId !== exit.serverId) return; // 测量期间切走 → 丢弃
-        deps.publish(exit.serverId, rtt);
-        lastAt.set(exit.serverId, now()); // publish 成功后才推进节流额度（失败/抛异常不占额度）
-        deps.log?.(`exit-probe latency ${rtt}ms -> ${exit.serverId}`);
+        if (!after || after.serverId !== effExit.serverId) return; // 测量期间切走 → 丢弃
+        deps.publish(effExit.serverId, rtt);
+        lastAt.set(effExit.serverId, now()); // publish 成功后才推进节流额度（失败/抛异常不占额度）
+        deps.log?.(`exit-probe latency ${rtt}ms -> ${effExit.serverId}`);
       } finally {
         inFlight = false;
       }

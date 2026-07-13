@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app-store';
 import { useUnlockDetection } from './use-unlock-detection';
+import { isRestrictedEgressRegion } from '../../../shared/unlock-detection';
 import {
   UNLOCK_SERVICES,
   STATUS_LABEL_KEY,
@@ -54,12 +55,8 @@ export function UnlockInline() {
     void reprobeExitIp().finally(() => setReprobing(false));
   };
 
-  // 挂载即触发（随首页出现）。实际初检由 useUnlockDetection 的挂载逻辑接管：先 get() 水合缓存快照，
-  // 无有效快照才走 force=false 检测（吃主进程 30min TTL + 按出口 IP 缓存）；本处 run() 被 hook 内单飞拦下。
-  useEffect(() => {
-    run();
-  }, [run]);
-
+  // issue 2：不再挂载即 run()。检测态现驻 store（切页存活）、发起由主进程 backend self-run 驱动；hook 的冷水合只在
+  // store 无态时补一次。挂载即 run() 会使每次进首页都强制检测（架空缓存 + 与「切页不重跑」目标冲突），故删除。
   const ai = UNLOCK_SERVICES.filter((s) => s.group === 'ai');
   const media = UNLOCK_SERVICES.filter((s) => s.group === 'media');
 
@@ -94,7 +91,11 @@ export function UnlockInline() {
               拦截），非检测故障」。不显「已封锁」——无 marker 证据不下 blocked 结论（checkers「绝不误 block」契约）。 */}
           {status === 'timeout' && egress && (
             <div className="mt-1 max-w-[13rem] whitespace-normal text-fg-faint">
-              {t('home.unlockTimeoutHint')}
+              {t(
+                isRestrictedEgressRegion(egress.region)
+                  ? 'home.unlockRestrictedEgressHint'
+                  : 'home.unlockTimeoutHint'
+              )}
             </div>
           )}
         </HoverCardContent>

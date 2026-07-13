@@ -41,6 +41,12 @@ jest.mock('../ProtocolParser', () => ({ ProtocolParser: class {} }));
 jest.mock('../ConfigManager', () => ({ ConfigManager: class {} }));
 jest.mock('../WarpService', () => ({ WarpService: class {} }));
 
+// F-1：删除恒 sendToAll('event:configChanged')（渲染端差集刷新）。mock 避免真实 BrowserWindow（未 mock 会炸）。
+const sendToAllSpy = jest.fn();
+jest.mock('../../ipc/ipc-events', () => ({
+  ipcEventEmitter: { sendToAll: (...a: any[]) => sendToAllSpy(...a) },
+}));
+
 function makeConfig() {
   return {
     selectedServerId: 's2' as string | null,
@@ -104,10 +110,14 @@ describe('SERVER_DELETE_BATCH', () => {
     expect(saved.servers.map((s: any) => s.id)).toEqual(['s2']);
   });
 
-  it('未命中选中/未被规则指向 → selectedServerId 不变 + 不触发重启（defer）', async () => {
+  it('未命中选中/未被规则指向 → selectedServerId 不变 + 恒双播（F-1；重启分类归 switchMode canSkip）', async () => {
+    sendToAllSpy.mockClear();
     await invoke(['s1', 's4']);
     expect(saveConfigSpy.mock.calls[0][0].selectedServerId).toBe('s2');
-    expect(emittedConfigChanged()).toBe(false); // 删未引用节点不 emit → 不重启
+    // F-1：删除**恒** emit + sendToAll（不再在 handler 层复刻 wasSelected‖ruleTargeted 判据——那漏 detour/endpoint）。
+    // 「未引用删除不重启」的 defer 判定移到 switchMode.canSkipRestartForAddedUnreferenced（此处不可观测）。
+    expect(emittedConfigChanged()).toBe(true);
+    expect(sendToAllSpy).toHaveBeenCalledWith('event:configChanged', expect.objectContaining({}));
   });
 
   it('命中选中节点(无兜底) → selectedServerId=DIRECT_SERVER_ID（0 剩余走直连哨兵，非 null）+ 触发重启', async () => {

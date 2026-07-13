@@ -391,7 +391,7 @@ describe('§2 待应用差集 — getPendingNodeChanges 仅报未引用（review
   it('核未运行（无快照）→ 空差集', () => {
     const svc = makeSvc();
     const c = cfg([ss('A')], { selectedServerId: 'A' });
-    expect(svc.getPendingNodeChanges(c)).toEqual({ added: [], modified: [], removed: [] });
+    expect(svc.getPendingNodeChanges(c)).toEqual({ added: [], modified: [] });
   });
 
   it('测速 probe.isDirty（review F-B）：比传入待测节点指纹 vs 快照，不依赖 currentConfig', () => {
@@ -409,8 +409,9 @@ describe('§2 待应用差集 — getPendingNodeChanges 仅报未引用（review
     expect(probe.isDirty(ss('N', '1.2.3.4'))).toBe(false);
   });
 
-  it('被引用节点（选中/规则目标）的改/增剔除；未引用的改/增/删保留', () => {
+  it('被引用节点（选中/规则目标）的改/增剔除；未引用的改/增保留；删除不入差集（F-2）', () => {
     const svc = makeSvc();
+    svc.getStatus = () => ({ running: true }) as never; // F-3：差集拉取需核运行（夹具无 pid → 默认 false）
     const r1: Rule = {
       id: 'r1',
       type: 'domainSuffix',
@@ -436,6 +437,18 @@ describe('§2 待应用差集 — getPendingNodeChanges 仅报未引用（review
     const diff = svc.getPendingNodeChanges(next);
     expect(diff.modified.sort()).toEqual(['Z']); // A/B 被引用（即刻重启）剔除；Z 未引用保留
     expect(diff.added).toEqual(['N']); // N 未引用新增
-    expect(diff.removed).toEqual(['Del']); // 删未引用保留（removed 不按引用过滤）
+    // F-2：Del 删除不入差集（既不在 added/modified，removed 已移除）——删被引用恒重启仅瞬态、删未引用 orphan 无语义。
+    expect(Object.keys(diff)).toEqual(['added', 'modified']);
+    expect(diff.added).not.toContain('Del');
+    expect(diff.modified).not.toContain('Del');
+  });
+
+  it('F-3：核未运行（有陈旧快照但 running=false）→ 空差集（死核 guard）', () => {
+    const svc = makeSvc();
+    // 模拟崩溃终态：快照未清但核已停。
+    svc.runningServersFingerprint = svc.computeServersFingerprint([ss('A'), ss('Z')]);
+    svc.getStatus = () => ({ running: false }) as never;
+    const next = cfg([ss('A')], { selectedServerId: 'A' });
+    expect(svc.getPendingNodeChanges(next)).toEqual({ added: [], modified: [] }); // running=false → 空
   });
 });

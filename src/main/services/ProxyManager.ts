@@ -409,6 +409,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // currentConfig 会重启回旧 cfg、丢新节点、复现死循环。仅 force-restart 路径写；去抖 timer 消费即清；switchMode 结构性
   // 重启（更新的完整 config）清它以超代（newer 胜）。null=普通去抖重启，读 currentConfig 原语义。
   private pendingForceRestartConfig: UserConfig | null = null;
+  // 丢失更新修复（bug#5）：lifecycle 在飞（depth>0，如删选中节点触发的重启 stop→spawn 空窗）时到达的 switchMode 配置
+  // 变更不丢弃、暂存于此；endLifecycleOp 回 depth 0（kind≠stop）时重放一次 switchMode 对账。窗口内多次变更 last-wins
+  // （每次 payload 都是 ConfigManager 全量最新）。与 pendingForceRestartConfig 正交：force 由去抖 timer 消费、本字段由
+  // drain 重放 switchMode；相撞时 switchMode 最终重启腿会清 force（newer 胜）。根因：restart 空窗 singboxPid=null，旧
+  // switchMode「未运行」早退把变更静默丢给盘、对运行核永久丢失 → 核起于陈旧 fallback 快照（出口≠UI 选中）。
+  private pendingSwitchConfig: UserConfig | null = null;
   // issue #176：最近一次 start() 是否因被接管而「静默让位」（未真正起核）。startInternal 入口复位 false，start() 的
   // supersede 吞掉分支同步置 true。供 attemptAutoRestart 在 await start() 后判别——让位时跳过「自动重启成功」日志与
   // EVENT_PROXY_STARTED（否则发出与「已让位」矛盾、pid/startTime 陈旧的多余 started 事件）。
@@ -1111,6 +1117,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       void this.reassertSelectorSelection(config).finally(() => {
         // S1：reassert 完成（selector 已校正回 config.selectedServerId 或放弃）→ 放行出口首探（whenSelectorSettled）。
         this.markSelectorSettled('reassert 完成');
+        // F-C 解锁污染根治（契约收口）：reassert 可能实际翻转 selector（cache_file 复活旧选择 → 校正回 config 选中，
+        // 含 rule-sel）。该翻转不经 switchMode、原**不在 unlock invalidate 契约内** → boot 窗口内起跑的解锁轮会经错出口
+        // 探测、结果被当新鲜 commit 污染 store/cache（epoch 守卫失明）。此处补入契约：epoch 作废 boot 窗口轮，GAP-1
+        // self-run 在校正后出口重跑。同值 no-op reassert 多 emit 一次 → 与 'started' 的 invalidate 经 self-run 防抖合并，无害。
+        this.emit('unlock-invalidate');
         this.scheduleConnectionFlush(config);
       });
     } else {
@@ -1139,7 +1150,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // 不要把它 revert 回启动时的旧节点。
       const targetId = this.currentConfig?.selectedServerId ?? config.selectedServerId;
       const tag = this.currentIdToTagMap?.get(targetId as string);
-      if (!tag) break;
+      if (!tag) {
+        // bug#5：选中节点不在本次起核的 tag 映射（config 被并发推进）→ 原静默 break 会让 selector 无声停在 cache_file
+        // 旧选择（症状放大器）。A/C 落地后由 settle 对账重启收敛，此处保留观测日志。
+        this.logToManager(
+          'warn',
+          `selector 校正放弃：选中节点 ${String(targetId)} 不在运行核 tag 映射，待启动后对账收敛`
+        );
+        break;
+      }
       const client = this.tailscaleApiClient;
       if (!client) break; // 管理 API 客户端未创建（核未起/无管理 API）→ 放弃，cache/default 兜底
       // 缺陷1 登录期出口让位预置：选中 TS 未登录（据 state 目录判 tunnelReady）→ reassert 直接 PUT 'direct' 而非
@@ -1517,12 +1536,30 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (kind === 'stop') {
       this.restartPending = false;
       this.pendingForceRestartConfig = null; // H-1：停止终态丢弃待决 force-restart（停止优先，勿停后又被拉起）
+      this.pendingSwitchConfig = null; // bug#5：停止终态丢弃暂存变更（已落盘，下次 start 读盘应用，勿重放拉起核）
       return;
+    }
+    // bug#5：先重放窗口内暂存的 switchMode 变更（其内部自行分流热切/no-op/defer/重启；走重启为去抖，与下方
+    // restartPending 的去抖天然合并为一次）。depth 已回 0 → 重放的 switchMode 不再命中暂存分支、正常执行。失败仅记日志。
+    const pendingSwitch = this.pendingSwitchConfig;
+    this.pendingSwitchConfig = null;
+    if (pendingSwitch) {
+      void this.switchMode(pendingSwitch).catch((e) =>
+        this.logToManager(
+          'warn',
+          `生命周期后配置重放失败: ${e instanceof Error ? e.message : String(e)}`
+        )
+      );
     }
     if (this.restartPending) {
       this.restartPending = false;
       this.scheduleDebouncedRestart();
     }
+  }
+
+  /** bug#5：是否有 start/stop/restart 在飞——CONFIG_CHANGED 处理器据此不把重启 stop→spawn 空窗误判为「未运行」而丢变更。 */
+  isLifecycleBusy(): boolean {
+    return this.lifecycleDepth > 0;
   }
 
   /**
@@ -1711,8 +1748,28 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   async switchMode(newConfig: UserConfig): Promise<void> {
     // core-swap 手动轴门控：内核替换窗口中拒绝切模式/切节点——防 clash_api 打到半替换核、防重启式切换撞核。
     this.rejectIfCoreSwapInProgress('切换代理模式');
+    // 丢失更新修复（bug#5）：start/stop/restart 在飞时**绝不能**走下面「未运行」早退丢弃——restart 的 stop→spawn
+    // 空窗句柄为 null，早退会让变更对核永久丢失（且 startInternal 头会覆写 currentConfig）。暂存，settle 后由
+    // endLifecycleOp 重放对账（H-1 pendingForceRestartConfig 同型）。**必须先于句柄判空**。
+    if (this.lifecycleDepth > 0) {
+      this.pendingSwitchConfig = newConfig;
+      return;
+    }
     // 代理未运行：只更新配置（下次 start 时按新配置生成）
     if (!this.singboxProcess && !this.singboxPid) {
+      this.currentConfig = newConfig;
+      return;
+    }
+
+    // bug#5 review#1：newConfig 与 currentConfig **逐字节全等**（无任何变化）→ 仅更新引用即返回，不进 planHotSwitch /
+    // degraded 桥 / 重启。否则 C 的 started-对账在 config 未变时会走到 no-op 腿的 `if(customRuleFilesDegraded)
+    // scheduleDebouncedRestart`：外化文件持续写失败（磁盘满/EIO）时每次 start 自触发重启→再写失败→无限重启循环
+    // （原桥仅真实 CONFIG_CHANGED 触发、有界）；瞬时写失败也会多付一次无谓重启。全等用 stableStringify（键序不敏感）；
+    // 仅选中/规则/参数等真实差异才继续走热切/重启（degraded 桥仍在真实变更时按需重试写文件，语义不变）。
+    if (
+      this.currentConfig &&
+      this.stableStringify(newConfig) === this.stableStringify(this.currentConfig)
+    ) {
       this.currentConfig = newConfig;
       return;
     }
@@ -2191,24 +2248,25 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    */
   getPendingNodeChanges(config: UserConfig): PendingNodeChanges {
     const snap = this.runningServersFingerprint;
-    if (!snap) return { added: [], modified: [], removed: [] };
+    // F-3：死核快照 guard——崩溃终态（cleanup 不清快照）/spawn 前起败会留非空快照，核未运行时差集必须为空
+    // （动作条「核未运行→不渲染」不变量的单点收口；pull 模型恒经此处）。
+    if (!snap || !this.getStatus().running) return { added: [], modified: [] };
     // 差集只报「可 defer（未引用）」变更。被引用节点（选中/规则目标/detour 链/endpoint）的增/改会即刻去抖重启
     // （canSkip③/④返 false），仅在 ~1.5s 去抖窗口内因快照尚旧而瞬态出现在差集里——那不是真「待应用」（它正在重启）。
     // 按引用集过滤 added/modified，消动作条/徽标在自动重启窗口的误报闪动（review Low-1；差集语义收敛为「仅 deferrable」）。
-    // removed 无法据当前 config 判旧引用（节点已不在 config）→ 不过滤；删被引用节点的瞬态窗口极窄且由 B1 重选+重启收口。
+    // F-2：**removed 不进差集**——删被引用节点恒即刻重启（F-1 恒 emit → canSkip③ 拦）仅瞬态；删未引用节点的核内
+    // orphan 是惰性 selector 成员：无 UI 锚点、不可被选、「应用」无可观测收益（不影响活流量/选路），下次自然重启清。
+    // 全代码库无逻辑消费 removed 计数（仅显示消费）→ 显它是负价值 cosmetic（侵蚀徽标可信度），类型级删除。
     const ref = referencedServerIds(config);
     const added: string[] = [];
     const modified: string[] = [];
-    const liveIds = new Set<string>();
     for (const s of config.servers) {
-      liveIds.add(s.id);
       if (ref.has(s.id)) continue; // 被引用节点变更即刻重启，不入待应用差集
       const fp = snap.get(s.id);
       if (fp === undefined) added.push(s.id);
       else if (fp !== this.serverFingerprint(s)) modified.push(s.id);
     }
-    const removed = [...snap.keys()].filter((id) => !liveIds.has(id));
-    return { added, modified, removed };
+    return { added, modified };
   }
 
   /**
@@ -2586,6 +2644,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         engaged: true,
         serverName: name,
       });
+      // F-C-b：登录让位 engage（selector 节点→direct，不经 switchMode）= 契约外出口翻转 → 入 unlock invalidate 契约。
+      this.emit('unlock-invalidate');
     }
   }
 
@@ -2652,6 +2712,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           engaged: false,
           serverName: name,
         });
+        // F-C-b：登录让位 disengage（selector direct→节点，同选中出口切回）= 契约外出口翻转 → 入 unlock invalidate 契约。
+        this.emit('unlock-invalidate');
       } else {
         // 切走出口：selector 已由 planHotSwitch/config default PUT 到新目标，仅清 flag + 撤 UI（不 PUT，避免打架）。
         this.bootstrapFallbackEngaged = false;

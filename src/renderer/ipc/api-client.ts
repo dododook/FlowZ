@@ -28,7 +28,11 @@ import type {
   ImportParseResult,
   PendingNodeChanges,
 } from '../../shared/types';
-import type { UnlockSnapshot, UnlockProgress } from '../../shared/unlock-detection';
+import type {
+  UnlockSnapshot,
+  UnlockProgress,
+  UnlockInvalidatedPayload,
+} from '../../shared/unlock-detection';
 import type { SubscriptionPreviewResult } from '../../shared/subscription-preview';
 import type { WarpWireGuardDraft } from '../../shared/warp';
 import type { BackupCategory } from '../../shared/backup-categories';
@@ -633,9 +637,13 @@ export const unlockApi = {
   onProgress(listener: (p: UnlockProgress) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_UNLOCK_PROGRESS, listener);
   },
-  /** 切节点/起停代理 → 缓存失效，渲染端复位重跑。 */
-  onInvalidated(listener: () => void): () => void {
+  /** 切节点/起停代理 → 缓存失效。载荷带主进程核真态（running/exitBlocked），渲染端据此判「检测中 vs idle」。 */
+  onInvalidated(listener: (p: UnlockInvalidatedPayload) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_UNLOCK_INVALIDATED, listener);
+  },
+  /** 一轮检测完成的完整终态快照（issue 2：checkedAt/egress 跨组件卸载持有，切页回来不重跑）。 */
+  onUpdated(listener: (snap: UnlockSnapshot) => void): () => void {
+    return ipcClient.on(IPC_CHANNELS.EVENT_UNLOCK_UPDATED, listener);
   },
 };
 

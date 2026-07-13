@@ -1520,6 +1520,8 @@ if (gotTheLock) {
           keepTestingState: true,
         });
       },
+      // W1：unlock 轮 settle 信号（call-time 闭包——unlockService 在下方才构造，伴测触发时已就绪，同 trayManager 模式）。
+      whenQuiet: (capMs) => unlockService?.whenIdle(capMs) ?? Promise.resolve(),
       log: (message) => logManager.addLog('debug', message, 'ExitProbeLatency'),
     });
 
@@ -1563,7 +1565,16 @@ if (gotTheLock) {
       if (unlockSelfRunTimer) clearTimeout(unlockSelfRunTimer);
       unlockSelfRunTimer = setTimeout(() => {
         unlockSelfRunTimer = null;
-        void unlockService?.run(false);
+        // issue 2 review#1：self-run 终态**广播回渲染端 store**。fresh commit 已经 onComplete 广播（幂等），但
+        // blockedReason（exit-invalid/proxy-not-running）/ S-gate notReady / cache-hit 等早退**不发 onComplete** →
+        // 若不在此广播，渲染端「检测中」永卡（切到无效出口后 spinner 不灭、刷新钮禁用无自愈）。applyUnlockSnapshot
+        // 会把 blockedReason/notReady 正确折叠成 idle。
+        void unlockService
+          ?.run(false)
+          .then((snap) => {
+            if (snap) ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_UPDATED, snap);
+          })
+          .catch(() => {});
       }, UNLOCK_SELF_RUN_DEBOUNCE_MS);
     };
     unlockService = new UnlockDetectionService({
@@ -1575,12 +1586,21 @@ if (gotTheLock) {
       isRunning: () => proxyManager?.getStatus().running ?? false,
       // 选中 TS 出口 API 直判无效 → 短路检测（不空转死出口就绪门）。call-time 取值，规避构造顺序。
       getExitBlock: () => proxyManager?.selectedTsExitBlock() ?? null,
+      // F-A：等 selector 校正完成再探测（对齐 IpInfo S1，:1754 同 4s cap）——防解锁轮落 boot 窗口经 cache_file 复活的旧出口。
+      whenExitSettled: () => proxyManager?.whenSelectorSettled(4000) ?? Promise.resolve(),
       onProgress: (p) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_PROGRESS, p),
       onInvalidated: () => {
-        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_INVALIDATED, {});
+        // issue 2 review#1/#3：带主进程核真态（渲染端 connectionStatus/proxyBlocked 常陈旧——invalidate 先于
+        // EVENT_PROXY_STARTED / IP_INFO_UPDATED 抵达）→ 渲染端据此正确判「显示检测中 vs idle」，不再用陈旧本地视图。
+        const running = proxyManager?.getStatus().running ?? false;
+        const exitBlocked = running && !!proxyManager?.selectedTsExitBlock();
+        ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_INVALIDATED, { running, exitBlocked });
         // GAP-1：invalidate 后主进程侧防抖自跑（不依赖 home 页挂载着的 renderer hook 发 IPC）。
         scheduleUnlockSelfRun();
       },
+      // issue 2：一轮 fresh commit 的完整终态广播给渲染端 store（跨组件卸载持有 checkedAt/egress）。使切导航
+      // 期间后台自跑（GAP-1 self-run）的终态照样落 store，切回首页直接展示、不重跑（渲染端纯展示、不再自触发）。
+      onComplete: (snap) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_UPDATED, snap),
       // X2（§12.2）：per-leg 传输失败逐条 debug（host/err/phase/bytes/elapsed）→ 真机 V36 分诊 WARP 下 checker「超时」根因。
       log: (message) => logManager.addLog('debug', message, 'Unlock'),
     });
@@ -1711,6 +1731,15 @@ if (gotTheLock) {
       // stats 订阅【不】在此发起：emit('started') 早于 ProxyManager 创建 api client（startInternal 末尾）约 0.5s，
       // 此刻 getApiClient()=null、subscribe* 早退（首页 stats 全 0 根因）。改挂 'api-client-ready'（见下）。
       subscriptionScheduler?.onProxyStarted(); // 代理就绪 → 补跑因 viaProxy 跳过的启动订阅更新
+      // bug#5 类级兜底：任何路径导致「核起于陈旧配置」（崩溃自动重启退避窗口内的编辑等，A 覆盖不到的格 8）→ start
+      // 完成后取 ConfigManager 最新配置跑一次 switchMode 对账。配置未变 = norm-equal no-op（幂等零成本）；有差异按既有
+      // 分流热切/重启。'started' 时 lifecycleDepth>0 → 经 switchMode 暂存、endLifecycleOp settle 后重放，时序安全。
+      try {
+        const latest = await configManager.loadConfig();
+        await proxyManager?.switchMode(latest);
+      } catch (e) {
+        logManager.addLog('warn', `启动后配置对账失败: ${e}`, 'Main');
+      }
       try {
         await coreUpdateService.recordSuccessfulVersion();
         logManager.addLog('info', '已记录当前运行的内核版本基线', 'Main');

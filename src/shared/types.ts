@@ -384,13 +384,13 @@ export interface RegionRoutingConfig {
 
 /**
  * §2 待应用差集：节点集相对运行核启动快照（runningServersFingerprint）的差异。
- * added=新增未入核（徽标「待入池」）；modified=已编辑未生效（徽标「待生效」+dirty）；removed=已删未从核移出。
- * 三者皆为 serverId 列表；全空 = 运行核与 config 一致（或核未运行）。
+ * added=新增未入核（徽标「待入池」）；modified=已编辑未生效（徽标「待生效」+dirty）。
+ * 均为 serverId 列表；全空 = 运行核与 config 一致（或核未运行）。
+ * （F-2：removed 已移除——删被引用节点恒即刻重启仅瞬态、删未引用节点核内 orphan 无可行动语义，不再报为差集。）
  */
 export interface PendingNodeChanges {
   added: string[];
   modified: string[];
-  removed: string[];
 }
 
 export interface UserConfig {

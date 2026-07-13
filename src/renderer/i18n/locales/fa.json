@@ -285,6 +285,7 @@
     "addServer": "افزودن سرور",
     "addSubscription": "افزودن اشتراک",
     "selectServerHint": "برای فعال‌سازی پروکسی یک سرور انتخاب کنید",
+    "selectPendingNodeRestartHint": "گره انتخاب‌شده تغییرات معلق دارد — هسته برای اعمال در حال راه‌اندازی مجدد است، به‌زودی آماده می‌شود",
     "modeGlobalDesc": "همهٔ ترافیک از پروکسی عبور می‌کند",
     "modeSmartDesc": "اتصال مستقیم برای داخلی، پروکسی برای خارجی",
     "modeDirectDesc": "همهٔ ترافیک بدون پروکسی مستقیم می‌رود",
@@ -349,6 +350,7 @@
     "unlockStateChecking": "در حال بررسی",
     "unlockStateTimeout": "مهلت تمام شد",
     "unlockStateIdle": "بررسی‌نشده",
+    "unlockRestrictedEgressHint": "خروجی فعلی در منطقه‌ای با محدودیت شبکه است — در دسترس نبودن سرویس‌های خارجی مورد انتظار است، نه خطای گره یا تشخیص",
     "unlockTimeoutHint": "این سرویس از طریق خروجی فعلی در دسترس نیست (احتمالاً توسط سرویس‌دهنده در لایه شبکه مسدود شده)؛ خطای تشخیص نیست"
   },
   "settings": {
@@ -823,7 +825,6 @@
     "pendingChangesSummary": "{{count}} تغییر نود در انتظار اعمال",
     "pendingAdded": "{{count}} افزوده شد",
     "pendingModified": "{{count}} تغییر یافت",
-    "pendingRemoved": "{{count}} حذف شد",
     "pendingApplyNow": "همین حالا اعمال کن",
     "pendingApplying": "در حال اعمال…",
     "pendingApplyFailed": "اعمال تغییرات ناموفق بود",

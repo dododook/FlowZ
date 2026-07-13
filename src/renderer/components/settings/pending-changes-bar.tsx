@@ -22,7 +22,7 @@ export function PendingChangesBar() {
   // 兜底复位定时器引用：供卸载/重触发时 clear，防卸载后 setApplying 空跑（Nit-1）。
   const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const total = pending.added.length + pending.modified.length + pending.removed.length;
+  const total = pending.added.length + pending.modified.length;
 
   // 差集清空（重启已入核）→ 复位 applying（本条即将卸载，稳妥起见仍复位，防父组件缓存实例）。
   useEffect(() => {
@@ -55,13 +55,11 @@ export function PendingChangesBar() {
     applyTimerRef.current = setTimeout(() => setApplying(false), 5000);
   };
 
-  // 明细拆分（新增/修改/删除，仅非零项）供 title 悬停，主文案给总数保持简洁。
+  // 明细拆分（新增/修改，仅非零项）供 title 悬停，主文案给总数保持简洁。（F-2：removed 已移除）
   const parts: string[] = [];
   if (pending.added.length) parts.push(t('servers.pendingAdded', { count: pending.added.length }));
   if (pending.modified.length)
     parts.push(t('servers.pendingModified', { count: pending.modified.length }));
-  if (pending.removed.length)
-    parts.push(t('servers.pendingRemoved', { count: pending.removed.length }));
 
   return (
     <div className="nd-batch">

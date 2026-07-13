@@ -285,6 +285,7 @@
     "addServer": "Добавить сервер",
     "addSubscription": "Добавить подписку",
     "selectServerHint": "Выберите сервер, чтобы включить прокси",
+    "selectPendingNodeRestartHint": "У выбранного узла есть ожидающие изменения — перезапуск ядра для применения, скоро будет готово",
     "modeGlobalDesc": "Весь трафик идёт через прокси",
     "modeSmartDesc": "Внутренние сайты — напрямую, зарубежные — через прокси",
     "modeDirectDesc": "Весь трафик идёт напрямую, без прокси",
@@ -349,6 +350,7 @@
     "unlockStateChecking": "Проверка",
     "unlockStateTimeout": "Тайм-аут",
     "unlockStateIdle": "Не проверено",
+    "unlockRestrictedEgressHint": "Текущий выход находится в регионе с сетевыми ограничениями — недоступность зарубежных сервисов ожидаема, это не сбой узла или проверки",
     "unlockTimeoutHint": "Сервис недоступен через текущий выход (возможно, заблокирован провайдером на сетевом уровне); это не сбой проверки"
   },
   "settings": {
@@ -823,7 +825,6 @@
     "pendingChangesSummary": "{{count}} изменений узлов, ожидающих применения",
     "pendingAdded": "Добавлено: {{count}}",
     "pendingModified": "Изменено: {{count}}",
-    "pendingRemoved": "Удалено: {{count}}",
     "pendingApplyNow": "Применить сейчас",
     "pendingApplying": "Применение…",
     "pendingApplyFailed": "Не удалось применить изменения",

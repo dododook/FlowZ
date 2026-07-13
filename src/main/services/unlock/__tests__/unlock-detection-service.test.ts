@@ -14,6 +14,9 @@ import {
   READINESS_MAX_ATTEMPTS,
   SETTLE_RETRY_BACKOFF_MS,
   SETTLE_RETRY_MAX_ROUNDS,
+  TOTAL_DETECTION_BUDGET_MS,
+  RECHECK_DELAY_MS,
+  TIMEOUT_TTL_MS,
   UnlockDetectionService,
   type UnlockServiceDeps,
 } from '../UnlockDetectionService';
@@ -155,7 +158,7 @@ describe('M-gate：选中 TS 出口无效 → 短路（零网络）', () => {
     expect(h.transport).not.toHaveBeenCalled();
     h.setExitBlock(null); // 翻回有效（真机由 reconcileTsExitBlock invalidate + 本轮重跑驱动）
     await h.svc.run();
-    expect(h.egressCalls()).toBe(1); // 就绪门探测已发
+    expect(h.egressCalls()).toBe(2); // 就绪门探测(1) + F-B 轮尾归属 bracket 复测(1)
     expect(h.onProgress).toHaveBeenCalledTimes(SERVICE_IDS.length);
   });
 });
@@ -165,7 +168,7 @@ describe('单飞', () => {
     const h = build();
     const [a, b] = await Promise.all([h.svc.run(), h.svc.run()]);
     expect(a).toBe(b); // 同一 promise 结果
-    expect(h.egressCalls()).toBe(1);
+    expect(h.egressCalls()).toBe(2); // 就绪门(1) + F-B bracket(1)；单飞只一轮
     expect(h.netflixCalls()).toBe(1);
   });
 });
@@ -187,7 +190,8 @@ describe('缓存 / TTL', () => {
     expect(h.netflixCalls()).toBe(1);
     h.setTime(1_000_000 + 60_000); // < 30min
     await h.svc.run();
-    expect(h.egressCalls()).toBe(2); // trace 每次都打（缓存 key）
+    // run1 = 就绪门(1)+bracket(1)=2；run2 命中 TTL 缓存（就绪门(1) → 命中即返回，在 bracket 之前）=1 → 共 3。
+    expect(h.egressCalls()).toBe(3);
     expect(h.netflixCalls()).toBe(1); // 命中缓存，checker 未重打
   });
 
@@ -227,7 +231,7 @@ describe('就绪门（H6：核起了但 inbound 未路由）', () => {
     // 默认 egress 首次即有效；用真实定时器证明无退避（若走了退避会需要 fake timer 推进才能完成）。
     const h = build();
     const snap = await h.svc.run();
-    expect(h.egressCalls()).toBe(1); // 未重试
+    expect(h.egressCalls()).toBe(2); // 就绪门未重试(1) + F-B bracket(1)
     expect(snap.notReady).toBeUndefined();
     expect(snap.egress).toEqual({ ip: '9.9.9.9', region: 'HK' });
     expect(h.netflixCalls()).toBe(1);
@@ -248,7 +252,7 @@ describe('就绪门（H6：核起了但 inbound 未路由）', () => {
     // probe0 失败 → 退避 schedule[0] → probe1 成功（everFailed）→ 确认退避 CONFIRM → probe2 确认成功 → 就绪。
     await jest.advanceTimersByTimeAsync(READINESS_BACKOFF_SCHEDULE_MS[0] + READINESS_CONFIRM_MS);
     const snap = await p;
-    expect(h.egressCalls()).toBe(3); // 失败 + 成功 + 确认成功（B1 追加确认）
+    expect(h.egressCalls()).toBe(4); // 失败+成功+确认成功（B1 3 次）+ F-B bracket(1)
     expect(snap.notReady).toBeUndefined();
     expect(snap.egress).toEqual({ ip: '9.9.9.9', region: 'HK' });
     expect(h.netflixCalls()).toBe(1); // 就绪后正常跑 checker
@@ -258,7 +262,7 @@ describe('就绪门（H6：核起了但 inbound 未路由）', () => {
   it('B1：首攻即成（一路成功）→ 零确认、零延迟就绪（健康路径不加确认）', async () => {
     const h = build(); // 默认 egress 恒成功
     const snap = await h.svc.run();
-    expect(h.egressCalls()).toBe(1); // 首攻成功即就绪，无确认探测
+    expect(h.egressCalls()).toBe(2); // 首攻成功即就绪(1) + F-B bracket(1)
     expect(snap.notReady).toBeUndefined();
     expect(h.netflixCalls()).toBe(1);
   });
@@ -582,5 +586,346 @@ describe('X2：per-leg 传输失败诊断日志（§12.2）', () => {
     expect(failLogs[0]).toMatch(/host=\S+ err=timeout phase=connect bytes=0 elapsed=\d+ms/);
     // 判定不变：全 timeout 仍走既有 lowConfidence 路径（X2 纯诊断，不改判定）。
     expect(snap.lowConfidence).toBe(true);
+  });
+});
+
+// issue 1：整轮 wall-clock deadline（TOTAL_DETECTION_BUDGET_MS）贯穿就绪门 / checker 主轮 / settle-retry。now() 随每次
+// 网络操作推进（模拟真实耗时），越过 deadline 即提前收口——替代旧「三段独立预算加法累加最坏 ~127s」。
+describe('issue 1 总检测超时 deadline', () => {
+  // build 变体：now() 读随每次网络操作推进的虚拟时钟（build 的 now 恒定 1_000_000，无法触发 deadline）。
+  function buildAdvancing(opts: {
+    perOpAdvanceMs: number;
+    egress?: () => UnlockResponse;
+    responder?: (url: string) => UnlockResponse;
+  }) {
+    const sess = { setProxy: jest.fn().mockResolvedValue(undefined) };
+    mockFromPartition.mockReturnValue(sess);
+    let clock = 1_000_000;
+    const onProgress = jest.fn();
+    const transport = jest.fn((_s: unknown, req: { url: string; timeoutMs?: number }) => {
+      const resp =
+        req.url === EGRESS_TRACE_URL
+          ? (opts.egress?.() ?? res({ status: 0, error: 'x' }))
+          : (opts.responder?.(req.url) ?? okBody(req.url));
+      clock += opts.perOpAdvanceMs; // 每次网络操作后推进虚拟时钟
+      return Promise.resolve(resp);
+    });
+    const svc = new UnlockDetectionService({
+      getMixedPort: () => 7890,
+      isRunning: () => true,
+      onProgress,
+      onInvalidated: jest.fn(),
+      transport: transport as unknown as UnlockServiceDeps['transport'],
+      now: () => clock,
+    });
+    const egressCalls = () => transport.mock.calls.filter((c) => c[1].url === EGRESS_TRACE_URL);
+    return { svc, onProgress, transport, egressCalls };
+  }
+
+  it('就绪门恒失败 + now() 随探测推进越过 deadline → notReady 且探测次数 < 7（提前收口，非探满）', async () => {
+    jest.useFakeTimers();
+    // 每探推进 ⌈budget/3⌉：约 3 次探测即越 deadline → 提前收口，不探满 READINESS_MAX_ATTEMPTS。
+    const h = buildAdvancing({
+      perOpAdvanceMs: Math.ceil(TOTAL_DETECTION_BUDGET_MS / 3),
+      egress: () => res({ status: 0, error: 'x' }),
+    });
+    const p = h.svc.run(false);
+    await jest.advanceTimersByTimeAsync(
+      READINESS_BACKOFF_SCHEDULE_MS.reduce((a, b) => a + b, 0) + 100
+    );
+    const snap = await p;
+    expect(snap.notReady).toBe(true);
+    expect(h.egressCalls().length).toBeLessThan(READINESS_MAX_ATTEMPTS); // 未探满 7 次
+    // 单次探测按剩余预算收紧超时：末次探测 timeoutMs 收窄到 <默认 8s 且 >0（deadline 逼近）。
+    const calls = h.egressCalls();
+    const last = calls[calls.length - 1];
+    expect(last?.[1].timeoutMs).toBeLessThan(8000);
+    expect(last?.[1].timeoutMs).toBeGreaterThan(0);
+  });
+
+  it('就绪门快过 + checker 轮耗时越 deadline → settle-retry 跳过（无 checking 二次广播、timeout 落定）', async () => {
+    jest.useFakeTimers();
+    // egress 首探即成（clock 尚早）；此后每次 checker 网络操作 +3s，跑首轮即越 deadline → settle-retry 提前 break。
+    const h = buildAdvancing({
+      perOpAdvanceMs: 3000,
+      egress: () => res({ status: 200, body: 'ip=9.9.9.9\nloc=HK\n' }),
+      responder: (url) => (url === GEMINI.homeUrl ? res({ status: 0, error: 'x' }) : okBody(url)),
+    });
+    const p = h.svc.run(false);
+    // 只推进 <RECHECK_DELAY_MS(5000)：验主轮 settle-retry 被 deadline 跳过（partial-timeout 的一次性 recheck 补测是
+    // 另一机制、5s 后才触发，另有专项测；此处不让它 fire，隔离 settle-retry 断言）。
+    await jest.advanceTimersByTimeAsync(200);
+    const snap = await p;
+    expect(snap.results.gemini.status).toBe('timeout'); // 首轮失败，deadline 跳过 settle-retry 补测 → 落定 timeout
+    const gemChecking = h.onProgress.mock.calls.filter(
+      (c) => c[0].serviceId === 'gemini' && c[0].result.status === 'checking'
+    );
+    expect(gemChecking).toHaveLength(0); // settle-retry 被 deadline 跳过 → 无「灰→spinner」二次广播（review#1 灰点不卡转）
+  });
+});
+
+// whenIdle（W1 出口伴测 warm-gate 信号）：当前检测轮 settle（或无在飞轮）后 resolve；cap 兜底恒 resolve、绝不 reject。
+describe('whenIdle', () => {
+  it('无在飞轮 → 立即 resolve', async () => {
+    const h = build();
+    await expect(h.svc.whenIdle(1000)).resolves.toBeUndefined();
+  });
+
+  it('在飞轮正常 settle → cap 前 resolve（走 inflight settle 非 cap 兜底）', async () => {
+    jest.useFakeTimers();
+    const sess = { setProxy: jest.fn().mockResolvedValue(undefined) };
+    mockFromPartition.mockReturnValue(sess);
+    const svc = new UnlockDetectionService({
+      getMixedPort: () => 7890,
+      isRunning: () => true,
+      onProgress: jest.fn(),
+      onInvalidated: jest.fn(),
+      transport: (() =>
+        Promise.resolve(
+          res({ status: 0, error: 'x' })
+        )) as unknown as UnlockServiceDeps['transport'], // egress 恒失败 → 就绪门耗尽 notReady → 轮 settle
+      now: () => 1_000_000,
+    });
+    const p = svc.run(false); // inflight（就绪门重试中）
+    let resolved = false;
+    void svc.whenIdle(100_000).then(() => (resolved = true)); // 大 cap（100s）：resolve 只能来自 inflight settle
+    await jest.advanceTimersByTimeAsync(1);
+    expect(resolved).toBe(false); // 在飞未 settle
+    await jest.advanceTimersByTimeAsync(READINESS_TOTAL_BACKOFF_MS + 100); // 就绪门耗尽 → notReady → inflight 清
+    await p;
+    await Promise.resolve();
+    expect(resolved).toBe(true); // 轮 settle → whenIdle resolve（cap 100s 远未到 → 证明非 cap 路径）
+  });
+
+  it('在飞轮挂起（就绪门 transport 永挂）→ cap 到点兜底 resolve（不等在飞、不 reject）', async () => {
+    jest.useFakeTimers();
+    const sess = { setProxy: jest.fn().mockResolvedValue(undefined) };
+    mockFromPartition.mockReturnValue(sess);
+    const svc = new UnlockDetectionService({
+      getMixedPort: () => 7890,
+      isRunning: () => true,
+      onProgress: jest.fn(),
+      onInvalidated: jest.fn(),
+      transport: (() => new Promise<UnlockResponse>(() => {})) as unknown as UnlockServiceDeps['transport'], // 永不 resolve
+      now: () => 1_000_000,
+    });
+    void svc.run(false); // 起一轮 → 卡在就绪门 egress 探测（transport 永挂）→ inflight 不结束
+    let resolved = false;
+    void svc.whenIdle(500).then(() => (resolved = true));
+    await jest.advanceTimersByTimeAsync(499);
+    expect(resolved).toBe(false); // cap 未到
+    await jest.advanceTimersByTimeAsync(2);
+    expect(resolved).toBe(true); // cap 到 → 兜底 resolve
+  });
+});
+
+// partial-timeout 一次性 warm 定向补测（R1/R2：NF 等个别 checker 冷启超时→settle-retry 不可达→需手动 的自愈）
+describe('partial-timeout warm 补测', () => {
+  const SETTLE_ALL = SETTLE_RETRY_BACKOFF_MS * (SETTLE_RETRY_MAX_ROUNDS + 1) + 100;
+
+  it('partial（gemini 独超、其余 ok）→ 不锁 30min 缓存 + RECHECK_DELAY 后 warm 补测自愈', async () => {
+    jest.useFakeTimers();
+    let g = 0;
+    const h = build({
+      egress: () => res({ body: 'ip=9.9.9.9\nloc=HK\n' }), // 就绪门过
+      // gemini 主轮+settle-retry 全失败（≤3 次）、补测轮成功。
+      responder: (url) => {
+        if (url === GEMINI.homeUrl) {
+          g++;
+          return g <= 3 ? res({ status: 0, error: 'x' }) : res({ status: 200, body: GEMINI.availableMarker });
+        }
+        return okBody(url);
+      },
+    });
+    const p = h.svc.run();
+    await jest.advanceTimersByTimeAsync(SETTLE_ALL); // 放行 settle-retry 退避
+    const snap1 = await p;
+    expect(snap1.results.gemini.status).toBe('timeout'); // 主轮+settle-retry 全失败 → partial
+    // partial 未写 30min 缓存：补测触发前 run(false) 会重打（不命中缓存）——此处只验补测自愈。
+    await jest.advanceTimersByTimeAsync(RECHECK_DELAY_MS + 100); // 触发一次性 warm 补测
+    expect(g).toBe(4); // 主轮1 + settle-retry2 + 补测1
+    expect(h.svc.getSnapshot()?.results.gemini.status).toBe('ok'); // 补测自愈，无需手动
+  });
+
+  it('invalidate 取消待触发的补测（切节点放弃）', async () => {
+    jest.useFakeTimers();
+    let g = 0;
+    const h = build({
+      egress: () => res({ body: 'ip=9.9.9.9\nloc=HK\n' }),
+      responder: (url) => {
+        if (url === GEMINI.homeUrl) {
+          g++;
+          return res({ status: 0, error: 'x' }); // 恒失败
+        }
+        return okBody(url);
+      },
+    });
+    const p = h.svc.run();
+    await jest.advanceTimersByTimeAsync(SETTLE_ALL);
+    await p; // partial commit，补测已挂
+    const gAfterMain = g;
+    h.svc.invalidate(); // 切节点 → 取消补测
+    await jest.advanceTimersByTimeAsync(RECHECK_DELAY_MS + 100);
+    expect(g).toBe(gAfterMain); // 补测被取消 → gemini 未再打
+  });
+
+  it('补测仍 timeout → 写缓存但短 TTL（2min 内命中不重打、2min 后自然重检）', async () => {
+    jest.useFakeTimers();
+    let g = 0;
+    const h = build({
+      egress: () => res({ body: 'ip=9.9.9.9\nloc=HK\n' }),
+      responder: (url) => {
+        if (url === GEMINI.homeUrl) {
+          g++;
+          return res({ status: 0, error: 'x' }); // gemini 恒失败（补测也失败）
+        }
+        return okBody(url);
+      },
+    });
+    const p = h.svc.run();
+    await jest.advanceTimersByTimeAsync(SETTLE_ALL);
+    await p;
+    await jest.advanceTimersByTimeAsync(RECHECK_DELAY_MS + 100); // 补测仍失败 → 写缓存（含 timeout）
+    const gAfterRecheck = g;
+    expect(h.svc.getSnapshot()?.results.gemini.status).toBe('timeout');
+    // 2min 内 run(false) → 命中短 TTL 缓存（不重打）
+    h.setTime(1_000_000 + 60_000);
+    await h.svc.run(false);
+    expect(g).toBe(gAfterRecheck); // 缓存命中，gemini 未重打
+    // 2min 后 run(false) → 缓存过期 → 重检（gemini 再打）
+    h.setTime(1_000_000 + TIMEOUT_TTL_MS + 60_000);
+    const p2 = h.svc.run(false);
+    await jest.advanceTimersByTimeAsync(SETTLE_ALL);
+    await p2;
+    expect(g).toBeGreaterThan(gAfterRecheck); // 短 TTL 过期 → 自然重检
+  });
+});
+
+// F-A/F-B 解锁污染根治：出口归属 bracket（轮首/轮尾 egress 比对）+ selector-settled 门控
+describe('F-B 出口归属 bracket + F-A settled 门控', () => {
+  it('bracket 不符（轮首 A、checker ok、轮尾 B）→ 丢弃 + invalidate、不 commit、快照空', async () => {
+    let ec = 0;
+    const h = build({
+      // 就绪门探到 A，checker 走 okBody（成功），轮尾 bracket 复测探到 B（出口在轮中被契约外翻转）。
+      egress: () =>
+        ++ec === 1 ? res({ body: 'ip=1.1.1.1\nloc=A\n' }) : res({ body: 'ip=2.2.2.2\nloc=B\n' }),
+    });
+    const snap = await h.svc.run();
+    expect(h.onInvalidated).toHaveBeenCalledTimes(1); // 不符 → invalidate（自动重跑正确出口）
+    expect(snap.checkedAt).toBeNull(); // 未 commit 本轮结果（返回 invalidate 后的空快照）
+    expect(h.svc.getSnapshot()).toBeNull(); // lastSnapshot 被 invalidate 清空 → 无污染
+  });
+
+  it('bracket confirm 失败(null)≠不符 → 照常 commit（网络瞬态不误触发 invalidate）', async () => {
+    let ec = 0;
+    const h = build({
+      egress: () =>
+        ++ec === 1 ? res({ body: 'ip=1.1.1.1\nloc=A\n' }) : res({ status: 0, error: 'x' }), // 轮尾 confirm 失败
+    });
+    const snap = await h.svc.run();
+    expect(h.onInvalidated).not.toHaveBeenCalled(); // confirm null ≠ 不符 → 不触发
+    expect(snap.egress?.ip).toBe('1.1.1.1'); // 照常 commit 轮首 egress 标签
+    expect(h.netflixCalls()).toBe(1);
+  });
+
+  it('连续 2 次不符 → lowConfidence 落定（WARP 多 IP 出口轮换，防全量重打死循环）', async () => {
+    let ec = 0;
+    // 每次探测 A/B 交替：每轮就绪门(奇=A)、bracket(偶=B) 恒不符。
+    const h = build({
+      egress: () =>
+        ++ec % 2 === 1 ? res({ body: 'ip=1.1.1.1\nloc=A\n' }) : res({ body: 'ip=2.2.2.2\nloc=B\n' }),
+    });
+    await h.svc.run(); // 第1次不符 → streak=1 → invalidate
+    const snap2 = await h.svc.run(); // 第2次不符 → streak=2 → lowConfidence 落定
+    expect(snap2.lowConfidence).toBe(true);
+    expect(h.svc.getSnapshot()?.lowConfidence).toBe(true);
+  });
+
+  it('受限出口(loc=CN) 全 timeout → 不标 lowConfidence + 正常缓存（同 egress 二跑命中、零重打）', async () => {
+    const h = build({
+      egress: () => res({ body: 'ip=1.1.1.1\nloc=CN\n' }), // 大陆出口
+      responder: () => res({ status: 0, error: 'x' }), // 所有 checker 结构性 timeout
+    });
+    const snap = await h.svc.run();
+    expect(snap.lowConfidence).toBeUndefined(); // 受限 → 高置信终态，不标 lowConfidence
+    expect(SERVICE_IDS.every((id) => snap.results[id]?.status === 'timeout')).toBe(true);
+    // 缓存已写（非 lowConfidence 的 B2 不写路径）：同 egress 二跑命中缓存 → checker 零重打。
+    const nf = h.netflixCalls();
+    await h.svc.run();
+    expect(h.netflixCalls()).toBe(nf); // 命中 30min 缓存（受限不走 2min churn）
+  });
+
+  it('受限出口(loc=CN) → settle-retry 跳过（无 checking 二次广播）', async () => {
+    jest.useFakeTimers();
+    const h = build({
+      egress: () => res({ body: 'ip=1.1.1.1\nloc=CN\n' }),
+      responder: (url) => (url === GEMINI.homeUrl ? res({ status: 0, error: 'x' }) : okBody(url)),
+    });
+    const p = h.svc.run();
+    await jest.advanceTimersByTimeAsync(SETTLE_RETRY_BACKOFF_MS * (SETTLE_RETRY_MAX_ROUNDS + 1) + 100);
+    await p;
+    const checking = h.onProgress.mock.calls.filter((c) => c[0].result.status === 'checking');
+    expect(checking).toHaveLength(0); // 受限 → settle-retry 整段跳过 → 无补测 spinner
+  });
+
+  it('受限出口(loc=CN) partial-timeout → 不挂 warm 补测（partialTimeout=false）', async () => {
+    jest.useFakeTimers();
+    let g = 0;
+    const h = build({
+      egress: () => res({ body: 'ip=1.1.1.1\nloc=CN\n' }),
+      responder: (url) => {
+        if (url === GEMINI.homeUrl) {
+          g++;
+          return res({ status: 0, error: 'x' });
+        }
+        return okBody(url);
+      },
+    });
+    const p = h.svc.run();
+    await jest.advanceTimersByTimeAsync(SETTLE_RETRY_BACKOFF_MS * (SETTLE_RETRY_MAX_ROUNDS + 1) + 100);
+    await p;
+    const gAfter = g;
+    await jest.advanceTimersByTimeAsync(RECHECK_DELAY_MS + 100); // 补测本应在此触发
+    expect(g).toBe(gAfter); // 受限 → 无 partial warm 补测
+  });
+
+  it('trace 无 loc（region 缺失）→ 非受限，行为原封（走 lowConfidence 路径）', async () => {
+    jest.useFakeTimers(); // 非受限 → settle-retry 真跑退避（需推进）
+    const h = build({
+      egress: () => res({ body: 'ip=1.1.1.1\n' }), // 无 loc
+      responder: () => res({ status: 0, error: 'x' }), // 全 timeout
+    });
+    const p = h.svc.run();
+    await jest.advanceTimersByTimeAsync(SETTLE_RETRY_BACKOFF_MS * (SETTLE_RETRY_MAX_ROUNDS + 1) + 100);
+    const snap = await p;
+    expect(snap.lowConfidence).toBe(true); // region 缺失 → 非受限 → 全超仍走 lowConfidence
+  });
+
+  it('F-A whenExitSettled 未 resolve 前零探测；resolve 后正常检测', async () => {
+    const sess = { setProxy: jest.fn().mockResolvedValue(undefined) };
+    mockFromPartition.mockReturnValue(sess);
+    let releaseSettle!: () => void;
+    const transport = jest.fn((_s: unknown, req: { url: string }) =>
+      Promise.resolve(
+        req.url === EGRESS_TRACE_URL ? res({ body: 'ip=9.9.9.9\nloc=HK\n' }) : okBody(req.url)
+      )
+    );
+    const svc = new UnlockDetectionService({
+      getMixedPort: () => 7890,
+      isRunning: () => true,
+      whenExitSettled: () => new Promise<void>((r) => (releaseSettle = r)),
+      onProgress: jest.fn(),
+      onInvalidated: jest.fn(),
+      transport: transport as unknown as UnlockServiceDeps['transport'],
+      now: () => 1_000_000,
+    });
+    const p = svc.run(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(transport).not.toHaveBeenCalled(); // settled 未放行 → 零探测
+    releaseSettle();
+    const snap = await p;
+    expect(transport).toHaveBeenCalled(); // 放行后正常探测 + checker
+    expect(snap.egress).toEqual({ ip: '9.9.9.9', region: 'HK' });
   });
 });

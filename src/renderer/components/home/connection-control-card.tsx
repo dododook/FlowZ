@@ -33,6 +33,7 @@ import { deriveConnectionStatus } from './connection-status';
 import { deriveConnectButtonState } from './connect-button-state';
 import { UnlockInline } from './unlock-inline';
 import { TsExitWarning } from './ts-exit-warning';
+import { willRestartOnSelect } from './pending-select-hint';
 import { DIRECT_SERVER_ID, isDirectSelection } from '@shared/direct-selection';
 import { sortServersByLatency } from '@shared/server-latency-sort';
 import { isServerComplete } from '@shared/server-completeness';
@@ -141,6 +142,7 @@ export function ConnectionControlCard() {
   const updateProxyMode = useAppStore((s) => s.updateProxyMode);
   const setCurrentView = useAppStore((s) => s.setCurrentView);
   const setServerPageAction = useAppStore((s) => s.setServerPageAction);
+  const pendingChanges = useAppStore((s) => s.pendingChanges);
   const sortByLatency = useNodeSortStore((s) => s.sortByLatency);
   const toggleSortByLatency = useNodeSortStore((s) => s.toggleSortByLatency);
 
@@ -205,9 +207,13 @@ export function ConnectionControlCard() {
   // ── 选节点（走既有 saveConfig：selectedServerId 写入配置，非新增 store action）──────────────────
   const handleServerChange = async (serverId: string) => {
     if (!config) return;
+    // issue 3：选中「待入池/待生效」节点将使其变被引用 → 触发自动整核重启、待应用动作条随即消失。
+    // 先判后 save（save 成功即触发重启清差集），成功后给一次性提示，解释「动作条为何消失」。
+    const willRestart = willRestartOnSelect(pendingChanges, serverId);
     try {
       await saveConfig({ ...config, selectedServerId: serverId });
       // 选节点不弹「已切换」成功 toast（用户反馈：picker 即时反映选择即为反馈、无需提醒；同接管方式 toast 移除理由）。
+      if (willRestart) toast.info(t('home.selectPendingNodeRestartHint'));
     } catch (error) {
       toast.error(t('home.switchFailed'), {
         description: error instanceof Error ? error.message : t('home.switchError'),

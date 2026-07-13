@@ -22,6 +22,12 @@ import {
   useTailscaleLoginCacheStore,
 } from './use-tailscale-login-cache-store';
 import { pickFallbackExit } from '../../shared/direct-selection';
+import {
+  SERVICE_IDS,
+  type UnlockResult,
+  type UnlockSnapshot,
+  type UnlockEgress,
+} from '../../shared/unlock-detection';
 
 // 兼容旧的类型定义
 type ProxyMode = UserConfig['proxyMode'];
@@ -36,6 +42,27 @@ export interface AvailableCoreUpdate {
   /** 是否跨当前 minor 带（如 1.13.x→1.14.x）；true 时 UI 用警告色 + 风险文案。 */
   crossBand?: boolean;
 }
+
+/**
+ * 解锁检测显示态（issue 2）：提到 store 使其跨首页组件卸载存活——切导航离开首页 → UnlockInline 卸载但检测态留存，
+ * 切回时直接展示、不从头重跑。progress/complete/invalidated 由 use-native-events 持久订阅写入（无论首页是否挂载均累积）；
+ * 检测的发起唯一驱动 = 主进程 backend self-run（GAP-1），渲染端纯展示、不再自触发。
+ */
+export interface UnlockDisplayState {
+  results: Record<string, UnlockResult>;
+  running: boolean;
+  checkedAt: number | null;
+  egress: UnlockEgress | null;
+  /**
+   * 上次真发起一轮检测的完成时刻（renderer 打戳，含真检测 + notReady——两者后端都置 lastRunAt、force 15s 下限生效）。
+   * 手动刷新冷却由此**派生**（不再手动 startCooldown）：统一 auto（backend self-run）+ manual 两条完成路径都镜像后端 force-min，
+   * 消除「auto 路径完成后 15s 内点刷新→假重检闪烁」。blockedReason（M-gate 毫秒响应）不打戳、停代理清 null → 冷却自动灭。
+   */
+  lastRunAt: number | null;
+}
+
+const allCheckingResults = (): Record<string, UnlockResult> =>
+  Object.fromEntries(SERVICE_IDS.map((id) => [id, { status: 'checking' as const }]));
 
 // loadConfig 单飞：防 configChanged 风暴 / 启动期重复拉取（替代原 isLoading 重入守卫）
 let loadConfigInflight: Promise<void> | null = null;
@@ -106,6 +133,9 @@ interface AppState {
   // proxyStopped 后 refreshPendingChanges 拉取。动作条汇总 + 徽标数据源。核未运行 → 全空（动作条隐藏）。
   pendingChanges: PendingNodeChanges;
 
+  // issue 2：解锁检测显示态提到 store（跨首页组件卸载存活，切页回来不重跑）。见 UnlockDisplayState。
+  unlock: UnlockDisplayState;
+
   // 启动前配置校验 gate 剔除的非法节点（serverId → 信息）：节点列表据此标灰 + tooltip（不禁用点击）。
   // 仅会话内存，由 EVENT_PROXY_INVALID_NODES 事件覆盖（空数组=清空）。
   invalidNodes: Record<string, InvalidNodeInfo>;
@@ -155,6 +185,15 @@ interface AppState {
   applyLatencyResults: (results: Record<string, number>, notInPool?: string[]) => void;
   /** 标记本会话已发起全量测速（全量测速起跑时调；不可测节点徽标据此从「—」转「不支持测速」）。 */
   markSpeedTestAttempted: () => void;
+  // issue 2 解锁检测显示态 actions：
+  /** 发起/失效一轮检测：results 置 allChecking + running=true（切页不丢的「检测中」态；egress/checkedAt 清空待新值）。 */
+  beginUnlockCheck: () => void;
+  /** 单服务 settle 增量点亮（EVENT_UNLOCK_PROGRESS 持久订阅写入，无论首页是否挂载均累积）。 */
+  setUnlockProgress: (serviceId: string, result: UnlockResult) => void;
+  /** 应用一轮完整终态（run() 返回 / EVENT_UNLOCK_UPDATED）：notReady/blocked → idle，否则 results/checkedAt/egress，running=false。 */
+  applyUnlockSnapshot: (snap: UnlockSnapshot) => void;
+  /** 复位为 idle（停代理 / 选中出口无效）。 */
+  resetUnlock: () => void;
   setPrivacyMode: (value: boolean) => void;
   setAvailableAppUpdate: (info: UpdateInfo | null) => void;
   setAvailableCoreUpdate: (info: AvailableCoreUpdate | null) => void;
@@ -225,7 +264,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   latencyTestedAt: {},
   speedTestAttempted: false,
   speedTestNotInPool: new Set<string>(),
-  pendingChanges: { added: [], modified: [], removed: [] },
+  pendingChanges: { added: [], modified: [] },
+  unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null },
   invalidNodes: {},
   // 启动秒显：从 localStorage 缓存派生登录态初值（代理关时不再 spawn 瞬态核探针，见 use-tailscale-login-cache-store）。
   tailscaleLoginStates: loadTailscaleLoginStatesFromCache(),
@@ -465,6 +505,56 @@ export const useAppStore = create<AppState>((set, get) => ({
       /* 拉取失败保留旧值 */
     }
   },
+
+  // issue 2 解锁检测显示态（lastRunAt 承载「上次完成时刻」供冷却派生；beginUnlockCheck/setUnlockProgress 保留旧 lastRunAt）：
+  beginUnlockCheck: () =>
+    set((s) => ({
+      unlock: {
+        results: allCheckingResults(),
+        running: true,
+        checkedAt: null,
+        egress: null,
+        lastRunAt: s.unlock.lastRunAt,
+      },
+    })),
+  setUnlockProgress: (serviceId, result) =>
+    set((s) => ({
+      unlock: { ...s.unlock, results: { ...s.unlock.results, [serviceId]: result } },
+    })),
+  applyUnlockSnapshot: (snap) => {
+    // review#5：陈旧轮 no-op 快照（空 results + 无 checkedAt/notReady/blockedReason）——本轮在飞期间被 invalidate、
+    // 新一轮已 beginUnlockCheck 接管显示 → 不覆盖（否则会把新一轮「检测中」清成空 idle）。
+    if (
+      !snap.checkedAt &&
+      !snap.notReady &&
+      !snap.blockedReason &&
+      Object.keys(snap.results).length === 0
+    ) {
+      return;
+    }
+    if (snap.blockedReason) {
+      // gating 短路（proxy-not-running / exit-invalid）→ idle，不打 lastRunAt（M-gate 毫秒响应，允许反复点，无冷却）。
+      set({ unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null } });
+    } else if (snap.notReady) {
+      // 就绪门未过 → idle 但后端已置 lastRunAt（force 15s 下限生效）→ 打戳，冷却据此镜像。
+      set({
+        unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: Date.now() },
+      });
+    } else {
+      // 真检测落定 → results/checkedAt/egress + 打 lastRunAt（冷却镜像后端 force-min）。
+      set({
+        unlock: {
+          results: snap.results,
+          running: false,
+          checkedAt: snap.checkedAt,
+          egress: snap.egress,
+          lastRunAt: Date.now(),
+        },
+      });
+    }
+  },
+  resetUnlock: () =>
+    set({ unlock: { results: {}, running: false, checkedAt: null, egress: null, lastRunAt: null } }),
 
   // Status Actions
   refreshConnectionStatus: async () => {

@@ -285,6 +285,7 @@
     "addServer": "添加服务器",
     "addSubscription": "添加订阅",
     "selectServerHint": "请选择服务器以启用代理",
+    "selectPendingNodeRestartHint": "所选节点有待应用变更，正在自动重启内核以生效，稍候即可使用",
     "modeGlobalDesc": "所有流量通过代理服务器",
     "modeSmartDesc": "国内直连，国外走代理",
     "modeDirectDesc": "所有流量直连，不走代理",
@@ -349,6 +350,7 @@
     "unlockStateChecking": "检测中",
     "unlockStateTimeout": "超时",
     "unlockStateIdle": "未检测",
+    "unlockRestrictedEgressHint": "当前出口位于受限网络地区，海外服务不可达属预期，非节点或检测故障",
     "unlockTimeoutHint": "该服务经当前出口不可达（可能被服务方网络层拦截），非检测故障"
   },
   "settings": {
@@ -823,7 +825,6 @@
     "pendingChangesSummary": "{{count}} 个节点变更待应用",
     "pendingAdded": "新增 {{count}}",
     "pendingModified": "修改 {{count}}",
-    "pendingRemoved": "删除 {{count}}",
     "pendingApplyNow": "立即应用",
     "pendingApplying": "应用中…",
     "pendingApplyFailed": "应用变更失败",
