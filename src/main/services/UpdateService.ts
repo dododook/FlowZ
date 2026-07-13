@@ -39,7 +39,7 @@ import {
   buildMacUpdateScript,
   macAppBundleFromExe,
 } from './update-install-script';
-import { mt } from '../i18n';
+import { mt, getMainLanguage } from '../i18n';
 
 // 下载停滞超时：连接/下载 30s 无数据即视为卡死 → abort + 失败兜底（github 链接自动换镜像重试一次）。
 // 防永久挂起致更新永不 resolve（进度窗/对话框永久转圈）。正常下载持续有 data、不断重置、不会误触发。
@@ -70,6 +70,8 @@ export class UpdateService {
   private popupActionListenerBound = false;
   // 上次弹窗内容高度：仅态切换（高度变）时 setContentSize+重定位，避免进度每帧重设致抖动。
   private lastPopupHeight = 0;
+  // 最近下发的弹窗状态：renderer 崩溃/重载后 did-finish-load 重放，避免空白挂死窗（#292 review Low-4）。
+  private lastPopupState: UpdatePopupState | null = null;
   // 弹窗流当前下载的取消 token（progress 态 × / OS 关窗时取消它；仅弹窗流持有，与手动下载隔离）。
   private popupDownloadControl: DownloadControl | null = null;
   private downloadProgress: UpdateProgress = {
@@ -586,9 +588,13 @@ export class UpdateService {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
+        // 当前界面语言注入 preload：弹窗页据此设 <html lang/dir>（fa=rtl），修 lang 写死 zh-CN（review Nit）。
+        additionalArguments: [`--flowz-popup-lang=${getMainLanguage()}`],
       },
     });
     if (process.platform !== 'darwin') win.setMenu(null);
+    // 拒绝任何子窗口打开（纯本地受信内容，belt-and-braces；对齐 dashboard 窗先例）。
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
     const isDev = process.env.NODE_ENV === 'development';
     const loaded = isDev
@@ -607,8 +613,21 @@ export class UpdateService {
       this.positionPopup(win, width, popupHeightFor(state.phase));
       win.showInactive(); // 不抢键盘焦点（角落 toast 语义，非打断式 dialog）
     });
-    // 内容就绪后补推状态（防弹窗 onState 监听注册晚于首次 send）。
-    win.webContents.once('did-finish-load', () => this.sendPopupState(state));
+    // 内容就绪即重放最近状态（非 once：renderer 崩溃/重载后重新渲染当前态，避免空白挂死窗，Low-4）。
+    win.webContents.on('did-finish-load', () => {
+      if (this.updatePopupWindow === win && this.lastPopupState)
+        this.sendPopupState(this.lastPopupState);
+    });
+    // renderer 进程崩溃：无按钮/无法交互的隐形 alwaysOnTop 窗 → 视同关窗收尾（取消在途下载 + 解 awaiter）。
+    win.webContents.on('render-process-gone', () => {
+      if (this.updatePopupWindow !== win) return;
+      if (this.popupDownloadControl) {
+        this.popupDownloadControl.cancelled = true;
+        this.popupDownloadControl.abort?.();
+      }
+      this.popupActionResolver?.('__closed__');
+      this.closeUpdatePopup();
+    });
 
     win.on('closed', () => {
       // 仅当关闭的是当前活跃弹窗才复位 + 解 awaiter：防 close→closed 异步间隙内已被新流程替换时，
@@ -633,6 +652,7 @@ export class UpdateService {
 
   /** 向弹窗整帧下发状态；态切换（高度变）时才 setContentSize + 保角锚点重定位。 */
   private sendPopupState(state: UpdatePopupState): void {
+    this.lastPopupState = state; // 记录供 did-finish-load 崩溃/重载重放（Low-4）。
     const win = this.updatePopupWindow;
     if (!win || win.isDestroyed()) return;
     const height = popupHeightFor(state.phase);
@@ -659,6 +679,7 @@ export class UpdateService {
   /** 关闭并复位弹窗状态。 */
   private closeUpdatePopup(): void {
     this.lastPopupHeight = 0;
+    this.lastPopupState = null;
     if (this.updatePopupWindow && !this.updatePopupWindow.isDestroyed()) {
       this.updatePopupWindow.close();
     }
@@ -691,7 +712,9 @@ export class UpdateService {
       return;
     }
     if (action === 'manualDownload' && this.currentUpdateInfo) {
-      shell.openExternal(this.currentUpdateInfo.downloadUrl);
+      // 仅放行 https（防被篡改的非 http(s) scheme 经 openExternal 触发协议处理器，review Nit）。
+      const url = this.currentUpdateInfo.downloadUrl;
+      if (/^https:\/\//i.test(url)) shell.openExternal(url);
     }
     this.popupActionResolver?.(action);
   };
@@ -779,7 +802,7 @@ export class UpdateService {
           phase: 'error',
           theme: this.resolvedTheme(),
           version: updateInfo.version,
-          errorText: errorMessage,
+          errorText: this.localizeDownloadError(errorMessage), // 本地化展示；原始详情已进日志
           labels: this.popupLabels(),
         });
 
@@ -799,6 +822,20 @@ export class UpdateService {
         return null;
       }
     }
+  }
+
+  /** 把下载错误的（中文）内部消息按类别映射为本地化文案，供 5 语弹窗 error 态展示；原始详情仍进日志（review Low-5）。 */
+  private localizeDownloadError(raw: string): string {
+    if (
+      /停滞超时|超时|ETIMEDOUT|ECONNRESET|DISCONNECTED|NETWORK_CHANGED|socket hang up|中断|拦截/i.test(
+        raw
+      )
+    ) {
+      return mt('updErrNetwork');
+    }
+    if (/不完整|截断|incomplete|truncat/i.test(raw)) return mt('updErrIncomplete');
+    if (/HTTP\s*\d|返回错误|频率限制|响应过大|403|5\d\d/i.test(raw)) return mt('updErrServer');
+    return mt('updErrGeneric');
   }
 
   /** 取消下载的统一收尾：清 token + 删残件 + 关窗 + 返回 null（不安装）。 */

@@ -715,6 +715,34 @@ const MESSAGES = {
     ru: 'Закрыть',
     fa: 'بستن',
   },
+  updErrNetwork: {
+    'zh-CN': '网络连接中断或超时，请检查网络后重试',
+    'zh-TW': '網路連線中斷或逾時，請檢查網路後重試',
+    'en-US': 'Network interrupted or timed out. Check your connection and retry.',
+    ru: 'Сеть прервана или истекло время ожидания. Проверьте подключение и повторите.',
+    fa: 'اتصال شبکه قطع شد یا زمان آن به پایان رسید. اتصال را بررسی و دوباره تلاش کنید.',
+  },
+  updErrIncomplete: {
+    'zh-CN': '下载文件不完整，请重试',
+    'zh-TW': '下載檔案不完整，請重試',
+    'en-US': 'The downloaded file is incomplete. Please retry.',
+    ru: 'Загруженный файл неполный. Повторите попытку.',
+    fa: 'فایل دانلود‌شده ناقص است. لطفاً دوباره تلاش کنید.',
+  },
+  updErrServer: {
+    'zh-CN': '下载服务器返回错误，请稍后重试',
+    'zh-TW': '下載伺服器回傳錯誤，請稍後重試',
+    'en-US': 'The download server returned an error. Please try again later.',
+    ru: 'Сервер загрузки вернул ошибку. Повторите попытку позже.',
+    fa: 'سرور دانلود خطا برگرداند. لطفاً بعداً دوباره تلاش کنید.',
+  },
+  updErrGeneric: {
+    'zh-CN': '下载失败，请重试',
+    'zh-TW': '下載失敗，請重試',
+    'en-US': 'Download failed. Please retry.',
+    ru: 'Ошибка загрузки. Повторите попытку.',
+    fa: 'دانلود ناموفق بود. لطفاً دوباره تلاش کنید.',
+  },
 } satisfies Record<string, Record<SupportedLanguage, string>>;
 
 /** 主进程文案键（自 MESSAGES 自动派生，无需手维护 union）。 */
