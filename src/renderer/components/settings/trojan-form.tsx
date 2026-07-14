@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -67,35 +66,18 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   const { t } = useTranslation();
   const trojanFormSchema = createTrojanSchema(t);
 
-  const form = useForm<TrojanFormValues>({
-    resolver: zodResolver(trojanFormSchema),
-    defaultValues: {
-      address: '',
-      port: 443,
-      password: '',
-      network: 'tcp',
-      security: 'tls',
-      tlsServerName: '',
-      tlsAllowInsecure: false,
-      tlsFingerprint: 'none',
-      tlsEngine: 'go',
-      alpn: '',
-      ...readTransportDefaults(),
-      ...echDefaults,
-      ...multiplexDefaults,
-      ...tlsSpoofDefaults,
-    },
-  });
+  // 标准化 security（转小写匹配 schema）。
+  const normalizeSecurity = (s: string | undefined): 'none' | 'tls' => {
+    const lower = (s || 'tls').toLowerCase();
+    return lower === 'none' ? 'none' : 'tls';
+  };
 
-  useEffect(() => {
+  // 同步 defaultValues（对齐 vless/vmess）：编辑态直接由 serverConfig 算初值，表单按 key={id} 挂载即正确。
+  // 不走挂载后 useEffect(form.reset)——radix Select 受控 value 被编程改写会触发伪 onValueChange 打回空态
+  // （传输显「选择传输协议」+ 保存 invalid input，issue #294）；同步初值让 Select 挂载即带正确值，结构性免疫。
+  const getDefaultValues = (): TrojanFormValues => {
     if (serverConfig && serverConfig.protocol?.toLowerCase() === 'trojan') {
-      // 标准化 network 和 security 值（转为全小写以匹配 schema）
-      const normalizeSecurity = (s: string | undefined): 'none' | 'tls' => {
-        const lower = (s || 'tls').toLowerCase();
-        return lower === 'none' ? 'none' : 'tls';
-      };
-
-      const formData = {
+      return {
         address: serverConfig.address || '',
         port: serverConfig.port || 443,
         password: serverConfig.password || '',
@@ -111,9 +93,29 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         ...readMultiplexDefaults(serverConfig),
         ...readTlsSpoofDefault(serverConfig),
       };
-      form.reset(formData);
     }
-  }, [serverConfig, form]);
+    return {
+      address: '',
+      port: 443,
+      password: '',
+      network: 'tcp',
+      security: 'tls',
+      tlsServerName: '',
+      tlsAllowInsecure: false,
+      tlsFingerprint: 'none',
+      tlsEngine: 'go',
+      alpn: '',
+      ...readTransportDefaults(),
+      ...echDefaults,
+      ...multiplexDefaults,
+      ...tlsSpoofDefaults,
+    };
+  };
+
+  const form = useForm<TrojanFormValues>({
+    resolver: zodResolver(trojanFormSchema),
+    defaultValues: getDefaultValues(),
+  });
 
   const handleSubmit = async (values: TrojanFormValues) => {
     const network = values.network;

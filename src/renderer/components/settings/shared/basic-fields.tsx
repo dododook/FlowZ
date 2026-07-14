@@ -76,9 +76,17 @@ export function PortField({
             value={field.value ?? ''}
             readOnly={readOnly}
             className={readOnly ? 'cursor-default opacity-70' : undefined}
-            onChange={(e) =>
-              field.onChange(e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 0)
-            }
+            onChange={(e) => {
+              // 空串（退格删空）→ undefined，允许清空后重录；不用 `parseInt || 0`（0 触发 min(1) 校验挂、
+              // 且把「删到一位再退格」卡成 0 无法清空，issue #294）。非空按十进制解析，异常值 → undefined 不硬塞 0。
+              const raw = e.target.value;
+              if (raw === '') {
+                field.onChange(undefined);
+                return;
+              }
+              const n = Number.parseInt(raw, 10);
+              field.onChange(Number.isNaN(n) ? undefined : n);
+            }}
           />
           <FormMessage className="fld-err" />
         </div>
