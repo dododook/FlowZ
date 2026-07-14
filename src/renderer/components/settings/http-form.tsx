@@ -48,7 +48,8 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
 
   const getDefaultValues = (): HttpFormValues => {
     if (serverConfig && serverConfig.protocol?.toLowerCase() === 'http') {
-      const isHttps = serverConfig.security === 'tls';
+      // 大小写归一：存量/导入 security 可能是 'TLS'——严格 === 'tls' 会误判 isHttps=false、隐藏 TLS 段。
+      const isHttps = (serverConfig.security || '').toLowerCase() === 'tls';
       return {
         address: serverConfig.address || '',
         port: serverConfig.port || 80,

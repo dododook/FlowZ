@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -48,9 +47,37 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
   const { t } = useTranslation();
   const tuicFormSchema = createTuicSchema(t);
 
-  const form = useForm<TuicFormValues>({
-    resolver: zodResolver(tuicFormSchema),
-    defaultValues: {
+  // 拥塞控制 / UDP 中继模式读取归一：存量/导入值大小写或别名不一（BBR / newreno）严格灌 z.enum 会挂或显占位符。
+  const normalizeCongestion = (c: string | undefined): 'bbr' | 'cubic' | 'new_reno' => {
+    const l = (c || 'bbr').toLowerCase();
+    if (l === 'cubic') return 'cubic';
+    if (l === 'new_reno' || l === 'newreno' || l === 'reno') return 'new_reno';
+    return 'bbr';
+  };
+  const normalizeUdpRelay = (u: string | undefined): 'native' | 'quic' =>
+    (u || 'native').toLowerCase() === 'quic' ? 'quic' : 'native';
+
+  // 同步 defaultValues（对齐 vless/vmess/trojan）：编辑态直接由 serverConfig 算初值。此前用挂载后
+  // useEffect(form.reset) + 非受控 defaultValue Select，Select 在 reset 前挂载、捕获初始默认值（bbr/native），
+  // reset 改的是 RHF 值而非 Select 显示 → 编辑已有 tuic 节点时拥塞/中继下拉显错值。改同步初值 + 受控 value 修复。
+  const getDefaultValues = (): TuicFormValues => {
+    if (serverConfig && serverConfig.protocol?.toLowerCase() === 'tuic') {
+      return {
+        address: serverConfig.address || '',
+        port: serverConfig.port || 443,
+        uuid: serverConfig.uuid || '',
+        password: serverConfig.password || '',
+        congestionControl: normalizeCongestion(serverConfig.tuicSettings?.congestionControl),
+        udpRelayMode: normalizeUdpRelay(serverConfig.tuicSettings?.udpRelayMode),
+        zeroRttHandshake: serverConfig.tuicSettings?.zeroRttHandshake ?? false,
+        heartbeat: serverConfig.tuicSettings?.heartbeat || '',
+        tlsServerName: serverConfig.tlsSettings?.serverName || '',
+        tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
+        alpn: serverConfig.tlsSettings?.alpn?.join(',') || 'h3',
+        ...readEchDefault(serverConfig),
+      };
+    }
+    return {
       address: '',
       port: 443,
       uuid: '',
@@ -63,28 +90,13 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
       tlsAllowInsecure: false,
       alpn: 'h3',
       ...echDefaults,
-    },
-  });
+    };
+  };
 
-  useEffect(() => {
-    if (serverConfig && serverConfig.protocol?.toLowerCase() === 'tuic') {
-      const formData: TuicFormValues = {
-        address: serverConfig.address || '',
-        port: serverConfig.port || 443,
-        uuid: serverConfig.uuid || '',
-        password: serverConfig.password || '',
-        congestionControl: serverConfig.tuicSettings?.congestionControl || 'bbr',
-        udpRelayMode: serverConfig.tuicSettings?.udpRelayMode || 'native',
-        zeroRttHandshake: serverConfig.tuicSettings?.zeroRttHandshake ?? false,
-        heartbeat: serverConfig.tuicSettings?.heartbeat || '',
-        tlsServerName: serverConfig.tlsSettings?.serverName || '',
-        tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
-        alpn: serverConfig.tlsSettings?.alpn?.join(',') || 'h3',
-        ...readEchDefault(serverConfig),
-      };
-      form.reset(formData);
-    }
-  }, [serverConfig, form]);
+  const form = useForm<TuicFormValues>({
+    resolver: zodResolver(tuicFormSchema),
+    defaultValues: getDefaultValues(),
+  });
 
   const handleSubmit = async (values: TuicFormValues) => {
     const config: any = {
@@ -163,7 +175,7 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
               render={({ field }) => (
                 <div className="nd-fld">
                   <span className="nd-fld-lbl">{t('servers.congestionControl')}</span>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <SelectTrigger>
                       <SelectValue placeholder="bbr" />
                     </SelectTrigger>
@@ -183,7 +195,7 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
               render={({ field }) => (
                 <div className="nd-fld">
                   <span className="nd-fld-lbl">{t('servers.udpRelayMode')}</span>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <SelectTrigger>
                       <SelectValue placeholder="native" />
                     </SelectTrigger>

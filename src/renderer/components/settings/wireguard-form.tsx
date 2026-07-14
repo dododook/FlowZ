@@ -428,7 +428,18 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                   <Input
                     type="number"
                     {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
+                    value={field.value ?? ''}
+                    onChange={(e) => {
+                      // 空串（退格删空）→ undefined，允许清空重录；不用 Number(e.target.value)（`Number('')===0`
+                      // 会把删空卡成 0、无法清空）。非空按十进制解析，异常值 → undefined 不硬塞 0。
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        field.onChange(undefined);
+                        return;
+                      }
+                      const n = Number.parseInt(raw, 10);
+                      field.onChange(Number.isNaN(n) ? undefined : n);
+                    }}
                   />
                   <FormMessage className="fld-err" />
                 </div>
@@ -445,7 +456,18 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                   <Input
                     type="number"
                     {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
+                    value={field.value ?? ''}
+                    onChange={(e) => {
+                      // 空串（退格删空）→ undefined，允许清空重录；不用 Number(e.target.value)（`Number('')===0`
+                      // 会把删空卡成 0、无法清空）。非空按十进制解析，异常值 → undefined 不硬塞 0。
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        field.onChange(undefined);
+                        return;
+                      }
+                      const n = Number.parseInt(raw, 10);
+                      field.onChange(Number.isNaN(n) ? undefined : n);
+                    }}
                   />
                   <FormMessage className="fld-err" />
                 </div>
