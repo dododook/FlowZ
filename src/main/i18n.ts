@@ -416,6 +416,20 @@ const MESSAGES = {
     ru: 'FlowZ — Подключено',
     fa: 'FlowZ — متصل',
   },
+  trayNoUpdateBody: {
+    'zh-CN': '当前已是最新版本',
+    'zh-TW': '目前已是最新版本',
+    'en-US': "You're on the latest version",
+    ru: 'У вас установлена последняя версия',
+    fa: 'شما از آخرین نسخه استفاده می‌کنید',
+  },
+  trayNoUpdateOk: {
+    'zh-CN': '确定',
+    'zh-TW': '確定',
+    'en-US': 'OK',
+    ru: 'ОК',
+    fa: 'تأیید',
+  },
 
   // —— 提权 helper 授权对话框（index.ts）：按钮 ——
   btnCancel: {

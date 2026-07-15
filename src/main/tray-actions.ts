@@ -211,9 +211,9 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
           const { dialog } = require('electron');
           dialog.showMessageBox(mainWindow, {
             type: 'info',
-            title: '检查更新',
-            message: '当前已是最新版本',
-            buttons: ['确定'],
+            title: mt('trayCheckUpdates'), // 复用打开本 dialog 的托盘菜单项文案，不另造近重复 key
+            message: mt('trayNoUpdateBody'),
+            buttons: [mt('trayNoUpdateOk')],
           });
         }
       }
