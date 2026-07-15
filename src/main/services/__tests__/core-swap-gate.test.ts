@@ -198,6 +198,14 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     svc.setProxyManager(proxy);
     svc.setConfigProvider(() => Promise.resolve({ autoUpdateCore: true } as any));
     svc.setEventSender(() => {});
+    // rollbackCore 在 win32 分支经 privilegeService.copyFileElevated 写核（生产由 index.ts 无条件注入）；
+    // 非 win32 分支直接 fs.copyFileSync。注入等价 stub（复刻 service 首步 copyFileSync），使 copySpy 计数
+    // 与 'disk full' 抛错传播在 windows/linux/mac runner 上一致。
+    svc.setPrivilegeService({
+      copyFileElevated: async (src: string, dest: string) => {
+        require('fs').copyFileSync(src, dest);
+      },
+    } as any);
     return svc;
   }
 
