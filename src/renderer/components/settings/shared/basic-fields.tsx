@@ -77,15 +77,17 @@ export function PortField({
             readOnly={readOnly}
             className={readOnly ? 'cursor-default opacity-70' : undefined}
             onChange={(e) => {
-              // 空串（退格删空）→ undefined，允许清空后重录；不用 `parseInt || 0`（0 触发 min(1) 校验挂、
-              // 且把「删到一位再退格」卡成 0 无法清空，issue #294）。非空按十进制解析，异常值 → undefined 不硬塞 0。
+              // 空串（退格删空）→ ''（**不是 undefined**）：RHF Controller 在 field.value===undefined 时会回退到
+              // defaultValue，把刚清空的端口自动填回旧值（issue #294 复现：清空后又变回 443）。'' 是「已定义的空」，
+              // Controller 不回退 → 真正清空、可重录。port 为必填 z.number()，'' 在提交时自然判无效（符合必填语义）。
+              // 不用 `parseInt || 0`（0 触发 min(1) 校验挂）。非空按十进制解析，异常值 → '' 不硬塞 0。
               const raw = e.target.value;
               if (raw === '') {
-                field.onChange(undefined);
+                field.onChange('');
                 return;
               }
               const n = Number.parseInt(raw, 10);
-              field.onChange(Number.isNaN(n) ? undefined : n);
+              field.onChange(Number.isNaN(n) ? '' : n);
             }}
           />
           <FormMessage className="fld-err" />

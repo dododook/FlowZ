@@ -39,7 +39,8 @@ const createWireGuardSchema = (t: any) =>
     alwaysRouteSubnets: z.boolean(),
     allowedIPs: z.string().optional(),
     persistentKeepalive: z.number().min(0).max(65535),
-    mtu: z.number().min(0).max(9000).optional(),
+    // 允许 ''（清空态）：清空数字输入用 '' 作空哨兵（避免 Controller 回退 defaultValue），提交时 `mtu || undefined` 归一。
+    mtu: z.number().min(0).max(9000).optional().or(z.literal('')),
     reserved: z.string().optional(),
   });
 
@@ -430,15 +431,16 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                     {...field}
                     value={field.value ?? ''}
                     onChange={(e) => {
-                      // 空串（退格删空）→ undefined，允许清空重录；不用 Number(e.target.value)（`Number('')===0`
-                      // 会把删空卡成 0、无法清空）。非空按十进制解析，异常值 → undefined 不硬塞 0。
+                      // 空串（退格删空）→ ''（**不是 undefined**）：RHF Controller 在 value===undefined 时回退
+                      // defaultValue，把清空的字段自动填回旧值（issue #294 同类回归）。'' 是「已定义的空」不触发回退。
+                      // 不用 Number(e.target.value)（`Number('')===0` 卡成 0）。异常值 → '' 不硬塞 0。
                       const raw = e.target.value;
                       if (raw === '') {
-                        field.onChange(undefined);
+                        field.onChange('');
                         return;
                       }
                       const n = Number.parseInt(raw, 10);
-                      field.onChange(Number.isNaN(n) ? undefined : n);
+                      field.onChange(Number.isNaN(n) ? '' : n);
                     }}
                   />
                   <FormMessage className="fld-err" />
@@ -458,15 +460,16 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
                     {...field}
                     value={field.value ?? ''}
                     onChange={(e) => {
-                      // 空串（退格删空）→ undefined，允许清空重录；不用 Number(e.target.value)（`Number('')===0`
-                      // 会把删空卡成 0、无法清空）。非空按十进制解析，异常值 → undefined 不硬塞 0。
+                      // 空串（退格删空）→ ''（**不是 undefined**）：RHF Controller 在 value===undefined 时回退
+                      // defaultValue，把清空的字段自动填回旧值（issue #294 同类回归）。'' 是「已定义的空」不触发回退。
+                      // 不用 Number(e.target.value)（`Number('')===0` 卡成 0）。异常值 → '' 不硬塞 0。
                       const raw = e.target.value;
                       if (raw === '') {
-                        field.onChange(undefined);
+                        field.onChange('');
                         return;
                       }
                       const n = Number.parseInt(raw, 10);
-                      field.onChange(Number.isNaN(n) ? undefined : n);
+                      field.onChange(Number.isNaN(n) ? '' : n);
                     }}
                   />
                   <FormMessage className="fld-err" />
