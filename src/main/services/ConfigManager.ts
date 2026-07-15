@@ -883,25 +883,19 @@ export class ConfigManager implements IConfigManager {
       config.autoCheckUpdate = true;
     }
 
-    // 图形兼容逃生门（纯开关，默认 false=不改现有行为，undefined=关闭）：非 boolean 一律删除而非 throw
-    //（同 appRoutingEnabled/singboxDashboard 标准——throw 在 loadConfig 路径会触发默认配置覆盖落盘致用户
-    // 节点/订阅/规则全丢，不值当）。不回填默认（缺省即关，减少 config 写放大；读取端一律用 === true）。
+    // 图形兼容逃生门（正向纯开关，默认开=true；undefined=未设/旧配置，读取端一律 `!== false` 视为开）：
+    // 非 boolean 一律删除而非 throw（同 appRoutingEnabled/singboxDashboard 标准——throw 在 loadConfig 路径会触发
+    // 默认配置覆盖落盘致用户节点/订阅/规则全丢，不值当）。删除即回落 undefined = 默认开，语义自洽、无需回填。
     if (
-      config.disableHardwareAcceleration !== undefined &&
-      typeof config.disableHardwareAcceleration !== 'boolean'
+      config.hardwareAcceleration !== undefined &&
+      typeof config.hardwareAcceleration !== 'boolean'
     ) {
-      this.log(
-        'warn',
-        'disableHardwareAcceleration must be a boolean; resetting to default (disabled)'
-      );
-      delete config.disableHardwareAcceleration;
+      this.log('warn', 'hardwareAcceleration must be a boolean; resetting to default (enabled)');
+      delete config.hardwareAcceleration;
     }
-    if (
-      config.disableWindowEffects !== undefined &&
-      typeof config.disableWindowEffects !== 'boolean'
-    ) {
-      this.log('warn', 'disableWindowEffects must be a boolean; resetting to default (disabled)');
-      delete config.disableWindowEffects;
+    if (config.windowEffects !== undefined && typeof config.windowEffects !== 'boolean') {
+      this.log('warn', 'windowEffects must be a boolean; resetting to default (enabled)');
+      delete config.windowEffects;
     }
 
     // autoLightweightMode 是可选字段，兼容旧配置
@@ -1154,8 +1148,8 @@ export class ConfigManager implements IConfigManager {
       minimizeToTray: true,
       autoCheckUpdate: true, // 默认启用启动时自动检查更新
       autoLightweightMode: false, // 默认不启用自动轻量模式
-      disableHardwareAcceleration: false, // 图形兼容逃生门：默认关（纯 opt-in 自救；true 时 app ready 前禁硬件加速，见 services/graphics-compat）
-      disableWindowEffects: false, // Windows Mica 逃生门：默认关（Mica 仍默认开；true 时创建主窗不设 backgroundMaterial:'mica'）
+      hardwareAcceleration: true, // 图形兼容逃生门：默认开（关闭=opt-in 自救，app ready 前禁硬件加速改软件渲染，见 services/graphics-compat）
+      windowEffects: true, // 窗口特效（Win Mica / mac 毛玻璃）默认开；关闭=opt-in 自救，主窗回落实色底
       desktopNotifications: true, // 桌面通知总开关，默认开（仅严重错误事件发通知）
       autoUpdateSubscriptionOnStart: true, // 默认启用订阅自动更新（启动补更陈旧订阅 + 周期更新）
       subscriptionUpdateIntervalHours: 12, // 订阅自动更新周期/陈旧阈值（小时）

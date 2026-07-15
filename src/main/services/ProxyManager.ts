@@ -2179,6 +2179,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       helperPromptDismissed: null,
       helperDisabledPromptDismissed: null,
       helperUpgradePromptDismissed: null,
+      // 图形兼容逃生门（硬件加速 / 窗口特效）纯 Electron 窗口·GPU 偏好，不影响 sing-box 生成 → 排除出 norm。
+      // 不排除的话：运行中拨这两个开关 → norm 翻转 → 去抖重启内核断流；而它们本就**需重启 FlowZ 才生效**，
+      // 断用户流量换零收益（同 language / restartOnNodeChange 处置）。
+      hardwareAcceleration: null,
+      windowEffects: null,
       // fakeIpToggleMigrated / fakeIpTunAutoEnable / nodeResolverMigrated 都是一次性迁移元数据标记，不影响生成
       //   （enableFakeIp / nodeResolver* 本身仍在 norm 内 → 影响生成保留）。若不排除：未来某路径重建 dnsConfig 丢/带
       //   该标记 → norm 翻转无谓重启断流 + 迁移重跑可能从 deprecated 字段回灌覆盖用户自选值。

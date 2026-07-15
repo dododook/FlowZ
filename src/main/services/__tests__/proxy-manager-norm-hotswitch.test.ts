@@ -192,6 +192,16 @@ describe('ProxyManager.configGenerationNorm', () => {
     expect(svc.configGenerationNorm(a)).toBe(svc.configGenerationNorm(b));
   });
 
+  it('拨图形兼容逃生门 hardwareAcceleration/windowEffects → norm 等价（纯窗口/GPU 偏好，且本就需重启 FlowZ 才生效，绝不应重启内核断流）', () => {
+    const svc = makeSvc();
+    const base = makeConfig();
+    const on = { ...base, hardwareAcceleration: true, windowEffects: true } as UserConfig;
+    const off = { ...base, hardwareAcceleration: false, windowEffects: false } as UserConfig;
+    expect(svc.configGenerationNorm(on)).toBe(svc.configGenerationNorm(off));
+    // 缺字段（旧配置/未设=默认开）与显式 true 亦须等价，杜绝存量配置首次落盘该键即触发一次无谓重启
+    expect(svc.configGenerationNorm(base as UserConfig)).toBe(svc.configGenerationNorm(on));
+  });
+
   // --- norm 翻转分支（结构变 = 重启）-----------------------------------------
 
   it('改规则条件值（domain 内容）→ norm 翻转（值经 ext 投影的 ok 位承载，值空↔非空翻转）', () => {

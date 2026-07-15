@@ -16,8 +16,8 @@ type ToggleField =
   | 'rememberWindowSize'
   | 'autoPrivacyMode'
   | 'desktopNotifications'
-  | 'disableHardwareAcceleration'
-  | 'disableWindowEffects';
+  | 'hardwareAcceleration'
+  | 'windowEffects';
 
 export function GeneralSettings() {
   const { t } = useTranslation();
@@ -27,11 +27,10 @@ export function GeneralSettings() {
   // macOS 关窗恒不退出 app（红灯关窗是平台惯例，shouldQuitOnAllWindowsClosed 对 darwin 恒 false）→
   // minimizeToTray 在 macOS 上完全无效，隐藏该开关（否则是个拨了没反应的死开关）。
   const isMac = window.electron?.platform === 'darwin';
-  // disableWindowEffects 仅规避 Windows Mica 合成失效 → 仅 Windows 显示（其它平台开了无意义）。
-  const isWindows = window.electron?.platform === 'win32';
-  // Linux 已在主进程无条件禁用硬件加速（index.ts「Linux 一律禁用硬件加速换稳定」）→ disableHardwareAcceleration
-  // 在 Linux 上是拨了没反应的死开关，且 OFF 态会谎称「硬件加速开启」误导用户白跑一轮自救；Mica 开关又仅 Windows。
-  // 故 Linux 上整张图形兼容卡无可用项 → 整卡隐藏（同 minimizeToTray 在 macOS 的死开关隐藏惯例）。
+  // Linux 已在主进程无条件禁用硬件加速（index.ts「Linux 一律禁用硬件加速换稳定」）→ hardwareAcceleration
+  // 在 Linux 上是拨了没反应的死开关，且 ON 态会谎称「硬件加速开启」误导用户白跑一轮自救；Linux 又无窗口特效
+  //（无 Mica/vibrancy，仅 frame:false）→ windowEffects 同样是死开关。故 Linux 整张图形兼容卡无可用项 →
+  // 整卡隐藏（同 minimizeToTray 在 macOS 的死开关隐藏惯例）。Win/mac 两项均有效，卡内不再按平台分门。
   const isLinux = window.electron?.platform === 'linux';
   const [passwordValue, setPasswordValue] = useState('');
   const [hasPrivacyPassword, setHasPrivacyPassword] = useState(false);
@@ -195,22 +194,17 @@ export function GeneralSettings() {
             <small>{t('settings.general.graphicsSub', '显示异常或白屏时的自救选项')}</small>
           </div>
           <SettingsRow
-            label={t('settings.general.disableHardwareAcceleration')}
-            description={t('settings.general.disableHardwareAccelerationDesc')}
+            label={t('settings.general.hardwareAcceleration')}
+            description={t('settings.general.hardwareAccelerationDesc')}
           >
-            <Toggle
-              field="disableHardwareAcceleration"
-              checked={config.disableHardwareAcceleration === true}
-            />
+            <Toggle field="hardwareAcceleration" checked={config.hardwareAcceleration !== false} />
           </SettingsRow>
-          {isWindows && (
-            <SettingsRow
-              label={t('settings.general.disableWindowEffects')}
-              description={t('settings.general.disableWindowEffectsDesc')}
-            >
-              <Toggle field="disableWindowEffects" checked={config.disableWindowEffects === true} />
-            </SettingsRow>
-          )}
+          <SettingsRow
+            label={t('settings.general.windowEffects')}
+            description={t('settings.general.windowEffectsDesc')}
+          >
+            <Toggle field="windowEffects" checked={config.windowEffects !== false} />
+          </SettingsRow>
         </div>
       )}
     </div>

@@ -391,11 +391,11 @@
       "autoCheckUpdateDesc": "發現新版本時在關於頁提示",
       "rememberWindowSizeDesc": "下次開啟時還原上次的視窗版面",
       "groupGraphics": "圖形相容",
-      "graphicsSub": "介面白屏或顯示異常時的自救選項",
-      "disableHardwareAcceleration": "停用硬體加速",
-      "disableHardwareAccelerationDesc": "介面持續白屏、花屏或 GPU 處理程序反覆崩潰時啟用，改用軟體轉譯繞開顯示卡問題。需重新啟動 FlowZ 才會生效。",
-      "disableWindowEffects": "停用視窗材質效果",
-      "disableWindowEffectsDesc": "Windows 下 Mica 雲母材質導致視窗最小化／還原後白屏時啟用，改用純色背景。需重新啟動 FlowZ 才會生效。"
+      "graphicsSub": "介面白屏或顯示異常時，關掉下列選項自救",
+      "hardwareAcceleration": "硬體加速",
+      "hardwareAccelerationDesc": "關閉後改用軟體轉譯，可解決部分裝置的白屏、花屏、GPU 處理程序反覆崩潰。需重新啟動 FlowZ 才會生效。",
+      "windowEffects": "視窗特效",
+      "windowEffectsDesc": "Windows Mica 材質、macOS 毛玻璃。關閉後改用純色背景，可解決視窗空白、合成異常。需重新啟動 FlowZ 才會生效。"
     },
     "coreVersion": {
       "changedTitle": "sing-box 核心已更新",

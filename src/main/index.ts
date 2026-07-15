@@ -140,18 +140,18 @@ runCliEarlyExit({
 // 以确保便携模式下，锁文件和所有 Electron 数据都重定向到正确的目录
 initUserDataPath();
 
-// 图形兼容逃生门（用户自救）：disableHardwareAcceleration 为 true 时禁用硬件加速。
+// 图形兼容逃生门（用户自救）：hardwareAcceleration 被显式关闭（=== false）时禁用硬件加速，改用软件渲染。
 // app.disableHardwareAcceleration() 必须在 app ready **之前**调用（Electron 硬约束），此时 ConfigManager 尚未
 // 初始化 → 只能早期同步读 config.json 原文本（initUserDataPath 已把 userData 路径下沉，getConfigPath 可用）。
-// 判定抽成纯函数 shouldDisableHardwareAcceleration（可单测）；容错第一：文件缺失/损坏/字段缺 → 当 false，绝不抛
-//（早期崩 = 整个启动失败）。此为显式用户控制，实际只对 Win/mac 有意义——Linux 见下方已**无条件**禁用硬件加速，
-// 故 Linux 上本开关是 no-op（设置页对 Linux 整卡隐藏，不给死开关）。重复调用 disableHardwareAcceleration 幂等无害。
+// 判定抽成纯函数 shouldDisableHardwareAcceleration（可单测）；容错第一：文件缺失/损坏/字段缺 → 当「默认开」不禁，
+// 绝不抛（早期崩 = 整个启动失败）。此为显式用户控制，实际只对 Win/mac 有意义——Linux 见下方已**无条件**禁用硬件
+// 加速，故 Linux 上本开关是 no-op（设置页对 Linux 整卡隐藏，不给死开关）。重复调用 disableHardwareAcceleration 幂等无害。
 try {
   if (shouldDisableHardwareAcceleration(fs.readFileSync(getConfigPath(), 'utf-8'))) {
     app.disableHardwareAcceleration();
   }
 } catch {
-  // 文件不存在（新装/首启）/无权限/读失败：视为未开启，静默忽略（绝不阻断启动）。
+  // 文件不存在（新装/首启）/无权限/读失败：视为默认开（不禁），静默忽略（绝不阻断启动）。
 }
 
 // Windows LTSC / 精简版系统兼容处理
@@ -741,6 +741,16 @@ async function createWindow(forceShow = false) {
   // 不能用 cfg.uiTheme==='dark' 字面判：uiTheme='system'+OS 深色会被误判为浅色，致标题栏/背景与内容初始不一致，
   // 而 onThemeUpdated 仅在 OS 主题「切换」时修正、初始不跑（review #3）。
   const isDarkInitial = nativeTheme.shouldUseDarkColors;
+  // 图形兼容逃生门（windowEffects，默认开=`!== false`）：D 类合成层向量（Windows Mica bug 群 / macOS 透明+vibrancy）
+  // 跨平台对齐——关闭时 Win 不设 Mica、mac 不开 transparent+vibrancy，一律回落实色窗口底，供合成失效白屏时自救。
+  // 窗口 chrome（titleBarStyle/titleBarOverlay/frame）不属特效，不受此开关影响。
+  const effectsOn = cfg.windowEffects !== false;
+  // mac 特效开才用透明底（让原生 vibrancy 透出）；特效关 / 非 mac 一律实色主题色。
+  // 关键：mac 特效关时必须给实色——渲染端 html/body/.app-shell 在 platform-darwin 下恒 transparent
+  //（index.css:148/153/476「keep html transparent so native vibrancy shows through」），若窗口底仍是
+  // '#00000000' 而 transparent 已关，透出的就是黑底。给实色后透出实色，与 Win/Linux 的 app-shell 同色收敛。
+  const useMacTransparent = isMac && effectsOn;
+  const solidBackground = isDarkInitial ? '#1F252E' : '#E9EEF3';
 
   mainWindow = new BrowserWindow({
     width: windowWidth,
@@ -750,8 +760,8 @@ async function createWindow(forceShow = false) {
     title: 'FlowZ',
     icon: resourceManager.getAppIconPath(),
     show: false, // 先不显示，等待加载完成
-    backgroundColor: isMac ? '#00000000' : isDarkInitial ? '#1F252E' : '#E9EEF3',
-    transparent: isMac,
+    backgroundColor: useMacTransparent ? '#00000000' : solidBackground,
+    transparent: useMacTransparent,
     autoHideMenuBar: true, // 自动隐藏菜单栏
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -768,11 +778,11 @@ async function createWindow(forceShow = false) {
         `--flowz-lang-choice=${cfg.language ?? ''}`,
       ],
     },
-    // macOS：集成式窗口（红绿灯内嵌 + sidebar 半透材质）
+    // macOS：集成式窗口（红绿灯内嵌 + sidebar 半透材质）。titleBarStyle 是窗口 chrome、恒设；
+    // vibrancy/visualEffectState 是合成层特效 → 仅 effectsOn 时展开（关闭即回落实色底，见 solidBackground）。
     ...(isMac && {
       titleBarStyle: 'hiddenInset',
-      vibrancy: 'sidebar',
-      visualEffectState: 'active',
+      ...(effectsOn && { vibrancy: 'sidebar' as const, visualEffectState: 'active' as const }),
     }),
     // Windows：集成式标题栏（隐藏原生栏 + 右上覆盖层按钮，对齐 Mac）+ Win11 Mica 材质。
     // Mica 仅作窗口/侧栏底（壁纸微染），内容卡片实色不透。窗口 backgroundColor 取实色主题色作兜底：
@@ -780,10 +790,10 @@ async function createWindow(forceShow = false) {
     ...(isWindows && {
       titleBarStyle: 'hidden',
       titleBarOverlay: overlayColors(isDarkInitial),
-      // Mica 逃生门（disableWindowEffects）：默认设 backgroundMaterial:'mica'（Win11 材质）；用户开了逃生门则不设，
+      // Mica 逃生门（windowEffects，默认开）：默认设 backgroundMaterial:'mica'（Win11 材质）；用户关掉特效则不设，
       // 回落 DWM 实色底（backgroundColor 已是实色主题色，不会黑），规避 electron Mica 合成失效
       //（#38743/#46753/#28255/#48031）的 hide/show 白屏。titleBarStyle/overlay 等其它 Windows 项保持不变。
-      ...(!cfg.disableWindowEffects && { backgroundMaterial: 'mica' as const }),
+      ...(effectsOn && { backgroundMaterial: 'mica' as const }),
     }),
     // Linux：无系统 titleBarOverlay API → frameless（frame:false）+ 渲染端自绘标题栏（拖拽区 + min/max/close 按钮），
     // 与 Mac/Win 嵌入式视觉对齐。frameless 窗口 Electron 默认仍保留边缘 resize（resizable 未关）。
