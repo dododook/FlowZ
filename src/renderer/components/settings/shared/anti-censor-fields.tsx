@@ -150,7 +150,7 @@ export function MultiplexFields({
                     {...field}
                     value={field.value ?? ''}
                     onChange={(e) =>
-                      field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)
+                      field.onChange(e.target.value ? parseInt(e.target.value, 10) : '')
                     }
                   />
                   <FormMessage className="fld-err" />
@@ -169,7 +169,7 @@ export function MultiplexFields({
                     {...field}
                     value={field.value ?? ''}
                     onChange={(e) =>
-                      field.onChange(e.target.value ? parseInt(e.target.value, 10) : undefined)
+                      field.onChange(e.target.value ? parseInt(e.target.value, 10) : '')
                     }
                   />
                   <FormMessage className="fld-err" />

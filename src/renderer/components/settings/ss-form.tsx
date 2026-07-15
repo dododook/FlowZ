@@ -39,7 +39,7 @@ const createSsSchema = (t: any) =>
     shadowTlsPassword: z.string().optional(),
     shadowTlsSni: z.string().optional(),
     shadowTlsFingerprint: z.string().optional(),
-    shadowTlsPort: z.number().optional(),
+    shadowTlsPort: z.number().optional().or(z.literal('')), // '' = 清空态哨兵（提交 `|| undefined` 归一）
     ...multiplexSchemaShape,
   });
 
@@ -310,8 +310,9 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
                           {...field}
                           value={field.value ?? ''}
                           onChange={(e) => {
+                            // '' 空哨兵（非 undefined）：避免 RHF Controller 编辑态回退旧端口（issue #294 同类）。
                             const val = e.target.value;
-                            field.onChange(val ? parseInt(val) : undefined);
+                            field.onChange(val ? parseInt(val) : '');
                           }}
                         />
                         <FormMessage className="fld-err" />

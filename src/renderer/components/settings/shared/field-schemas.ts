@@ -60,8 +60,10 @@ export function buildTlsSpoofSettings(values: { tlsSpoofMethod?: string; tlsSpoo
 export const multiplexSchemaShape = {
   muxEnabled: z.boolean().optional(),
   muxProtocol: z.enum(['h2mux', 'smux', 'yamux']).optional(),
-  muxMaxConnections: z.number().optional(),
-  muxMinStreams: z.number().optional(),
+  // .or(z.literal('')) 容纳清空态哨兵 ''（数字输入清空用 '' 而非 undefined，避免 RHF Controller 回退 defaultValue
+  // 把编辑态旧值自动填回，issue #294 同类）。buildMultiplexSettings 提交时 `|| undefined` 归一。
+  muxMaxConnections: z.number().optional().or(z.literal('')),
+  muxMinStreams: z.number().optional().or(z.literal('')),
   muxPadding: z.boolean().optional(),
 };
 
@@ -103,8 +105,8 @@ export function readMultiplexDefaults(serverConfig: ServerConfig) {
 interface MultiplexValues {
   muxEnabled?: boolean;
   muxProtocol?: 'h2mux' | 'smux' | 'yamux';
-  muxMaxConnections?: number;
-  muxMinStreams?: number;
+  muxMaxConnections?: number | '';
+  muxMinStreams?: number | '';
   muxPadding?: boolean;
   flow?: string;
 }
@@ -125,8 +127,9 @@ export function buildMultiplexSettings(
     ? {
         enabled: true,
         protocol: values.muxProtocol || 'h2mux',
-        maxConnections: values.muxMaxConnections,
-        minStreams: values.muxMinStreams,
+        // '' / 0（清空或未填）→ undefined 不下发（0 连接/流无意义）。
+        maxConnections: values.muxMaxConnections || undefined,
+        minStreams: values.muxMinStreams || undefined,
         padding: values.muxPadding === true,
       }
     : undefined;

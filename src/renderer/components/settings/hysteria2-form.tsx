@@ -27,14 +27,14 @@ const createHysteria2Schema = (t: any) =>
       port: z.number().min(1).max(65535),
       password: z.string().min(1, t('servers.passwordRequired')),
       // 带宽限制
-      upMbps: z.number().optional(),
-      downMbps: z.number().optional(),
+      upMbps: z.number().optional().or(z.literal('')),
+      downMbps: z.number().optional().or(z.literal('')),
       // 混淆设置
       obfsEnabled: z.boolean(),
       obfsType: z.enum(['salamander', 'gecko']),
       obfsPassword: z.string().optional(),
-      obfsMinPacketSize: z.number().optional(),
-      obfsMaxPacketSize: z.number().optional(),
+      obfsMinPacketSize: z.number().optional().or(z.literal('')),
+      obfsMaxPacketSize: z.number().optional().or(z.literal('')),
       // 拥塞控制
       bbrProfile: z.string().optional(),
       // TLS 设置
@@ -216,7 +216,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                     value={field.value ?? ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      field.onChange(val ? parseInt(val) : undefined);
+                      field.onChange(val ? parseInt(val) : ''); // '' 空哨兵：避免 Controller 编辑态回退旧值(#294 同类)
                     }}
                   />
                   <FormMessage className="fld-err" />
@@ -236,7 +236,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                     value={field.value ?? ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      field.onChange(val ? parseInt(val) : undefined);
+                      field.onChange(val ? parseInt(val) : ''); // '' 空哨兵：避免 Controller 编辑态回退旧值(#294 同类)
                     }}
                   />
                   <FormMessage className="fld-err" />
@@ -313,7 +313,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                                 value={field.value ?? ''}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  field.onChange(val ? parseInt(val) : undefined);
+                                  field.onChange(val ? parseInt(val) : ''); // '' 空哨兵：避免 Controller 编辑态回退旧值(#294 同类)
                                 }}
                               />
                               <FormMessage className="fld-err" />
@@ -335,7 +335,7 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
                                 value={field.value ?? ''}
                                 onChange={(e) => {
                                   const val = e.target.value;
-                                  field.onChange(val ? parseInt(val) : undefined);
+                                  field.onChange(val ? parseInt(val) : ''); // '' 空哨兵：避免 Controller 编辑态回退旧值(#294 同类)
                                 }}
                               />
                               <FormMessage className="fld-err" />

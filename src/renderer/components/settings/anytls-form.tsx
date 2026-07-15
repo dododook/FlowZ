@@ -47,7 +47,7 @@ const createAnyTlsSchema = (t: any) =>
     realityShortId: z.string().optional(),
     idleSessionCheckInterval: z.string().optional(),
     idleSessionTimeout: z.string().optional(),
-    minIdleSession: z.number().int().min(0).optional(),
+    minIdleSession: z.number().int().min(0).optional().or(z.literal('')), // '' = 清空态哨兵
     ...echSchemaShape,
     ...tlsSpoofSchemaShape,
   });
@@ -144,7 +144,8 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
       anyTlsSettings.idleSessionCheckInterval = values.idleSessionCheckInterval.trim();
     if (values.idleSessionTimeout?.trim())
       anyTlsSettings.idleSessionTimeout = values.idleSessionTimeout.trim();
-    if (values.minIdleSession != null) anyTlsSettings.minIdleSession = values.minIdleSession;
+    if (values.minIdleSession != null && values.minIdleSession !== '')
+      anyTlsSettings.minIdleSession = values.minIdleSession;
     if (Object.keys(anyTlsSettings).length > 0) config.anyTlsSettings = anyTlsSettings;
 
     await onSubmit(config);
@@ -289,8 +290,9 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
                     {...field}
                     value={field.value ?? ''}
                     onChange={(e) => {
+                      // '' 空哨兵（非 undefined）：避免 RHF Controller 编辑态回退旧值（issue #294 同类）。
                       const val = e.target.value;
-                      field.onChange(val ? parseInt(val) : undefined);
+                      field.onChange(val ? parseInt(val) : '');
                     }}
                   />
                   <FormMessage className="fld-err" />
