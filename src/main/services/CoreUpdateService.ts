@@ -29,7 +29,7 @@ import { CoreDownloader } from './core-downloader';
 import type { UpdateNetwork } from './UpdateNetwork';
 import coreManifest from '../../shared/core-manifest.json';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
-import { system32, powershellPath } from '../utils/win-system32';
+import { system32 } from '../utils/win-system32';
 
 export interface CoreUpdateCheckResult {
   hasUpdate: boolean;
@@ -1725,58 +1725,11 @@ export class CoreUpdateService {
    * 解决将文件写入 C:\Program Files (UAC 保护目录) 时的 EPERM 问题
    */
   private async copyFileElevatedWindows(src: string, dest: string): Promise<void> {
-    // delegate → PlatformPrivilegeService.copyFileElevated（T16 子 commit 1：PowerShell RunAs 逻辑原样保留，
-    // this.logManager.addLog → ctx.log）；未注入时保留原实现兜底。
-    if (this.privilegeService) return this.privilegeService.copyFileElevated(src, dest);
-    const { execSync } = require('child_process') as typeof import('child_process');
-
-    const escapedSrc = src.replace(/'/g, "''");
-    const escapedDest = dest.replace(/'/g, "''");
-
-    const destDir = path.dirname(dest);
-    if (!fs.existsSync(destDir)) {
-      fs.mkdirSync(destDir, { recursive: true });
+    // 恒经 PlatformPrivilegeService（index.ts 无条件注入）。旧内联 PowerShell RunAs 实现已删：它不可达，
+    // 且缺 service 侧的两处加固（脚本落盘随机名 + 不盲杀同名 sing-box 进程）——留着=误触发即复现已修 bug。
+    if (!this.privilegeService) {
+      throw new Error('privilegeService 未注入：copyFileElevatedWindows 不可用');
     }
-
-    try {
-      // First try a direct copy (works if app has write access)
-      fs.copyFileSync(src, dest);
-    } catch (directErr: any) {
-      if (directErr.code !== 'EPERM' && directErr.code !== 'EACCES' && directErr.code !== 'EBUSY') {
-        throw directErr;
-      }
-
-      this.logManager.addLog(
-        'info',
-        `Direct copy failed (${directErr.code}), attempting elevated PowerShell copy...`,
-        'CoreUpdateService'
-      );
-
-      // Fall back: use PowerShell with -Verb RunAs to elevate.
-      const scriptPath = path.join(app.getPath('temp'), `flowz-copy-${Date.now()}.ps1`);
-      // 使用 $ErrorActionPreference = 'Stop' 确保出错时非 0 退出
-      // 增加 Stop-Process 防御，防止因为 TUN 模式的高权限占用导致无法覆盖
-      fs.writeFileSync(
-        scriptPath,
-        `$ErrorActionPreference = 'Stop'\nStop-Process -Name "sing-box" -Force -ErrorAction SilentlyContinue\nStart-Sleep -Seconds 1\nCopy-Item -Path '${escapedSrc}' -Destination '${escapedDest}' -Force\n`
-      );
-
-      try {
-        // 使用 Start-Process -Verb RunAs 触发 UAC 提权并用 -Wait 阻塞直到完成
-        execSync(
-          `"${powershellPath()}" -Command "Start-Process '${powershellPath()}' -ArgumentList '-ExecutionPolicy Bypass -WindowStyle Hidden -File \\"${scriptPath}\\"' -Verb RunAs -Wait"`,
-          {
-            stdio: 'pipe',
-            timeout: 60000,
-          }
-        );
-      } finally {
-        try {
-          fs.unlinkSync(scriptPath);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    return this.privilegeService.copyFileElevated(src, dest);
   }
 }
