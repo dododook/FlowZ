@@ -40,6 +40,30 @@ const MID_TOTAL_RATIO = 0.8; // 中列总高上限 = 可容纳高度 * 此比例
 const OUT_TOTAL_SINGLE = 80; // 右列总高上限：单出口（与 source 等高）
 const OUT_TOTAL_MULTI = 120; // 右列总高上限：多出口分列
 
+/** 命中区最小高度：条随连接数反比缩水（50 连接时仅几 px），靶子太小右键戳不中，故命中区不跟随视觉尺寸。 */
+const HIT_MIN_HEIGHT = 18;
+/** 命中区向标签文字侧的横向延伸：标签 pointer-events:none，不覆盖则点域名会穿透。 */
+const HIT_LABEL_REACH = 96;
+
+/**
+ * 节点命中区（相对节点 g 原点）：纵向至少 HIT_MIN_HEIGHT，但不超过「条高 + NODE_GAP - 2」——
+ * 恒不与相邻节点的命中区重叠（同列间距恒为 NODE_GAP）；横向覆盖条 + 标签文字侧。
+ * 与视觉尺寸解耦：条可以细到 2px，命中区仍可点。
+ */
+export function hitBox(node: Node): { x: number; y: number; width: number; height: number } {
+  const maxH = node.height + NODE_GAP - 2; // 上界：吃掉间距但留 2px，杜绝相邻重叠
+  const height = Math.min(Math.max(node.height, HIT_MIN_HEIGHT), Math.max(maxH, node.height));
+  const y = (node.height - height) / 2; // 以条为中心纵向扩展
+  // 标签在 source/rule 左侧、outbound 右侧（见 text 的 x 与 textAnchor）
+  const towardLabelLeft = node.type !== 'outbound';
+  return {
+    x: towardLabelLeft ? -HIT_LABEL_REACH : -10,
+    y,
+    width: HIT_LABEL_REACH + NODE_WIDTH + 10,
+    height,
+  };
+}
+
 /**
  * 从焦点节点出发收集整条链路上的节点 id + 缎带 id（`link-<i>`）——hover 与检索共用同一套高亮语义。
  * 沿链路向上游(target→source)与下游(source→target)各做一次 BFS，收敛即停；两端都在链路集内的缎带一并纳入。

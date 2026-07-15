@@ -7,6 +7,7 @@ import {
   collectLinkedIds,
   computeTopologyLayout,
   getSankeyPath,
+  hitBox,
   matchNodeIds,
   FIXED_HEIGHT,
 } from '../topology-layout';
@@ -298,6 +299,57 @@ describe('collectLinkedIds — 链路高亮（hover 与检索共用）', () => {
     expect(set.has('mid-a.com')).toBe(true);
     expect(set.has('source')).toBe(true);
     expect(set.has('mid-b.com')).toBe(false);
+  });
+});
+
+describe('hitBox — 命中区与视觉尺寸解耦（issue #303 真机：条几 px 高时右键戳不中）', () => {
+  const node = (over: Partial<Parameters<typeof hitBox>[0]>) =>
+    ({
+      id: 'x',
+      name: 'x',
+      type: 'rule',
+      value: 1,
+      x: 0,
+      y: 0,
+      height: 9,
+      color: '',
+      ...over,
+    }) as Parameters<typeof hitBox>[0];
+
+  it('细条（9px，真机实测值）→ 命中区抬到 18px 下限', () => {
+    expect(hitBox(node({ height: 9 })).height).toBe(18);
+  });
+
+  it('极细条（2px 地板）→ 抬到 12px 封顶：防重叠优先于最小高度', () => {
+    // 上界 = 条高 + NODE_GAP(12) - 2 = 12；再高就与相邻节点命中区重叠。
+    // 12 仍是 2px 的 6 倍，可点性大幅改善，但不牺牲"绝不误触邻居"。
+    expect(hitBox(node({ height: 2 })).height).toBe(12);
+  });
+
+  it('粗条（80px）→ 命中区不缩水，跟随条高', () => {
+    expect(hitBox(node({ height: 80 })).height).toBe(80);
+  });
+
+  it('命中区恒不与相邻节点重叠：height ≤ 条高 + NODE_GAP(12) - 2', () => {
+    for (const h of [2, 5, 9, 12, 16, 20, 40, 80]) {
+      const box = hitBox(node({ height: h }));
+      expect(box.height).toBeLessThanOrEqual(Math.max(h + 10, h));
+    }
+  });
+
+  it('细条命中区以条为中心纵向扩展（上下对称）', () => {
+    const box = hitBox(node({ height: 9 }));
+    expect(box.y).toBeCloseTo((9 - box.height) / 2, 5);
+  });
+
+  it('rule/source 节点：命中区向左覆盖标签文字（文字 pointer-events:none 会穿透）', () => {
+    const box = hitBox(node({ type: 'rule' }));
+    expect(box.x).toBeLessThan(-10); // 远超原来的 -10，够到标签
+    expect(box.width).toBeGreaterThan(100);
+  });
+
+  it('outbound 节点：标签在右侧，命中区不向左过度延伸', () => {
+    expect(hitBox(node({ type: 'outbound' })).x).toBe(-10);
   });
 });
 

@@ -15,6 +15,7 @@ import {
 import {
   collectLinkedIds,
   computeTopologyLayout,
+  hitBox,
   matchNodeIds,
   FIXED_HEIGHT,
   NODE_WIDTH,
@@ -35,6 +36,9 @@ export function ConnectionTopology() {
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState<{ type: 'node' | 'link'; id: string } | null>(null);
   const [search, setSearch] = useState('');
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  // tooltip 实测尺寸：靠近视口边缘时翻到指针另一侧（首帧 0 → 落在指针右下，测得后即修正）
+  const [tooltipSize, setTooltipSize] = useState({ w: 0, h: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; domain: string } | null>(
     null
@@ -109,6 +113,28 @@ export function ConnectionTopology() {
 
   // 检索中即使零命中也算激活态（全图淡出 + 空态提示），与"未检索"的全亮区分。
   const dimming = hovered !== null || searching;
+
+  // tooltip 尺寸随内容变（域名长短/链路条目数），每次 hover 换目标后重测。
+  useEffect(() => {
+    if (!hovered || !tooltipRef.current) return;
+    const r = tooltipRef.current.getBoundingClientRect();
+    setTooltipSize((prev) =>
+      prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }
+    );
+  }, [hovered]);
+
+  // fixed 定位 + 边界翻转：默认落指针右下；越过视口右/下缘则翻到左/上侧（原 absolute 会被卡片裁掉）。
+  const tooltipPos = useMemo(() => {
+    const OFFSET = 12;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const flipX = mousePos.x + OFFSET + tooltipSize.w > vw - 8;
+    const flipY = mousePos.y + OFFSET + tooltipSize.h > vh - 8;
+    return {
+      left: Math.max(8, flipX ? mousePos.x - OFFSET - tooltipSize.w : mousePos.x + OFFSET),
+      top: Math.max(8, flipY ? mousePos.y - OFFSET - tooltipSize.h : mousePos.y + OFFSET),
+    };
+  }, [mousePos, tooltipSize]);
 
   const getNodeOpacity = (nodeId: string) => {
     if (!dimming) return 1;
@@ -193,11 +219,9 @@ export function ConnectionTopology() {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setMousePos({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      });
+      // 存视口坐标：tooltip 用 fixed 定位（原 absolute 挂在 overflow-hidden [contain:size] 容器内，
+      // 靠下/靠右 hover 时被卡片裁掉——与右键菜单同一个病）。
+      setMousePos({ x: e.clientX, y: e.clientY });
     }
   };
 
@@ -324,13 +348,7 @@ export function ConnectionTopology() {
           )}
 
           {hovered && !contextMenu && (
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: mousePos.x + 10,
-                top: mousePos.y + 10,
-              }}
-            >
+            <div ref={tooltipRef} className="pointer-events-none fixed z-50" style={tooltipPos}>
               {getTooltipContent()}
             </div>
           )}
@@ -459,12 +477,14 @@ export function ConnectionTopology() {
                 >
                   {node.value}
                 </text>
-                {/* Hit area for easier hover */}
+                {/* 命中区：连接数一多，条本身只剩几 px 高（scale 反比缩水），6×9px 的靶子右键根本戳不中。
+                    故命中区独立于条的视觉尺寸：纵向至少 HIT_MIN_HEIGHT 且不超过条+间距（绝不与相邻节点重叠），
+                    横向覆盖到标签文字（文字本身 pointer-events:none，否则点域名会穿透）。 */}
                 <rect
-                  x={-10}
-                  y={0}
-                  width={NODE_WIDTH + 20}
-                  height={node.height}
+                  x={hitBox(node).x}
+                  y={hitBox(node).y}
+                  width={hitBox(node).width}
+                  height={hitBox(node).height}
                   fill="transparent"
                 />
               </g>
