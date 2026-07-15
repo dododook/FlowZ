@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -77,9 +76,34 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
   const { t } = useTranslation();
   const hysteria2FormSchema = createHysteria2Schema(t);
 
-  const form = useForm<Hysteria2FormValues>({
-    resolver: zodResolver(hysteria2FormSchema),
-    defaultValues: {
+  // 混淆类型读取归一（大小写）：obfs.type 存量/导入可能非严格小写，直灌 z.enum 会挂/显占位符。
+  const normalizeObfsType = (o: string | undefined): 'salamander' | 'gecko' =>
+    (o || 'salamander').toLowerCase() === 'gecko' ? 'gecko' : 'salamander';
+
+  // 同步 defaultValues（对齐 vless/vmess/trojan/tuic）：编辑态直接由 serverConfig 算初值，不走挂载后
+  // useEffect(form.reset)——避免受控 Select value 被编程改写触发 radix 伪 onValueChange（issue #294 同类）。
+  const getDefaultValues = (): Hysteria2FormValues => {
+    if (serverConfig && serverConfig.protocol?.toLowerCase() === 'hysteria2') {
+      return {
+        address: serverConfig.address || '',
+        port: serverConfig.port || 443,
+        password: serverConfig.password || '',
+        upMbps: serverConfig.hysteria2Settings?.upMbps ?? undefined,
+        downMbps: serverConfig.hysteria2Settings?.downMbps ?? undefined,
+        obfsEnabled: !!serverConfig.hysteria2Settings?.obfs?.type,
+        obfsType: normalizeObfsType(serverConfig.hysteria2Settings?.obfs?.type),
+        obfsPassword: serverConfig.hysteria2Settings?.obfs?.password || '',
+        obfsMinPacketSize: serverConfig.hysteria2Settings?.obfs?.minPacketSize ?? undefined,
+        obfsMaxPacketSize: serverConfig.hysteria2Settings?.obfs?.maxPacketSize ?? undefined,
+        bbrProfile: serverConfig.hysteria2Settings?.bbrProfile || '',
+        tlsServerName: serverConfig.tlsSettings?.serverName || '',
+        tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
+        ...readEchDefault(serverConfig),
+        serverPorts: serverConfig.hysteria2Settings?.serverPorts || '',
+        hopInterval: serverConfig.hysteria2Settings?.hopInterval || '',
+      };
+    }
+    return {
       address: '',
       port: 443,
       password: '',
@@ -96,32 +120,13 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
       ...echDefaults,
       serverPorts: '',
       hopInterval: '',
-    },
-  });
+    };
+  };
 
-  useEffect(() => {
-    if (serverConfig && serverConfig.protocol?.toLowerCase() === 'hysteria2') {
-      const formData = {
-        address: serverConfig.address || '',
-        port: serverConfig.port || 443,
-        password: serverConfig.password || '',
-        upMbps: serverConfig.hysteria2Settings?.upMbps ?? undefined,
-        downMbps: serverConfig.hysteria2Settings?.downMbps ?? undefined,
-        obfsEnabled: !!serverConfig.hysteria2Settings?.obfs?.type,
-        obfsType: serverConfig.hysteria2Settings?.obfs?.type || 'salamander',
-        obfsPassword: serverConfig.hysteria2Settings?.obfs?.password || '',
-        obfsMinPacketSize: serverConfig.hysteria2Settings?.obfs?.minPacketSize ?? undefined,
-        obfsMaxPacketSize: serverConfig.hysteria2Settings?.obfs?.maxPacketSize ?? undefined,
-        bbrProfile: serverConfig.hysteria2Settings?.bbrProfile || '',
-        tlsServerName: serverConfig.tlsSettings?.serverName || '',
-        tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
-        ...readEchDefault(serverConfig),
-        serverPorts: serverConfig.hysteria2Settings?.serverPorts || '',
-        hopInterval: serverConfig.hysteria2Settings?.hopInterval || '',
-      };
-      form.reset(formData);
-    }
-  }, [serverConfig, form]);
+  const form = useForm<Hysteria2FormValues>({
+    resolver: zodResolver(hysteria2FormSchema),
+    defaultValues: getDefaultValues(),
+  });
 
   const handleSubmit = async (values: Hysteria2FormValues) => {
     const serverConfig: any = {

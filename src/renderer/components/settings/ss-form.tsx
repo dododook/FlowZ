@@ -101,7 +101,7 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
       shadowTlsPassword: hasShadowTls ? (serverConfig?.shadowTlsSettings?.password ?? '') : '',
       shadowTlsSni: hasShadowTls ? (serverConfig?.shadowTlsSettings?.sni ?? '') : '',
       shadowTlsFingerprint: hasShadowTls
-        ? (serverConfig?.shadowTlsSettings?.fingerprint ?? 'chrome')
+        ? (serverConfig?.shadowTlsSettings?.fingerprint ?? 'chrome').toLowerCase()
         : 'chrome',
       shadowTlsPort: hasShadowTls
         ? (serverConfig?.shadowTlsSettings?.port ?? undefined)
