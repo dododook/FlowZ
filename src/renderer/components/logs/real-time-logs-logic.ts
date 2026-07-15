@@ -1,9 +1,8 @@
 import type { LogEntry } from '@/bridge/types';
 
 /**
- * 实时日志的纯逻辑（与 React 无关，便于在 node/.ts jest 下单测）。
- * 从 real-time-logs.tsx 抽出的搜索匹配 / 环形缓冲截断 / 级别配色映射，
- * 组件层只做订阅与渲染。
+ * 实时日志的纯逻辑（无 React 依赖，便于 jest 单测）：从 real-time-logs.tsx 抽出的搜索匹配 / 环形缓冲截断 /
+ * 级别配色映射，组件层只做订阅与渲染。
  */
 
 /**
@@ -16,7 +15,6 @@ export function logMatchesSearch(log: Pick<LogEntry, 'message' | 'level'>, term:
 }
 
 /**
- * 环形缓冲截断：仅保留最新 max 条（超出则从尾部取）。
  * 未超限时原样返回同一引用，保持 setState 幂等、避免无谓重渲。
  * max<=0 → 空数组（否则 slice(-0) 退化为 slice(0) 返全量；当前调用恒传正数、不可达，但导出函数须自洽）。
  */
@@ -45,7 +43,6 @@ export function getLevelColorClass(level: LogEntry['level']): string {
 /**
  * 级别 → pill「形+色」类（低饱和 tint 底 + 语义文字色，含 border-transparent 以贴合 ui/badge outline 基座）。
  * 单一真值：日志页级别标（logs-page）与实时日志级别标共用此函数，杜绝「两处各自内联映射」漂移。
- * warn=警告 tint / error·fatal=危险 tint / 其余（info/debug/默认）=中性 muted。
  */
 export function getLevelPillClass(level: LogEntry['level']): string {
   switch (level) {

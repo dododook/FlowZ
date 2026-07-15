@@ -16,7 +16,6 @@ interface SettingsRowProps {
   className?: string;
 }
 
-/** 标签 + 可选 ⓘ 行（tooltip 存在时横排在 label 右侧，复用 conduit .srow-lbl 的 flex 排布）。 */
 function RowLabel({ label, tooltip }: { label: ReactNode; tooltip?: ReactNode }) {
   return (
     <div className="srow-lbl">
@@ -27,9 +26,7 @@ function RowLabel({ label, tooltip }: { label: ReactNode; tooltip?: ReactNode })
 }
 
 /**
- * 统一的设置行（Conduit .srow）：左侧标签 + 副文案，右侧控件（macOS 系统设置范式）。
- * 卡内相邻 .srow 由 conduit `.srow + .srow` 规则自动生成分隔线，无需 divide-y 包裹。
- * heading → 卡头 .set-h；stacked → .srow.stacked（标签在上、控件全宽在下）。
+ * 统一设置行（macOS 系统设置范式，左标签+右控件）；卡内相邻 .srow 由 conduit `.srow + .srow` 规则自动生成分隔线，无需 divide-y 包裹。
  */
 export function SettingsRow({
   label,

@@ -109,16 +109,13 @@ export function RealTimeLogs({
     setLogs((prev) => truncateToBuffer(prev, maxBuffer));
   }, [maxBuffer]);
 
-  // 获取滚动元素（`.lv-stream` 自身）。
   const getScrollElement = useCallback(() => streamRef.current, []);
 
-  // 检查是否在底部
   const checkIsAtBottom = useCallback((element: HTMLElement) => {
     const threshold = 30; // 距离底部30px以内认为在底部
     return element.scrollTop + element.clientHeight >= element.scrollHeight - threshold;
   }, []);
 
-  // 滚到底部（程序化）。
   const scrollToBottom = useCallback(() => {
     const el = getScrollElement();
     if (el) el.scrollTop = el.scrollHeight;
@@ -135,7 +132,6 @@ export function RealTimeLogs({
     return () => el.removeEventListener('scroll', onScroll);
   }, [getScrollElement, checkIsAtBottom]);
 
-  // 新日志到达：吸附底部时跟随滚到底；脱离底部则保持不动。
   useEffect(() => {
     if (isAutoScroll) scrollToBottom();
   }, [logs, isAutoScroll, scrollToBottom]);
@@ -176,7 +172,6 @@ export function RealTimeLogs({
     // 会盖过 tailwind 分层 utility，在非定高父级下把卡压塌；h-full(height:100%) 对定高父级稳定解析。
     <div className={heightClass}>
       <div className="card log-viewer h-full">
-        {/* 顶栏：搜索（消息/级别子串过滤）+ 清空（二次确认） */}
         <div className="lv-bar">
           <div className="lv-search">
             <svg
@@ -250,7 +245,6 @@ export function RealTimeLogs({
           )}
         </div>
 
-        {/* 底栏：吸附状态 + 行数 + 到底部 */}
         <div className="lv-foot">
           <span className="lv-follow">
             <span className={cn('dot', isAutoScroll ? 'ok' : 'idle')} />

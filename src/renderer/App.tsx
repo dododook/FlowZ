@@ -58,7 +58,6 @@ function App() {
 
   // 离开设置页重置子节的逻辑已下沉到 store.setCurrentView，此处直接用 setCurrentView
 
-  // Listen to native events
   useNativeEventListeners();
 
   // 同步「节点列表按延迟排序」开关到主进程：mount 时把 localStorage 持久值推给托盘（cold-start 同序），
@@ -67,7 +66,6 @@ function App() {
     api.config.setNodeSortByLatency(nodeSortByLatency).catch(console.error);
   }, [nodeSortByLatency]);
 
-  // Load initial data
   useEffect(() => {
     loadConfig();
     refreshConnectionStatus();
@@ -75,7 +73,6 @@ function App() {
     // 此处无需主动拉取。
     // 语言不再在此推送给主进程：主进程直接读 config.language 单一真值源（见上方迁移 effect + config-change 热同步）。
 
-    // Poll connection status every 2 seconds
     const statusInterval = setInterval(() => {
       refreshConnectionStatus();
     }, 2000);
@@ -83,7 +80,6 @@ function App() {
     return () => clearInterval(statusInterval);
   }, [loadConfig, refreshConnectionStatus]);
 
-  // Listen to navigate events from main process (tray menu)
   useEffect(() => {
     const routeMap: Record<string, string> = {
       '/settings': 'settings',
@@ -110,7 +106,6 @@ function App() {
     return () => unsubscribe();
   }, [setCurrentView]);
 
-  // Listen to speed test results
   useEffect(() => {
     const unsubscribe = ipcClient.on<{
       outcome: SpeedTestOutcome;
@@ -149,7 +144,6 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // Listen to privacy mode trigger from main process idle timer
   useEffect(() => {
     const unsubscribeEnter = ipcClient.on(IPC_CHANNELS.EVENT_ENTER_PRIVACY_MODE, () => {
       setPrivacyMode(true);

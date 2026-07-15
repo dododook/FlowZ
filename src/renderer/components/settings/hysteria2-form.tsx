@@ -25,23 +25,17 @@ const createHysteria2Schema = (t: any) =>
       address: z.string().min(1, t('servers.addressRequired')),
       port: z.number().min(1).max(65535),
       password: z.string().min(1, t('servers.passwordRequired')),
-      // 带宽限制
       upMbps: z.number().optional().or(z.literal('')),
       downMbps: z.number().optional().or(z.literal('')),
-      // 混淆设置
       obfsEnabled: z.boolean(),
       obfsType: z.enum(['salamander', 'gecko']),
       obfsPassword: z.string().optional(),
       obfsMinPacketSize: z.number().optional().or(z.literal('')),
       obfsMaxPacketSize: z.number().optional().or(z.literal('')),
-      // 拥塞控制
       bbrProfile: z.string().optional(),
-      // TLS 设置
       tlsServerName: z.string().optional(),
       tlsAllowInsecure: z.boolean(),
-      // ECH
       ...echSchemaShape,
-      // 端口跳跃
       serverPorts: z.string().optional(),
       hopInterval: z.string().optional(),
     })

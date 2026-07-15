@@ -274,7 +274,6 @@ export function CoreManagementCard() {
     }
   };
 
-  // 同版本确认后强制替换
   const handleConfirmSameVersionReplace = async () => {
     const target = sameVersionConfirm;
     setSameVersionConfirm(null);
@@ -435,7 +434,6 @@ export function CoreManagementCard() {
         <small>{t('settings.coreManagement.cardSub', 'sing-box 版本、来源与更新')}</small>
       </div>
 
-      {/* 当前版本 + 来源徽章 + 检查更新 */}
       <Srow
         label={
           <>
@@ -459,7 +457,6 @@ export function CoreManagementCard() {
         </button>
       </Srow>
 
-      {/* 来源图例 */}
       <div className="src-legend">
         <span className="pill ok">{t('settings.coreManagement.sourceOfficial', '官方')}</span>
         <span className="src-note">
@@ -509,7 +506,6 @@ export function CoreManagementCard() {
         </div>
       )}
 
-      {/* 备份版本 + 回滚 */}
       {hasBackup && (
         <Srow
           label={t('settings.coreManagement.backupVersion')}
@@ -530,7 +526,6 @@ export function CoreManagementCard() {
         </Srow>
       )}
 
-      {/* 常驻「发现新内核」入口（数据源 = store.availableCoreUpdate）。crossBand 时警告色 + 风险文案。 */}
       {availableCoreUpdate && (
         <div className="set-pad" style={{ paddingTop: 0 }} ref={updateEntryRef}>
           <div
@@ -601,7 +596,6 @@ export function CoreManagementCard() {
         </div>
       )}
 
-      {/* 内核自动更新 */}
       <Srow
         label={t('settings.coreManagement.autoUpdate')}
         desc={t('settings.coreManagement.autoUpdateDesc')}
@@ -625,7 +619,6 @@ export function CoreManagementCard() {
         />
       </Srow>
 
-      {/* 手动替换内核 */}
       <Srow
         label={t('settings.coreManagement.manualReplace')}
         desc={t(
@@ -712,7 +705,6 @@ export function CoreManagementCard() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 同版本换核确认框 */}
       <AlertDialog
         open={sameVersionConfirm !== null}
         onOpenChange={(open) => {

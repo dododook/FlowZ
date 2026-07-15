@@ -28,9 +28,7 @@ type TFn = (key: string, fallback?: any) => string;
 
 /**
  * TLS serverName / SNI / Reality target —— 三种语义共用 tlsServerName 字段，标签按场景传入。
- * @param labelKey    标签 i18n key（默认 servers.tlsServerName）
- * @param placeholder 占位符（默认 example.com）
- * @param optional    true 时在标签后追加「(可选)」
+ * @param optional true 时在标签后追加「(可选)」
  */
 export function TlsServerNameField({
   control,
@@ -71,7 +69,6 @@ export function TlsServerNameField({
   );
 }
 
-/** uTLS 客户端指纹伪装下拉。统一含 none + 7 种指纹，i18n 标签。 */
 export function FingerprintField({ control, t }: { control: AnyControl; t: TFn }) {
   return (
     <FormField
@@ -232,10 +229,7 @@ export function AllowInsecureField({ control, t }: { control: AnyControl; t: TFn
   );
 }
 
-/**
- * ALPN 输入。
- * @param placeholder 占位符（如 trojan 用 http/1.1，tuic 用 h3）
- */
+/** @param placeholder 占位符（如 trojan 用 http/1.1，tuic 用 h3） */
 export function AlpnField({
   control,
   t,

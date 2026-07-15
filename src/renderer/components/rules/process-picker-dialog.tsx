@@ -68,7 +68,6 @@ export function ProcessPickerDialog({ open, onOpenChange, mode, onAdd }: Process
     });
   }, [processes, search, hideSystem, mode]);
 
-  // 选中键：name 模式用 name，path 模式用 path（无路径项不可选）
   const keyOf = (p: SystemProcessInfo) => (mode === 'path' ? p.path || '' : p.name);
 
   const toggle = (key: string) => {

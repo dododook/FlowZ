@@ -26,12 +26,7 @@ import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
 
-// 注意：zod schema 在组件外，我们需要在组件内使用 useTranslation 或者保留这里，并在渲染时翻译错误。
-// 为了简单起见，这里我们保持默认中文，并在下面使用 t() 覆盖，或者直接在 FormMessage 处处理（比较复杂）。
-// 更好的做法是将 schema 的构建移到组件内部，或者接受 t 函数。
-// 这里我们将 schema 的构建移到组件内部，以便使用 t()。
-// 所以我们移除外部定义的 schema。
-// 我们可以创建一个动态创建 schema 的函数
+// schema 含 i18n 错误文案，需要 t()，故做成工厂函数按当前语言创建，而非模块级常量。
 const createAnyTlsSchema = (t: any) =>
   z.object({
     address: z.string().min(1, t('servers.addressRequired')),

@@ -270,7 +270,7 @@ export class StatsWorkerHost implements StatsHost {
   getConnectionsSnapshot(): ConnectionsSnapshot {
     // batch3：detail 订阅的初始帧来源（registry.getInitialFrame('detail')）。at 用 worker 真实采样时刻
     // （this.connections.at），非读取时刻：连接页速率差分以采样间隔为分母，避免同一缓存被读两次 → Δbytes=0 报
-    // 速率 0、下次翻倍的抖动（review Low-2）。detail 需求已改由订阅驱动（hasSubscribers），不再记 lastPullAt。
+    // 速率 0、下次翻倍的抖动。detail 需求已改由订阅驱动（hasSubscribers），不再记 lastPullAt。
     return { connections: this.connections.connections, at: this.connections.at };
   }
 

@@ -361,7 +361,6 @@ exit 0
    * 读取经 ctx 回调注入）；原 this.logToManager → ctx.log（source 默认 'sing-box'）。
    */
   async fixFilePermissions(): Promise<void> {
-    // 只在 macOS 上需要处理
     if (process.platform !== 'darwin') {
       return;
     }
@@ -386,10 +385,8 @@ exit 0
       try {
         if (fsSync.existsSync(filePath)) {
           const stats = fsSync.statSync(filePath);
-          // 检查文件是否属于 root (uid 0)
           if (stats.uid === 0) {
             this.ctx.log('info', `修复文件权限: ${filePath}`);
-            // 使用 chown 修改文件所有权为当前用户
             const currentUser = process.env.USER || process.env.LOGNAME;
             if (currentUser) {
               try {
@@ -427,11 +424,9 @@ exit 0
   async copyFileElevated(src: string, dest: string): Promise<void> {
     const { execSync } = require('child_process') as typeof import('child_process');
 
-    // Escape single quotes in paths for PowerShell
     const escapedSrc = src.replace(/'/g, "''");
     const escapedDest = dest.replace(/'/g, "''");
 
-    // Ensure destination directory exists
     const destDir = path.dirname(dest);
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });
@@ -507,7 +502,7 @@ exit 0
     if (process.platform !== 'darwin') throw new Error('installCoreElevatedMac 仅 macOS');
     const destDir = path.dirname(dest);
     // 受保护核目录恒 root:wheel、普通用户写不动 → 不试免提权 direct copy：①避免非 EPERM 错（ENOSPC/ENOENT）在弹窗前抛、
-    // 致调用方 declinedVersion 已记却从未弹；②杜绝「万一目录松权时植入用户属主二进制」的 TOCTOU（复审硬化）。mkdir 由
+    // 致调用方 declinedVersion 已记却从未弹；②杜绝「万一目录松权时植入用户属主二进制」的 TOCTOU。mkdir 由
     // 下方 root 脚本做。落盘 root 脚本（shq 转义路径），osascript 一次性 admin 跑（mirror runRootScript）。启动期代理未连，pkill 防御性。
     const script = [
       '#!/bin/bash',
@@ -657,7 +652,7 @@ exit 0
 
       killProcess.on('error', async (error) => {
         this.ctx.log('error', `停止 sing-box 进程失败: ${error.message}`);
-        // spawn 失败（osascript 无法启动，非用户取消授权）：尽力强杀但不发 STOP_AUTH_CANCELLED（MED-2，避免误报）。
+        // spawn 失败（osascript 无法启动，非用户取消授权）：尽力强杀但不发 STOP_AUTH_CANCELLED（避免误报）。
         const ok = await this.forceKillElevated(pid, false);
         resolve({ stopped: ok });
       });
@@ -788,7 +783,7 @@ exit 0
       });
     });
     // 复核：osascript 取消授权时进程仍活 → 返回 false，并发 STOP_AUTH_CANCELLED。
-    // reportCancelled=false：spawn 失败兜底路径（osascript 无法启动，非用户取消授权）不发该事件，避免误报「停止被取消授权」（MED-2）。
+    // reportCancelled=false：spawn 失败兜底路径（osascript 无法启动，非用户取消授权）不发该事件，避免误报「停止被取消授权」。
     const stopped = !this.ctx.isProcessAlive(pid);
     if (!stopped && reportCancelled) {
       this.ctx.onStopAuthCancelled();
@@ -805,7 +800,6 @@ exit 0
 
   /**
    * 当前配置是否需要 root/admin 权限（TUN 模式）。
-   * Windows/macOS/Linux TUN 模式都需要管理员权限。
    * 迁自 ProxyManager.needsRootPrivilege：原 this.currentConfig?.proxyModeType === 'tun' → ctx.isTunMode()。
    */
   needsPrivilege(): boolean {

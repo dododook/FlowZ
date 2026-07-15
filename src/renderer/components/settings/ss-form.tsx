@@ -33,7 +33,6 @@ const createSsSchema = (t: any) =>
     plugin: z.string().optional(),
     pluginOptions: z.string().optional(),
     remarks: z.string().optional(),
-    // Shadow-TLS v3
     enableShadowTls: z.boolean(),
     shadowTlsPassword: z.string().optional(),
     shadowTlsSni: z.string().optional(),
@@ -249,7 +248,6 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
             />
           </FieldGrid>
 
-          {/* Shadow-TLS v3 */}
           <div className="nd-fset">
             <FormField
               control={form.control}

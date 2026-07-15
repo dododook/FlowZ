@@ -39,9 +39,6 @@ const execFileAsync = promisify(execFile);
 // 「best-effort 不阻断 TUN 启动」承诺）。命中即子进程被 kill、调用 reject → 经 retry/try-catch 降级为 best-effort。
 const DNS_CMD_TIMEOUT_MS = 8000;
 
-/**
- * 系统 DNS 管理器接口
- */
 export interface ISystemDnsManager {
   /** TUN 启动 → 保存原始 DNS、把系统 DNS 设为受控 IP（best-effort：失败仅告警，不阻断 TUN 启动）。 */
   setDns(): Promise<void>;
@@ -379,7 +376,7 @@ export class MacOSSystemDns extends SystemDnsBase {
         .split('\n')
         .slice(1)
         .map((l) => l.trim())
-        // 跨平台 review 🟡-2：与 SystemProxyManager.getNetworkServices 口径统一，排除 Bluetooth PAN——
+        // 与 SystemProxyManager.getNetworkServices 口径统一，排除 Bluetooth PAN——
         // 否则 DNS 接管会把 DNS 写到蓝牙网络（PAN/个人热点），关闭后可能残留。
         .filter((l) => l && !l.startsWith('*') && !l.includes('Bluetooth'))
     );
@@ -407,7 +404,7 @@ export class MacOSSystemDns extends SystemDnsBase {
         .split('\n')
         .slice(1)
         .map((l: string) => l.trim())
-        // 跨平台 review 🟡-2/M5：与 async listTargets 口径统一，排除 Bluetooth PAN——否则关机还原
+        // 与 async listTargets 口径统一，排除 Bluetooth PAN——否则关机还原
         //（restoreDnsSync 走此 sync 路径）仍会往蓝牙网络写 DNS，async/sync 服务集不一致。
         .filter((l: string) => l && !l.startsWith('*') && !l.includes('Bluetooth'))
     );
@@ -556,9 +553,6 @@ export class LinuxSystemDns extends SystemDnsBase {
   }
 }
 
-/**
- * 创建系统 DNS 管理器（按平台）。
- */
 export function createSystemDnsManager(): ISystemDnsManager {
   const platform = process.platform;
   if (platform === 'darwin') return new MacOSSystemDns();

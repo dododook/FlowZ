@@ -73,7 +73,7 @@ function udpQuery(
     if (signal.aborted) return onAbort();
     signal.addEventListener('abort', onAbort, { once: true });
     sock.on('message', (msg, rinfo) => {
-      // 硬化（review M2）：只接受来自该上游 IP:port 的响应，且响应 id 必须 == query id（前 2 字节）——
+      // 硬化：只接受来自该上游 IP:port 的响应，且响应 id 必须 == query id（前 2 字节）——
       // 防 off-path UDP 注入伪造响应污染解析。不匹配 → 忽略继续等真响应（超时由上层 budget 兜）。
       if (rinfo.address !== ip || rinfo.port !== port) return;
       if (msg.length >= 2 && query.length >= 2 && (msg[0] !== query[0] || msg[1] !== query[1])) {
@@ -203,7 +203,7 @@ export class NodeDnsRaceServer {
       sock.bind(preferredPort, '127.0.0.1', () => {
         settled = true;
         // stop() 在 re-listen 进行中被调（closing=true）→ 别复活这只 socket，否则成孤儿：端口泄漏 +
-        // isRunning() 与 ProxyManager.raceServerPort=0 状态不一致（review 二次：relistening 期 stop 竞态）。
+        // isRunning() 与 ProxyManager.raceServerPort=0 状态不一致（relistening 期 stop 竞态）。
         // resolve(0) 仅解开 listen promise 防永挂；调用方按 closing/返回值不再使用它。
         if (this.closing) {
           try {
@@ -225,7 +225,7 @@ export class NodeDnsRaceServer {
   /**
    * watchdog（fail-open 第二层）：非主动关闭时 socket 异常/关闭 → 重建。
    * 关键：重绑**原端口**（非 bind(0) 换新口）——内核 config 已烧旧端口且不因 socket 重建而重新生成，
-   * 换新口会让内核查死口致节点解析静默失效（review #1）。relistening 守卫防 'error'+'close' 双触发。
+   * 换新口会让内核查死口致节点解析静默失效。relistening 守卫防 'error'+'close' 双触发。
    */
   private onSocketDown(): void {
     if (this.closing || this.relistening) return;

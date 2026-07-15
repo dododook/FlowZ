@@ -26,7 +26,7 @@ export function ConnectionTopology() {
 
   // Responsive Container Logic：hero 随窗口宽/高自适应——实测容器尺寸喂布局（高度回退 FIXED_HEIGHT 防首帧塌陷）。
   const containerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(800); // Default start width
+  const [width, setWidth] = useState(800);
   const [height, setHeight] = useState(FIXED_HEIGHT);
 
   useEffect(() => {
@@ -49,9 +49,9 @@ export function ConnectionTopology() {
     };
   }, []);
 
-  // batch3 §3.7：拓扑订阅 'aggregate' topic——挂载即拿初始帧（= 原 CONNECTIONS_AGGREGATE_GET 回填），之后增量 push
-  // 同一通道；隐藏/卸载自动退订。非首页可见视图下本组件不挂载 → 无 aggregate 订阅者 → main 停上游 Connections 流
-  // （逐级停机）。载荷仍是小聚合（~Top-N host + 出口数），渲染端不直连 :9090、不持 secret。
+  // §3.7：拓扑订阅 'aggregate' topic——挂载即拿初始帧（= 原 CONNECTIONS_AGGREGATE_GET 回填），之后增量 push 同一通道；
+  // 隐藏/卸载自动退订。非首页可见视图下本组件不挂载 → 无 aggregate 订阅者 → main 停上游 Connections 流（逐级停机）。
+  // 载荷仍是小聚合（~Top-N host + 出口数），渲染端不直连 :9090、不持 secret。
   useStatsTopic<ConnectionsAggregate>(
     'aggregate',
     useCallback((agg: ConnectionsAggregate) => {
@@ -65,9 +65,6 @@ export function ConnectionTopology() {
     [aggregate, width, height, t]
   );
 
-  // --- Interaction Logic ---
-
-  // Trace Logic: Identify all connected nodes/links for a given hover
   const highlightedIds = useMemo(() => {
     if (!hovered) return new Set<string>();
 
@@ -132,7 +129,6 @@ export function ConnectionTopology() {
     return highlightedIds.has(`link-${index}`) ? 0.8 : 0.05;
   };
 
-  // Tooltip Content logic
   const getTooltipContent = () => {
     if (!hovered) return null;
 
@@ -165,7 +161,6 @@ export function ConnectionTopology() {
 
       const mainNode = mainNodeId ? nodes.find((n) => n.id === mainNodeId) : null;
 
-      // If we found a middle node, show its details primarily
       if (mainNode) {
         return (
           <div className="bg-popover text-popover-foreground px-3 py-2 rounded-md shadow-lg border border-border text-xs z-50 animate-in fade-in zoom-in-95 duration-200 chat-bubble">
@@ -206,7 +201,6 @@ export function ConnectionTopology() {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    // Relative to the container
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       setMousePos({
@@ -224,11 +218,9 @@ export function ConnectionTopology() {
     setHovered({ type, id });
   };
 
-  // -------- Right-click: Add domain to rule --------
   const handleNodeContextMenu = (e: React.MouseEvent, node: Node) => {
     // Only allow right-click on domain (middle/rule) nodes, not source or outbound
     if (node.type !== 'rule') return;
-    // Skip 'Others' group node
     if (node.name === t('home.others')) return;
     // Only show menu for domain-like names (contains dots or is a valid host)
     if (!node.name.includes('.') && !node.name.includes(':')) return;
@@ -252,7 +244,6 @@ export function ConnectionTopology() {
     const parts = domain.split('.');
     const rootDomain = parts.length > 2 ? parts.slice(-2).join('.') : domain;
 
-    // Check if a domain-type rule already covers this domain
     const isDomainType = (r: Rule) =>
       r.type === 'domain' || r.type === 'domainSuffix' || r.type === 'domainKeyword';
     const existing = config.customRules.find(
@@ -299,7 +290,7 @@ export function ConnectionTopology() {
           // hero flex-1 填满 topo-card（conduit .topo-card{flex:1} flex-col）；下限 300px 防挤扁。
           // 用 flex-1 而非 h-full：h-full(height:100%) 在 flex 父级下不稳解析、会塌成内容高（同 logs 修复根因）。
           // [contain:size]：内容不参与自身尺寸——否则 svg viewBox 纵横比把上次高度变成内容地板，intrinsic 经
-          // flex-basis:0 链传进 .container(min-h-full auto 高)，缩窗时 RO 永远量不到更小值（高度棘轮，Fable 定位）。
+          // flex-basis:0 链传进 .container(min-h-full auto 高)，缩窗时 RO 永远量不到更小值（高度棘轮）。
           className="relative min-h-[300px] w-full min-w-0 flex-1 cursor-default overflow-hidden [contain:size]"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
@@ -317,7 +308,6 @@ export function ConnectionTopology() {
             </div>
           )}
 
-          {/* Tooltip Layer */}
           {hovered && !contextMenu && (
             <div
               className="absolute pointer-events-none"
@@ -330,10 +320,8 @@ export function ConnectionTopology() {
             </div>
           )}
 
-          {/* Right-click Context Menu */}
           {contextMenu && (
             <>
-              {/* Backdrop to close menu */}
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setContextMenu(null)}
@@ -424,7 +412,6 @@ export function ConnectionTopology() {
               </linearGradient>
             </defs>
 
-            {/* Links */}
             {links.map((link, i) => (
               <path
                 key={`link-${i}`}
@@ -437,7 +424,6 @@ export function ConnectionTopology() {
               />
             ))}
 
-            {/* Nodes */}
             {nodes.map((node) => (
               <g
                 key={node.id}

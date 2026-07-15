@@ -87,7 +87,7 @@ export function aggregateConnections(
 }
 
 /**
- * 聚合内容签名（batch2 §3.6 change-driven）：**内容规范化后**稳定序列化 `{total, hosts, outbounds}`，**剔 `at`**。
+ * 聚合内容签名（§3.6 change-driven）：**内容规范化后**稳定序列化 `{total, hosts, outbounds}`，**剔 `at`**。
  * aggregateConnections 的展示序按 count 降序，但等计数兄弟（host / outbound / host 内 flow）的相对次序会随入参连接
  * 数组顺序漂移——connMap 的 #167 LRU 每个 UPDATE 事件 delete+set 把活跃连接移到末尾，故等计数兄弟每帧重排。裸
  * JSON.stringify 对「同内容不同顺序」产出不同签名，会把 change-driven 架空成稳定集也每帧 post（退化到 rate-cap

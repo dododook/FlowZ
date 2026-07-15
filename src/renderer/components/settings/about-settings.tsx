@@ -44,7 +44,6 @@ export function AboutSettings() {
 
   useEffect(() => {
     loadVersionInfo();
-    // 清理进度监听器
     return () => {
       if (progressUnsubscribeRef.current) {
         progressUnsubscribeRef.current();
@@ -68,11 +67,9 @@ export function AboutSettings() {
   };
 
   const handleDownloadAndInstall = async (updateInfo: any) => {
-    // 开始监听下载进度
     setDownloading(true);
     setDownloadProgress(0);
 
-    // 订阅进度更新
     progressUnsubscribeRef.current = api.update.onProgress((progress: UpdateProgress) => {
       if (progress.status === 'downloading') {
         setDownloadProgress(progress.percentage);
@@ -93,7 +90,6 @@ export function AboutSettings() {
     try {
       const downloadResult = await downloadUpdate(updateInfo);
 
-      // 取消订阅
       if (progressUnsubscribeRef.current) {
         progressUnsubscribeRef.current();
         progressUnsubscribeRef.current = null;
@@ -114,7 +110,6 @@ export function AboutSettings() {
         });
       }
     } catch (error) {
-      // 取消订阅
       if (progressUnsubscribeRef.current) {
         progressUnsubscribeRef.current();
         progressUnsubscribeRef.current = null;
@@ -221,7 +216,6 @@ export function AboutSettings() {
         />
       )}
       <div className="card set-card">
-        {/* 品牌 · 版本 · 检查更新 */}
         <div className="about-brand">
           {/* FlowZ 自有应用图标（ui/icon.svg，F/Z 导流单色渐变）——替换原通用占位 SVG（用户反馈）。 */}
           <div className="about-logo overflow-hidden !bg-transparent !p-0">
@@ -255,7 +249,6 @@ export function AboutSettings() {
           </button>
         </div>
 
-        {/* 下载进度（仅下载中） */}
         {downloading && (
           <>
             <div className="set-hair" />
@@ -273,7 +266,6 @@ export function AboutSettings() {
 
         <div className="set-hair" />
 
-        {/* 开源 · 社区外链 */}
         <div className="ext-links">
           <button type="button" className="btn ghost sm" onClick={handleReportIssue}>
             <svg
@@ -318,7 +310,6 @@ export function AboutSettings() {
           </button>
         </div>
 
-        {/* 版本细节 · 版权 */}
         <div className="about-foot">
           {t('settings.about.builtWith')}
           <br />

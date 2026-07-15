@@ -243,7 +243,6 @@ export function AddCustomAppDialog({
         </div>
 
         <div className="apd-body">
-          {/* 应用图标：内联图标库 `.ico-lib` */}
           <div className="field">
             <div className="field-lbl">
               {t('rules.customApp.iconLabel')}{' '}
@@ -267,7 +266,6 @@ export function AddCustomAppDialog({
             />
           </div>
 
-          {/* 名称（必填，内联校验） */}
           <div className="field">
             <div className="field-lbl">
               {t('rules.customApp.nameLabel')} <small>{t('rules.customApp.nameReq', '必填')}</small>
@@ -288,7 +286,6 @@ export function AddCustomAppDialog({
             )}
           </div>
 
-          {/* 分类归属（含自定义） */}
           <div className="field">
             <div className="field-lbl">
               {t('rules.customApp.categoryLabel', '分类归属')}{' '}
@@ -333,7 +330,6 @@ export function AddCustomAppDialog({
             )}
           </div>
 
-          {/* Geosite（必填至少一个，内联校验） */}
           <div className="field">
             <div className="field-lbl">
               Geosite <small>{t('rules.customApp.geositeFieldHint', '域名匹配 · 多选')}</small>
@@ -355,7 +351,6 @@ export function AddCustomAppDialog({
             )}
           </div>
 
-          {/* GeoIP */}
           <div className="field">
             <div className="field-lbl">
               GeoIP <small>{t('rules.customApp.geoipFieldHint', 'IP 段匹配 · 多选')}</small>
@@ -372,7 +367,6 @@ export function AddCustomAppDialog({
             />
           </div>
 
-          {/* 前往规则资源下载 */}
           <a
             className="apd-link"
             role="button"
@@ -393,7 +387,6 @@ export function AddCustomAppDialog({
             <ArrowRight />
           </a>
 
-          {/* 进程名（可选，逗号分隔） */}
           <div className="field">
             <div className="field-lbl">
               {t('rules.customApp.processLabel', '进程名')}{' '}

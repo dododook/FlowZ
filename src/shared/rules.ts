@@ -45,7 +45,6 @@ export const RULE_TYPE_CATEGORY: Record<RuleType, RuleCategory> = {
   ruleSet: 'ruleset',
 };
 
-/** 仅这三类域名规则支持 bypassFakeIP。 */
 export const BYPASS_FAKEIP_TYPES: RuleType[] = ['domain', 'domainSuffix', 'domainKeyword'];
 
 /**

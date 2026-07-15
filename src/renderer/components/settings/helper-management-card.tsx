@@ -9,12 +9,9 @@ import { InfoTooltip } from './shared/info-tooltip';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../../shared/constants';
 
 /**
- * 提权助手管理卡（Conduit `.card.set-card` + `.helper-top` 单活态呈现，macOS / Windows）。
- * 状态机（检查中/未安装/后台被禁/路径不符/需修复/可升级/已安装就绪）以徽章 pill + 图标色 + 单条说明 + 动作按钮呈现；
- * 原型「7 态图例」为设计展示，真实组件只渲染当前活跃态。
+ * 提权助手管理卡：状态机（检查中/未安装/后台被禁/路径不符/需修复/可升级/已安装就绪）只渲染当前活跃态一种。
  * 与首页启动提示共享同一安装逻辑（store.installHelper / uninstallHelper）。
  * backgroundDisabled / pathMismatch / upgradeable 相关 UI 仅 macOS 出现（Windows 这些 flag 恒 false）。
- * macOS「允许在后台」被关时：检测到 backgroundDisabled → 提示 + 一键打开系统设置引导用户手动开启。
  */
 export function HelperManagementCard() {
   const { t } = useTranslation();
@@ -29,9 +26,8 @@ export function HelperManagementCard() {
   const upgradeable = helperStatus?.upgradeable;
   const backgroundDisabled = helperStatus?.backgroundDisabled;
 
-  // mount 强制刷新 + 窗口 focus（切回 FlowZ=刚在系统设置改过开关）强制 fresh 检测 + focus 后 3/6/9s 各补刷一次：
-  // 捕捉"开开关后 daemon 重新 bootstrap 完成"的滞后,使开开关后切回**一次**即在几秒内自动转「已安装就绪」。
-  // **不常驻轮询**——开关关/需修复是稳定态,靠 focus 检测即可、不持续耗资源;补刷是 focus 触发的有限重试,9s 内停。
+  // mount 刷新 + 窗口 focus（切回 FlowZ=刚在系统设置改过开关）强制 fresh 检测 + focus 后 3/6/9s 各补刷一次，
+  // 捕捉 daemon 重新 bootstrap 的滞后；不常驻轮询——稳定态靠 focus 检测即可，补刷是有限重试，9s 内停。
   useEffect(() => {
     let timers: ReturnType<typeof setTimeout>[] = [];
     const clearTimers = () => {

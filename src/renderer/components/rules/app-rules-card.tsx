@@ -211,7 +211,6 @@ export function AppRulesCard() {
 
   return (
     <>
-      {/* 工具条：搜索 + 策略计数摘要 + 双视图切换 */}
       <div className="ap-toolbar">
         <label className="ap-search">
           <Search />
@@ -352,7 +351,6 @@ export function AppRulesCard() {
           </div>
         )}
 
-        {/* 新增自定义应用虚线卡（搜索时隐）。 */}
         {!appSearchQuery && (
           <div className="ap-add-zone">
             <button type="button" className="add-card" onClick={() => setIsAddDialogOpen(true)}>

@@ -83,7 +83,7 @@ export function ServerPage() {
   const manualProxyServers = serversOfGroup('manual');
   // 组网组全量（含 Tailscale）：供 tab 是否显示、state 兜底 effect 取 TS id、接入区取 tsNode/warpNode。
   const meshServersAll = serversOfGroup('mesh');
-  // 批3b：TS 融入统一节点模型 → 组网列表纳入全部组网节点（含 Tailscale），点卡=选为出口（复用全局 selectedServerId）。
+  // TS 融入统一节点模型 → 组网列表纳入全部组网节点（含 Tailscale），点卡=选为出口（复用全局 selectedServerId）。
   // 单例硬限保证至多一个 Tailscale；无则接入区渲染「连接」入口态。
   const tailscaleNode = meshServersAll.find((s) => isAccountBasedProtocol(s.protocol));
   // 已注册的 WARP 节点（单例，行为变更用户签核）；有则接入区「已接入·管理」，无则「接入」。
@@ -131,7 +131,7 @@ export function ServerPage() {
         for (const id of tsIds) {
           // 仅对缓存无记录的节点兜底（缓存=STATUS 流真值优先，不被 state 乐观值覆盖）。
           // skipCache：这是纯文件存在性推断的乐观值，不持久化进缓存（缓存只存 STATUS 真值）——
-          // 否则 revoked/过期 key 的 state 残留会让乐观 true 固化、长期误显已连接（review #3/#10/#15）。
+          // 否则 revoked/过期 key 的 state 残留会让乐观 true 固化、长期误显已连接。
           if (known[id] === undefined && existsMap[id]) {
             setTailscaleLoginState(id, true, { skipCache: true });
           }
@@ -152,7 +152,6 @@ export function ServerPage() {
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      // 如果垂直滚动幅度大于水平滚动幅度，则将其转换为水平滚动
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault();
         el.scrollLeft += e.deltaY;
@@ -222,12 +221,10 @@ export function ServerPage() {
     return res;
   };
 
-  // 页头摘要计数：共 / 自建 / 组网 / 订阅（订阅=各订阅组节点数之和）。
   const subTotal = subscriptions.reduce((n, sub) => n + serversOfGroup(sub.id).length, 0);
 
   return (
     <section className="flex flex-col gap-4" data-page="nodes">
-      {/* 页头：标题 + 摘要计数 + 全部测速 + 添加下拉 */}
       <div className="page-h">
         <h1>{t('sidebar.server')}</h1>
         <span className="nd-count">
@@ -278,7 +275,6 @@ export function ServerPage() {
           添加/导入/添加订阅已上移页头全局动作。 */}
       <div className="nd-tabs-scroll" ref={scrollContainerRef}>
         <div className="tabs">
-          {/* 自建节点 Tab（仅代理节点） */}
           <button
             type="button"
             className={activeTab === 'manual' ? 'on' : ''}
@@ -288,7 +284,7 @@ export function ServerPage() {
             {manualProxyServers.length > 0 && ` · ${manualProxyServers.length}`}
           </button>
 
-          {/* 组网 Tab 常显：批3 起它承载 TS/WG/WARP「接入组网」入口，新用户（无组网节点）也须可达。 */}
+          {/* 组网 Tab 常显：承载 TS/WG/WARP「接入组网」入口，新用户（无组网节点）也须可达。 */}
           <button
             type="button"
             className={activeTab === 'mesh' ? 'on' : ''}
@@ -298,7 +294,6 @@ export function ServerPage() {
             {meshServersAll.length > 0 && ` · ${meshServersAll.length}`}
           </button>
 
-          {/* 每个订阅一个 Tab */}
           {subscriptions.map((sub) => {
             const n = serversOfGroup(sub.id).length;
             const isUpdating = updatingSubIds.has(sub.id);
@@ -317,7 +312,6 @@ export function ServerPage() {
         </div>
       </div>
 
-      {/* 自建节点内容（仅代理节点） */}
       {activeTab === 'manual' && (
         <ServerList
           servers={manualProxyServers}
@@ -332,7 +326,7 @@ export function ServerPage() {
         />
       )}
 
-      {/* 组网节点内容：接入组网入口区（批3b：含 TS 完整登录状态机 + WARP 单例）+ 统一节点列表（含 Tailscale） */}
+      {/* 组网节点内容：接入组网入口区（含 TS 完整登录状态机 + WARP 单例）+ 统一节点列表（含 Tailscale） */}
       {activeTab === 'mesh' && (
         <div className="flex flex-col gap-4">
           <MeshAccessEntry
@@ -356,7 +350,6 @@ export function ServerPage() {
         </div>
       )}
 
-      {/* 各订阅节点内容 */}
       {subscriptions.map((sub) => {
         if (activeTab !== sub.id) return null;
         const subServers = serversOfGroup(sub.id);
@@ -367,7 +360,6 @@ export function ServerPage() {
         const pct = total ? Math.min(100, Math.round((used / total) * 100)) : 0;
         return (
           <div key={sub.id} className="flex flex-col gap-4">
-            {/* 订阅信息栏 */}
             <div className="nd-subbar">
               <div className="nd-subbar-main">
                 <div className="nd-subbar-nm">
@@ -465,7 +457,6 @@ export function ServerPage() {
               </div>
             </div>
 
-            {/* 节点列表 */}
             <ServerList
               servers={subServers}
               showAddButton={false}

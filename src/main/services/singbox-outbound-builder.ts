@@ -195,7 +195,6 @@ export function buildProxyOutbound(
   // 否则 UDP 断流且无从调整）。显式设为空串则省略该字段（不下发 packet_encoding，由核心用其默认）。
   const packetEncoding = server.packetEncoding ?? 'xudp';
 
-  // VLESS 特定配置
   if (protocol === 'vless') {
     outbound.uuid = server.uuid;
     if (server.flow) {
@@ -206,7 +205,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // VMess 特定配置
   if (protocol === 'vmess') {
     outbound.uuid = server.uuid;
     outbound.security = server.vmessSecurity || 'auto';
@@ -216,12 +214,10 @@ export function buildProxyOutbound(
     }
   }
 
-  // Trojan 特定配置
   if (protocol === 'trojan') {
     outbound.password = server.password;
   }
 
-  // Hysteria2 特定配置
   if (protocol === 'hysteria2') {
     outbound.password = server.password;
 
@@ -290,7 +286,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // AnyTLS 特定配置
   if (protocol === 'anytls') {
     outbound.password = server.password;
     // AnyTLS 的 TLS 永远开启，这里不需要额外处理，类型检查结尾部分统一生成
@@ -309,7 +304,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // Shadowsocks 特定配置
   if (protocol === 'shadowsocks') {
     if (!server.shadowsocksSettings) {
       throw new Error(`Shadowsocks server ${server.name} missing settings`);
@@ -322,7 +316,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // TUIC 特定配置
   if (protocol === 'tuic') {
     outbound.uuid = server.uuid;
     outbound.password = server.password;
@@ -345,7 +338,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // NaiveProxy 特定配置
   if (protocol === 'naive') {
     outbound.username = server.username;
     outbound.password = server.password;
@@ -373,7 +365,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // SOCKS 特定配置
   if (protocol === 'socks') {
     if (server.username) outbound.username = server.username;
     if (server.password) outbound.password = server.password;
@@ -381,7 +372,6 @@ export function buildProxyOutbound(
     (outbound as any).version = '5';
   }
 
-  // HTTP 特定配置
   if (protocol === 'http') {
     if (server.username) outbound.username = server.username;
     if (server.password) outbound.password = server.password;
@@ -397,7 +387,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // SSH 特定配置
   if (protocol === 'ssh') {
     const ssh = server.sshSettings || {};
     if (ssh.user) outbound.user = ssh.user;
@@ -471,7 +460,6 @@ export function buildProxyOutbound(
     }
   }
 
-  // Reality 配置
   if (server.security === 'reality' && server.realitySettings) {
     outbound.tls = {
       enabled: true,
@@ -489,7 +477,6 @@ export function buildProxyOutbound(
     };
   }
 
-  // 传输层配置（不适用于 hysteria2、anytls、naive）
   if (
     protocol !== 'hysteria2' &&
     protocol !== 'anytls' &&
@@ -1026,7 +1013,6 @@ export function buildOutbounds(
     domain_resolver: getDomesticResolverTag(config, 'dns-bootstrap'),
   });
 
-  // 阻断出站
   outbounds.push({
     type: 'block',
     tag: 'block',
@@ -1081,13 +1067,10 @@ export function buildOutbounds(
       };
       stlsOutbounds.push(stlsOutbound);
 
-      // 主 outbound (原本的 shadowsocks) 必须作为应用的路由目标
-      // 所以我们保留它为 proxy (shadowsocks)，但将其 detour 指向新增的 shadowtls outbound
+      // 主 outbound（原 shadowsocks）仍是应用的路由目标，故保留其 tag，只把 detour 指向新增的 shadowtls
+      // outbound：外层负责 TLS 握手连接真实服务器地址，内层 SS 是被保护的流量（detour 生效后核心会忽略
+      // 主 outbound 的 server/port，故其原参数是否保留不影响行为）。
       ob.detour = stlsTag;
-
-      // 当配置了 detour 后，sing-box 通常期望主 outbound 的 server/port 被忽略
-      // 但为了规范，我们可以保留 shadowsocks 的原参数或统一指向实际伪装的地址
-      // 在 ShadowTLS 架构中，外层负责 TLS 握手连接真实服务器地址，内层 SS 则是被保护的流量
     }
   }
   outbounds.push(...stlsOutbounds);

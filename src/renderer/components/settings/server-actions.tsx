@@ -30,7 +30,6 @@ interface ServerActionsProps extends ServerActionsContext {
   stopPropagation?: boolean;
 }
 
-// 操作按钮（卡片和列表模式共用）
 export function ServerActions({
   server,
   stopPropagation = true,

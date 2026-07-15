@@ -60,7 +60,7 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
     resolver: zodResolver(createTailscaleSchema()),
     defaultValues: {
       authKey: '',
-      allowInternet: true, // 新建默认开
+      allowInternet: true,
       reverseMesh: false, // Phase 2：反向 mesh（system_interface），默认关=userspace
       alwaysRouteSubnets: true, // 缺省开=tailnet/routes 恒可达(组网)；关=仅出网
       exitNode: '',
@@ -85,7 +85,7 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
       form.reset({
         authKey: ts?.authKey || '',
         allowInternet: ts?.allowInternet !== false, // 缺省 true（向后兼容）
-        reverseMesh: ts?.reverseMesh === true, // 缺省 false
+        reverseMesh: ts?.reverseMesh === true,
         alwaysRouteSubnets: ts?.alwaysRouteSubnets !== false, // 缺省 true（向后兼容）
         exitNode: ts?.exitNode || '',
         exitNodeAllowLanAccess: ts?.exitNodeAllowLanAccess ?? false,

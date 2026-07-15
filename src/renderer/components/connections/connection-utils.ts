@@ -52,7 +52,6 @@ export function shouldHideForPrivacy(isPrivacyMode: boolean): boolean {
   return isPrivacyMode === true;
 }
 
-/** 连接的目标展示：host 优先，回落 destinationIP，带目标端口。 */
 export function destOf(c: ConnectionEntry): string {
   const m = c.metadata || {};
   const host = m.host || m.destinationIP || '';
@@ -60,21 +59,18 @@ export function destOf(c: ConnectionEntry): string {
   return host ? `${host}${port}` : '-';
 }
 
-/** 源展示：sourceIP:sourcePort。 */
 export function sourceOf(c: ConnectionEntry): string {
   const m = c.metadata || {};
   if (!m.sourceIP) return '-';
   return m.sourcePort ? `${m.sourceIP}:${m.sourcePort}` : m.sourceIP;
 }
 
-/** 类型展示：network/type（如 tcp/Tun）。 */
 export function typeOf(c: ConnectionEntry): string {
   const m = c.metadata || {};
   const parts = [m.network, m.type].filter(Boolean);
   return parts.length ? parts.join('/') : '-';
 }
 
-/** 节点链展示。 */
 export function chainOf(c: ConnectionEntry): string {
   return c.chains && c.chains.length ? c.chains.join(' / ') : '-';
 }

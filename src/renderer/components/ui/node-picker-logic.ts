@@ -16,7 +16,6 @@ export type DotTone = 'ok' | 'warn' | 'err' | 'mesh' | 'idle';
 export interface NodePickerItem {
   /** 选中回填 / onSelect 回调的唯一值（节点 id、直连哨兵、跟随全局哨兵等）。 */
   id: string;
-  /** 展示名。 */
   name: string;
   /** 协议角标（如 vless）；缺省不显。 */
   protocol?: string;
@@ -121,7 +120,6 @@ export function findItem(
   return items.find((i) => i.id === id);
 }
 
-/** 节点多时（> 阈值）才显搜索框（默认 6）。 */
 export function shouldShowSearch(count: number, threshold = 6): boolean {
   return count > threshold;
 }

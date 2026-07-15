@@ -1,8 +1,3 @@
-/**
- * 协议解析服务
- * 负责解析 VLESS 和 Trojan 协议 URL
- */
-
 import { randomUUID } from 'crypto';
 import { isIPv6 } from 'net';
 import type {
@@ -26,19 +21,8 @@ import { isSupportedShareUrl } from '../../shared/protocol-url-schemes';
 import type { LogManager } from './LogManager';
 
 export interface IProtocolParser {
-  /**
-   * 检查 URL 是否为支持的协议
-   */
   isSupported(url: string): boolean;
-
-  /**
-   * 解析协议 URL 为服务器配置
-   */
   parseUrl(url: string): ServerConfig;
-
-  /**
-   * 将服务器配置生成为分享 URL
-   */
   generateUrl(config: ServerConfig): string;
 }
 
@@ -65,16 +49,10 @@ export class ProtocolParser implements IProtocolParser {
     else console.log(message);
   }
 
-  /**
-   * 检查 URL 是否为支持的协议
-   */
   isSupported(url: string): boolean {
     return isSupportedShareUrl(url);
   }
 
-  /**
-   * 解析协议 URL 为服务器配置
-   */
   /**
    * 预处理分享 URL，将裸 IPv6 地址（无方括号）转换为标准格式（全协议通用；无 '@' 时原样返回）。
    * 例: ss://user@2001:db8::1:8388?... → ss://user@[2001:db8::1]:8388?...
@@ -189,9 +167,6 @@ export class ProtocolParser implements IProtocolParser {
     }
   }
 
-  /**
-   * 移除 IPv6 地址两端的中括号（如果存在）
-   */
   private stripIpv6Brackets(hostname: string): string {
     if (hostname.startsWith('[') && hostname.endsWith(']')) {
       return hostname.slice(1, -1);
@@ -215,10 +190,7 @@ export class ProtocolParser implements IProtocolParser {
     return { address, port, params, name };
   }
 
-  /**
-   * 解析 VLESS URL
-   * 格式: vless://uuid@address:port?encryption=none&security=tls&type=ws&host=example.com&path=/path#name
-   */
+  /** 格式: vless://uuid@address:port?encryption=none&security=tls&type=ws&host=example.com&path=/path#name */
   private parseVless(url: URL): ServerConfig {
     const uuid = url.username;
     const { address, port, params, name } = this.parseBase(url);
@@ -238,14 +210,12 @@ export class ProtocolParser implements IProtocolParser {
       flow: params.get('flow') || undefined,
     };
 
-    // 解析传输层配置：归一化/白名单校验收口在 parseTransportSettings（内含 config.network 写入；
-    // 未知传输层（xhttp/splithttp/kcp 等 sing-box 不支持）throw 整节点拒绝，订阅逐行 catch 聚合告警）。
+    // 归一化/白名单收口于 parseTransportSettings（未知类型 throw 整节点拒绝）。
     const network = params.get('type');
     if (network) {
       this.parseTransportSettings(config, params, network);
     }
 
-    // 解析安全配置
     const security = params.get('security') as Security | null;
     if (security) {
       config.security = security;
@@ -264,10 +234,7 @@ export class ProtocolParser implements IProtocolParser {
     return config;
   }
 
-  /**
-   * 解析 Trojan URL
-   * 格式: trojan://password@address:port?security=tls&type=ws&host=example.com&path=/path#name
-   */
+  /** 格式: trojan://password@address:port?security=tls&type=ws&host=example.com&path=/path#name */
   private parseTrojan(url: URL): ServerConfig {
     const password = decodeURIComponent(url.username);
     const { address, port, params, name } = this.parseBase(url);
@@ -281,14 +248,13 @@ export class ProtocolParser implements IProtocolParser {
       password,
     };
 
-    // 解析传输层配置：归一化/白名单校验收口在 parseTransportSettings（内含 config.network 写入；
-    // 未知传输层（xhttp/splithttp/kcp 等 sing-box 不支持）throw 整节点拒绝，订阅逐行 catch 聚合告警）。
+    // 归一化/白名单收口于 parseTransportSettings（未知类型 throw 整节点拒绝）。
     const network = params.get('type');
     if (network) {
       this.parseTransportSettings(config, params, network);
     }
 
-    // 解析安全配置 (Trojan 默认通常就是 TLS)
+    // Trojan 默认即 TLS
     const security = (params.get('security') as Security | null) || 'tls';
     config.security = security;
 
@@ -307,7 +273,6 @@ export class ProtocolParser implements IProtocolParser {
   }
 
   /**
-   * 解析 Hysteria2 URL
    * 格式: hysteria2://password@address:port?obfs=salamander&obfs-password=xxx&sni=example.com&insecure=1#name
    * 或者: hy2://password@address:port?...
    */
@@ -384,10 +349,7 @@ export class ProtocolParser implements IProtocolParser {
     return config;
   }
 
-  /**
-   * 解析 TUIC URL
-   * 格式: tuic://uuid:password@address:port?congestion_control=bbr&alpn=h3&sni=link.apple.com&udp_relay_mode=native&allow_insecure=1#name
-   */
+  /** 格式: tuic://uuid:password@address:port?congestion_control=bbr&alpn=h3&sni=link.apple.com&udp_relay_mode=native&allow_insecure=1#name */
   private parseTuic(url: URL): ServerConfig {
     const params = url.searchParams;
     const name = decodeURIComponent(url.hash ? url.hash.slice(1) : '');
@@ -458,10 +420,7 @@ export class ProtocolParser implements IProtocolParser {
     return config;
   }
 
-  /**
-   * 解析 AnyTLS URL
-   * 格式: anytls://password@address:port?security=tls&sni=...&fp=chrome&pbk=...&sid=...#name
-   */
+  /** 格式: anytls://password@address:port?security=tls&sni=...&fp=chrome&pbk=...&sid=...#name */
   private parseAnyTls(url: URL): ServerConfig {
     const password = decodeURIComponent(url.username);
     const { address, port, params, name } = this.parseBase(url);
@@ -479,7 +438,6 @@ export class ProtocolParser implements IProtocolParser {
       password,
     };
 
-    // AnyTLS 会话参数
     const anyTlsSettings: AnyTlsSettings = {};
     const idleCheckInterval = normalizeDuration(params.get('idle_session_check_interval'));
     const idleTimeout = normalizeDuration(params.get('idle_session_timeout'));
@@ -498,7 +456,6 @@ export class ProtocolParser implements IProtocolParser {
       config.anyTlsSettings = anyTlsSettings;
     }
 
-    // 安全配置
     const security = params.get('security') as Security | null;
     if (security) {
       config.security = security;
@@ -578,9 +535,6 @@ export class ProtocolParser implements IProtocolParser {
     };
   }
 
-  /**
-   * 解析 Shadowsocks URL
-   */
   private parseShadowsocks(urlObj: URL): ServerConfig {
     const config: ServerConfig = {
       id: randomUUID(),
@@ -738,10 +692,7 @@ export class ProtocolParser implements IProtocolParser {
     return config;
   }
 
-  /**
-   * 解析 NaiveProxy URL
-   * 格式: http2://username:password@address:port#name
-   */
+  /** 格式: http2://username:password@address:port#name */
   private parseNaive(urlObj: URL): ServerConfig {
     const username = decodeURIComponent(urlObj.username);
     const password = decodeURIComponent(urlObj.password);
@@ -761,14 +712,12 @@ export class ProtocolParser implements IProtocolParser {
       password,
     };
 
-    // 解析传输层配置：归一化/白名单校验收口在 parseTransportSettings（内含 config.network 写入；
-    // 未知传输层（xhttp/splithttp/kcp 等 sing-box 不支持）throw 整节点拒绝，订阅逐行 catch 聚合告警）。
+    // 归一化/白名单收口于 parseTransportSettings（未知类型 throw 整节点拒绝）。
     const network = params.get('type');
     if (network) {
       this.parseTransportSettings(config, params, network);
     }
 
-    // 设置默认 TLS
     config.security = 'tls';
     config.tlsSettings = this.parseTlsSettings(params);
     if (!config.tlsSettings.serverName) {
@@ -807,7 +756,6 @@ export class ProtocolParser implements IProtocolParser {
         vmessSecurity: vmessData.scy || 'auto',
       };
 
-      // 解析传输层
       const net = (vmessData.net || 'tcp').toLowerCase();
       if (net === 'ws') {
         config.network = 'ws';
@@ -841,7 +789,6 @@ export class ProtocolParser implements IProtocolParser {
         throw new Error(`不支持的传输层类型: ${net}`);
       }
 
-      // 解析安全层
       if (vmessData.tls === 'tls') {
         config.security = 'tls';
         config.tlsSettings = {
@@ -873,14 +820,10 @@ export class ProtocolParser implements IProtocolParser {
     }
   }
 
-  /**
-   * 解析 SOCKS URL
-   * 格式: socks5://username:password@address:port#name
-   */
+  /** 格式: socks5://username:password@address:port#name */
   private parseSocks(urlObj: URL): ServerConfig {
     const { address, port, name } = this.parseBase(urlObj, 1080);
 
-    // Credentials
     const credentials = decodeURIComponent(
       urlObj.username + (urlObj.password ? ':' + urlObj.password : '')
     );
@@ -901,16 +844,11 @@ export class ProtocolParser implements IProtocolParser {
     return config;
   }
 
-  /**
-   * 解析 HTTP/HTTPS URL
-   * 格式: http://username:password@address:port#name  或者 https://...
-   */
+  /** 格式: http://username:password@address:port#name  或者 https://... */
   private parseHttp(urlObj: URL): ServerConfig {
-    // https 默认 443, http 默认 80
     const defaultPort = urlObj.protocol.includes('https') ? 443 : 80;
     const { address, port, params, name } = this.parseBase(urlObj, defaultPort);
 
-    // Credentials
     const credentials = decodeURIComponent(
       urlObj.username + (urlObj.password ? ':' + urlObj.password : '')
     );
@@ -983,9 +921,6 @@ export class ProtocolParser implements IProtocolParser {
     }
   }
 
-  /**
-   * 解析 WebSocket 配置
-   */
   private parseWebSocketSettings(params: URLSearchParams): WebSocketSettings {
     const settings: WebSocketSettings = {};
 
@@ -1012,9 +947,6 @@ export class ProtocolParser implements IProtocolParser {
     return settings;
   }
 
-  /**
-   * 解析 gRPC 配置
-   */
   private parseGrpcSettings(params: URLSearchParams): GrpcSettings {
     const settings: GrpcSettings = {};
 
@@ -1031,9 +963,6 @@ export class ProtocolParser implements IProtocolParser {
     return settings;
   }
 
-  /**
-   * 解析 HTTP 配置
-   */
   private parseHttpSettings(params: URLSearchParams): HttpSettings {
     const settings: HttpSettings = {};
 
@@ -1055,26 +984,21 @@ export class ProtocolParser implements IProtocolParser {
     return settings;
   }
 
-  /**
-   * 解析 TLS 配置
-   */
   private parseTlsSettings(params: URLSearchParams): TlsSettings {
     const settings: TlsSettings = {};
 
-    // SNI / Server Name
     const sni = params.get('sni') || params.get('host') || params.get('peer');
     if (sni) {
       settings.serverName = sni;
     }
 
-    // Allow Insecure (支持多种常见别名)
+    // 支持多种常见别名
     const allowInsecure =
       params.get('allowInsecure') || params.get('insecure') || params.get('allow_insecure');
     if (allowInsecure !== null) {
       settings.allowInsecure = allowInsecure === '1' || allowInsecure === 'true';
     }
 
-    // ALPN
     // dedupeTrim：逗号串拆分后修剪空白 + 保序去重，空值/纯空白产出空数组而非 ['']，
     // 避免带前导空格的 ALPN（如 'h2, http/1.1'）原样进 sing-box tls.alpn 致按字面匹配失败。
     const alpn = params.get('alpn');
@@ -1082,7 +1006,6 @@ export class ProtocolParser implements IProtocolParser {
       settings.alpn = dedupeTrim(alpn.split(','));
     }
 
-    // Fingerprint
     const fingerprint = params.get('fp') || params.get('fingerprint');
     if (fingerprint) {
       settings.fingerprint = fingerprint;
@@ -1091,9 +1014,6 @@ export class ProtocolParser implements IProtocolParser {
     return settings;
   }
 
-  /**
-   * 解析 Reality 配置
-   */
   private parseRealitySettings(params: URLSearchParams): RealitySettings | undefined {
     const publicKey = params.get('pbk');
     if (!publicKey) {
@@ -1185,16 +1105,11 @@ export class ProtocolParser implements IProtocolParser {
     )}`;
   }
 
-  /**
-   * 生成 AnyTLS URL
-   */
   private generateAnyTlsUrl(config: ServerConfig): string {
     const params = new URLSearchParams();
 
-    // 安全配置
     this.appendSecurityParams(params, config);
 
-    // AnyTLS 会话参数
     if (config.anyTlsSettings) {
       if (config.anyTlsSettings.idleSessionCheckInterval) {
         params.set('idle_session_check_interval', config.anyTlsSettings.idleSessionCheckInterval);
@@ -1211,9 +1126,6 @@ export class ProtocolParser implements IProtocolParser {
     return this.buildShareUrl('anytls', password, config, params);
   }
 
-  /**
-   * 生成 SOCKS URL
-   */
   private generateSocksUrl(config: ServerConfig): string {
     const username = encodeURIComponent(config.username || '');
     const password = encodeURIComponent(config.password || '');
@@ -1221,9 +1133,6 @@ export class ProtocolParser implements IProtocolParser {
     return `socks5://${credentials}${config.address}:${config.port}#${this.encodeShareName(config)}`;
   }
 
-  /**
-   * 生成 HTTP URL
-   */
   private generateHttpUrl(config: ServerConfig): string {
     const isHttps = config.security === 'tls';
     const protocolPrefix = isHttps ? 'https://' : 'http://';
@@ -1233,54 +1142,38 @@ export class ProtocolParser implements IProtocolParser {
     return `${protocolPrefix}${credentials}${config.address}:${config.port}#${this.encodeShareName(config)}`;
   }
 
-  /**
-   * 生成 VLESS URL
-   */
   private generateVlessUrl(config: ServerConfig): string {
     const params = new URLSearchParams();
 
-    // 加密方式
     if (config.encryption) {
       params.set('encryption', config.encryption);
     }
 
-    // Flow
     if (config.flow) {
       params.set('flow', config.flow);
     }
 
-    // 传输层配置
     this.appendTransportParams(params, config);
 
-    // 安全配置
     this.appendSecurityParams(params, config);
 
     return this.buildShareUrl('vless', config.uuid || '', config, params);
   }
 
-  /**
-   * 生成 Trojan URL
-   */
   private generateTrojanUrl(config: ServerConfig): string {
     const params = new URLSearchParams();
 
-    // 传输层配置
     this.appendTransportParams(params, config);
 
-    // 安全配置
     this.appendSecurityParams(params, config);
 
     const password = encodeURIComponent(config.password || '');
     return this.buildShareUrl('trojan', password, config, params);
   }
 
-  /**
-   * 生成 Hysteria2 URL
-   */
   private generateHysteria2Url(config: ServerConfig): string {
     const params = new URLSearchParams();
 
-    // Hysteria2 特定配置
     if (config.hysteria2Settings) {
       if (config.hysteria2Settings.upMbps) {
         params.set('up_mbps', config.hysteria2Settings.upMbps.toString());
@@ -1299,7 +1192,6 @@ export class ProtocolParser implements IProtocolParser {
       }
     }
 
-    // TLS 配置
     if (config.tlsSettings) {
       if (config.tlsSettings.serverName) {
         params.set('sni', config.tlsSettings.serverName);
@@ -1316,18 +1208,13 @@ export class ProtocolParser implements IProtocolParser {
     return this.buildShareUrl('hysteria2', password, config, params);
   }
 
-  /**
-   * 生成 TUIC URL
-   */
   private generateTuicUrl(config: ServerConfig): string {
     const params = new URLSearchParams();
     const name = encodeURIComponent(config.name || '');
 
-    // UUID and Password
     const uuid = config.uuid || '';
     const password = config.password || '';
 
-    // TLS Settings
     if (config.tlsSettings) {
       if (config.tlsSettings.serverName) {
         params.set('sni', config.tlsSettings.serverName);
@@ -1340,7 +1227,6 @@ export class ProtocolParser implements IProtocolParser {
       }
     }
 
-    // TUIC Settings
     if (config.tuicSettings) {
       if (config.tuicSettings.congestionControl) {
         params.set('congestion_control', config.tuicSettings.congestionControl);
@@ -1363,15 +1249,11 @@ export class ProtocolParser implements IProtocolParser {
 
     const queryStr = params.toString();
     const queryPart = queryStr ? `?${queryStr}` : '';
-    // tuic credential is uuid:password
     const credentials = encodeURIComponent(`${uuid}:${password}`);
 
     return `tuic://${credentials}@${config.address}:${config.port}${queryPart}#${name}`;
   }
 
-  /**
-   * 生成 NaiveProxy URL
-   */
   private generateNaiveUrl(config: ServerConfig): string {
     const username = encodeURIComponent(config.username || '');
     const password = encodeURIComponent(config.password || '');
@@ -1379,9 +1261,7 @@ export class ProtocolParser implements IProtocolParser {
     return this.buildShareUrl('http2', `${username}:${password}`, config, new URLSearchParams());
   }
 
-  /**
-   * 生成 VMess URL (V2RayN 格式)
-   */
+  /** V2RayN 格式（对称 parseVmess）。 */
   private generateVmessUrl(config: ServerConfig): string {
     const vmessData: any = {
       v: '2',
@@ -1422,9 +1302,6 @@ export class ProtocolParser implements IProtocolParser {
     return `vmess://${base64Data}`;
   }
 
-  /**
-   * 生成 Shadowsocks URL
-   */
   private generateShadowsocksUrl(config: ServerConfig): string {
     if (!config.shadowsocksSettings) {
       throw new Error('Shadowsocks 配置不完整');
@@ -1432,7 +1309,6 @@ export class ProtocolParser implements IProtocolParser {
 
     const { method, password, plugin, pluginOptions } = config.shadowsocksSettings;
     const userInfo = `${method}:${password}`;
-    // 标准 SS URL 使用 Base64 编码 userInfo
     // 但很多客户端也支持明文，这里遵循 SIP002 标准使用 Base64
     const userInfoBase64 = Buffer.from(userInfo).toString('base64');
 
@@ -1440,7 +1316,6 @@ export class ProtocolParser implements IProtocolParser {
     // 注意：ss:// 后面通常直接跟 base64，不带 user:pass 这种格式，而是整个 userinfo 部分 base64
     // 格式: ss://BASE64(method:password)@hostname:port
 
-    // 处理 plugin 参数
     const params = new URLSearchParams();
     if (plugin) {
       let pluginStr = plugin;
@@ -1465,9 +1340,6 @@ export class ProtocolParser implements IProtocolParser {
     return this.buildShareUrl('ss', userInfoBase64, config, params);
   }
 
-  /**
-   * 添加传输层参数
-   */
   private appendTransportParams(params: URLSearchParams, config: ServerConfig): void {
     if (config.network) {
       params.set('type', config.network);
@@ -1489,7 +1361,6 @@ export class ProtocolParser implements IProtocolParser {
       }
     }
 
-    // gRPC 配置
     if (config.network === 'grpc' && config.grpcSettings) {
       if (config.grpcSettings.serviceName) {
         params.set('serviceName', config.grpcSettings.serviceName);
@@ -1499,7 +1370,6 @@ export class ProtocolParser implements IProtocolParser {
       }
     }
 
-    // HTTP 配置
     if (config.network === 'http' && config.httpSettings) {
       if (config.httpSettings.host) {
         params.set('host', config.httpSettings.host.join(','));
@@ -1513,9 +1383,6 @@ export class ProtocolParser implements IProtocolParser {
     }
   }
 
-  /**
-   * 添加安全参数
-   */
   private appendSecurityParams(params: URLSearchParams, config: ServerConfig): void {
     if (config.security) {
       params.set('security', config.security);

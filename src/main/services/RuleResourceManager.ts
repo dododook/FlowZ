@@ -82,7 +82,7 @@ export class RuleResourceManager {
     return this.updateNetwork.resolveSessionForMainUpdate().catch(() => undefined);
   }
 
-  // 串行化所有 load-modify-save，防并发批次/删除/setGhProxy 在 load→save 窗口内交错丢写（review P2-1）
+  // 串行化所有 load-modify-save，防并发批次/删除/setGhProxy 在 load→save 窗口内交错丢写（P2-1）
   private saveChain: Promise<unknown> = Promise.resolve();
   private withLock<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.saveChain.then(fn, fn);
@@ -643,7 +643,6 @@ export class RuleResourceManager {
   // ── 资源库（catalog）：内置精选 + 动态刷新 ───────────────────────────────
   async getCatalog(): Promise<RuleResourceCatalogResult> {
     if (this.catalogCache) return this.catalogCache;
-    // 尝试读磁盘缓存
     try {
       const raw = await fs.readFile(this.catalogCachePath(), 'utf-8');
       const parsed = JSON.parse(raw) as {

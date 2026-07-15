@@ -119,7 +119,7 @@ export interface MainCoreProbe {
   /** §2：节点已编辑未生效（**传入的待测节点**参数 ≠ 运行核启动快照）→ 波前剔除。否则测的是运行核里的旧参数出口、
    *  latency 挂到新参数名下失真（徽标已经 pendingChanges 显「待生效」，此处再免测省槽 + 不存陈旧值）。
    *  传完整节点（非 id）：待测列表来自 ConfigManager 最新 config，直接比其指纹 vs 快照，避开 currentConfig 在
-   *  订阅 OFF 自动刷新路径的滞后（review F-B：currentConfig 那条路径不经 switchMode 更新会漏判）。 */
+   *  订阅 OFF 自动刷新路径的滞后（currentConfig 那条路径不经 switchMode 更新会漏判）。 */
   isDirty(server: ServerConfig): boolean;
 }
 

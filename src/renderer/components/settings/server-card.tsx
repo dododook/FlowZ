@@ -66,7 +66,6 @@ export function ServerCard({
   );
   const needsLogin = !loggingIn && tailscaleNeedsLogin(server, tailscaleLoginStates[server.id]);
 
-  // 状态点：登录中→warn；当前出口→ok；超时→warn；其余→idle。
   const dotTone = loggingIn ? 'warn' : isCurrent ? 'ok' : latency === -1 ? 'warn' : 'idle';
 
   const cls = ['nd-card'];

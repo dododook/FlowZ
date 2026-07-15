@@ -68,7 +68,6 @@ export function GeoTagPicker({
         </div>
       )}
 
-      {/* 搜索 */}
       <label className="ico-search">
         <Search />
         <input
@@ -79,7 +78,6 @@ export function GeoTagPicker({
         />
       </label>
 
-      {/* 匹配列表（仅在搜索时展开，保持紧凑） */}
       {q && (
         <div className="max-h-40 overflow-y-auto">
           {loading ? (
@@ -108,14 +106,13 @@ export function GeoTagPicker({
         </div>
       )}
 
-      {/* 友好提示：选中的「未下载」分类会在保存时下载进规则资源（与路由生成本地优先联动） */}
+      {/* 与路由生成本地优先联动 */}
       {value.some((tg) => !localTags?.has(tg)) && (
         <p className="text-[10px] leading-tight text-fg-faint">
           {t('rules.customApp.geoUnsavedHint', '「未下载」的分类将在保存时下载到规则资源')}
         </p>
       )}
 
-      {/* 刷新全量（内置/缓存只含精选） */}
       {onRefresh && (
         <button
           type="button"

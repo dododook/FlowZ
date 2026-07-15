@@ -33,7 +33,6 @@ export interface BackupFileFormat {
   config: Partial<UserConfig>;
 }
 
-/** 配置摘要信息（用于 UI 展示） */
 export interface BackupInfo {
   serverCount: number;
   manualServerCount: number;
@@ -92,7 +91,6 @@ function sanitizeCrossPlatformRules(config: UserConfig, backupPlatform?: NodeJS.
   return n;
 }
 
-/** 从 config 算摘要（导出/导入后展示用）。 */
 function buildBackupInfo(
   config: Partial<UserConfig>,
   crossPlatformDisabledRules?: number
@@ -118,9 +116,6 @@ const IMPORT_FILTERS = [
   { name: '所有文件', extensions: ['*'] },
 ];
 
-/**
- * 注册备份与恢复 IPC 处理器
- */
 export function registerBackupHandlers(
   configManager: ConfigManager,
   ruleResourceManager: RuleResourceManager
@@ -240,7 +235,7 @@ export function registerBackupHandlers(
       await configManager.saveConfig(merged);
 
       // 重新 loadConfig 让迁移（含 FakeIP-TUN 待纠正评估）对导入配置即时生效，再广播 fresh——否则导入的 systemProxy
-      // 冻结态直接广播 merged（flag 未评估）会漏掉 FakeIP-TUN 纠正窗口、被同会话切 TUN 永久消费（复审 L3）。
+      // 冻结态直接广播 merged（flag 未评估）会漏掉 FakeIP-TUN 纠正窗口、被同会话切 TUN 永久消费。
       const fresh = await configManager.loadConfig();
       ipcEventEmitter.sendToAll('event:configChanged', { newValue: fresh });
       mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, fresh);

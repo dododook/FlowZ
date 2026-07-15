@@ -9,9 +9,6 @@ import { effectiveLogLevel } from '../../shared/log-level';
 import { getSingBoxLogPath } from '../utils/paths';
 import type { SingBoxLogConfig } from './singbox-config-types';
 
-/**
- * 生成日志配置
- */
 export function buildLogConfig(config: UserConfig, privacyMode: boolean): SingBoxLogConfig {
   // 日志级别由用户配置（默认 info）。level 影响是否记录访问域名/SNI（info/debug 会记，warn+ 不记）。
   // 隐私模式经 effectiveLogLevel 抬到 ≥warn，从源头不让 sing-box 记录连接明细到 singbox.log。

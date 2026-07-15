@@ -223,9 +223,7 @@ export function Sidebar({
       {collapsed && <div className={RAIL_DIVIDER_CLASS} />}
 
       {isSettings ? (
-        /* ── Settings sub-navigation ── */
         <>
-          {/* Settings sub-nav items */}
           <nav className="flex-1 app-region-no-drag space-y-[6px] overflow-hidden">
             {settingsNavItems.map((item) =>
               renderNavItem(
@@ -257,7 +255,6 @@ export function Sidebar({
           </div>
         </>
       ) : (
-        /* ── Main navigation ── */
         <>
           <nav className="flex-1 pb-2 app-region-no-drag overflow-hidden">
             {mainNavGroups.map((group, gi) => (
@@ -278,7 +275,6 @@ export function Sidebar({
             ))}
           </nav>
 
-          {/* Settings pinned to bottom */}
           <div className="pb-4 app-region-no-drag space-y-[6px]">
             {renderNavItem(
               { id: 'settings', icon: SettingsIcon },

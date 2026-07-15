@@ -75,7 +75,6 @@ export function AppearanceSettings() {
 
   return (
     <div className="set-panel">
-      {/* 主题 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.appearance.theme', '主题')}</b>
@@ -97,7 +96,6 @@ export function AppearanceSettings() {
         </SettingsRow>
       </div>
 
-      {/* 语言 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.appearance.language', '语言')}</b>

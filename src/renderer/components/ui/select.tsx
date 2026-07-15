@@ -96,8 +96,7 @@ const SelectLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    // 组名与列表项分层：小一号字(text-xs)+ 弱化色(muted)+ 左对齐到容器边(px-2,去掉项的 pl-8 缩进)+ 上留白(pt-2)
-    // 制造组间分割。组名像分组标题、项在其下缩进，不再混作一团；与 server-select-groups 的组名风格统一。
+    // 组名弱化小字 + 去缩进左对齐 + 上留白，与列表项分层不再混作一团；风格与 server-select-groups 的组名统一。
     className={cn('px-2 pb-1.5 pt-2 text-xs font-semibold text-fg-faint', className)}
     {...props}
   />

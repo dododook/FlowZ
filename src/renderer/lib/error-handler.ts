@@ -2,9 +2,6 @@ import { toast } from 'sonner';
 import i18n from '../i18n';
 import { ProxyErrorCode, isProxyErrorCode } from '../../shared/types';
 
-/**
- * 错误类别
- */
 export enum ErrorCategory {
   Config = 'Config',
   Connection = 'Connection',
@@ -13,26 +10,16 @@ export enum ErrorCategory {
   Unknown = 'Unknown',
 }
 
-/**
- * 应用程序错误接口
- */
 export interface AppError {
   category: ErrorCategory;
   userMessage: string;
   technicalMessage?: string;
 }
 
-/**
- * 错误处理器类
- */
 export class ErrorHandler {
-  /**
-   * 处理应用程序错误
-   */
   static handle(error: AppError): void {
     console.error(`[${error.category}] ${error.userMessage}`, error.technicalMessage);
 
-    // 根据错误类别显示不同的提示
     switch (error.category) {
       case ErrorCategory.Config:
         this.handleConfigError(error);
@@ -51,9 +38,6 @@ export class ErrorHandler {
     }
   }
 
-  /**
-   * 处理 API 调用错误
-   */
   static handleApiError(error: unknown, context: string): void {
     console.error(`API Error in ${context}:`, error);
 
@@ -66,7 +50,6 @@ export class ErrorHandler {
       userMessage = error;
     }
 
-    // 仅用于错误分类
     if (this.isTrojanError(userMessage)) {
       category = ErrorCategory.Connection;
     } else if (this.isProtocolError(userMessage)) {
@@ -80,17 +63,11 @@ export class ErrorHandler {
     });
   }
 
-  /**
-   * Check if error is Trojan-specific
-   */
   private static isTrojanError(message: string): boolean {
     const trojanKeywords = ['trojan', 'Trojan', '认证失败', '密码错误', 'TLS 握手失败'];
     return trojanKeywords.some((keyword) => message.includes(keyword));
   }
 
-  /**
-   * Check if error is protocol-related
-   */
   private static isProtocolError(message: string): boolean {
     return (
       message.includes('不支持的协议') ||
@@ -99,30 +76,18 @@ export class ErrorHandler {
     );
   }
 
-  /**
-   * 显示成功提示
-   */
   static showSuccess(message: string): void {
     toast.success(message);
   }
 
-  /**
-   * 显示信息提示
-   */
   static showInfo(message: string): void {
     toast.info(message);
   }
 
-  /**
-   * 显示警告提示
-   */
   static showWarning(message: string): void {
     toast.warning(message);
   }
 
-  /**
-   * 显示错误提示
-   */
   static showError(message: string, description?: string): void {
     toast.error(message, {
       description,

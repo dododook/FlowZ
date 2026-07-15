@@ -15,13 +15,11 @@ type IconItem = { name: string; url: string };
 // 模块级缓存：已拉取的图标库跨组件挂载持久化（图标库每次打开不重拉 CDN）；空结果不缓存（length>0 才跳过重拉）。
 let _iconGalleryCache: IconItem[] = [];
 
-// emoji 兜底调色板（远端图标不可用/不想用时的快速选择）。
 const EMOJI_PALETTE = ['🌐', '📺', '🎬', '🎮', '💬', '🤖', '🛒', '🎵'];
 
 interface IconGalleryPickerProps {
   /** 当前 emoji（无 iconUrl 时展示 + `.sel` 高亮）。 */
   emoji: string;
-  /** 当前远端/URL 图标。 */
   iconUrl: string;
   /** 应用名（首字母回退用）。 */
   appName: string;
@@ -29,7 +27,6 @@ interface IconGalleryPickerProps {
   onPickRemote: (url: string, suggestedName: string) => void;
   /** 选中 emoji（清 iconUrl、置 emoji）。 */
   onPickEmoji: (emoji: string) => void;
-  /** 应用手动粘贴的图标 URL。 */
   onApplyUrl: (url: string) => void;
 }
 

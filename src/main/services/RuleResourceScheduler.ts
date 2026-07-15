@@ -149,7 +149,6 @@ export class RuleResourceScheduler {
       if (staleIds.length === 0) return;
 
       const results = await this.ruleResourceManager.updateMany(staleIds, { silent: true });
-      // 退避记账（用 r.id）：成功清退避、失败指数退避。
       for (const r of results) {
         if (!r.id) continue;
         if (r.ok) this.backoff.recordSuccess(r.id);

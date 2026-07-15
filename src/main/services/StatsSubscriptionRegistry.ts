@@ -1,5 +1,5 @@
 /**
- * StatsSubscriptionRegistry —— stats 数据面订阅表（batch3 §3.7，推翻-1/-3 收口）。
+ * StatsSubscriptionRegistry —— stats 数据面订阅表（batch3 §3.7）。
  *
  * 背景：batch2 把 worker demand 收敛成 setDemand，但 demand 的**源**仍是「窗口可见」（isUiActive）——非首页可见视图
  * （设置页）下拓扑流仍在跑（Mac 真机 0.47Hz）。batch3 把源换成 renderer 按 topic 精确声明的订阅：无订阅者 → 逐级停机。

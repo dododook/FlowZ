@@ -24,7 +24,7 @@ const TOTAL_PROBE_BUDGET_MS = 10_000;
 // 出口 IP 启动初期隧道/DNS 未就绪 → 首测易失败。重试至 MAX_PROBE_ATTEMPTS 上限、每次间隔 RETRY_DELAY_MS，
 // 期间保持 loading（界面显「获取中」）；全部失败才报错（界面友好提示，不闪「获取失败」）。
 //
-// 收敛重试预算（#86-122 复审 #10）：原 3 次重试 × 链内 3 端点串行 × 5s 超时 ≈ 最坏 45s，全失败时经
+// 收敛重试预算（#86-122）：原 3 次重试 × 链内 3 端点串行 × 5s 超时 ≈ 最坏 45s，全失败时经
 // enqueue 串行链堵住后续 refreshProxy（切节点连点会叠加）。每次 attempt 内 queryViaProxy/queryDirectChain
 // 已串行多端点容错，第 3 轮边际收益低却贡献 1/3 最坏延迟 → 降到 2 轮：最坏 ~45s→~30s，成功路径零影响
 // （成功首跳即返回，不触发重试/超时）；startup 初期仍有 2 轮 × 多端点 + 间隔重试覆盖隧道抖动。
@@ -92,7 +92,7 @@ export function parseTrace(body: string): IpInfo | null {
   const kv: Record<string, string> = {};
   for (const line of body.split('\n')) {
     const t = line.trim();
-    if (!t) continue; // 忽略空行
+    if (!t) continue;
     const i = t.indexOf('=');
     if (i <= 0) continue; // 无 '=' 或以 '=' 开头（无 key）→ 跳过
     kv[t.slice(0, i)] = t.slice(i + 1).trim();
@@ -508,7 +508,6 @@ export class IpInfoService {
     return fetch(EP_IPIP);
   }
 
-  /** 代理出口：经探针端口依次尝试 PROXY_CHAIN，首个成功即返回。 */
   private async queryViaProxy(proxyPort: number): Promise<IpInfo | null> {
     for (const ep of PROXY_CHAIN) {
       const r = await this.viaProbe(proxyPort, ep);
@@ -524,7 +523,7 @@ export class IpInfoService {
 
   /**
    * 传输层：取响应体纯文本。保留原有兜底（提前关闭/oversize destroy/timeout/error 均返 null，防 promise 永挂
-   * 死整条刷新链——review P1）；新增 statusCode!==200 即返 null（顺手对所有端点加固：301/403/5xx 直接降级，
+   * 死整条刷新链）；新增 statusCode!==200 即返 null（顺手对所有端点加固：301/403/5xx 直接降级，
    * 不再单靠 parse 失败兜底）。
    */
   private httpText(options: http.RequestOptions): Promise<string | null> {
@@ -549,7 +548,7 @@ export class IpInfoService {
         res.on('data', (c) => {
           body += c;
           // 防异常大响应（如劫持页/portal/WAF 的大 HTML）。必须带 error 参数，否则 destroy() 不发
-          // error/end 事件 → done 永不调用 → enqueue 的 inflight 永挂、IP 卡永久转圈（review P1）。
+          // error/end 事件 → done 永不调用 → enqueue 的 inflight 永挂、IP 卡永久转圈。
           if (body.length > 8192) req.destroy(new Error('oversize'));
         });
         res.on('end', () => done(body));

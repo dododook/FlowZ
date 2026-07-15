@@ -18,12 +18,10 @@ export class BackoffTracker {
     return !bo || now >= bo.nextEligibleAt;
   }
 
-  /** 记成功：清除该 id 的退避。 */
   recordSuccess(id: string): void {
     this.state.delete(id);
   }
 
-  /** 记失败：失败次数 +1，计算下次可尝试时刻，返回 { failures, delayMs }。 */
   recordFailure(id: string, now: number): { failures: number; delayMs: number } {
     const failures = (this.state.get(id)?.failures ?? 0) + 1;
     const delayMs = Math.min(this.baseMs * 2 ** (failures - 1), this.maxMs);

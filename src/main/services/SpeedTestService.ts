@@ -319,15 +319,12 @@ export class SpeedTestService {
     return results;
   }
 
-  /**
-   * 测试单个服务器 (TCP Ping)
-   */
   private async testTcpServer(server: ServerConfig): Promise<SpeedTestResult> {
     const start = Date.now();
     try {
       await new Promise<void>((resolve, reject) => {
         const socket = new net.Socket();
-        const timeout = 5000; // 5秒超时
+        const timeout = 5000;
 
         socket.setTimeout(timeout);
 
@@ -596,7 +593,6 @@ export class SpeedTestService {
           'SpeedTest'
         );
       }
-      // 清理临时进程
       if (singboxProcess && !singboxProcess.killed) {
         singboxProcess.kill('SIGTERM');
         const forceKillTimer = setTimeout(() => {
@@ -608,7 +604,6 @@ export class SpeedTestService {
         }, 2000);
         singboxProcess.on('exit', () => clearTimeout(forceKillTimer));
       }
-      // 清理临时配置文件
       if (configFilePath) {
         try {
           await fs.unlink(configFilePath);
@@ -892,9 +887,6 @@ export class SpeedTestService {
     return config;
   }
 
-  /**
-   * 为单个 UDP 服务器生成 sing-box outbound 配置
-   */
   private buildOutbound(server: ServerConfig, tag: string): Record<string, unknown> {
     const protocol = server.protocol.toLowerCase();
 
@@ -1291,7 +1283,7 @@ export class SpeedTestService {
         // issue #154 ③ 校验响应码：非 2xx（如 cp.cloudflare 经 CF-Workers 的 403）判失败，不再把错误页当成功记 TTFB。
         const code = parseHttpStatusCode(buf.slice(sl));
         // code===null：响应头收齐但状态行无法解析出 3 位码（畸形/非标准）——无法确认 2xx，判失败，
-        // 否则畸形响应会被当成功记 TTFB，软重引入 #154 修复前「错误页当成功」的问题（review #4）。
+        // 否则畸形响应会被当成功记 TTFB，软重引入 #154 修复前「错误页当成功」的问题。
         if (code === null || !isAcceptableSpeedTestStatus(code)) {
           finish(null, code === null ? 'http-unparsable' : `http-${code}`);
           return;
@@ -1323,9 +1315,6 @@ export class SpeedTestService {
     await Promise.all(workers);
   }
 
-  /**
-   * 找到多个系统可用的空闲端口
-   */
   private async findFreePorts(count: number): Promise<number[]> {
     const servers: net.Server[] = [];
     const ports: number[] = [];

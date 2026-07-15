@@ -32,7 +32,7 @@ export interface IconProtocolDeps {
 }
 
 // viaProxy 决策的 config 短 TTL 缓存：图标库网格一次渲染会并发数百个 flowz-icon:// 请求，每请求都
-// loadConfig（读盘+校验+sweepStaleTmpFiles）会拖垮主进程（review MEDIUM）。mainSessionViaProxy 变化频率
+// loadConfig（读盘+校验+sweepStaleTmpFiles）会拖垮主进程。mainSessionViaProxy 变化频率
 // 远低于渲染，1s TTL 足够新鲜；proxyRunning / update-in 端口走 thunk（内存、廉价）每次取最新、不缓存。
 let cfgMsvpCache: { value: boolean | undefined; expiry: number } | null = null;
 const CFG_CACHE_TTL_MS = 1000;

@@ -1,7 +1,3 @@
-/**
- * React hook for listening to IPC events from Electron main process
- */
-
 import { useEffect } from 'react';
 import { api } from '../ipc';
 import { unlockApi } from '../ipc/api-client';
@@ -26,7 +22,6 @@ import type {
   UnlockInvalidatedPayload,
 } from '../../shared/unlock-detection';
 
-// 定义事件数据类型
 interface NativeEventData {
   processStarted: { pid: number | null; startTime?: string | Date; autoRestarted?: boolean };
   processStopped: Record<string, never>;
@@ -58,7 +53,7 @@ interface NativeEventData {
   // sing-box 1.14 管理 API 推送的 Tailscale 节点真实态（取代 1.13 的 state 目录/stdout 启发式）。
   // = 共享 TailscaleStatusEvent（含 self IP / peers / exitNode，L2/L3）；单一真值防 duck-typing 漂移。
   tailscaleStatus: TailscaleStatusEvent;
-  // 启动前属主归一删掉某节点 root 残留 state（登录态失效）→ 渲染端清缓存 + 登录态（review #4）。
+  // 启动前属主归一删掉某节点 root 残留 state（登录态失效）→ 渲染端清缓存 + 登录态。
   tailscaleStateCleared: { serverId: string };
   systemProxyResidual: { proxy: string };
   speedTestResult: { serverId: string; latency: number };
@@ -157,14 +152,12 @@ export function useNativeEvent<K extends keyof NativeEventData>(
 // 处理器直接引用静态导入的 useAppStore（无循环依赖），去掉原先逐次 import('../store/app-store')。
 
 function handleProcessStarted(_data: NativeEventData['processStarted']) {
-  // Refresh connection status when process starts
   useAppStore.getState().refreshConnectionStatus();
   // §2 待应用差集：起核后运行核快照刷新 → 差集应清零（原待应用变更已入核）。
   useAppStore.getState().refreshPendingChanges();
 }
 
 function handleProcessStopped(_data: NativeEventData['processStopped']) {
-  // Refresh connection status when process stops
   useAppStore.getState().refreshConnectionStatus();
   // §2 待应用差集：停核后无运行核快照 → 差集应清空（动作条隐藏）。
   useAppStore.getState().refreshPendingChanges();
@@ -177,27 +170,22 @@ function handleProcessError(data: NativeEventData['processError']) {
 
   // 各 emit 点 message/error 不一致 → 统一取值，避免「崩溃达上限」等场景因只读 data.error 而漏弹 toast
   const errText = data.message ?? data.error;
-  // Display user-friendly error notification
   if (errText) {
     // F15：优先按主进程附带的结构化 errorCode 分类；无码（旧主进程/未覆盖路径）才回落到中文字符串匹配。
     let category = proxyErrorCategory(data.errorCode);
     if (category === null) {
       category = ErrorCategory.Process;
-      // Check for Trojan-specific errors
       if (errText.includes('Trojan') || errText.includes('trojan')) {
         category = ErrorCategory.Connection;
       }
-      // Check for VLESS-specific errors
       if (errText.includes('VLESS') || errText.includes('vless')) {
         category = ErrorCategory.Connection;
       }
-      // Check for protocol errors
       if (errText.includes('不支持的协议') || errText.includes('Protocol')) {
         category = ErrorCategory.Config;
       }
     }
 
-    // Handle the error with appropriate category
     ErrorHandler.handle({
       category,
       userMessage: errText,
@@ -218,22 +206,19 @@ function handleConfigChanged(data: NativeEventData['configChanged']) {
   useAppStore.getState().refreshPendingChanges();
 }
 
-// batch3 §3.7：stats 帧改经 useStatsTopic('stats') 订阅（取代旧全局 api.stats.onUpdated）。payload 即最新
+// §3.7：stats 帧改经 useStatsTopic('stats') 订阅（取代旧全局 api.stats.onUpdated）。payload 即最新
 // TrafficStats，直接写 store（省去 refreshStatistics 的二次 IPC 拉取）。
 function handleStatsUpdated(data: TrafficStats) {
   useAppStore.setState({ stats: data });
 }
 
 function handleIpInfoUpdated(data: NativeEventData['ipInfoUpdated']) {
-  // 事件 payload 即最新出口 IP 快照，直接写 store
   useAppStore.setState({ ipInfo: data });
 }
 
 function handleAutoNodeSwitched(data: NativeEventData['autoNodeSwitched']) {
-  // 刷新连接状态和配置，以反映新节点
   useAppStore.getState().refreshConnectionStatus();
   useAppStore.getState().loadConfig();
-  // 显示 toast 通知
   toast.success(i18n.t('home.autoSwitched', { name: data.newServerName, latency: data.latency }), {
     description: i18n.t('home.autoSwitchedDesc'),
     duration: 5000,
@@ -353,7 +338,7 @@ function handleTailscaleStatus(data: NativeEventData['tailscaleStatus']) {
 }
 
 // 启动前属主归一删掉某节点 root 残留 state（登录态已失效）→ 清登录缓存 + 登录态，避免陈旧 loggedIn=true
-// 与已清空 state 撕裂（review #4）。代理开启后真实 STATUS 流仍会再校正。
+// 与已清空 state 撕裂。代理开启后真实 STATUS 流仍会再校正。
 function handleTailscaleStateCleared(data: NativeEventData['tailscaleStateCleared']) {
   useTailscaleLoginCacheStore.getState().removeCached(data.serverId);
   useAppStore.getState().setTailscaleLoginState(data.serverId, false);
@@ -399,7 +384,7 @@ function handleUnlockUpdated(data: NativeEventData['unlockUpdated']) {
   useAppStore.getState().applyUnlockSnapshot(data);
 }
 function handleUnlockInvalidated(data: NativeEventData['unlockInvalidated']) {
-  // 失效（切节点/起停/G-flip/G-flip2）：据**主进程带来的核真态**判分支（review#1/#3：渲染端 connectionStatus/
+  // 失效（切节点/起停/G-flip/G-flip2）：据**主进程带来的核真态**判分支（渲染端 connectionStatus/
   // proxyBlocked 在 invalidate 抵达时常陈旧——invalidate 先于 EVENT_PROXY_STARTED / IP_INFO_UPDATED）。
   // 核在跑且出口有效 → 显「检测中」（后台 self-run 1.5s 后跑，结果经 EVENT_UNLOCK_UPDATED 回填）；否则 → idle。
   if (data.running && !data.exitBlocked) useAppStore.getState().beginUnlockCheck();
@@ -479,7 +464,7 @@ export function useNativeEventListeners() {
   useNativeEvent('processStopped', handleProcessStopped);
   useNativeEvent('processError', handleProcessError);
   useNativeEvent('configChanged', handleConfigChanged);
-  // batch3 §3.7：stats 走订阅驱动 useStatsTopic（App 常驻，可见即订阅、隐藏退订），取代全局 statsUpdated 事件。
+  // §3.7：stats 走订阅驱动 useStatsTopic（App 常驻，可见即订阅、隐藏退订），取代全局 statsUpdated 事件。
   useStatsTopic<TrafficStats>('stats', handleStatsUpdated);
   useNativeEvent('ipInfoUpdated', handleIpInfoUpdated);
   useNativeEvent('autoNodeSwitched', handleAutoNodeSwitched);

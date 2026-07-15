@@ -1,8 +1,3 @@
-/**
- * 日志管理服务
- * 负责日志记录、存储、查询和级别过滤
- */
-
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -59,9 +54,6 @@ export class LogManager extends EventEmitter implements ILogManager {
     this.initPromise = this.ensureLogDirectory();
   }
 
-  /**
-   * 确保日志目录存在
-   */
   private async ensureLogDirectory(): Promise<void> {
     const logDir = path.dirname(this.logFilePath);
     try {
@@ -71,30 +63,18 @@ export class LogManager extends EventEmitter implements ILogManager {
     }
   }
 
-  /**
-   * 设置日志级别
-   */
   setLogLevel(level: LogLevel): void {
     this.currentLogLevel = level;
   }
 
-  /**
-   * 获取当前日志级别
-   */
   getLogLevel(): LogLevel {
     return this.currentLogLevel;
   }
 
-  /**
-   * 检查日志级别是否应该被记录
-   */
   private shouldLog(level: LogLevel): boolean {
     return this.logLevelPriority[level] >= this.logLevelPriority[this.currentLogLevel];
   }
 
-  /**
-   * 添加日志条目
-   */
   addLog(level: LogLevel, message: string, source: string, stack?: string): void {
     // 折叠连续相同日志（防同一行被风暴/重试/多源短时间刷屏）——文件与 UI 都受益，故置于级别过滤之前。
     const foldKey = `${level}|${source}|${message}`;
@@ -148,10 +128,7 @@ export class LogManager extends EventEmitter implements ILogManager {
     this.emit('log', entry);
   }
 
-  /**
-   * 等待所有待处理的写入操作完成
-   * 主要用于测试和优雅关闭
-   */
+  /** 主要用于测试和优雅关闭。 */
   async flush(): Promise<void> {
     await Promise.all(Array.from(this.pendingWrites));
   }
@@ -164,9 +141,6 @@ export class LogManager extends EventEmitter implements ILogManager {
     return this.droppedDueToBackpressure;
   }
 
-  /**
-   * 获取日志条目
-   */
   getLogs(limit?: number): LogEntry[] {
     if (limit === undefined || limit <= 0) {
       return [...this.logs];
@@ -174,9 +148,6 @@ export class LogManager extends EventEmitter implements ILogManager {
     return this.logs.slice(-limit);
   }
 
-  /**
-   * 清空日志（内存和文件）
-   */
   clearLogs(): void {
     this.logs = [];
     // 异步清空日志文件
@@ -185,16 +156,12 @@ export class LogManager extends EventEmitter implements ILogManager {
     });
   }
 
-  /**
-   * 清空所有日志文件
-   */
   private async clearLogFiles(): Promise<void> {
     try {
       await this.initPromise;
       const logDir = path.dirname(this.logFilePath);
       const logBaseName = path.basename(this.logFilePath, '.log');
 
-      // 清空主日志文件（截断为空）
       try {
         await fs.writeFile(this.logFilePath, '', 'utf-8');
       } catch (error: any) {
@@ -203,13 +170,11 @@ export class LogManager extends EventEmitter implements ILogManager {
         }
       }
 
-      // 删除所有轮转的日志文件
       for (let i = 1; i <= this.maxLogFiles; i++) {
         const rotatedLogFile = path.join(logDir, `${logBaseName}.${i}.log`);
         try {
           await fs.unlink(rotatedLogFile);
         } catch (error: any) {
-          // 文件不存在，忽略
           if (error.code !== 'ENOENT') {
             console.error(`Failed to delete rotated log file ${rotatedLogFile}:`, error);
           }
@@ -220,15 +185,10 @@ export class LogManager extends EventEmitter implements ILogManager {
     }
   }
 
-  /**
-   * 写入日志到文件
-   */
   private async writeToFile(entry: LogEntry): Promise<void> {
     try {
-      // 等待初始化完成
       await this.initPromise;
 
-      // 检查文件大小，如果超过限制则轮转
       await this.rotateLogIfNeeded();
 
       const line = this.formatLogEntry(entry);
@@ -238,9 +198,6 @@ export class LogManager extends EventEmitter implements ILogManager {
     }
   }
 
-  /**
-   * 格式化日志条目
-   */
   private formatLogEntry(entry: LogEntry): string {
     const timestamp = entry.timestamp; // 已经是 ISO 字符串
     const level = entry.level.toUpperCase().padEnd(5);
@@ -254,9 +211,6 @@ export class LogManager extends EventEmitter implements ILogManager {
     return line;
   }
 
-  /**
-   * 检查并轮转日志文件
-   */
   private async rotateLogIfNeeded(): Promise<void> {
     try {
       const stats = await fs.stat(this.logFilePath);
@@ -271,40 +225,32 @@ export class LogManager extends EventEmitter implements ILogManager {
     }
   }
 
-  /**
-   * 轮转日志文件
-   */
   private async rotateLogFiles(): Promise<void> {
     try {
       const logDir = path.dirname(this.logFilePath);
       const logBaseName = path.basename(this.logFilePath, '.log');
 
-      // 删除最旧的日志文件
       const oldestLog = path.join(logDir, `${logBaseName}.${this.maxLogFiles}.log`);
       try {
         await fs.unlink(oldestLog);
       } catch (error: any) {
-        // 文件不存在，忽略
         if (error.code !== 'ENOENT') {
           console.error('Failed to delete oldest log file:', error);
         }
       }
 
-      // 重命名现有日志文件
       for (let i = this.maxLogFiles - 1; i >= 1; i--) {
         const oldPath = path.join(logDir, `${logBaseName}.${i}.log`);
         const newPath = path.join(logDir, `${logBaseName}.${i + 1}.log`);
         try {
           await fs.rename(oldPath, newPath);
         } catch (error: any) {
-          // 文件不存在，忽略
           if (error.code !== 'ENOENT') {
             console.error(`Failed to rename log file ${oldPath}:`, error);
           }
         }
       }
 
-      // 重命名当前日志文件
       const newPath = path.join(logDir, `${logBaseName}.1.log`);
       await fs.rename(this.logFilePath, newPath);
     } catch (error) {

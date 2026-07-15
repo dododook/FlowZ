@@ -46,7 +46,6 @@ export function BackupCategoryDialog({
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<BackupCategory>>(new Set());
 
-  // 打开 / 可选类别变化 → 默认全选
   useEffect(() => {
     if (open) setSelected(new Set(categories));
   }, [open, categories]);
@@ -121,7 +120,6 @@ export function BackupCategoryDialog({
           </DialogDescription>
 
           <div className="bk-cats">
-            {/* 全选（含半选态 indeterminate） */}
             <label className="bk-cat">
               <input
                 type="checkbox"

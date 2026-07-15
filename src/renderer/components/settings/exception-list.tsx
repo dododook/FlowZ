@@ -11,7 +11,6 @@ interface ExceptionListProps {
   /** 提交回调（onBlur / 恢复默认） */
   onChange?: (values: string[]) => void;
   placeholder?: string;
-  /** 一句辅助说明 */
   hint?: string;
   /** hint 配色：muted=次要灰（默认）；warning=琥珀提醒（与网关提示一致，强调优先级语义） */
   hintTone?: 'muted' | 'warning';

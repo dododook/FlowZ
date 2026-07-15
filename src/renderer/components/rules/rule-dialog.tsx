@@ -230,7 +230,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
     });
   };
 
-  // 点击常用标签：已存在则移除该行，否则追加
   const toggleValue = (ct: RuleType, v: string) => {
     setValuesByType((prev) => {
       const lines = parseLines(prev[ct] ?? '');
@@ -302,7 +301,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
     }
   };
 
-  // 单个条件块的「匹配值」编辑器（ruleSet→资源选择器；其余→textarea + 常用标签 / 进程选择器）。
   const renderValueEditor = (ct: RuleType) => {
     if (ct === 'ruleSet') {
       return (
@@ -393,7 +391,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[92vh] max-w-[480px] flex-col gap-0 overflow-hidden p-0">
-        {/* 头部 */}
         <div className="rl-dlg-h">
           <div>
             <DialogTitle className="rl-dlg-title">
@@ -404,9 +401,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
           </div>
         </div>
 
-        {/* 主体（可滚动） */}
         <div className="rl-dlg-body min-h-0 flex-1 overflow-y-auto">
-          {/* 备注名（顶部，必填） */}
           <div className="rl-zone">
             <label className="field">
               <div className="field-lbl">
@@ -428,7 +423,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             )}
           </div>
 
-          {/* 匹配条件（1..N）：每块 = 类型 Select + 值编辑器 + 删除 */}
           <div className="rl-zone">
             <div className="rl-zone-h">
               <div className="rl-zone-lbl">
@@ -533,7 +527,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
             )}
           </div>
 
-          {/* 策略区（策略 seg + 目标节点 + 启用规则 / bypassFakeIP） */}
           <div className="rl-zone">
             <div className="rl-zone-h">
               <div className="rl-zone-lbl">{t('rules.policy')}</div>
@@ -582,7 +575,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
               </div>
             )}
 
-            {/* 开关区：启用规则 + bypassFakeIP（域名类条件才显） */}
             <div className="rl-optcard">
               <label className="rl-optrow">
                 <div>
@@ -629,7 +621,6 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
           </div>
         </div>
 
-        {/* 底部操作 */}
         <div className="rl-dlg-foot">
           <button
             type="button"

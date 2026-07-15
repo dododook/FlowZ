@@ -237,9 +237,7 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
 
             <TabsContent value="file" className="space-y-2">
               <Label htmlFor="local-import-file">{t('localImport.fileLabel', 'Config File')}</Label>
-              {/* 走主进程 dialog.showOpenDialog（系统原生文件框，跟随系统语言），替代 HTML <input type=file>：
-                  避开 Chromium 原生控件英文文案（"Choose File / No file chosen"）；按钮文字 + 文件名走 i18next。
-                  Button 是 labelable 元素，保留 id 让 Label htmlFor 关联（点字段标题亦弹框，a11y 友好）。 */}
+              {/* Button 是 labelable 元素，保留 id 让 Label htmlFor 关联（点字段标题亦弹框，a11y 友好）。 */}
               <Button
                 id="local-import-file"
                 type="button"
@@ -298,7 +296,6 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
             )}
           </Button>
 
-          {/* 节点预览 */}
           {nodes.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
@@ -389,7 +386,6 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
             </Card>
           )}
 
-          {/* 订阅预览 */}
           {subs.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
@@ -430,7 +426,6 @@ export function LocalImportDialog({ open, onOpenChange, onImportSuccess }: Local
             </Card>
           )}
 
-          {/* 跳过统计 */}
           {parsed && dropped > 0 && (
             <p className="text-xs text-muted-foreground">
               {t('localImport.skippedTitle', {

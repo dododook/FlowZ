@@ -1,8 +1,3 @@
-/**
- * 代理管理 IPC 处理器
- * 处理代理相关的 IPC 请求
- */
-
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type {
@@ -17,23 +12,14 @@ import type { ConfigManager } from '../../services/ConfigManager';
 import { tailscaleStateExists } from '../../services/tailscale-state';
 import type { TailscaleStatusSnapshot } from '../../../shared/tailscale-status';
 
-/**
- * 托盘状态更新回调
- */
 export type TrayStateUpdateCallback = (isRunning: boolean, hasError?: boolean) => void;
 
 let trayStateCallback: TrayStateUpdateCallback | null = null;
 
-/**
- * 设置托盘状态更新回调
- */
 export function setTrayStateCallback(callback: TrayStateUpdateCallback): void {
   trayStateCallback = callback;
 }
 
-/**
- * 注册代理管理相关的 IPC 处理器
- */
 export function registerProxyHandlers(
   proxyManager: ProxyManager,
   configManager: ConfigManager
@@ -73,7 +59,6 @@ export function registerProxyHandlers(
     return { ok: true };
   });
 
-  // 启动代理
   registerIpcHandler<UserConfig, void>(
     IPC_CHANNELS.PROXY_START,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {
@@ -86,30 +71,25 @@ export function registerProxyHandlers(
       // 避免双写者污染 originalSettings（曾致 disable 把死端口代理设回 → 断网）。
       await proxyManager.start(config);
 
-      // 更新托盘状态
       if (trayStateCallback) {
         trayStateCallback(true);
       }
     }
   );
 
-  // 停止代理
   registerIpcHandler<void, void>(IPC_CHANNELS.PROXY_STOP, async (_event: IpcMainInvokeEvent) => {
     // 用户主动停止：先清系统代理（在 stop() 之前调，stopping 仍为 false → 会真正清）。
     // 经 ProxyManager.ensureSystemProxyCleared 而非裸 disableProxy → marker + 指向门控：
     // 仅清 FlowZ 自己设置的系统代理，TUN/manual 模式或用户自配的企业代理无 marker → 不动（修 M4 stomp）。
     await proxyManager.ensureSystemProxyCleared().catch(() => {});
 
-    // 停止 sing-box 进程
     await proxyManager.stop();
 
-    // 更新托盘状态
     if (trayStateCallback) {
       trayStateCallback(false);
     }
   });
 
-  // 获取代理状态
   registerIpcHandler<void, ProxyStatus>(
     IPC_CHANNELS.PROXY_GET_STATUS,
     async (_event: IpcMainInvokeEvent) => {
@@ -117,7 +97,6 @@ export function registerProxyHandlers(
     }
   );
 
-  // 重启代理
   registerIpcHandler<UserConfig, void>(
     IPC_CHANNELS.PROXY_RESTART,
     async (_event: IpcMainInvokeEvent, config: UserConfig) => {

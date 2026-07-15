@@ -47,7 +47,7 @@ export class UpdateNetwork {
   }
 
   /**
-   * sessionFor 的兜底版（M1）：经代理会话构造（setProxy/partition 初始化）极罕见 reject 时，回落强制直连会话，
+   * sessionFor 的兜底版：经代理会话构造（setProxy/partition 初始化）极罕见 reject 时，回落强制直连会话，
    * **绝不让调用方拿到 undefined**——否则 net.request({session:undefined}) 会落到 Electron default session，
    * 重新引入系统代理污染 / manual 模式挂死，违反「更新链路不消费 default session」。与 CoreDownloader.updateSession
    * 的 direct 兜底同口径。direct 自身再 reject（几乎不可能：setProxy mode:direct）才由调用方最终兜底。
@@ -81,7 +81,7 @@ export class UpdateNetwork {
   /**
    * 主更新链路统一会话决策（类2 收口单点）：读 config(mainSessionViaProxy)+proxyRunning+updateInPort，经
    * resolveUpdateProxyTarget 决定 viaProxy/有效端口（端口闸单一真值，与 icon-protocol 共用）；读 config 失败
-   * → 直连兜底；返回 sessionForOrDirect（绝不消费 default session，M1）。UpdateService/RuleResourceManager/
+   * → 直连兜底；返回 sessionForOrDirect（绝不消费 default session）。UpdateService/RuleResourceManager/
    * CoreDownloader 三处统一调用，防漂移。未注入 providers（理论：index 总注入）→ 读不到则 viaProxy=false。
    */
   async resolveSessionForMainUpdate(): Promise<Session> {

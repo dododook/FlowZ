@@ -1,5 +1,5 @@
 /**
- * useStatsTopic —— 渲染端按 topic 订阅 stats 数据面（batch3 §3.7，取代拓扑/连接页/流量三处各自订阅 + GET/event 双路径）。
+ * useStatsTopic —— 渲染端按 topic 订阅 stats 数据面（§3.7，取代拓扑/连接页/流量三处各自订阅 + GET/event 双路径）。
  *
  * 挂载且可见 → 订阅（invoke STATS_SUBSCRIBE + 监听 EVENT_<topic>，订阅即拿初始帧）；unmount / 文档隐藏
  * （document.visibilityState==='hidden'，Electron 窗口 hide/最小化即触发）→ 退订；可见恢复 → 重订（重订自然拿

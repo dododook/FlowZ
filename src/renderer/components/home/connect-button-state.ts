@@ -13,7 +13,6 @@ export interface ConnectButtonState {
   kind: ConnectButtonKind;
   /** 进行中（spinner）。 */
   busy: boolean;
-  /** 是否禁用点击。 */
   disabled: boolean;
 }
 

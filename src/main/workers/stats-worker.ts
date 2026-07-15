@@ -1,5 +1,5 @@
 /**
- * stats-worker —— Electron utilityProcess 入口（T4，issue #225；batch2 数据面核心，issue #242）。
+ * stats-worker —— Electron utilityProcess 入口（T4，issue #225；数据面核心，issue #242）。
  *
  * 把 StatsService 的 Status/Connections gRPC 长流订阅 + 连接事件解析 + per-frame 物化从 main 进程移出，消除主线程
  * 事件循环争用（Windows 拖动 move modal loop 跑主线程，与 stats 处理抢线程 → 拖动卡顿 / 启动后迟缓）。
@@ -9,7 +9,7 @@
  *   / resubscribe 切端口 等全部不变量；存量单测继续护）。connections 流的按需开关经 StatsService.setConnectionsStreamEnabled
  *   （复用其既有 subscribe/unsubscribe，不新增流原语）。
  * - worker 持自己的 SingBoxApiClient（仅 stats，不传 onUpdate → 不订 Tailscale）；端点参数由 main 经 'connect' 下发。
- * - **batch2 治本（issue #242）**：聚合下沉本 worker。每收到内核 connections 帧本地 aggregateConnections + 签名比对：
+ * - **治本（issue #242）**：聚合下沉本 worker。每收到内核 connections 帧本地 aggregateConnections + 签名比对：
  *   ① change-driven + rate-cap → 仅内容真变且距上次 ≥AGG_MIN_INTERVAL_MS 才 post 小载荷 aggregate（杀「每秒全量克隆」
  *   B2 + 「零信息增量每秒重渲染」放大器）；② detail（全量明细）仅 host 下发 detailDemand（连接页 pull 期）才 post；
  *   ③ connectionsStream 需求为 false（窗口隐藏/无消费者）时取消上游 SubscribeConnections（顺带削核 CPU 面）。
@@ -24,13 +24,13 @@ import type { HostToWorkerMessage, WorkerToHostMessage } from '../services/Stats
 // utilityProcess 子进程的父端口（Electron 在子进程 process 上注入）。
 const parentPort = process.parentPort;
 
-// change-driven aggregate 的最小 post 间隔（batch2 §3.6；#251 真机观测后 2s→1s 提升拓扑跟手度）：内核帧 ~1s 到，
+// change-driven aggregate 的最小 post 间隔（§3.6；#251 真机观测后 2s→1s 提升拓扑跟手度）：内核帧 ~1s 到，
 // 签名变化且距上次 post ≥1s 才推——高 churn 最坏 1 Hz；拓扑是计数图、落后 ≤1s 可接受，故无需额外 timer（帧本身即驱动）。
 const AGG_MIN_INTERVAL_MS = 1000;
 
 let apiClient: SingBoxApiClient | null = null;
 
-// batch2 需求驱动状态（取代 issue #225 的 connActive）：
+// 需求驱动状态（取代 issue #225 的 connActive）：
 // detailDemand——host 据连接页 pull 活跃度下发（setDemand.detail）。true 时每帧 post 全量明细（跨进程克隆，仅连接页
 //   开着时才付费）。默认 false，待 host 首个 status 帧惰性下发真实值。
 let detailDemand = false;

@@ -49,7 +49,6 @@ export type RendererMemoryAction = 'discard' | 'warn' | 'none';
 export interface RendererMemoryDecisionInput {
   /** 渲染主窗口 RSS（MB）；采样不可得为 null。 */
   rssMb: number | null;
-  /** 触发阈值（MB）。 */
   thresholdMb: number;
   /** 主窗口是否存在（!null && !destroyed）。 */
   windowExists: boolean;

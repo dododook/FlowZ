@@ -1,8 +1,3 @@
-/**
- * API 客户端
- * 封装所有 IPC 调用方法，提供类型安全的 API 接口
- */
-
 import { ipcClient } from './ipc-client';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import type { CoreBuildKind } from '../../shared/core-build';
@@ -39,35 +34,19 @@ import type { BackupCategory } from '../../shared/backup-categories';
 import type { TailscaleStatusEvent, TailscaleStatusSnapshot } from '../../shared/tailscale-status';
 import type { SpeedTestInvokeResult } from '../../shared/speed-test';
 
-/**
- * 代理控制 API
- */
 export const proxyApi = {
-  /**
-   * 启动代理
-   * @param config 用户配置
-   */
   async start(config: UserConfig): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.PROXY_START, config);
   },
 
-  /**
-   * 停止代理
-   */
   async stop(): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.PROXY_STOP);
   },
 
-  /**
-   * 重启代理
-   */
   async restart(): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.PROXY_RESTART);
   },
 
-  /**
-   * 获取代理状态
-   */
   async getStatus(): Promise<ProxyStatus> {
     return ipcClient.invoke(IPC_CHANNELS.PROXY_GET_STATUS);
   },
@@ -107,9 +86,6 @@ export const proxyApi = {
     return ipcClient.invoke(IPC_CHANNELS.PROXY_APPLY_PENDING_CHANGES);
   },
 
-  /**
-   * 监听代理启动事件
-   */
   onStarted(
     listener: (data: {
       pid: number | null;
@@ -120,15 +96,12 @@ export const proxyApi = {
     return ipcClient.on(IPC_CHANNELS.EVENT_PROXY_STARTED, listener);
   },
 
-  /**
-   * 监听代理停止事件
-   */
   onStopped(listener: (data: Record<string, never>) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_PROXY_STOPPED, listener);
   },
 
   /**
-   * 监听代理错误事件。主进程各 emit 点 payload 形状不一，message 优先 / error 兜底。
+   * 主进程各 emit 点 payload 形状不一，message 优先 / error 兜底。
    */
   onError(
     listener: (data: {
@@ -142,9 +115,6 @@ export const proxyApi = {
     return ipcClient.on(IPC_CHANNELS.EVENT_PROXY_ERROR, listener);
   },
 
-  /**
-   * 监听自动换节点成功事件
-   */
   onAutoNodeSwitched(
     listener: (data: { reason: string; newServerName: string; latency: number }) => void
   ): () => void {
@@ -184,14 +154,14 @@ export const proxyApi = {
 
   /**
    * 监听「启动前属主归一删掉某节点 root 残留 state」（登录态已失效）→ 渲染端清登录缓存 + 登录态，
-   * 避免陈旧 loggedIn=true 与已清空 state 撕裂（review #4）。
+   * 避免陈旧 loggedIn=true 与已清空 state 撕裂。
    */
   onTailscaleStateCleared(listener: (data: { serverId: string }) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_TAILSCALE_STATE_CLEARED, listener);
   },
 
   /**
-   * 监听「登录期出口让位」事件（缺陷1）：选中 TS 出口未就绪→默认路由让位直连（engaged=true）、隧道 Running 后
+   * 监听「登录期出口让位」事件：选中 TS 出口未就绪→默认路由让位直连（engaged=true）、隧道 Running 后
    * 切回（engaged=false）。渲染端据此提示用户「登录期临时直连」。preload 通用 ipcRenderer.on 无 allowlist，无需改 preload。
    */
   onMeshLoginFallback(
@@ -215,64 +185,37 @@ export const proxyApi = {
   },
 };
 
-/**
- * 配置管理 API
- */
 export const configApi = {
-  /**
-   * 获取完整配置
-   */
   async get(): Promise<UserConfig> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_GET);
   },
 
-  /**
-   * 保存完整配置
-   */
   async save(config: UserConfig): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_SAVE, config);
   },
 
-  /**
-   * 更新代理模式
-   */
   async updateMode(mode: UserConfig['proxyMode']): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_UPDATE_MODE, { mode });
   },
 
-  /**
-   * 获取配置值
-   */
   async getValue<T = any>(key: string): Promise<T> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_GET_VALUE, { key });
   },
 
-  /**
-   * 设置配置值
-   */
   async setValue(key: string, value: any): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_SET_VALUE, { key, value });
   },
 
-  /**
-   * 监听配置变化事件
-   */
   onChanged(
     listener: (data: { key?: string; oldValue?: any; newValue?: any }) => void
   ): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_CONFIG_CHANGED, listener);
   },
 
-  /**
-   * 获取隐私模式状态
-   */
   async getPrivacyMode(): Promise<boolean> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_GET_PRIVACY_MODE);
   },
 
-  /**
-   * 设置隐私模式状态
-   */
   async setPrivacyMode(value: boolean): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.CONFIG_SET_PRIVACY_MODE, value);
   },
@@ -296,20 +239,11 @@ export const privacyApi = {
   hasPassword: (): Promise<boolean> => ipcClient.invoke(IPC_CHANNELS.PRIVACY_HAS_PASSWORD),
 };
 
-/**
- * 服务器管理 API
- */
 export const serverApi = {
-  /**
-   * 获取所有服务器
-   */
   async getAll(): Promise<ServerConfig[]> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_GET_ALL);
   },
 
-  /**
-   * 添加服务器
-   */
   async add(server: Omit<ServerConfig, 'id'>): Promise<ServerConfig> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_ADD, server);
   },
@@ -321,9 +255,6 @@ export const serverApi = {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_ADD_BULK, { servers });
   },
 
-  /**
-   * 更新服务器
-   */
   async update(server: ServerConfig): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_UPDATE, server);
   },
@@ -387,16 +318,10 @@ export const serverApi = {
     return ipcClient.invoke(IPC_CHANNELS.TAILSCALE_GET_STATUS);
   },
 
-  /**
-   * 切换服务器
-   */
   async switch(serverId: string): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_SWITCH, { serverId });
   },
 
-  /**
-   * 生成分享 URL
-   */
   async generateUrl(server: ServerConfig): Promise<string> {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_GENERATE_URL, { server });
   },
@@ -426,20 +351,12 @@ export const serverApi = {
     return ipcClient.invoke(IPC_CHANNELS.SERVER_SPEED_TEST, { serverIds });
   },
 
-  /**
-   * 订阅测速单个节点完成事件（流式增量显示，不等队列）。
-   * listener: (data: { serverId: string; latency: number }) => void
-   * 返回取消订阅函数。
-   */
+  /** 订阅测速单个节点完成事件（流式增量显示，不等队列）。 */
   onSpeedTestResult(listener: (data: { serverId: string; latency: number }) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_SPEED_TEST_RESULT, listener);
   },
 
-  /**
-   * 订阅测速进度事件（已测/成功/总数，参考 mihomo zashboard）。
-   * listener: (data: { tested: number; ok: number; total: number }) => void
-   * 返回取消订阅函数。
-   */
+  /** 订阅测速进度事件（已测/成功/总数，参考 mihomo zashboard）。 */
   onSpeedTestProgress(
     listener: (data: { tested: number; ok: number; total: number }) => void
   ): () => void {
@@ -447,34 +364,19 @@ export const serverApi = {
   },
 };
 
-/**
- * 路由规则管理 API
- */
 export const rulesApi = {
-  /**
-   * 获取所有规则
-   */
   async getAll(): Promise<Rule[]> {
     return ipcClient.invoke(IPC_CHANNELS.RULES_GET_ALL);
   },
 
-  /**
-   * 添加规则
-   */
   async add(rule: Omit<Rule, 'id'>): Promise<Rule> {
     return ipcClient.invoke(IPC_CHANNELS.RULES_ADD, rule);
   },
 
-  /**
-   * 更新规则
-   */
   async update(rule: Rule): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.RULES_UPDATE, rule);
   },
 
-  /**
-   * 删除规则
-   */
   async delete(ruleId: string): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.RULES_DELETE, { ruleId });
   },
@@ -485,20 +387,11 @@ export const rulesApi = {
   },
 };
 
-/**
- * 日志管理 API
- */
 export const logsApi = {
-  /**
-   * 获取日志
-   */
   async get(limit?: number): Promise<LogEntry[]> {
     return ipcClient.invoke(IPC_CHANNELS.LOGS_GET, { limit });
   },
 
-  /**
-   * 清空日志
-   */
   async clear(): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.LOGS_CLEAR);
   },
@@ -512,27 +405,18 @@ export const logsApi = {
   },
 };
 
-/**
- * 自启动管理 API
- */
 export const autoStartApi = {
-  /**
-   * 设置自启动
-   */
   async set(enabled: boolean): Promise<boolean> {
     return ipcClient.invoke(IPC_CHANNELS.AUTO_START_SET, { enabled });
   },
 
-  /**
-   * 获取自启动状态
-   */
   async getStatus(): Promise<AutoStartStatus> {
     return ipcClient.invoke(IPC_CHANNELS.AUTO_START_GET_STATUS);
   },
 };
 
 /**
- * 连接数据 API（batch3 §3.7）：明细（detail）与拓扑聚合（aggregate）已改订阅驱动——渲染端经 useStatsTopic
+ * 连接数据 API（§3.7）：明细（detail）与拓扑聚合（aggregate）已改订阅驱动——渲染端经 useStatsTopic
  * ('detail'/'aggregate') 订阅、订阅即回初始帧 + 增量 push，旧 CONNECTIONS_GET / CONNECTIONS_AGGREGATE_GET 双路径
  * 随之删除。此处仅留关连接的命令式动作；渲染端不直连 :9090、不持 secret。
  */
@@ -547,9 +431,6 @@ export const connectionsApi = {
   },
 };
 
-/**
- * 系统能力 API（进程枚举等）
- */
 export const systemApi = {
   /** 枚举当前系统进程（聚合去重，供进程规则快速选择） */
   async listProcesses(): Promise<SystemProcessInfo[]> {
@@ -604,9 +485,6 @@ export const ruleResourcesApi = {
   },
 };
 
-/**
- * 出口 IP 信息 API
- */
 export const ipInfoApi = {
   /** 获取出口 IP 快照。force=强制重测（绕 TTL）；visible=手动重探可见流程（清当前出口→检测中→结果/超时，仅与 force 搭配）。 */
   async get(force = false, visible = false): Promise<IpInfoSnapshot> {
@@ -618,7 +496,6 @@ export const ipInfoApi = {
     return ipcClient.invoke(IPC_CHANNELS.IP_INFO_GET, { peek: true });
   },
 
-  /** 监听出口 IP 更新事件 */
   onUpdated(listener: (snap: IpInfoSnapshot) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_IP_INFO_UPDATED, listener);
   },
@@ -628,7 +505,7 @@ export const ipInfoApi = {
  * 解锁检测 API（AI/流媒体，经当前代理出口）。照 ipInfoApi 范式（invoke + on），preload 零改。
  */
 export const unlockApi = {
-  /** 跑一轮检测（force 绕 TTL，仍受 15s 硬下限约束）。返回完整快照。 */
+  /** 跑一轮检测（force 绕 TTL，仍受 15s 硬下限约束）。 */
   async run(force = false): Promise<UnlockSnapshot> {
     return ipcClient.invoke(IPC_CHANNELS.UNLOCK_RUN, { force });
   },
@@ -650,9 +527,6 @@ export const unlockApi = {
   },
 };
 
-/**
- * 版本信息类型
- */
 export interface VersionInfo {
   appVersion: string;
   appName: string;
@@ -665,30 +539,18 @@ export interface VersionInfo {
   osVersion: string;
 }
 
-/**
- * 版本信息 API
- */
 export const versionApi = {
-  /**
-   * 获取版本信息
-   */
   async getInfo(): Promise<VersionInfo> {
     return ipcClient.invoke(IPC_CHANNELS.VERSION_GET_INFO);
   },
 };
 
-/**
- * 更新检查结果
- */
 export interface UpdateCheckResult {
   hasUpdate: boolean;
   updateInfo?: UpdateInfo;
   error?: string;
 }
 
-/**
- * 更新信息
- */
 export interface UpdateInfo {
   version: string;
   title: string;
@@ -700,9 +562,6 @@ export interface UpdateInfo {
   fileName: string;
 }
 
-/**
- * 更新进度
- */
 export interface UpdateProgress {
   status:
     | 'idle'
@@ -717,62 +576,35 @@ export interface UpdateProgress {
   error?: string;
 }
 
-/**
- * 更新管理 API
- */
 export const updateApi = {
-  /**
-   * 检查更新
-   */
   async check(includePrerelease = false): Promise<UpdateCheckResult> {
     return ipcClient.invoke(IPC_CHANNELS.UPDATE_CHECK, { includePrerelease });
   },
 
-  /**
-   * 下载更新
-   */
   async download(
     updateInfo: UpdateInfo
   ): Promise<{ success: boolean; filePath?: string; error?: string }> {
     return ipcClient.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, { updateInfo });
   },
 
-  /**
-   * 安装更新
-   */
   async install(filePath: string): Promise<{ success: boolean; error?: string }> {
     return ipcClient.invoke(IPC_CHANNELS.UPDATE_INSTALL, { filePath });
   },
 
-  /**
-   * 跳过版本
-   */
   async skip(version: string): Promise<{ success: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.UPDATE_SKIP, { version });
   },
 
-  /**
-   * 打开 Releases 页面
-   */
   async openReleases(): Promise<{ success: boolean }> {
     return ipcClient.invoke(IPC_CHANNELS.UPDATE_OPEN_RELEASES);
   },
 
-  /**
-   * 监听更新进度事件
-   */
   onProgress(listener: (progress: UpdateProgress) => void): () => void {
     return ipcClient.on(IPC_CHANNELS.EVENT_UPDATE_PROGRESS, listener);
   },
 };
 
-/**
- * 核心更新 API
- */
 export const coreUpdateApi = {
-  /**
-   * 检查核心更新
-   */
   async check(): Promise<{
     hasUpdate: boolean;
     currentVersion: string;
@@ -786,16 +618,10 @@ export const coreUpdateApi = {
     return ipcClient.invoke(IPC_CHANNELS.CORE_UPDATE_CHECK);
   },
 
-  /**
-   * 更新核心
-   */
   async update(downloadUrl: string): Promise<boolean> {
     return ipcClient.invoke(IPC_CHANNELS.CORE_UPDATE_RUN, downloadUrl);
   },
 
-  /**
-   * 获取核心版本信息（当前版本、备份版本、是否有备份）
-   */
   async getVersionInfo(): Promise<{
     currentVersion: string;
     backupVersion: string | null;
@@ -813,16 +639,10 @@ export const coreUpdateApi = {
     await ipcClient.invoke(IPC_CHANNELS.CORE_UPDATE_ACK_VERSION_CHANGE);
   },
 
-  /**
-   * 回滚核心到上一个备份版本
-   */
   async rollback(): Promise<boolean> {
     return ipcClient.invoke(IPC_CHANNELS.CORE_ROLLBACK);
   },
 
-  /**
-   * 监听核心版本变更事件
-   */
   onVersionChanged(
     listener: (data: {
       previousVersion: string;
@@ -865,9 +685,6 @@ export const coreUpdateApi = {
     return ipcClient.invoke(IPC_CHANNELS.CORE_RESET_FACTORY);
   },
 
-  /**
-   * 内核自动更新状态（lastCheckAt / staged 待生效 / 跨带提示）
-   */
   async getAutoStatus(): Promise<{
     autoUpdateEnabled: boolean;
     lastCheckAt: number | null;
@@ -886,9 +703,6 @@ export const coreUpdateApi = {
     return ipcClient.invoke(IPC_CHANNELS.CORE_UPDATE_APPLY_STAGED);
   },
 
-  /**
-   * 监听内核自动更新状态变更事件（staged 待生效 / 跨带提示）
-   */
   onAutoStatusChanged(
     listener: (data: {
       // autoUpdateEnabled 不随事件推送（主进程同步 emit 算不出真值）；真值由 getAutoStatus 快照提供。
@@ -901,36 +715,21 @@ export const coreUpdateApi = {
   },
 };
 
-/**
- * 订阅管理 API
- */
 export const subscriptionApi = {
-  /**
-   * 添加订阅
-   */
   async add(
     subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'>
   ): Promise<SubscriptionConfig> {
     return ipcClient.invoke(IPC_CHANNELS.SUBSCRIPTION_ADD, { subscription });
   },
 
-  /**
-   * 更新订阅配置
-   */
   async update(subscription: SubscriptionConfig): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.SUBSCRIPTION_UPDATE, { subscription });
   },
 
-  /**
-   * 根据 ID 删除订阅
-   */
   async delete(subscriptionId: string): Promise<void> {
     return ipcClient.invoke(IPC_CHANNELS.SUBSCRIPTION_DELETE, { subscriptionId });
   },
 
-  /**
-   * 触发订阅节点更新
-   */
   async updateServers(subscriptionId: string): Promise<{
     success: boolean;
     addedServers: number;
@@ -958,9 +757,6 @@ export const subscriptionApi = {
   },
 };
 
-/**
- * 数据备份与恢复摘要信息
- */
 export interface BackupInfo {
   serverCount: number;
   manualServerCount: number;
@@ -973,9 +769,6 @@ export interface BackupInfo {
   crossPlatformDisabledRules?: number;
 }
 
-/**
- * 数据备份与恢复 API
- */
 export const backupApi = {
   /**
    * 导出备份（按勾选类别；缺省/空 = 全部）。弹系统保存对话框。
@@ -1009,17 +802,11 @@ export const backupApi = {
     return ipcClient.invoke(IPC_CHANNELS.BACKUP_IMPORT_APPLY, { filePath, categories });
   },
 
-  /**
-   * 获取当前配置摘要（节点数、订阅数、规则数等）
-   */
   async getInfo(): Promise<BackupInfo> {
     return ipcClient.invoke(IPC_CHANNELS.BACKUP_GET_INFO);
   },
 };
 
-/**
- * 诊断 API（导出脱敏诊断报告）
- */
 export const diagnosticApi = {
   /** 导出诊断报告（弹出系统文件保存对话框，单 Markdown，密钥已脱敏） */
   async export(): Promise<{ success: boolean; filePath?: string; error?: string }> {
@@ -1031,7 +818,6 @@ export const diagnosticApi = {
  * macOS 提权 helper API（免提权启停 sing-box）
  */
 export const helperApi = {
-  /** 查询 helper 安装/就绪状态 */
   async getStatus(force = false): Promise<HelperStatus> {
     return ipcClient.invoke(IPC_CHANNELS.HELPER_GET_STATUS, force);
   },
@@ -1052,9 +838,6 @@ export const helperApi = {
   },
 };
 
-/**
- * 应用级 API（生命周期 / 卸载等）
- */
 export const appApi = {
   /**
    * B6：完全卸载 FlowZ（清除提权 helper、受保护目录内核、用户配置、应用本体）。
@@ -1097,14 +880,11 @@ export const windowApi = {
   maximizeToggle: (): Promise<boolean> => ipcClient.invoke(IPC_CHANNELS.WINDOW_MAXIMIZE_TOGGLE),
   close: (): Promise<void> => ipcClient.invoke(IPC_CHANNELS.WINDOW_CLOSE),
   isMaximized: (): Promise<boolean> => ipcClient.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
-  /** 监听最大化态变更（WM 双击标题/拖顶等非按钮操作）；返回取消订阅函数。 */
+  /** 监听最大化态变更（WM 双击标题/拖顶等非按钮操作）。 */
   onMaximizeChange: (listener: (maximized: boolean) => void): (() => void) =>
     ipcClient.on(IPC_CHANNELS.EVENT_WINDOW_MAXIMIZE_CHANGED, listener),
 };
 
-/**
- * 统一的 API 客户端
- */
 /**
  * 本地导入 API（解析文件/文本 → 预览；不可识别格式时主进程 throw → 此处 reject）
  */
@@ -1150,7 +930,4 @@ export const api = {
   app: appApi,
 };
 
-/**
- * 默认导出
- */
 export default api;

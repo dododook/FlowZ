@@ -45,7 +45,6 @@ export function MeshInfoPopover({ server }: { server: ServerConfigWithId }) {
   const tailscaleIps = useAppStore((s) => s.tailscaleIps[server.id] ?? EMPTY);
   // 新鲜度：代理未运行 → 内网IP 是「上次已知」缓存值（L2 主动拉 TAILSCALE_GET_STATUS），标陈旧而非当真 live。
   const proxyRunning = useAppStore((s) => s.connectionStatus?.proxyCore?.running ?? false);
-  // 非组网协议（vless 等）不显此 icon。
   if (!isEndpointProtocol(server.protocol)) return null;
 
   const ips = meshIntranetIps(server, tailscaleIps);

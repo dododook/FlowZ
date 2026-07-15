@@ -25,7 +25,6 @@ const PLACEHOLDER = `{
 
 type ProbeState = { state: 'idle' | 'checking' | 'ok' | 'fail' | 'unknown'; error?: string };
 
-/** 解析为合法的 outbound 对象（对象 + 含字符串 type）；否则 null。 */
 const parseOutbound = (text: string): Record<string, unknown> | null => {
   try {
     const o = JSON.parse(text);
@@ -69,7 +68,6 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
     }
   }, [serverConfig]);
 
-  // 输入防抖 probe：解析失败只提示 JSON 非法、不 probe；解析成功 → 500ms 后异步 probe 当前内核兼容性。
   useEffect(() => {
     if (probeTimer.current) clearTimeout(probeTimer.current);
     if (!jsonText.trim()) {

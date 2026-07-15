@@ -11,10 +11,6 @@ import type { SpeedTestInvokeResult } from '../../../shared/speed-test';
 import { registerIpcHandler } from '../ipc-handler';
 import { runSpeedTest, type SpeedTestRunnerDeps } from '../../services/speed-test-runner';
 
-/**
- * 注册测速相关的 IPC 处理器。
- * @param deps 唯一编排器依赖（configManager / speedTestService / getMainWindow / getTrayManager / logManager）。
- */
 export function registerSpeedTestHandlers(deps: SpeedTestRunnerDeps): void {
   // 服务器测速（serverIds 缺省=全部；逐节点结果/进度由 runSpeedTest 广播，托盘同步回写）
   registerIpcHandler<{ serverIds?: string[] }, SpeedTestInvokeResult>(

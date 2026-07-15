@@ -232,7 +232,7 @@ export function ConnectionsTable() {
   // per-conn 速率差分的上一帧缓存（不入 state，避免无谓重渲染）。
   const rateRef = useRef<RateState>(new Map());
 
-  // 数据（batch3 §3.7）：连接明细改【订阅驱动 push】——订阅 'detail' topic，挂载即拿初始帧，之后 worker 每帧
+  // 数据（§3.7）：连接明细改【订阅驱动 push】——订阅 'detail' topic，挂载即拿初始帧，之后 worker 每帧
   // push（取代旧每 PULL_INTERVAL_MS 拉 CONNECTIONS_GET + in-flight 守卫）。暂停（enabled=!paused → 退订）停流
   // （worker detail 逐级停机）+ 冻结当前帧；恢复重订拿最新初始帧。窗口隐藏由 useStatsTopic 自动退订。
   const applyDetail = useCallback((snap: ConnectionsSnapshot) => {
@@ -281,7 +281,7 @@ export function ConnectionsTable() {
     const trafficOf = (c: ConnectionEntry) => (c.upload ?? 0) + (c.download ?? 0);
     // 排序用连接起始时间戳（无/非法 start 垫底）替代 durationSec(c, now)：作差时 now 对所有行相同、完全抵消
     // （durationSec(a,now)-durationSec(b,now) === startMs(b)-startMs(a)），故 time 排序无需 now → filtered 不
-    // 再依赖 now，避免每秒时长刷新触发整表重排（LOW-A）。now 仍用于时长列显示（见 fmtDuration(durationSec)）。
+    // 再依赖 now，避免每秒时长刷新触发整表重排。now 仍用于时长列显示（见 fmtDuration(durationSec)）。
     const startMs = (c: ConnectionEntry) => {
       if (!c.start) return Infinity;
       const t = Date.parse(c.start);
@@ -312,7 +312,7 @@ export function ConnectionsTable() {
     return [...list].sort(cmp);
   }, [connections, search, sortKey, sortDir, speeds]);
 
-  // 大列表渲染保护（LOW-B）：连接数极多时全量 .map 撑爆 DOM + 拖慢每秒重渲染。代理活动连接通常几十到几百，
+  // 大列表渲染保护：连接数极多时全量 .map 撑爆 DOM + 拖慢每秒重渲染。代理活动连接通常几十到几百，
   // 超过软上限只渲染前 N 行并提示用搜索缩小（<table> 语义下真虚拟化需破坏表结构、收益有限，取此务实方案）。
   const MAX_VISIBLE_ROWS = 500;
   const visible =
@@ -375,7 +375,6 @@ export function ConnectionsTable() {
 
   return (
     <>
-      {/* 顶栏：摘要先行（连接总数 KPI + 实时/暂停指示）+ 搜索 + 暂停/恢复 + 全部关闭 */}
       <div className="conns-bar">
         <div className="conns-sum">
           <span className="n mono tnum">{connections.length}</span>
@@ -516,7 +515,6 @@ export function ConnectionsTable() {
         )}
       </div>
 
-      {/* 全部关闭确认弹窗 */}
       <AlertDialog open={confirmCloseAll} onOpenChange={setConfirmCloseAll}>
         <AlertDialogContent>
           <AlertDialogHeader>

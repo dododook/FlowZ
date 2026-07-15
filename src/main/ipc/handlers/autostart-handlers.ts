@@ -1,7 +1,3 @@
-/**
- * 自启动管理 IPC 处理器
- */
-
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { AutoStartStatus } from '../../../shared/types';
@@ -10,9 +6,6 @@ import { createAutoStartManager, IAutoStartManager } from '../../services/AutoSt
 
 let autoStartManager: IAutoStartManager | null = null;
 
-/**
- * 获取自启动管理器实例
- */
 function getAutoStartManager(): IAutoStartManager {
   if (!autoStartManager) {
     autoStartManager = createAutoStartManager();
@@ -20,11 +13,7 @@ function getAutoStartManager(): IAutoStartManager {
   return autoStartManager;
 }
 
-/**
- * 注册自启动管理相关的 IPC 处理器
- */
 export function registerAutoStartHandlers(): void {
-  // 设置自启动
   registerIpcHandler<{ enabled: boolean }, boolean>(
     IPC_CHANNELS.AUTO_START_SET,
     async (_event: IpcMainInvokeEvent, args: { enabled: boolean }) => {
@@ -33,7 +22,6 @@ export function registerAutoStartHandlers(): void {
     }
   );
 
-  // 获取自启动状态
   registerIpcHandler<void, AutoStartStatus>(
     IPC_CHANNELS.AUTO_START_GET_STATUS,
     async (_event: IpcMainInvokeEvent) => {

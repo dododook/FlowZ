@@ -210,10 +210,10 @@ export class SubscriptionScheduler {
       const fresh = await this.configManager.loadConfig();
       const nowIso = new Date().toISOString();
       let updated = 0;
-      // F-A（review）：仅「真实节点增/删/改」置位——304 / 内容等价的 200 不置。ON 开关据此只在真变更时 auto-apply，
+      // F-A：仅「真实节点增/删/改」置位——304 / 内容等价的 200 不置。ON 开关据此只在真变更时 auto-apply，
       //   不在无变化的周期刷新空转重启（否则 ON 用户每个订阅更新间隔无谓断流一次）。
       let nodesChanged = false;
-      // §2 矩阵 line 88「改/删被引用节点恒立即重启」（review 非 finding#1 扩 F14）：被引用节点=选中/规则目标/detour链/
+      // §2 矩阵 line 88「改/删被引用节点恒立即重启」（扩 F14）：被引用节点=选中/规则目标/detour链/
       //   endpoint（referencedServerIds 单一真值，与 canSkip 同口径）。循环前后各取一次引用集（refOld/refNext），
       //   任一被引用节点被本轮刷新增/删/改 → 运行核路由陈旧 → 恒重启对齐（不受开关，同手动路径 canSkip）。判据：
       //   删=不在最终 servers；增=新 id（不在 oldIds）；改=updatedAt===nowIso（reconcile 对内容变节点写本轮时间戳）。
@@ -292,7 +292,7 @@ export class SubscriptionScheduler {
         // F14：被下架的若是「选中」节点 → reselect 存活出口逃死节点（pickFallbackExit：无 latency 取首个候选，空则 direct）。
         const selectedDelisted = !!selId && !liveIds.has(selId);
         if (selectedDelisted) {
-          // 候选须过可用性谓词（排 subnet-only 组网节点，防静默直连，#291 review Med）；空则 DIRECT 哨兵。
+          // 候选须过可用性谓词（排 subnet-only 组网节点，防静默直连，#291）；空则 DIRECT 哨兵。
           fresh.selectedServerId =
             pickViableFallbackExit(fresh.servers.filter((s) => liveIds.has(s.id))) ??
             DIRECT_SERVER_ID;

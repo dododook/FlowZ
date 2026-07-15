@@ -1,8 +1,3 @@
-/**
- * 日志管理 IPC 处理器
- * 处理日志相关的 IPC 请求
- */
-
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { LogEntry } from '../../../shared/types';
@@ -11,9 +6,6 @@ import { LogManager } from '../../services/LogManager';
 import { ProxyManager } from '../../services/ProxyManager';
 import { broadcastEvent } from '../ipc-events';
 
-/**
- * 注册日志管理相关的 IPC 处理器
- */
 /** 日志 UI 批 flush 间隔（ms）：~150ms 窗口合并多条日志为单次 IPC，渲染端单次 setState。体感无延迟。 */
 const LOG_FLUSH_INTERVAL_MS = 150;
 /** 不活跃（拖动/隐藏）期 pending 暂存上限：超出丢最旧并计数（落盘不受影响，仅 UI live tail 截断）。 */
@@ -28,7 +20,6 @@ export function registerLogHandlers(
   proxyManager?: ProxyManager,
   isUiActive?: () => boolean
 ): void {
-  // 获取日志
   registerIpcHandler<{ limit?: number }, LogEntry[]>(
     IPC_CHANNELS.LOGS_GET,
     async (_event: IpcMainInvokeEvent, args?: { limit?: number }) => {
@@ -36,12 +27,9 @@ export function registerLogHandlers(
     }
   );
 
-  // 清空日志
   registerIpcHandler<void, void>(IPC_CHANNELS.LOGS_CLEAR, async (_event: IpcMainInvokeEvent) => {
-    // 清空应用日志（内存和文件）
     logManager.clearLogs();
 
-    // 同时清空 sing-box 日志文件
     if (proxyManager) {
       await proxyManager.clearSingBoxLogFile();
     }

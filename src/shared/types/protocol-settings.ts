@@ -1,9 +1,3 @@
-/**
- * 协议设置类型定义
- * 各协议专用的 *Settings interface，ServerConfig 按需引用
- */
-
-// Hysteria2 网络类型（仅 Hysteria2Settings 使用，随协议设置一起放置）
 export type Hysteria2Network = 'tcp' | 'udp';
 
 export interface TlsSettings {
@@ -55,7 +49,6 @@ export interface HttpSettings {
 // Hysteria2 混淆类型（sing-box 1.14 新增 gecko，与 salamander 并列）。gecko 经 min/max_packet_size 调随机填充长度。
 export type Hysteria2ObfsType = 'salamander' | 'gecko';
 
-// Hysteria2 混淆设置
 export interface Hysteria2ObfsSettings {
   type?: Hysteria2ObfsType;
   password?: string;
@@ -69,7 +62,6 @@ export interface Hysteria2ObfsSettings {
 // 其它值 → "unsupported BBR profile"）；留空 = 核心默认拥塞控制。
 export type Hysteria2BbrProfile = 'standard' | 'aggressive' | 'conservative';
 
-// Hysteria2 协议设置
 export interface Hysteria2Settings {
   upMbps?: number;
   downMbps?: number;
@@ -95,7 +87,7 @@ export interface SnellSettings {
   userkey?: string; // 多用户服务器鉴权 key；敏感，已进 diagnostic-redact 黑名单
 }
 
-// Multiplex 多路复用设置（vless/trojan/vmess/shadowsocks）；注意 reality+vision(xtls-rprx-vision) 不兼容
+// 供 vless/trojan/vmess/shadowsocks 使用；注意 reality+vision(xtls-rprx-vision) 不兼容
 export interface MultiplexSettings {
   enabled?: boolean;
   protocol?: 'smux' | 'yamux' | 'h2mux'; // 默认 h2mux
@@ -104,7 +96,6 @@ export interface MultiplexSettings {
   padding?: boolean; // 流量填充，增强抗特征
 }
 
-// TUIC 协议设置
 export interface TuicSettings {
   congestionControl?: 'bbr' | 'cubic' | 'new_reno';
   udpRelayMode?: 'native' | 'quic';
@@ -112,12 +103,10 @@ export interface TuicSettings {
   heartbeat?: string;
 }
 
-// Naive 协议设置
 export interface NaiveSettings {
   useHttp3?: boolean; // 使用 HTTP/3 (QUIC) 传输；sing-box naive outbound 的 quic 字段
 }
 
-// Shadowsocks 协议设置
 export interface ShadowsocksSettings {
   method: string;
   password: string;
@@ -125,14 +114,12 @@ export interface ShadowsocksSettings {
   pluginOptions?: string;
 }
 
-// AnyTLS 协议设置
 export interface AnyTlsSettings {
   idleSessionCheckInterval?: string; // e.g. '30s'
   idleSessionTimeout?: string; // e.g. '30s'
   minIdleSession?: number; // default 0
 }
 
-// SSH 协议设置
 export interface SshSettings {
   user?: string; // SSH 用户名，默认 root
   password?: string; // 密码认证

@@ -30,7 +30,6 @@ export function ExitNodeField({ value, onChange, serverId, disabled }: ExitNodeF
   const sorted = useMemo(() => sortPeers(peers), [peers]);
   const trimmed = value.trim();
   const matched = matchPeer(sorted, trimmed);
-  // 自定义 = 显式切入 或（有值且不匹配任何 peer）。
   const isCustom = customMode || (!!trimmed && !matched);
 
   const customInput = (
@@ -42,7 +41,6 @@ export function ExitNodeField({ value, onChange, serverId, disabled }: ExitNodeF
     />
   );
 
-  // 无 peer（未连接/无数据）→ 纯文本框兜底（无设备可选）。
   if (sorted.length === 0) return customInput;
 
   const items = peersToItems(sorted, trimmed, {

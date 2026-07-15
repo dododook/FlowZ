@@ -38,7 +38,6 @@ export function FieldSpan({ full = true, children }: { full?: boolean; children:
 }
 
 /**
- * 表单分区。
  * - 非折叠 → `.nd-fset` 具名分组（hairline 框 + 淡衬 + 大写小标题）。
  * - collapsible → 原生 `<details class="nd-adv">`（受控 open + onToggle 同步，用户可自由展开/收起）。
  */

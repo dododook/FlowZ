@@ -190,7 +190,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       needsRepair: installed && !ready,
       // 以下为 macOS 专属字段，Windows 恒默认值（消费方契约：先判 backgroundDisabled 再判 needsRepair）。
       backgroundDisabled: false,
-      // 已知限制（review TS-H2，待真机/后续）：Windows 核更新（Portable 模式写 userData/core_update）后，服务 binPath
+      // 已知限制（待真机/后续）：Windows 核更新（Portable 模式写 userData/core_update）后，服务 binPath
       // 仍指向安装时锁定的 sing-box，此处不检测漂移（恒 false）→ 不触发修复 gate。后续可比对服务 ImagePath 的 --singbox
       // 段 vs 当前 getSingBoxPath() 实现之；当前 Windows 核更新走 app 侧、非 helper，影响有限。
       pathMismatch: false,
@@ -422,7 +422,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
    * 安装脚本体（在 runElevatedPowerShell 的 $ErrorActionPreference=Stop + try/catch 包裹内跑）：**锁目录 ACL**
    * （$support 去继承、仅 SYSTEM/Admin 私有，机密性的唯一来源）→ 删旧+写 token（继承目录锁、刻意不单独只读，否则
    * 重装 Set-Content 覆盖被拒——真机根因）→ 幂等清旧服务并**轮询等其真正消失** → **把 helper.exe 外置复制到
-   * ProgramData 并锁 ACL**（U1，与 app 生命周期解耦的根因修复）→ New-Service **1072 退避重试**创建（BinaryPathName
+   * ProgramData 并锁 ACL**（与 app 生命周期解耦的根因修复）→ New-Service **1072 退避重试**创建（BinaryPathName
    * 单一 .NET 字符串直达 CreateService，真双引号锁定 exe + 三参，默认 LocalSystem，Automatic 开机自启）→ sc start。
    * 全程幂等可重入：重装/修复覆盖旧 token、停删旧服务、覆盖旧外置副本，均能自愈已损状态。
    */
@@ -432,7 +432,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     confDir: string,
     token: string
   ): string {
-    // 外置 helper.exe 到 ProgramData（U1，根因修复）：旧实现把服务 binPath 指向 **app 目录内**的 helper.exe，致
+    // 外置 helper.exe 到 ProgramData（根因修复）：旧实现把服务 binPath 指向 **app 目录内**的 helper.exe，致
     //   ① app 更新：NSIS 覆盖被「正在运行的服务锁定」的 helper.exe → 占用失败/残留；
     //   ② app 卸载：NSIS 删 app 文件却留下仍指向已删路径的 SCM 服务（孤儿服务 + 残留 ProgramData token）。
     // 镜像 macOS「把 helper 复制出 .app 到 /Library/PrivilegedHelperTools」范式：安装期把 helper.exe 复制到
@@ -479,7 +479,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       // 窗口，故旧副本解锁**靠下方 Copy-Item 的退避重试兜底**、而非仅靠本轮询（勿据此误删重试）。
       '$deadline = (Get-Date).AddSeconds(15)',
       `while ((Get-Service -Name ${SERVICE_NAME} -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 300 }`,
-      // 外置复制（U1）：旧服务已停删 → ProgramData 旧副本（若有）已解锁 → -Force 覆盖。带退避重试兜「文件仍被占用」
+      // 外置复制：旧服务已停删 → ProgramData 旧副本（若有）已解锁 → -Force 覆盖。带退避重试兜「文件仍被占用」
       // 的解锁窗口竞态（sc delete 后进程退出有微小延迟）。失败 fail-loud（不静默留旧副本跑老逻辑）。
       '$copied = $false',
       'for ($i = 0; $i -lt 10 -and -not $copied; $i++) {',
@@ -499,7 +499,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
       `  try { New-Service -Name ${SERVICE_NAME} -BinaryPathName $bp -StartupType Automatic | Out-Null; $created = $true }`,
       '  catch { $lastErr = $_; Start-Sleep -Milliseconds 500 }',
       '}',
-      // 失败抛**真实异常**（不用硬编码 1072 文案盖掉真因——非 1072 失败如路径非法/权限也要透出真原因，闭合 MED-2）
+      // 失败抛**真实异常**（不用硬编码 1072 文案盖掉真因——非 1072 失败如路径非法/权限也要透出真原因）
       `if (-not $created) { throw "New-Service 失败（重试 10 次；多为 sc delete 标记删除态 1072 竞态，若持续请重启）：$($lastErr.Exception.Message)" }`,
       `& '${system32('sc.exe')}' start ${SERVICE_NAME} | Out-Null`,
     ].join('\n');
@@ -536,7 +536,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
         `  "0" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
         '} catch {',
         // 用 .NET WriteAllText（默认 UTF-8 无 BOM）写异常信息——避免 PS5.1 `Out-File -Encoding utf8` 的 BOM
-        // 在 app 回传文案前残留零宽字符（MED-B）。
+        // 在 app 回传文案前残留零宽字符。
         `  [System.IO.File]::WriteAllText('${this.psq(errPath)}', $_.Exception.Message)`,
         `  "1" | Out-File -FilePath '${this.psq(flagPath)}' -Encoding ascii`,
         '}',

@@ -38,7 +38,7 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
             : 'light'
           : theme;
       root.classList.add(resolved);
-      // 缓存解析后的主题，供下次冷启动时 index.html 的早期脚本同步应用、消除 FOUC 闪白（修问题 2）。
+      // 缓存解析后的主题，供下次冷启动时 index.html 的早期脚本同步应用、消除 FOUC 闪白。
       try {
         localStorage.setItem('flowz-theme-resolved', resolved);
       } catch {

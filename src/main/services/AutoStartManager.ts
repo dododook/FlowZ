@@ -61,10 +61,8 @@ class LinuxAutoStart extends AutoStartLogBase implements IAutoStartManager {
 
     try {
       if (enabled) {
-        // 确保目录存在
         await fs.mkdir(this.autostartDir, { recursive: true });
 
-        // 创建 .desktop 文件
         const desktopContent = `[Desktop Entry]
 Type=Application
 Version=1.0
@@ -78,7 +76,6 @@ X-GNOME-Autostart-enabled=true
 `;
         await fs.writeFile(this.desktopFilePath, desktopContent, 'utf-8');
       } else {
-        // 删除 .desktop 文件
         await fs.unlink(this.desktopFilePath).catch(() => {});
       }
       return true;

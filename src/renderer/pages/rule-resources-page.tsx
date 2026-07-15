@@ -105,7 +105,6 @@ export function RuleResourcesPage() {
     return unsub;
   }, [refresh]);
 
-  // .rsc-sel 下拉点击外部收起
   useEffect(() => {
     if (!accelOpen) return;
     const onDocClick = (e: MouseEvent) => {
@@ -207,7 +206,6 @@ export function RuleResourcesPage() {
       return next;
     });
 
-  // 相对时间渲染（i18n）
   const renderTimeAgo = (iso?: string): string => {
     const ago = formatTimeAgo(iso);
     if (!ago) return '—';
@@ -261,7 +259,6 @@ export function RuleResourcesPage() {
     }
   };
 
-  // gh-proxy 设置
   const selectValue =
     ghPrefix === '' ? DIRECT : GH_PROXY_PRESETS.includes(ghPrefix as never) ? ghPrefix : CUSTOM;
 
@@ -324,7 +321,6 @@ export function RuleResourcesPage() {
 
   return (
     <div className="flex flex-col gap-4" data-page="resources">
-      {/* 页头：标题 + 摘要（项数/占用/缺失）+ 资源库 / URL 下载入口 */}
       <div className="page-h">
         <h1>{t('ruleResources.pageTitle', '规则资源')}</h1>
         <span className="rsc-summary">
@@ -350,9 +346,7 @@ export function RuleResourcesPage() {
         </div>
       </div>
 
-      {/* 设置区：GitHub 加速 + 自动更新（双列卡片） */}
       <div className="rsc-settings">
-        {/* GitHub 加速 */}
         <div className="card rsc-card">
           <div className="field-lbl">{t('ruleResources.ghProxy', 'GitHub 加速')}</div>
           <div className="cc-hair" />
@@ -401,7 +395,6 @@ export function RuleResourcesPage() {
           </div>
         </div>
 
-        {/* 自动更新 */}
         <div className="card rsc-card">
           <div className="rsc-card-head">
             <div className="field-lbl">
@@ -444,7 +437,6 @@ export function RuleResourcesPage() {
         </div>
       </div>
 
-      {/* 已下载资源表 */}
       <div className="card rsc-table-card">
         <div className="rsc-table-head">
           <div className="tabs">
@@ -714,7 +706,6 @@ export function RuleResourcesPage() {
       />
       <ResourceUrlDialog open={urlOpen} onOpenChange={setUrlOpen} onDownload={handleDownload} />
 
-      {/* 删除引用确认（AlertDialog + Conduit .rsc-dialog 内部结构） */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
         <AlertDialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[440px]">
           <div className="rsc-dialog-h">

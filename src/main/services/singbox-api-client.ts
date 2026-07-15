@@ -306,7 +306,7 @@ function getServiceCtor(): grpc.ServiceClientConstructor {
   const protoPath = path.join(os.tmpdir(), `flowz-started-service-${protoHash}.proto`);
   if (!fs.existsSync(protoPath)) {
     // 原子落盘：写进程私有临时文件再 rename（POSIX rename 原子、覆盖同内容无害）。否则主核与瞬态登录核
-    // 并发首连时 existsSync→writeFileSync 非原子，loadSync 可能读到半截 proto 抛错（review）。内容由 hash 钉死，
+    // 并发首连时 existsSync→writeFileSync 非原子，loadSync 可能读到半截 proto 抛错。内容由 hash 钉死，
     // 并发写同字节，rename 竞争时落后者 EEXIST(Win)/被覆盖(POSIX) → 清掉自己的临时文件即可。
     const tmp = `${protoPath}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, PROTO_SRC);

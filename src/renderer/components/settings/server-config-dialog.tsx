@@ -42,9 +42,8 @@ type ServerConfigWithId = ServerConfig;
 const DETOUR_DIRECT = 'direct';
 
 /**
- * 前置代理(detour)节点选择（`.npick`）—— 直连哨兵置顶 + 按订阅/自建分组 + 延迟徽标；排除自身(excludeId)与
- * 组网协议(WireGuard/Tailscale 不作前置代理目标)。独立子组件隔离 latencyMap 订阅，测速期只重渲本下拉、不牵动整弹窗。
- * 取代原 ServerSelectGroups（radix Select 内嵌手风琴）：NodePicker 一步选、口径与首页/规则/首页出口统一。
+ * 前置代理(detour)节点选择：直连哨兵置顶+按订阅/自建分组+延迟徽标；排除自身与组网协议(WireGuard/Tailscale 不作前置代理目标)。
+ * 独立子组件隔离 latencyMap 订阅，测速期只重渲本下拉、不牵动整弹窗。
  */
 function DetourPicker({
   servers,
@@ -61,8 +60,7 @@ function DetourPicker({
   const subscriptions = useAppStore((s) => s.config?.subscriptions || []);
   const latencyMap = useAppStore((s) => s.latencyMap);
 
-  // 排除自身 + 组网协议（endpoint 不作前置代理目标）；直连哨兵置顶。共享映射与首页/规则/应用分流口径统一。
-  // memo 对齐 rule-dialog / app-rules-card：测速广播只重渲本下拉、输入不变不空跑。
+  // memo 对齐 rule-dialog / app-rules-card 口径：测速广播只重渲本下拉、输入不变不空跑。
   const { items, groups: pickerGroups } = useMemo(
     () =>
       buildServerPickerModel({
@@ -126,8 +124,8 @@ export function ServerConfigDialog({
   const [saving, setSaving] = useState(false);
 
   const isEditing = !!server;
-  // 锁协议**只针对组网节点**（WireGuard/WARP/Tailscale）：协议=组网身份不可变，换协议=删了重建 → 杜绝把
-  // WARP/组网节点误改成代理协议的混淆。代理/自定义节点编辑时仍可改协议（导入填错等需修正，沿用原行为）。
+  // 锁协议只针对组网节点（WireGuard/WARP/Tailscale）：协议=组网身份不可变，换协议=删了重建，防止误改成代理协议；
+  // 代理/自定义节点编辑时仍可改协议（导入填错等需修正）。
   const isMeshEdit = isEditing && isEndpointProtocol(server?.protocol);
   // WARP 节点底层协议是 wireguard，但触发器显示「Cloudflare WARP」而非「WireGuard」（鲁棒判定，含旧无标记节点）。
   const isWarp = !!server && isWarpServer(server);
@@ -138,8 +136,7 @@ export function ServerConfigDialog({
       ? 'Tailscale'
       : 'WireGuard';
 
-  // 重名软检测（非阻塞）：与其它节点同名时给琥珀提示，但不拦保存——后端 generateSingBoxConfig 用
-  // getUniqueTag 自动去重 tag（重名不破功能/切换），且订阅天然有同名节点，硬拦会误伤。排除自身（编辑不改名不报）。
+  // 重名软检测（非阻塞）：后端 generateSingBoxConfig 用 getUniqueTag 自动去重 tag，硬拦会误伤订阅天然重名的节点；排除自身。
   const trimmedName = serverName.trim();
   const isDuplicateName =
     !!trimmedName && servers.some((s) => s.id !== server?.id && s.name.trim() === trimmedName);
@@ -171,10 +168,8 @@ export function ServerConfigDialog({
     }
     setNameError('');
 
-    // 悬挂 detour 防回写：detour state 在 open 时由 server.detour 灌入，但目标节点可能已被删除（或因组网协议被
-    // excludeEndpoint 过滤出候选）。此时 DetourPicker 触发器显「直连」占位（findItem 落空），但 state 仍持旧 id——
-    // 若原样保存会把用户以为已直连的悬挂 id 再写回 config。故用与 DetourPicker 同一候选谓词（isPickerCandidate，
-    // excludeId=自身 + excludeEndpoint）校验：不在有效候选则视为直连（undefined），杜绝 UI 显示与持久化不一致。
+    // 悬挂 detour 防回写：detour state 可能指向已删除/被 excludeEndpoint 过滤掉的节点（UI 显「直连」但 state 仍持旧 id）；
+    // 用与 DetourPicker 同一候选谓词（isPickerCandidate）校验，不在有效候选则视为直连，避免 UI 与持久化不一致。
     const detourValid =
       !!detour && servers.some((s) => s.id === detour && isPickerCandidate(s, server?.id, true));
 
@@ -271,7 +266,6 @@ export function ServerConfigDialog({
             </div>
           )}
 
-          {/* 协议：组网节点编辑锁协议（disabled 禁打开 + 改值）；WARP 显示「Cloudflare WARP」，其余走 SelectValue。 */}
           <div className="nd-fld">
             <span className="nd-fld-lbl">
               {t('servers.protocol')}
@@ -290,8 +284,7 @@ export function ServerConfigDialog({
                 {isMeshEdit ? <span>{meshLockedLabel}</span> : <SelectValue />}
               </SelectTrigger>
               <SelectContent>
-                {/* 组网协议（WireGuard/WARP/Tailscale）始终不进可选下拉——新增走组网 tab 顶部「接入组网」区；编辑
-                    组网节点时协议被锁定，故下拉永不含 wireguard/tailscale，代理节点编辑时也无法被改成组网协议。 */}
+                {/* 组网协议（WireGuard/WARP/Tailscale）始终不进下拉：新增走组网 tab 顶部入口，编辑锁定协议。 */}
                 {getSortedProtocolOptions(t, i18n.language, (v) => v !== 'wireguard').map((p) => (
                   <SelectItem key={p.value} value={p.value}>
                     {p.label}
@@ -309,7 +302,6 @@ export function ServerConfigDialog({
             )}
           </div>
 
-          {/* 备注名（必填，内联校验；重名给琥珀软提示不拦保存） */}
           <div className="nd-fld">
             <span className="nd-fld-lbl">
               {t('servers.remarks')} <span className="nd-req">*</span>
@@ -506,7 +498,6 @@ export function ServerConfigDialog({
             )}
           </div>
 
-          {/* 前置代理(detour) 收进折叠 opt-in 区：默认关，编辑已有 detour 的节点时默认展开；WG 不作 detour 目标。 */}
           <FormSection
             title={t('servers.detour', 'Proxy Chain (Detour)')}
             collapsible

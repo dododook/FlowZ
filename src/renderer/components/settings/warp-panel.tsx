@@ -13,12 +13,8 @@ interface WarpPanelProps {
 }
 
 /**
- * Cloudflare WARP「一键」面板——降低理解成本：用户无需懂 WireGuard，点一下即注册匿名设备并直接保存为
- * WireGuard 节点（不暴露 privateKey/reserved 等技术字段）。WARP+ license 可选（多数人用免费版）。
- * 生成的就是普通 WG 节点，后续可在「编辑」里查看/调整 AllowedIPs 等。
- *
- * Conduit 1:1 移植：改用原型设计系统类（`.field`/`.field-lbl`/`.input.mono`/`.btn.flow`）+ conduit token 提示框。
- * 注册/保存逻辑（api.server.registerWarp → onSubmit 构造普通 WireGuard 节点 + warpDevice 自删凭据）逐字保留。
+ * Cloudflare WARP「一键」面板：用户无需懂 WireGuard，点一下即注册匿名设备并直接保存为 WireGuard 节点
+ * （不暴露 privateKey/reserved 等技术字段）；WARP+ license 可选。生成的就是普通 WG 节点，后续可在「编辑」里调整 AllowedIPs 等。
  */
 export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
   const { t } = useTranslation();
@@ -68,7 +64,7 @@ export function WarpPanel({ onSubmit, nameMissing }: WarpPanelProps) {
         </p>
       </div>
 
-      {/* WARP+ license（可选）：默认可见——留空=免费版；填 license 则注册后直接应用为 WARP+。 */}
+      {/* license 默认可见（不折叠进 Advanced）：留空=免费版。 */}
       <div className="field">
         <label className="field-lbl" htmlFor="warpLicenseKey">
           {t('servers.warpLicenseLabel', 'WARP+ license key (optional)')}

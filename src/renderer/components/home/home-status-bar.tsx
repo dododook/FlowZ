@@ -84,11 +84,9 @@ export function HomeStatusBar() {
 
   return (
     <div className="statusbar overflow-hidden whitespace-nowrap">
-      {/* 状态：点 + 文案 */}
       <span className={dotClass} style={dotStyle} />
       <span className="font-medium text-[hsl(var(--fg))]">{status.label}</span>
 
-      {/* 当前节点 */}
       {selectedServer && (
         <>
           <span className="sb-sep">·</span>

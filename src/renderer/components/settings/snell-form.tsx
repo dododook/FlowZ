@@ -199,7 +199,6 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
               </div>
             )}
           />
-          {/* v4：obfs 分支（none|http）；http 时显 Host。v6：mode 分支。互斥，按 version 条件渲染。 */}
           {isV4 ? (
             <FormField
               control={form.control}

@@ -60,7 +60,7 @@ export function useUnlockDetection(): UnlockState {
   exitBlockedRef.current = exitBlocked;
 
   // 冷却**派生自 store.unlock.lastRunAt**（真检测/notReady 完成打戳）：统一 auto（backend self-run）+ manual 完成路径，
-  // 消除「auto 路径完成后 15s 内点刷新→假重检闪烁」（re-review Low）。停代理 resetUnlock 清 lastRunAt → remaining≤0 → 灭。
+  // 消除「auto 路径完成后 15s 内点刷新→假重检闪烁」。停代理 resetUnlock 清 lastRunAt → remaining≤0 → 灭。
   useEffect(() => {
     if (lastRunAt == null) {
       setCooldown(false);
@@ -87,7 +87,7 @@ export function useUnlockDetection(): UnlockState {
   }, []);
 
   // 手动刷新（force=true，绕 TTL）：置「检测中」→ 发起 → 应用返回终态（保证 running 收口，含 force-min/S-gate 早退）。
-  // review#4：只受 proxyRunning 闸（去 exitBlocked 闸）——主进程 M-gate 是不变量，出口恢复窗内 force 本可真跑；返回
+  // 只受 proxyRunning 闸（去 exitBlocked 闸）——主进程 M-gate 是不变量，出口恢复窗内 force 本可真跑；返回
   // blockedReason 也由 applyUnlockSnapshot 折叠 idle。冷却由 lastRunAt 派生，此处不手动开。
   const run = useCallback(() => {
     if (!proxyRunningRef.current) return;
@@ -106,7 +106,7 @@ export function useUnlockDetection(): UnlockState {
   useEffect(() => {
     if (hasUnlockState(useAppStore.getState().unlock)) return;
     let cancelled = false;
-    // get() 水合本身零网络、**不受 gating**（review#2：窗口重建时 connectionStatus 尚未载入 → proxyRunningRef 陈旧
+    // get() 水合本身零网络、**不受 gating**（窗口重建时 connectionStatus 尚未载入 → proxyRunningRef 陈旧
     // false，若整段被 proxyRunning 闸早退则 fresh lastSnapshot 永不恢复、解锁行空白）。是否**发起** run 交 kickAutoRun 自守。
     void unlockApi
       .get()

@@ -37,7 +37,6 @@ type TFn = (key: string, opts?: Record<string, unknown>) => string;
 export function deriveConnectionStatus(inputs: DeriveStatusInputs, t: TFn): StatusInfo {
   const { proxyError, connectionStatus, configProxyModeType, proxyBusy, proxyPhase } = inputs;
 
-  // 优先 config 的模式类型，回落 connectionStatus，再回落 systemProxy
   const proxyModeType = configProxyModeType || connectionStatus?.proxyModeType || 'systemProxy';
   const isTunMode = proxyModeType === 'tun';
   const isManualMode = proxyModeType === 'manual';

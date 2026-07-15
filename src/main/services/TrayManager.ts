@@ -35,14 +35,8 @@ const PROTOCOL_SHORT: Record<string, string> = {
   hysteria2: 'Hy2',
 };
 
-/**
- * 托盘图标状态
- */
 export type TrayIconState = 'idle' | 'connected' | 'connecting';
 
-/**
- * 托盘菜单数据
- */
 export interface TrayMenuData {
   isProxyRunning: boolean;
   hasError?: boolean;
@@ -53,39 +47,16 @@ export interface TrayMenuData {
   proxyModeType: ProxyModeType;
 }
 
-/**
- * 托盘管理器接口
- */
 export interface ITrayManager {
-  /**
-   * 创建托盘图标
-   */
   createTray(): void;
-
-  /**
-   * 销毁托盘图标
-   */
   destroyTray(): void;
   hasTray(): boolean;
-
-  /**
-   * 更新托盘图标状态
-   */
   updateTrayIcon(state: TrayIconState): void;
-
-  /**
-   * 更新托盘菜单
-   */
   updateTrayMenu(isProxyRunning: boolean): void;
 
-  /**
-   * 更新完整托盘菜单（包含服务器列表和代理模式）
-   */
+  /** 更新完整托盘菜单（包含服务器列表和代理模式）。 */
   updateFullTrayMenu(data: TrayMenuData): void;
 
-  /**
-   * 进入轻量模式
-   */
   enterLightweightMode(): void;
 }
 
@@ -164,16 +135,10 @@ export class TrayManager implements ITrayManager {
     this.onEnterPrivacyMode = callbacks?.onEnterPrivacyMode;
   }
 
-  /**
-   * 设置主窗口引用
-   */
   setMainWindow(window: BrowserWindow | null): void {
     this.mainWindow = window;
   }
 
-  /**
-   * 创建托盘图标
-   */
   createTray(): void {
     if (this.tray) {
       this.logManager.addLog('warn', 'Tray already exists', 'TrayManager');
@@ -209,9 +174,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 销毁托盘图标
-   */
   destroyTray(): void {
     if (this.tray) {
       this.tray.destroy();
@@ -225,9 +187,6 @@ export class TrayManager implements ITrayManager {
     return this.tray !== null;
   }
 
-  /**
-   * 更新托盘图标状态
-   */
   updateTrayIcon(state: TrayIconState): void {
     if (!this.tray) {
       this.logManager.addLog('warn', 'Cannot update tray icon: tray not created', 'TrayManager');
@@ -271,9 +230,6 @@ export class TrayManager implements ITrayManager {
     });
   }
 
-  /**
-   * 更新完整托盘菜单（包含服务器列表和代理模式）
-   */
   updateFullTrayMenu(data: TrayMenuData): void {
     if (!this.tray) {
       this.logManager.addLog('warn', 'Cannot update tray menu: tray not created', 'TrayManager');
@@ -287,8 +243,6 @@ export class TrayManager implements ITrayManager {
     this.proxyMode = data.proxyMode;
     this.proxyModeType = data.proxyModeType;
 
-    // 状态显示：使用 emoji 区分不同状态
-    // 🔵 蓝色 = 已连接，⚪ 灰色 = 已断开，🔴 红色 = 连接异常
     let statusLabel: string;
     let statusState: 'connected' | 'disconnected' | 'error';
     if (data.hasError) {
@@ -368,20 +322,17 @@ export class TrayManager implements ITrayManager {
       serverSubmenu.push({ type: 'separator' });
     }
 
-    // 添加"管理服务器"选项
     serverSubmenu.push({
       label: mt('trayManageServers'),
       click: () => this.handleManageServers(),
     });
 
-    // 代理模式标签映射
     const proxyModeLabels: Record<ProxyMode, string> = {
       global: mt('trayGlobalProxy'),
       smart: mt('traySmartRouting'),
       direct: mt('trayDirectMode'),
     };
 
-    // 构建代理模式子菜单
     const proxyModeSubmenu: MenuItemConstructorOptions[] = (
       ['global', 'smart', 'direct'] as ProxyMode[]
     ).map((mode) => ({
@@ -474,15 +425,10 @@ export class TrayManager implements ITrayManager {
     this.logManager.addLog('debug', 'Tray menu updated', 'TrayManager');
   }
 
-  /**
-   * 加载托盘图标
-   * 如果图标文件不存在，使用内置的默认图标
-   */
   private loadTrayIcon(state: TrayIconState): Electron.NativeImage {
     const { resourceManager } = require('./ResourceManager');
     const iconPath = resourceManager.getTrayIconPath(state === 'connected');
 
-    // 检查图标文件是否存在
     const fs = require('fs');
     let icon: Electron.NativeImage;
 
@@ -498,7 +444,6 @@ export class TrayManager implements ITrayManager {
         // 连接态用彩色 app.png / 灰色 app-gray.png 区分（updateTrayIcon 按状态切换）。
       }
     } else {
-      // 图标文件不存在，创建一个简单的默认图标
       this.logManager.addLog(
         'warn',
         `Tray icon not found: ${iconPath}, using default`,
@@ -510,11 +455,7 @@ export class TrayManager implements ITrayManager {
     return icon;
   }
 
-  /**
-   * 创建默认托盘图标（当图标文件不存在时使用）
-   */
   private createDefaultTrayIcon(): Electron.NativeImage {
-    // 创建一个 22x22 的简单图标（V 字形状）
     const size = 22;
     const canvas = `
       <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
@@ -528,17 +469,11 @@ export class TrayManager implements ITrayManager {
     );
   }
 
-  /**
-   * 处理托盘图标点击事件
-   */
   private handleTrayClick(): void {
     this.logManager.addLog('info', 'Tray icon clicked', 'TrayManager');
     this.handleShowWindow();
   }
 
-  /**
-   * 处理启动代理
-   */
   private handleStartProxy(): void {
     this.logManager.addLog('info', 'Start proxy clicked from tray', 'TrayManager');
     if (this.onStartProxy) {
@@ -546,9 +481,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理停止代理
-   */
   private handleStopProxy(): void {
     this.logManager.addLog('info', 'Stop proxy clicked from tray', 'TrayManager');
     if (this.onStopProxy) {
@@ -556,9 +488,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理进入轻量模式
-   */
   private handleLightweightMode(): void {
     this.logManager.addLog('info', 'Enter lightweight mode clicked from tray', 'TrayManager');
     if (this.onLightweightMode) {
@@ -577,9 +506,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理进入隐私模式
-   */
   private handleEnterPrivacyMode(): void {
     this.logManager.addLog('info', 'Enter privacy mode clicked from tray', 'TrayManager');
     // onEnterPrivacyMode 由 index.ts 构造 TrayManager 时恒注入（置主进程隐私 flag 并广播）。
@@ -600,9 +526,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理退出应用
-   */
   private handleQuit(): void {
     this.logManager.addLog('info', 'Quit clicked from tray', 'TrayManager');
     if (this.onQuit) {
@@ -612,9 +535,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理选择服务器
-   */
   private handleSelectServer(serverId: string): void {
     this.logManager.addLog('info', `Server selected from tray: ${serverId}`, 'TrayManager');
     if (this.onSelectServer) {
@@ -622,9 +542,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理切换代理模式
-   */
   private handleChangeProxyMode(mode: ProxyMode): void {
     this.logManager.addLog('info', `Proxy mode changed from tray: ${mode}`, 'TrayManager');
     if (this.onChangeProxyMode) {
@@ -644,9 +561,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理打开设置
-   */
   private handleOpenSettings(): void {
     this.logManager.addLog('info', 'Open settings clicked from tray', 'TrayManager');
     if (this.onOpenSettings) {
@@ -660,9 +574,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理检查更新
-   */
   private handleCheckUpdate(): void {
     this.logManager.addLog('info', 'Check update clicked from tray', 'TrayManager');
     if (this.onCheckUpdate) {
@@ -673,9 +584,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理管理服务器
-   */
   private handleManageServers(): void {
     this.logManager.addLog('info', 'Manage servers clicked from tray', 'TrayManager');
     if (this.onManageServers) {
@@ -689,9 +597,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 处理测速
-   */
   private handleSpeedTest(): void {
     this.logManager.addLog('info', 'Speed test clicked from tray', 'TrayManager');
     if (this.onSpeedTest) {
@@ -701,9 +606,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 获取测速菜单项标签
-   */
   private getSpeedTestLabel(): string {
     if (this.isSpeedTesting) {
       return mt('trayTestingSpeed');
@@ -790,9 +692,6 @@ export class TrayManager implements ITrayManager {
     }
   }
 
-  /**
-   * 更新托盘 tooltip
-   */
   private updateTrayTooltip(): void {
     if (!this.tray) return;
 

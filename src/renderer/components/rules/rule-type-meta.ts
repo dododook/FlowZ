@@ -8,7 +8,7 @@ import { RULE_TYPE_CATEGORY, BYPASS_FAKEIP_TYPES } from '../../../shared/rules';
 import { RULE_RESOURCE_CATALOG } from '../../../shared/rule-resource-catalog';
 import { Globe, Network, AppWindow, Library, Router } from 'lucide-react';
 
-// 单一来源：分组映射与 bypassFakeIP 适用类型复用 shared/rules，避免与之漂移（review P2-6）
+// 单一来源：分组映射与 bypassFakeIP 适用类型复用 shared/rules，避免与之漂移
 export const TYPE_TO_CATEGORY = RULE_TYPE_CATEGORY;
 export { BYPASS_FAKEIP_TYPES };
 

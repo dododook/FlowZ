@@ -212,7 +212,7 @@ export class StatsService {
     this.onConnections?.({ connections: [], at: Date.now() });
     this.subscribeStatusStream();
     this.subscribeConnectionsStream(); // 跟随 started（见 start 注释）
-    // 启动长流周期重建定时器（issue #210 根因 #3 + R2 review H1 假绿修复）：本方法是生产唯一驱动入口
+    // 启动长流周期重建定时器（issue #210 根因 #3 + 假绿修复）：本方法是生产唯一驱动入口
     //（index.ts 仅 proxyManager.on('api-client-ready', () => resubscribe())，从不调 start()）。
     // 若定时器只在 start() 启动，生产环境永不触发 → 周期重建失效（grpc-js 长流驻留未规避）。
     // startResubscribeTimer 幂等（已运行则 return），故崩溃重启多次 resubscribe 只持有一个定时器。

@@ -5,12 +5,12 @@
  * 杜绝同款去重逻辑多份重复实现。
  */
 
-/** 去重保序：按首次出现顺序返回去重后的数组（= Array.from(new Set(items))）。 */
+/** 去重且保留首次出现顺序。 */
 export function dedupe<T>(items: Iterable<T>): T[] {
   return Array.from(new Set(items));
 }
 
-/** 字符串去重 + 修剪空白 + 丢弃空串（dedupe 的「trim + filter(Boolean)」变体），保序。 */
+/** 去重 + trim + 丢弃空串，保序（dedupe 的字符串变体）。 */
 export function dedupeTrim(list: Iterable<string>): string[] {
   return dedupe(Array.from(list, (s) => s.trim()).filter(Boolean));
 }

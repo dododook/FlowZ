@@ -1,7 +1,4 @@
-/**
- * macOS 提权 helper IPC 处理器
- * 状态查询 + 安装/卸载（安装/卸载会弹一次 osascript 管理员授权框）。
- */
+/** 状态查询 + 安装/卸载（安装/卸载会弹一次 osascript 管理员授权框）。 */
 
 import { BrowserWindow, IpcMainInvokeEvent, app, shell, dialog } from 'electron';
 import { spawn } from 'child_process';

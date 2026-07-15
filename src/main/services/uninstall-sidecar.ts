@@ -1,7 +1,7 @@
 /**
  * Windows 完全卸载的分离 sidecar 脚本生成（纯字符串，便于单测钉死命令/编码/分支；执行是真机项）。
  *
- * 背景（review H-1 同类潜伏 bug）：原 sidecar 把 userData/exeDir/uninstaller 等**含 Windows 用户名的路径内联进
+ * 背景：原 sidecar 把 userData/exeDir/uninstaller 等**含 Windows 用户名的路径内联进
  * .bat/.vbs**，且两者都 UTF-8 无 BOM 落盘——
  *  - `.vbs`（wscript）：只认 UTF-16 LE+BOM 为 Unicode，UTF-8 无 BOM 按 ANSI 读 → 非 ASCII 路径错乱。
  *  - `.bat`（cmd）：按系统 OEM 代码页（中文=GBK/936）读，UTF-8 内联的中文路径乱码 → rmdir/del 删错或失败。

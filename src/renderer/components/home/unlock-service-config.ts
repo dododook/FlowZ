@@ -38,7 +38,6 @@ export const UNLOCK_SERVICES: UnlockService[] = [
   { id: 'spotify', name: 'Spotify', short: 'Spotify', group: 'media' },
 ];
 
-/** 状态 → i18n key。 */
 export const STATUS_LABEL_KEY: Record<UnlockStatus, string> = {
   ok: 'home.unlockStateOk',
   partial: 'home.unlockStatePartial',

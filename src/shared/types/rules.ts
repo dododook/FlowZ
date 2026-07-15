@@ -1,8 +1,3 @@
-/**
- * 路由规则相关类型定义
- */
-
-// RuleAction 在路由规则、应用分流等规则域内广泛使用，统一在此定义
 export type RuleAction = 'proxy' | 'direct' | 'block';
 
 /**
@@ -12,7 +7,7 @@ export type RuleAction = 'proxy' | 'direct' | 'block';
 export interface LegacyDomainRule {
   id: string;
   domains: string[];
-  ipCidr?: string[]; // IP CIDR 规则
+  ipCidr?: string[];
   action: RuleAction;
   enabled: boolean;
   bypassFakeIP?: boolean;
@@ -45,16 +40,16 @@ export type RuleType =
   | 'geoip'
   | 'ruleSet';
 
-/**
- * 自定义路由规则（一条规则 = 单一 type + values 数组）。统一 values 为字符串数组：域名/CIDR/
- * 端口("443"或"1000-2000")/进程名/路径/geo 标签/规则集(URL 或 res:<resourceId>)，一项一条。
- */
 /** 单个匹配条件（type + values）。多条件规则用 conditions 数组承载。 */
 export interface RuleCondition {
   type: RuleType;
   values: string[];
 }
 
+/**
+ * 自定义路由规则（一条规则 = 单一 type + values 数组）。统一 values 为字符串数组：域名/CIDR/
+ * 端口("443"或"1000-2000")/进程名/路径/geo 标签/规则集(URL 或 res:<resourceId>)，一项一条。
+ */
 export interface Rule {
   id: string;
   type: RuleType; // 首条件镜像（向后兼容旧消费点 + 回滚安全；恒与 conditions[0] 一致）
@@ -195,9 +190,7 @@ export interface RuleResourceCatalogResult {
 export interface AppRule {
   /** 应用 ID，对应 APP_PRESETS 中的 id 或 customAppPresets 中的 id */
   appId: string;
-  /** 流量策略 */
   action: RuleAction;
-  /** 是否启用 */
   enabled: boolean;
   /** 目标代理服务器 ID (仅当 action === 'proxy' 时有效) */
   targetServerId?: string;
@@ -208,7 +201,7 @@ export interface CustomAppPreset {
   id: string;
   name: string;
   emoji: string;
-  /** 图标 URL（Qure Color 等彩色图标集的应用图标） */
+  /** Qure Color 等彩色图标集的应用图标 */
   iconUrl?: string;
   geositeTags: string[];
   geoipTags?: string[];

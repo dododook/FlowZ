@@ -58,7 +58,7 @@ export class WarpDeregisterQueue {
   /** 防并发重入（启动 drain 与注册后 drain 可能并发）：同一时刻只跑一次 drain。 */
   private draining = false;
   /**
-   * drain 进行中再次触发的「补跑」标志（#86-122 复审 #6）：注册成功后 drainInBackground 若撞上正在跑的启动 drain，
+   * drain 进行中再次触发的「补跑」标志（#86-122）：注册成功后 drainInBackground 若撞上正在跑的启动 drain，
    * 旧实现直接被 draining 互斥静默丢弃 → 注册时点想立即处理的 pending 条目要等下次启动才 drain。改为置位本标志，
    * 当前 drain 结束后补跑一次（合并多次在途触发为一次补跑，不致风暴），确保该次触发不丢。
    */

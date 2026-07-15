@@ -1,8 +1,3 @@
-/**
- * sing-box 内核版本变更提示横幅
- * 当检测到内核版本有变化时显示，支持一键回滚到备份版本
- */
-
 import { useEffect, useState } from 'react';
 import { AlertTriangle, RotateCcw, X, FolderUp, Loader2 } from 'lucide-react';
 import {

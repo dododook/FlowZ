@@ -1,7 +1,7 @@
 /**
  * 诊断报告脱敏 + Markdown 构建 —— 纯函数，主进程 DiagnosticService 与单测共用，不经网络/FS。
  *
- * 红线（[[issue-diagnostics-and-support]] 不变量）：诊断报告会被贴到公开 issue，**绝不含明文密钥**。
+ * 红线（不变量）：诊断报告会被贴到公开 issue，**绝不含明文密钥**。
  * 脱敏走「单一真值」：UserConfig 与生成的 sing-box 配置都过同一个 redactDeep，避免某处漏掉。
  *
  * 策略 = 键名黑名单（命中即整值打码）+ url 仅留 origin + custom 协议 secretKeys 叠加；未命中键原样保留（诊断需看形态）。

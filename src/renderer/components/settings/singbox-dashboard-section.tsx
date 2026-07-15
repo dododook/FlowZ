@@ -7,10 +7,8 @@ import { InfoTooltip } from './shared/info-tooltip';
 import { Srow, Swt } from './conduit-controls';
 
 /**
- * 控制面板卡（Conduit 高级面板 `.card.set-card`）：sing-box 原生控制 API（opt-in 逃生舱）。
- * 主开关 `.srow` + 开启后配置区 `.ctl-group`（缩进 + teal 内脊，归组于主开关下）。
- * 开关写 config.singboxDashboard，经 saveConfig→CONFIG_CHANGED 自动重启生效（不显式 restart）。
- * 「打开面板」仅开关 on 且代理运行时可点 → 调 IPC，main 用运行期 api 端口构造 /dashboard/ URL + 系统浏览器打开。
+ * sing-box 原生控制 API 开关（opt-in）：写 config.singboxDashboard，经 saveConfig→CONFIG_CHANGED 自动重启生效（不显式 restart）。
+ * 「打开面板」仅开关 on 且代理运行时可点：调 IPC，main 用运行期 api 端口构造 /dashboard/ URL + 系统浏览器打开。
  */
 export function SingboxDashboardSection() {
   const config = useAppStore((s) => s.config);

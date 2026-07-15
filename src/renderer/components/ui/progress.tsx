@@ -7,8 +7,8 @@ interface ProgressProps {
 }
 
 /**
- * 统一进度条（下载 / 更新共用一套）。样式对齐应用更新进度条：轨道 `bg-secondary` 圆头、
- * 填充 `bg-primary` 带过渡。确定态按 `value` 取宽度，不确定态显 1/3 宽脉冲条。
+ * 统一进度条（下载 / 更新共用一套，样式对齐应用更新进度条）。
+ * 确定态按 `value` 取宽度，不确定态显 1/3 宽脉冲条。
  */
 export function Progress({ value, className }: ProgressProps) {
   const indeterminate = value == null;

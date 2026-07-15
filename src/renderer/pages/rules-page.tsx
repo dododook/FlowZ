@@ -248,7 +248,6 @@ export function RulesPage() {
 
   return (
     <section className="flex flex-col gap-4" data-page="rules">
-      {/* 页头：标题 + 摘要 + 添加规则 */}
       <div className="page-h">
         <h1>{t('sidebar.rules')}</h1>
         <span className="sub">{t('rules.customRulesDesc')}</span>
@@ -263,10 +262,8 @@ export function RulesPage() {
         </button>
       </div>
 
-      {/* 分流生效前提说明 */}
       <p className="rl-lead">{t('rules.ruleListDesc')}</p>
 
-      {/* 非「智能」模式：自定义规则与地区分流暂不生效（琥珀提示） */}
       {!isSmartMode && (
         <div className="rl-notice">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
@@ -277,10 +274,8 @@ export function RulesPage() {
         </div>
       )}
 
-      {/* 地区分流卡 */}
       <RegionRoutingCard />
 
-      {/* 规则表格卡 */}
       <div className="card rl-tablecard">
         <div className="rl-toolbar">
           <div className="field-lbl" style={{ margin: 0 }}>
@@ -419,7 +414,6 @@ export function RulesPage() {
         )}
       </div>
 
-      {/* 优先级链 + 规则说明 */}
       <div className="card rl-chain">
         <div className="field-lbl">{t('rules.ruleInstructions')}</div>
         <div className="rl-chain-flow">
@@ -451,10 +445,8 @@ export function RulesPage() {
         </div>
       </div>
 
-      {/* Add Rule Dialog */}
       <RuleDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} mode="add" />
 
-      {/* Edit Rule Dialog */}
       {editingRule && (
         <RuleDialog
           open={!!editingRule}
@@ -464,7 +456,6 @@ export function RulesPage() {
         />
       )}
 
-      {/* Delete Rule Dialog */}
       {deletingRule && (
         <DeleteRuleDialog
           open={!!deletingRule}

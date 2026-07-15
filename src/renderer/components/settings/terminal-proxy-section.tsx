@@ -7,10 +7,6 @@ interface TerminalProxySectionProps {
   socksPort: string;
 }
 
-/**
- * 终端代理速查表（Conduit 网络面板末位卡 `.card.set-card` + `.set-collapse.flush`）：默认折叠。
- * 数据驱动渲染各平台命令块（`.cmd-block`），每块一个「复制」拷贝整段命令。
- */
 export function TerminalProxySection({ httpPort, socksPort }: TerminalProxySectionProps) {
   const { t } = useTranslation();
 

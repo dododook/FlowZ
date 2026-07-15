@@ -1,7 +1,3 @@
-/**
- * 更新管理 IPC 处理器
- */
-
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import { registerIpcHandler } from '../ipc-handler';
@@ -10,18 +6,11 @@ import type { UpdateCheckResult, UpdateInfo } from '../../../shared/types/update
 
 let updateService: UpdateService | null = null;
 
-/**
- * 设置 UpdateService 实例
- */
 export function setUpdateService(service: UpdateService): void {
   updateService = service;
 }
 
-/**
- * 注册更新相关的 IPC 处理器
- */
 export function registerUpdateHandlers(): void {
-  // 检查更新
   registerIpcHandler<{ includePrerelease?: boolean }, UpdateCheckResult>(
     IPC_CHANNELS.UPDATE_CHECK,
     async (_event: IpcMainInvokeEvent, args) => {
@@ -32,7 +21,6 @@ export function registerUpdateHandlers(): void {
     }
   );
 
-  // 下载更新
   registerIpcHandler<
     { updateInfo: UpdateInfo },
     { success: boolean; filePath?: string; error?: string }
@@ -50,7 +38,6 @@ export function registerUpdateHandlers(): void {
     return { success: false, error: '下载失败' };
   });
 
-  // 安装更新
   registerIpcHandler<{ filePath: string }, { success: boolean; error?: string }>(
     IPC_CHANNELS.UPDATE_INSTALL,
     async (_event: IpcMainInvokeEvent, args) => {
@@ -65,7 +52,6 @@ export function registerUpdateHandlers(): void {
     }
   );
 
-  // 跳过版本
   registerIpcHandler<{ version: string }, { success: boolean }>(
     IPC_CHANNELS.UPDATE_SKIP,
     async (_event: IpcMainInvokeEvent, args) => {
@@ -79,7 +65,6 @@ export function registerUpdateHandlers(): void {
     }
   );
 
-  // 打开 Releases 页面
   registerIpcHandler<void, { success: boolean }>(IPC_CHANNELS.UPDATE_OPEN_RELEASES, async () => {
     if (updateService) {
       updateService.openReleasesPage();

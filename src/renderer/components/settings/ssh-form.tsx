@@ -15,13 +15,10 @@ const createSshSchema = (t: any) =>
     address: z.string().min(1, t('servers.addressRequired')),
     port: z.number().min(1).max(65535),
     user: z.string().optional(),
-    // 密码认证
     password: z.string().optional(),
-    // 私钥认证
     privateKey: z.string().optional(),
     privateKeyPath: z.string().optional(),
     privateKeyPassphrase: z.string().optional(),
-    // 主机密钥（可选）
     hostKey: z.string().optional(),
     hostKeyAlgorithms: z.string().optional(),
     clientVersion: z.string().optional(),
@@ -114,7 +111,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
         .filter(Boolean);
     }
 
-    // 主机密钥算法（可选，逗号/换行分隔）
     if (values.hostKeyAlgorithms?.trim()) {
       sshSettings.hostKeyAlgorithms = values.hostKeyAlgorithms
         .split(/[\n,]/)
@@ -122,7 +118,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
         .filter(Boolean);
     }
 
-    // 客户端版本字符串（可选）
     if (values.clientVersion?.trim()) {
       sshSettings.clientVersion = values.clientVersion.trim();
     }
@@ -174,7 +169,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
           </FieldSpan>
         </FieldGrid>
 
-        {/* 认证方式 */}
         <div className="nd-fld">
           <span className="nd-fld-lbl">{t('servers.ssh.authMethod')}</span>
           <div className="seg2">
@@ -195,7 +189,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
           </div>
         </div>
 
-        {/* 密码认证 */}
         {authMode === 'password' && (
           <FormField
             control={form.control}
@@ -215,7 +208,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
           />
         )}
 
-        {/* 私钥认证 */}
         {authMode === 'privatekey' && (
           <div className="nd-fset">
             <div className="nd-fset-h">{t('servers.ssh.privateKeyAuth')}</div>
@@ -266,7 +258,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
           </div>
         )}
 
-        {/* 主机公钥（高级选项） */}
         <FormSection title={t('servers.advanced', 'Advanced')} collapsible defaultOpen={false}>
           <FormField
             control={form.control}

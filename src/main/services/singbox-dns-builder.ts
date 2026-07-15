@@ -90,13 +90,8 @@ export function buildDnsConfig(
     enableFakeIp: false,
   };
 
-  // 决定是否开启 FakeIP。
-  // 在 TUN 模式下强制开启 FakeIP。
-  // 原因：很多第三方机场的节点防滥用严格，如果收到纯 IP 地址而非域名，会直接拒绝连接并抛出无效证书或拦截页面。
-  // 配合我们刚刚修复的 macOS gvisor strict_route DHCP DNS 劫持逻辑，
-  // FakeIP 现在能够 100% 完美的用内部 cache 把假 IP 还原成真域名丢给代理节点。
-  // 从而完美避开机场对纯 IP 请求的无情封杀！
-  // 单一真值：与 custom-rule-files.usesFakeIp 同源（外化判定一致，避免漂移）
+  // TUN 模式强制开启 FakeIP：不少机场对纯 IP（非域名）连接会拒绝或返回无效证书/拦截页；FakeIP 让 sing-box 用内部
+  // cache 把假 IP 还原成真域名再转发给代理节点，避开该封杀。单一真值：与 custom-rule-files.usesFakeIp 同源（外化判定一致，避免漂移）。
   const enableFakeIp = usesFakeIp(config);
 
   // 用户自定义 DNS：解析 domesticDns/foreignDns（https DoH / tls DoT / udp / 裸 IP），非法或空回退默认并告警。
@@ -133,15 +128,11 @@ export function buildDnsConfig(
     ...(detour ? { detour } : {}),
   });
 
-  // sing-box 1.13+ 新格式：每个 server 必须有显式 type 字段
-  //
-  // 关键架构说明：
-  // - 在 TUN 下，Windows 的系统 DNS (svchost) 发出的解析请求会被 TUN 劫持。如果该系统 DNS 配置为公共 IP，
-  //   此时 type: 'local' (调用系统 getaddrinfo) 就会进入死循环。
-  // - 为了彻底解决这个问题，同时避免 UDP 53 屏蔽（之前使用 223.5.5.5 UDP 的缺陷），
-  //   我们引入一个坚不可摧的 DoH IP Bootstrap (dns-bootstrap)：向 223.5.5.5:443 直接发 DoH 包。
-  //   它绕过 TUN 不是靠 DNS detour，而是靠 route 规则把 223.5.5.5:443 直连放行（见 generateRouteConfig）。
-  //   关键路径（节点域名 / doh.pub / default_domain_resolver）均以它为 resolver，免疫 UDP 53 限速/劫持/投毒。
+  // sing-box 1.13+ 新格式：每个 server 必须有显式 type 字段。
+  // 关键架构：Win TUN 下 svchost 系统 DNS 若配置为公网 IP，type:'local'(getaddrinfo) 的查询会被 TUN 劫持回自身形成
+  // 死循环；且需避免 UDP 53 屏蔽（223.5.5.5 UDP 曾有此缺陷）。故用 DoH IP Bootstrap（dns-bootstrap）：向 223.5.5.5:443
+  // 直发 DoH 包，靠 route 规则把该地址直连放行绕过 TUN（非 DNS detour，见 generateRouteConfig）。关键路径（节点域名 /
+  // doh.pub / default_domain_resolver）均以它为 resolver，免疫 UDP 53 限速/劫持/投毒。
   const dnsServers: SingBoxDnsServer[] = [
     {
       // 引导解析（DoH over IP）：关键路径的解析器。server 已是 IP，无需 domain_resolver。
@@ -285,7 +276,7 @@ export function buildDnsConfig(
   // winLoopRisk 解耦（T2）：死环源于 Win strict_route(WFP) + type:local 本身，与 takeoverSystemDns 开关无关（Win
   // setDns 本就收敛 no-op）→ 改为「Win + TUN」恒判，不再以 takeoverSystemDns 为代理键。修原 takeoverSystemDns=false
   // 时死环防护被误关、该边界仍撞 svchost ∞ 环的潜在 bug（默认 takeoverSystemDns!==false 不受影响、行为字节不变）。
-  // ⚠️ 真机待验（[[feedback_empirical_test_over_review]]，推理可判但 DNS 运行期须实证）：Win + takeoverSystemDns=false
+  // ⚠️ 真机待验（推理可判但 DNS 运行期须实证）：Win + takeoverSystemDns=false
   //    + TUN 下 nslookup 内网/银行域名走 dns-domestic 不成环、内网 NXDOMAIN 不挂（见 docs/design/dns-ipv6-takeover.md §A）。
   const winLoopRisk = process.platform === 'win32' && config.proxyModeType === 'tun';
   // 内网/反查/captive 解析器：优先 dns-lan(直连放行的 LAN IP)；无则 Win 退 dns-domestic(避免 type:local 死环、
@@ -472,11 +463,9 @@ export function buildDnsConfig(
   // 智能分流/全局代理模式下的 DNS 规则
   if (proxyMode === 'smart' || proxyMode === 'global') {
     if (enableFakeIp) {
-      // [原版 Fork 核心精髓：Clash-style 全局 FakeIP]
-      // 让所有的 A/AAAA（IPv4/IPv6）解析无脑走 FakeIP 返回 198.18 的伪装 IP。
-      // 等浏览器连过来以后，Sing-box 靠伪装 IP 查缓存恢复域名，然后交给下面的 Route 引擎。
-      // Route 引擎看到域名，如果命中 geosite-cn，就走 direct 出口，走 direct 时再真正发起本地 DNS 查询拿到淘宝的真实 IP。
-      // 如果查不到 cn 规则，自然落入 proxy，连同域名一起完好无损发给代理节点！极其稳如泰山！
+      // Clash-style 全局 FakeIP：全部 A/AAAA 解析走 FakeIP 返回 198.18 伪装 IP；浏览器连接时 sing-box 按伪装 IP
+      // 查缓存还原域名交给 Route 引擎——命中 geosite-cn 走 direct（此时才真正发起本地 DNS 查询拿真实 IP），
+      // 否则落入 proxy，域名随包完整发给代理节点。
       dnsRules.push({
         query_type: ['A', 'AAAA'],
         server: 'fakeip',
@@ -516,7 +505,7 @@ export function buildDnsConfig(
         server: fakeipFallthroughResolver,
       } as SingBoxDnsRule);
     } else {
-      // 如果实在没开 FakeIP（比如系统代理模式），那就用 geosite 规则让它各自拿正确的 IP 吧（但也容易被墙污染）
+      // 未开 FakeIP（如系统代理模式）：用 geosite 规则各自解析正确 IP（但容易被墙污染）
       if (proxyMode === 'smart') {
         // 地区分流的 DNS 解析器划分，镜像 route 侧 localOut/foreignOut/final 的 reverse 翻转（单一真值同源）：
         //   geo tag 复用 region-routing（与 route 侧 REGION_LOCAL_GEO 同源）：cn=['geosite-cn']（逐字节=今日）/

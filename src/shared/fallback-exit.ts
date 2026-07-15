@@ -2,7 +2,7 @@
  * 删「当前选中」节点后的兜底出口候选选择（renderer 删节点 reselect 与 main 订阅 reselect 共用单一真值）。
  *
  * 关键：候选必须过可用性谓词，否则会静默选中不承载公网流量的节点（subnet-only 组网节点：WG allowInternet:false
- * 带网段 / TS 无 exitNode）→ 重启后公网流量静默走 direct = VPN 客户端语义下的泄漏（#291 review Med）。
+ * 带网段 / TS 无 exitNode）→ 重启后公网流量静默走 direct = VPN 客户端语义下的泄漏（#291）。
  * pickFallbackExit 无正延迟时回退列表首个候选，故过滤必须在其之前完成。
  */
 import type { ServerConfig } from './types';

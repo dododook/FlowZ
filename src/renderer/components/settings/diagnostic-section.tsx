@@ -6,7 +6,7 @@ import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 
 /**
- * 诊断节（[[issue-diagnostics-and-support]] P0 + 诊断采集）。渲染于「日志」页的「日志与诊断」折叠节
+ * 诊断节（诊断报告导出 + 诊断采集）。渲染于「日志」页的「日志与诊断」折叠节
  * （logs-page.tsx，2026-06 从「设置·高级」迁入；用户路径＝主页 → 日志 → 诊断），文件名/import 路径仍在 settings/ 下未迁。
  * - 导出诊断报告：始终可用，汇集环境/脱敏配置/日志 tail 成单 Markdown。
  * - 诊断采集：临时把 logLevel 拉到 debug 复现问题（快照原级别，结束/重启还原），与导出形成「采集→复现→导出」闭环。
@@ -117,7 +117,6 @@ export function DiagnosticSection() {
         </div>
       )}
 
-      {/* 动作行 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
         <button
           type="button"

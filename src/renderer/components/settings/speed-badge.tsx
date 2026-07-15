@@ -82,8 +82,8 @@ export function SpeedBadge({
           {t('servers.tsNotLoggedIn', '未登录')}
         </span>
       );
-    // 不可测且无值：faint 占位。§16.1 reason=ts-needs-core（TS-exit 代理关）→ 显「—」+ tooltip「连接代理后可测速」
-    //（它可测，只是缺主核）；否则恒不可测三类 → 「不支持测速」+ exitProbeHint（选为出口后伴测得真值，非永远测不了）。
+    // 不可测且无值：faint 占位。§16.1 reason=ts-needs-core（TS-exit 代理关，只是缺主核）→ 显「—」+ tooltip「连接代理后可测速」；
+    // 否则恒不可测三类 → 「不支持测速」+ exitProbeHint（选为出口后伴测得真值，非永远测不了）。
     case 'na':
       return badge.reason === 'ts-needs-core' ? (
         <ActionTip label={t('servers.speedTestTsNeedsCore', { defaultValue: '连接代理后可测速' })}>
@@ -98,9 +98,8 @@ export function SpeedBadge({
           </span>
         </ActionTip>
       );
-    // 可测未测。reason=not-in-pool（新增节点未写入运行核）→ 显性「待入池」文案替代「—」（藏在原生 title 后的解释在
-    // Electron 下常看不到）；tooltip 修正为真实入池路径（选中该节点或重启内核，**非**「刷新订阅」——纯新增走 P2-A 免重启）。
-    // 纯未测（未点测速）→ 占位 em dash「—」、无 tooltip。
+    // 可测未测。reason=not-in-pool（新增节点未写入运行核）→ 显性「待入池」替代「—」（原生 title 的解释在 Electron 下常看不到）；
+    // tooltip 给真实入池路径（选中该节点或重启内核，**非**「刷新订阅」——纯新增走 P2-A 免重启）。纯未测（未点测速）→ 占位「—」、无 tooltip。
     case 'untested':
       if (badge.reason === 'not-in-pool')
         return (

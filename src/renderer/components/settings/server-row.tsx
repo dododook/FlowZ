@@ -1,8 +1,3 @@
-/**
- * 节点列表视图行 —— Conduit `.nd-row` 形态（原型 1:1）。本地 SVG 国旗 + 状态点/多选框 + 名称 + 协议/组网/当前/
- * 传输角标 + 弹性占位 + 延迟徽标 + 常显操作条。行点击在选择态走 onToggleSelectId、非选择态走 onSelectServer；
- * 各角标判定逐字保留原行为，无功能变化。
- */
 import { useTranslation } from 'react-i18next';
 import { LogIn, LogOut } from 'lucide-react';
 import type { InvalidNodeInfo } from '../../../shared/types';

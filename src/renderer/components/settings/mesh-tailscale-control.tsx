@@ -1,5 +1,5 @@
 /**
- * Tailscale 组网接入控件（批3b：退役单例连接卡，TS 融入统一节点模型）。
+ * Tailscale 组网接入控件（退役单例连接卡，TS 融入统一节点模型）。
  *
  * 状态**显示**由列表里的统一 ServerCard（`.nd-card.mesh`：dot / `.nd-login` 登录角标 / `.nd-cur` 当前 / ⓘ）承载。
  * 本控件是「接入组网」入口区里的 **Tailscale 账户级管理入口**（Conduit `.nd-mesh-btn`）——只承载放不进节点卡的

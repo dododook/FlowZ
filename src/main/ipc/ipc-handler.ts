@@ -1,8 +1,3 @@
-/**
- * IPC 处理器注册和管理
- * 提供类型安全的 IPC 处理器注册功能
- */
-
 import { app, ipcMain, IpcMainInvokeEvent } from 'electron';
 import { ApiResponse } from '../../shared/types';
 import { IpcChannel } from '../../shared/ipc-channels';
@@ -25,26 +20,15 @@ export function setIpcLogger(logManager: LogManager | null): void {
   ipcLogger = logManager;
 }
 
-/**
- * IPC 处理器函数类型
- */
 export type IpcHandler<TArgs = any, TResult = any> = (
   event: IpcMainInvokeEvent,
   args: TArgs
 ) => Promise<TResult> | TResult;
 
-/**
- * IPC 处理器注册器类
- * 提供统一的错误处理和响应包装
- */
 export class IpcHandlerRegistry {
   private handlers: Map<IpcChannel, IpcHandler> = new Map();
 
-  /**
-   * 注册 IPC 处理器
-   * @param channel IPC 通道名称（收紧为 IpcChannel 联合类型，编译期根治孤儿字面量）
-   * @param handler 处理器函数
-   */
+  /** @param channel 收紧为 IpcChannel 联合类型，编译期根治孤儿字面量 */
   register<TArgs = any, TResult = any>(
     channel: IpcChannel,
     handler: IpcHandler<TArgs, TResult>
@@ -59,7 +43,6 @@ export class IpcHandlerRegistry {
       ipcLogger?.addLog('warn', msg, 'IpcHandlerRegistry');
     }
 
-    // 包装处理器，添加错误处理和响应格式化
     const wrappedHandler = async (
       event: IpcMainInvokeEvent,
       args: TArgs
@@ -100,10 +83,6 @@ export class IpcHandlerRegistry {
     ipcMain.handle(channel, wrappedHandler);
   }
 
-  /**
-   * 注销 IPC 处理器
-   * @param channel IPC 通道名称
-   */
   unregister(channel: IpcChannel): void {
     if (this.handlers.has(channel)) {
       ipcMain.removeHandler(channel);
@@ -111,9 +90,6 @@ export class IpcHandlerRegistry {
     }
   }
 
-  /**
-   * 注销所有 IPC 处理器
-   */
   unregisterAll(): void {
     for (const channel of this.handlers.keys()) {
       ipcMain.removeHandler(channel);
@@ -121,29 +97,17 @@ export class IpcHandlerRegistry {
     this.handlers.clear();
   }
 
-  /**
-   * 获取已注册的通道列表
-   */
   getRegisteredChannels(): IpcChannel[] {
     return Array.from(this.handlers.keys());
   }
 
-  /**
-   * 检查通道是否已注册
-   */
   isRegistered(channel: IpcChannel): boolean {
     return this.handlers.has(channel);
   }
 }
 
-/**
- * 全局 IPC 处理器注册器实例
- */
 export const ipcHandlerRegistry = new IpcHandlerRegistry();
 
-/**
- * 便捷函数：注册 IPC 处理器
- */
 export function registerIpcHandler<TArgs = any, TResult = any>(
   channel: IpcChannel,
   handler: IpcHandler<TArgs, TResult>

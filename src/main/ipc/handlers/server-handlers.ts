@@ -1,8 +1,3 @@
-/**
- * 服务器管理 IPC 处理器
- * 处理服务器配置相关的 IPC 请求
- */
-
 import { IpcMainInvokeEvent } from 'electron';
 import * as fs from 'fs/promises';
 import { randomUUID } from 'crypto';
@@ -19,10 +14,7 @@ import { getWarpDeregisterQueue } from '../../services/WarpDeregisterQueue';
 import { tailscaleStateDir } from '../../services/tailscale-state';
 import type { LogManager } from '../../services/LogManager';
 
-/**
- * 注册服务器管理相关的 IPC 处理器
- * @param logManager 可选，供 WARP 设备注销队列记录日志（只打 deviceId 前缀，绝不打 token）
- */
+/** @param logManager 可选，供 WARP 设备注销队列记录日志（只打 deviceId 前缀，绝不打 token） */
 export function registerServerHandlers(
   protocolParser: ProtocolParser,
   configManager: ConfigManager,
@@ -55,7 +47,6 @@ export function registerServerHandlers(
     }
   };
 
-  // 生成分享 URL
   registerIpcHandler<{ server: ServerConfig }, string>(
     IPC_CHANNELS.SERVER_GENERATE_URL,
     async (_event: IpcMainInvokeEvent, args: { server: ServerConfig }) => {
@@ -63,7 +54,6 @@ export function registerServerHandlers(
     }
   );
 
-  // 添加服务器
   registerIpcHandler<{ server: ServerConfig }, void>(
     IPC_CHANNELS.SERVER_ADD,
     async (_event: IpcMainInvokeEvent, args: { server: ServerConfig }) => {
@@ -98,7 +88,6 @@ export function registerServerHandlers(
     }
   );
 
-  // 更新服务器
   registerIpcHandler<{ server: ServerConfig }, void>(
     IPC_CHANNELS.SERVER_UPDATE,
     async (_event: IpcMainInvokeEvent, args: { server: ServerConfig }) => {
@@ -114,7 +103,6 @@ export function registerServerHandlers(
     }
   );
 
-  // 删除服务器
   // D4/F-1（flowz-node-change-restart）：删除**恒双播** event:configChanged（renderer 差集刷新）+ MAIN_EVENTS.CONFIG_CHANGED
   //   （主进程 switchMode）。重启与否**单一真值**归 switchMode.canSkipRestartForAddedUnreferenced（refOld∪refNext 含 detour
   //   闭包 + endpoint 保守集）：删被引用节点（含 detour 前置/未选中 endpoint）恒重启、删纯未引用节点 canSkip③ defer 不重启。
@@ -201,7 +189,6 @@ export function registerServerHandlers(
     }
   );
 
-  // 获取所有服务器
   registerIpcHandler<void, ServerConfig[]>(
     IPC_CHANNELS.SERVER_GET_ALL,
     async (_event: IpcMainInvokeEvent) => {
@@ -210,7 +197,6 @@ export function registerServerHandlers(
     }
   );
 
-  // 切换服务器
   registerIpcHandler<{ serverId: string }, void>(
     IPC_CHANNELS.SERVER_SWITCH,
     async (_event: IpcMainInvokeEvent, args: { serverId: string }) => {

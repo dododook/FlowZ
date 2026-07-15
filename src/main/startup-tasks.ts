@@ -1,5 +1,5 @@
 /**
- * 启动期任务调度 —— 从 index.ts whenReady 抽出（index.ts 拆分 Phase 3 step C）。
+ * 启动期任务调度 —— 从 index.ts whenReady 抽出。
  *
  * 两个延迟任务：① 2s 后自动连接（先落位上轮 staged 内核再 autoConnect）② 5s 后自动检查更新。
  * 经 deps 注入主进程服务；proxyManager 用 getter 取 call-time 当前值（setTimeout 触发时已初始化）。
@@ -66,7 +66,6 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
       // 时反复触发）。更新当下已有一次性反馈（applyStagedNow 的 EVENT_CORE_VERSION_CHANGED），回滚入口常驻内核管理设置，
       // 故启动期不再主动弹。
 
-      // 检查是否启用了启动时自动连接
       if (config.autoConnect && config.selectedServerId) {
         logManager.addLog('info', '启动时自动连接已启用，正在连接...', 'Main');
 
@@ -75,7 +74,6 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
           await proxyManager.start(config);
 
           logManager.addLog('info', '启动时自动连接成功', 'Main');
-          // 更新托盘菜单状态
           updateTrayMenuState(true);
         }
       } else if (config.autoConnect && !config.selectedServerId) {
@@ -84,7 +82,6 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logManager.addLog('error', `启动时自动连接失败: ${errorMessage}`, 'Main');
-      // 连接失败时更新托盘状态
       updateTrayMenuState(false, true);
     }
   }, 2000);
@@ -93,16 +90,13 @@ export function scheduleStartupTasks(deps: StartupTaskDeps): void {
   setTimeout(async () => {
     try {
       const config = await configManager.loadConfig();
-      // 检查是否启用了自动检查更新
       if (config.autoCheckUpdate !== false) {
         logManager.addLog('info', '正在自动检查更新...', 'Main');
         const result = await updateService.checkForUpdate();
         if (result.hasUpdate && result.updateInfo) {
           logManager.addLog('info', `发现新版本: ${result.updateInfo.version}`, 'Main');
-          // 显示更新对话框
           const action = await updateService.showUpdateDialog(result.updateInfo);
           if (action === 'update') {
-            // 使用带进度窗口的下载方法
             const filePath = await updateService.downloadUpdateWithProgress(result.updateInfo);
             if (filePath) {
               await updateService.installUpdate(filePath);

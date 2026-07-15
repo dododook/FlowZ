@@ -8,7 +8,7 @@
 import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 
-/** 计算文件内容的 sha256（hex）。同步读整文件——仅冷路径/低频校验调用。 */
+/** 计算文件内容的 sha256（hex）。 */
 export function sha256File(filePath: string): string {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
 }

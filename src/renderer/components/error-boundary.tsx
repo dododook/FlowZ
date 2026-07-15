@@ -15,10 +15,6 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-/**
- * React Error Boundary 组件
- * 捕获子组件树中的 JavaScript 错误，记录错误并显示备用 UI
- */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -30,12 +26,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    // 更新 state 使下一次渲染能够显示降级后的 UI
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // 记录错误信息
     console.error('Error caught by ErrorBoundary:', error, errorInfo);
 
     this.setState({
@@ -57,12 +51,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      // 如果提供了自定义 fallback，使用它
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      // 默认错误 UI
       return (
         <div className="flex items-center justify-center min-h-screen p-4 bg-background">
           <Card className="w-full max-w-2xl">

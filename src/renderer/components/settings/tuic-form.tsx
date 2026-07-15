@@ -56,9 +56,8 @@ export function TuicForm({ serverConfig, onSubmit }: TuicFormProps) {
   const normalizeUdpRelay = (u: string | undefined): 'native' | 'quic' =>
     (u || 'native').toLowerCase() === 'quic' ? 'quic' : 'native';
 
-  // 同步 defaultValues（对齐 vless/vmess/trojan）：编辑态直接由 serverConfig 算初值。此前用挂载后
-  // useEffect(form.reset) + 非受控 defaultValue Select，Select 在 reset 前挂载、捕获初始默认值（bbr/native），
-  // reset 改的是 RHF 值而非 Select 显示 → 编辑已有 tuic 节点时拥塞/中继下拉显错值。改同步初值 + 受控 value 修复。
+  // 同步 defaultValues（对齐 vless/vmess/trojan）：编辑态由 serverConfig 直接算初值，不走挂载后 useEffect(form.reset)——
+  // 此前用非受控 defaultValue Select + 事后 reset，reset 改的是 RHF 值而非 Select 显示，导致编辑已有节点时拥塞/中继下拉显错值。
   const getDefaultValues = (): TuicFormValues => {
     if (serverConfig && serverConfig.protocol?.toLowerCase() === 'tuic') {
       return {

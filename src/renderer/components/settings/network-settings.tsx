@@ -121,7 +121,6 @@ export function NetworkSettings() {
 
   const isTunMode = config.proxyModeType?.toLowerCase() === 'tun';
 
-  // 切换布尔配置项（整体回写，保留其余字段）
   const setBool = (key: keyof typeof config, value: boolean) =>
     saveConfig({ ...config, [key]: value }).catch(() => toast.error(t('common.saveFailed')));
 
@@ -248,7 +247,6 @@ export function NetworkSettings() {
     <div className="set-panel" data-set-panel="network">
       {(isMac || isWin || isLinux) && <HelperManagementCard />}
 
-      {/* DNS */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.advanced.dnsSettings')}</b>
@@ -445,7 +443,6 @@ export function NetworkSettings() {
         </Collapse>
       </div>
 
-      {/* 本地代理 / 局域网 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.advanced.localProxyLan', '本地代理 / 局域网')}</b>
@@ -563,7 +560,6 @@ export function NetworkSettings() {
               </>
             }
           >
-            {/* 邻居短名解析后缀（Linux/macOS）：对这些后缀的单标签短名走局域网邻居解析 */}
             <Srow
               label={
                 <>
@@ -640,7 +636,6 @@ export function NetworkSettings() {
         )}
       </div>
 
-      {/* TUN 模式：网络栈（仅 TUN 接管时显示） */}
       {isTunMode && (
         <div className="card set-card">
           <div className="set-h">
@@ -682,7 +677,6 @@ export function NetworkSettings() {
         </div>
       )}
 
-      {/* 连接 / 流量 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.network.connection')}</b>
@@ -697,7 +691,6 @@ export function NetworkSettings() {
             onChange={(c) => setBool('autoSwitchNode', c)}
           />
         </Srow>
-        {/* 缺陷1 组网登录期出口让位 */}
         <Srow
           label={t('settings.network.meshLoginFallback', '组网登录期出口让位')}
           desc={t(
@@ -722,7 +715,6 @@ export function NetworkSettings() {
           >
             <Swt checked={config.blockQuic === true} onChange={(c) => setBool('blockQuic', c)} />
           </Srow>
-          {/* WebRTC 防泄露（三态）。仅 TUN 模式生效——非 TUN 置灰 + 提示切到 TUN。 */}
           <Srow
             label={
               <>
@@ -803,7 +795,6 @@ export function NetworkSettings() {
           >
             <Swt checked={config.enableIPv6 === true} onChange={(c) => setBool('enableIPv6', c)} />
           </Srow>
-          {/* 仅 TUN + IPv6 开 + FakeIP 关 才提示 */}
           {config.proxyModeType === 'tun' &&
             config.enableIPv6 === true &&
             config.dnsConfig?.enableFakeIp === false && (
@@ -835,7 +826,6 @@ export function NetworkSettings() {
         </Collapse>
       </div>
 
-      {/* 更新与测速 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.network.updateAndSpeedTest', '更新与测速')}</b>
@@ -904,7 +894,6 @@ export function NetworkSettings() {
             </select>
           </div>
         </Srow>
-        {/* 更新检查走代理 */}
         <Srow
           label={
             <>
@@ -1151,7 +1140,6 @@ function NodeResolverSection({
         </>
       }
     >
-      {/* 抢跑段（Tier1，上限 3） */}
       <div className="ng-group">
         <div className="ng-row">
           <div className="ng-h">
@@ -1165,7 +1153,6 @@ function NodeResolverSection({
         {tier1Items.map((it) => renderChkRow(it, { disabled: tier1Full }))}
       </div>
 
-      {/* 兜底段（Tier2，不占额度） */}
       <div className="ng-group bordered">
         <div className="ng-h">
           {t('settings.advanced.nodeResolverFallbackHeading')}

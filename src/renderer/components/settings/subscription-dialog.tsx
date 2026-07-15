@@ -74,7 +74,6 @@ export function SubscriptionDialog({
       });
   }, [open, appVersion]);
 
-  // 默认 UA placeholder：拿到版本用 FlowZ/<版本>，否则占位提示
   const defaultUserAgent = appVersion ? `FlowZ/${appVersion}` : 'FlowZ/<版本>';
 
   useEffect(() => {
@@ -90,7 +89,7 @@ export function SubscriptionDialog({
       } else {
         setName('');
         setUrl('');
-        setAutoUpdate(false); // 新增订阅默认【关闭】自动更新（见上：避免无谓重启断流，按需手动开启）
+        setAutoUpdate(false);
         setUserAgent('');
         setUpdateViaProxy(false);
       }
@@ -139,7 +138,6 @@ export function SubscriptionDialog({
 
   const isEditing = !!subscription;
 
-  // 格式化日期显示
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return t('sub.unknown', 'Unknown');
     const date = new Date(timestamp * 1000);
@@ -206,7 +204,6 @@ export function SubscriptionDialog({
             <div className="text-[0.8rem] text-muted-foreground">{t('sub.userAgentDesc')}</div>
           </div>
 
-          {/* 流量和到期信息展示 */}
           {isEditing && subscription?.userInfo && (
             <div className="bg-muted/50 rounded-lg p-3 text-sm flex flex-col gap-1.5 border">
               <div className="flex items-center text-muted-foreground gap-1.5 mb-1">

@@ -14,7 +14,6 @@ import { mt } from '../../i18n';
 import { randomUUID } from 'crypto';
 
 /**
- * 注册订阅管理相关的 IPC 处理器。
  * @param applyConfigForcingRestart §16.3.4b：手动订阅更新（节点集变化）→ 强制核去抖重启入池（绕 P2-A）。call-time 取
  *   proxyManager（对齐 scheduler 装配、防循环依赖）；缺省=不重启（如单测/无代理实例）。
  */
@@ -23,7 +22,6 @@ export function registerSubscriptionHandlers(
   configManager: ConfigManager,
   applyConfigForcingRestart?: (config: UserConfig) => void
 ): void {
-  // 添加订阅
   registerIpcHandler<
     { subscription: Omit<SubscriptionConfig, 'id' | 'createdAt'> },
     SubscriptionConfig
@@ -52,7 +50,6 @@ export function registerSubscriptionHandlers(
     }
   );
 
-  // 更新订阅配置
   registerIpcHandler<{ subscription: SubscriptionConfig }, void>(
     IPC_CHANNELS.SUBSCRIPTION_UPDATE,
     async (_event: IpcMainInvokeEvent, args: { subscription: SubscriptionConfig }) => {
@@ -69,7 +66,6 @@ export function registerSubscriptionHandlers(
     }
   );
 
-  // 删除订阅
   registerIpcHandler<{ subscriptionId: string }, void>(
     IPC_CHANNELS.SUBSCRIPTION_DELETE,
     async (_event: IpcMainInvokeEvent, args: { subscriptionId: string }) => {
@@ -81,13 +77,10 @@ export function registerSubscriptionHandlers(
         throw new Error(`订阅不存在: ${args.subscriptionId}`);
       }
 
-      // 删除订阅
       config.subscriptions.splice(index, 1);
 
-      // 删除该订阅下的所有节点
       config.servers = config.servers.filter((s) => s.subscriptionId !== args.subscriptionId);
 
-      // 如果当前选中的节点被删除了，清除选中状态
       if (config.selectedServerId) {
         const stillExists = config.servers.some((s) => s.id === config.selectedServerId);
         if (!stillExists) {
@@ -99,7 +92,6 @@ export function registerSubscriptionHandlers(
     }
   );
 
-  // 更新订阅节点
   registerIpcHandler<{ subscriptionId: string }, SubscriptionUpdateResult>(
     IPC_CHANNELS.SUBSCRIPTION_UPDATE_SERVERS,
     async (_event: IpcMainInvokeEvent, args: { subscriptionId: string }) => {
@@ -201,11 +193,10 @@ export function registerSubscriptionHandlers(
           deletedIds.has(config.selectedServerId) &&
           !config.servers.some((s) => s.id === config.selectedServerId)
         ) {
-          // 候选过可用性谓词（排 subnet-only 组网节点，防静默直连，#291 review Med）；空则 DIRECT 哨兵。
+          // 候选过可用性谓词（排 subnet-only 组网节点，防静默直连，#291）；空则 DIRECT 哨兵。
           config.selectedServerId = pickViableFallbackExit(config.servers) ?? DIRECT_SERVER_ID;
         }
 
-        // 更新订阅的最后更新时间和流量信息
         subscription.lastUpdated = new Date().toISOString();
         if (result.userInfo) {
           subscription.userInfo = result.userInfo;

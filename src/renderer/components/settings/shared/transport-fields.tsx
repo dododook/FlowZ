@@ -12,7 +12,6 @@ import { FormField, FormMessage } from '@/components/ui/form';
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
 
-/** WebSocket / HTTPUpgrade path。 */
 export function WsPathField({ control, t }: { control: AnyControl; t: TFn }) {
   return (
     <FormField
@@ -29,7 +28,6 @@ export function WsPathField({ control, t }: { control: AnyControl; t: TFn }) {
   );
 }
 
-/** WebSocket / HTTPUpgrade Host header。 */
 export function WsHostField({ control, t }: { control: AnyControl; t: TFn }) {
   return (
     <FormField
@@ -46,7 +44,6 @@ export function WsHostField({ control, t }: { control: AnyControl; t: TFn }) {
   );
 }
 
-/** gRPC service name。约定字段名：grpcServiceName?: string。 */
 export function GrpcServiceNameField({ control, t }: { control: AnyControl; t: TFn }) {
   return (
     <FormField

@@ -97,7 +97,7 @@ export function WireGuardForm({ serverConfig, onSubmit }: WireGuardFormProps) {
         peerPublicKey: wg?.peerPublicKey || '',
         preSharedKey: wg?.preSharedKey || '',
         allowInternet: wg?.allowInternet !== false, // 缺省 true（向后兼容）
-        reverseMesh: wg?.reverseMesh === true, // 缺省 false
+        reverseMesh: wg?.reverseMesh === true,
         alwaysRouteSubnets: wg?.alwaysRouteSubnets !== false, // 缺省 true（向后兼容）
         // 全网段由开关接管，列表仅显示具体段（剥离存量 allowedIPs 里的 catch-all）。
         allowedIPs: stripCatchAll(wg?.allowedIPs).join(', '),

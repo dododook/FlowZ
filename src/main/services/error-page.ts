@@ -11,9 +11,7 @@
 export interface FatalErrorPageText {
   /** 标题（如「FlowZ 启动失败 / Failed to start」）。 */
   title: string;
-  /** 正文说明。 */
   message: string;
-  /** 重载按钮文案。 */
   reloadLabel: string;
   /**
    * 重试 IPC 通道名（如 'fatal:retry'）。本页经 loadURL(data:) 加载（opaque origin），webSecurity 下自身

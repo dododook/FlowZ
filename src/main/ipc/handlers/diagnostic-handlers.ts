@@ -1,5 +1,4 @@
 /**
- * 诊断 IPC 处理器（[[issue-diagnostics-and-support]] P0）。
  * 导出诊断报告：生成脱敏 Markdown → 系统保存对话框 → 落盘。复用 backup-handlers 的 showSaveDialog 模式。
  */
 
@@ -9,7 +8,6 @@ import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import { registerIpcHandler } from '../ipc-handler';
 import type { DiagnosticService } from '../../services/DiagnosticService';
 
-/** 注册诊断相关 IPC 处理器。 */
 export function registerDiagnosticHandlers(diagnosticService: DiagnosticService): void {
   registerIpcHandler<void, { success: boolean; filePath?: string; error?: string }>(
     IPC_CHANNELS.DIAGNOSTIC_EXPORT,

@@ -1,26 +1,19 @@
 import { CustomAppPreset, AppRule, RuleAction } from './types';
 
-/**
- * 应用分流预设列表
- * 每个应用对应一个或多个 geosite 标签，底层映射到 sing-box 的 rule_set 机制
- */
+/** 每个应用对应一个或多个 geosite 标签，底层映射到 sing-box 的 rule_set 机制。 */
 
 export interface AppPreset {
-  /** 应用唯一 ID */
   id: string;
   /** i18n key，对应 rules.apps.XXX */
   labelKey: string;
-  /** Emoji 图标（兜备用） */
+  /** iconUrl 加载失败时的兜底图标 */
   emoji: string;
-  /** 图标 URL（Qure Color 彩色图标集） */
+  /** Qure Color 彩色图标集 */
   iconUrl?: string;
-  /** 对应的 geosite 标签数组（可能有多个） */
   geositeTags: string[];
-  /** 对应的 geoip 标签数组（可能有多个，可选） */
   geoipTags?: string[];
-  /** 对应的进程名数组（用于 macOS/Windows/Linux 真·应用分流，可选） */
+  /** 用于跨平台（macOS/Windows/Linux）按进程名精准分流 */
   processNames?: string[];
-  /** 分类 */
   category: 'video' | 'social' | 'ai' | 'tools' | 'game';
 }
 
@@ -251,7 +244,6 @@ export function getAppPreset(
   if (customPresets) {
     const custom = customPresets.find((p) => p.id === appId);
     if (custom) {
-      // 将 CustomAppPreset 转换为 AppPreset 兼容格式
       return {
         id: custom.id,
         labelKey: custom.name, // 自定义应用直接存储名称
@@ -269,7 +261,6 @@ export function getAppPreset(
   return undefined;
 }
 
-/** 获取某个 category 下的所有预设 */
 export function getAppPresetsByCategory(category: AppPreset['category']): AppPreset[] {
   return APP_PRESETS.filter((p) => p.category === category);
 }

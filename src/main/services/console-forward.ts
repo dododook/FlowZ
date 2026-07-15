@@ -6,11 +6,9 @@
  * 刷爆；故滑动窗口限频 + 单条截断。纯逻辑无 electron 依赖，接线层负责取 details、写 logManager。
  */
 
-/** 默认滑动窗口 1s。 */
 const DEFAULT_WINDOW_MS = 1_000;
 /** 默认每窗口最多转 10 条（够看清风暴征兆，又不至刷爆日志）。 */
 const DEFAULT_MAX_PER_WINDOW = 10;
-/** 默认单条 message 截断上限（字符）。 */
 const DEFAULT_MAX_MESSAGE_CHARS = 2_000;
 
 /**

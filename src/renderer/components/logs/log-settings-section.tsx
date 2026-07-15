@@ -4,9 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 
 /**
- * 日志设置（级别 + 关闭写盘）。从「高级」节迁入日志页（排障归一 C1/H2/M4）。
- * Conduit `.ld-grid`：两列 `.field`（级别 `.select` + 写盘 `.swt-row`），由日志页「日志与诊断」折叠卡承载。
- * 逻辑全保留：级别读写 saveConfig、诊断采集中级别锁定禁用、写盘开关（disableLogFile 语义不变）。
+ * 日志设置（级别 + 关闭写盘）。从「高级」节迁入日志页（排障归一 C1/H2/M4），由日志页「日志与诊断」折叠卡承载。
  */
 export function LogSettingsSection() {
   const config = useAppStore((s) => s.config);

@@ -95,7 +95,6 @@ export function GeneralSettings() {
   // 卡片分组与「网络」节一致：每个主题一张卡（启动 / 行为与隐私），set-h 作卡头。
   return (
     <div className="set-panel">
-      {/* 启动 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.general.groupStartup', '启动')}</b>
@@ -129,7 +128,6 @@ export function GeneralSettings() {
         )}
       </div>
 
-      {/* 行为与隐私 */}
       <div className="card set-card">
         <div className="set-h">
           <b>{t('settings.general.groupBehavior', '行为与隐私')}</b>

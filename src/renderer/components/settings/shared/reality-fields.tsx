@@ -11,7 +11,6 @@ import { FormField, FormMessage } from '@/components/ui/form';
 type AnyControl = Control<any>;
 type TFn = (key: string, fallback?: any) => string;
 
-/** Reality Public Key。 */
 export function RealityPublicKeyField({ control, t }: { control: AnyControl; t: TFn }) {
   return (
     <FormField
@@ -28,7 +27,6 @@ export function RealityPublicKeyField({ control, t }: { control: AnyControl; t: 
   );
 }
 
-/** Reality short ID。 */
 export function RealityShortIdField({ control, t }: { control: AnyControl; t: TFn }) {
   return (
     <FormField

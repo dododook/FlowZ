@@ -93,7 +93,6 @@ export interface NodePickerProps {
   value?: string | null;
   /** 选中回调（一步选中即触发，菜单随即关闭）。 */
   onSelect: (id: string) => void;
-  /** 未选占位。 */
   placeholder?: string;
   /** 触发器尺寸：lg 用于首页出口，default 用于表单内选择。 */
   size?: 'default' | 'lg';
@@ -102,7 +101,6 @@ export interface NodePickerProps {
   /** 超过此数量才显搜索框（默认 6）。 */
   searchThreshold?: number;
   searchPlaceholder?: string;
-  /** 无匹配文案。 */
   emptyText?: string;
   /** 触发器是否显示地址副文本（首页 lg 用）。 */
   showAddress?: boolean;

@@ -116,7 +116,6 @@ export function ServerList({
     [servers, selectedServerId, customRules, appRules]
   );
 
-  // 记住用户的视图偏好
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem('flowz_server_view_mode');
     return saved === 'card' || saved === 'list' ? saved : 'card';
@@ -126,7 +125,6 @@ export function ServerList({
     localStorage.setItem('flowz_server_view_mode', viewMode);
   }, [viewMode]);
 
-  // 批量选择
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
 
@@ -380,7 +378,6 @@ export function ServerList({
           </div>
         </div>
 
-        {/* 本组测速 */}
         <button
           type="button"
           className="btn ghost sm"
@@ -391,7 +388,6 @@ export function ServerList({
           {isTestingSpeed ? t('servers.speedTesting') : t('servers.speedTestGroup')}
         </button>
 
-        {/* 多选 */}
         {showAddButton && (
           <button
             type="button"
@@ -407,7 +403,6 @@ export function ServerList({
         )}
       </div>
 
-      {/* 批量操作栏 */}
       {isSelecting && (
         <div className="nd-batch">
           <label className={`nd-chk${allSelected ? ' on' : ''}`} onClick={toggleSelectAll} />
@@ -472,7 +467,6 @@ export function ServerList({
         </div>
       )}
 
-      {/* 节点列表 */}
       {filteredServers.length === 0 ? (
         <div className="stub">
           <b>
@@ -501,7 +495,6 @@ export function ServerList({
           )}
         </div>
       ) : viewMode === 'card' ? (
-        /* ========= 卡片视图 ========= */
         <div className="nd-grid">
           {filteredServers.map((server) => (
             <ServerCard
@@ -521,7 +514,6 @@ export function ServerList({
           ))}
         </div>
       ) : (
-        /* ========= 列表视图 ========= */
         <div className="nd-rows">
           {filteredServers.map((server) => (
             <ServerRow

@@ -1,5 +1,5 @@
 /**
- * useStatsTopic 的纯订阅控制器（React / DOM 无关，node 可单测）——batch3 §3.7 订阅驱动数据面。
+ * useStatsTopic 的纯订阅控制器（React / DOM 无关，node 可单测）——§3.7 订阅驱动数据面。
  *
  * 管理某 topic 的「监听 + 订阅」生命周期：
  *  - attach：**先挂 EVENT_<topic> 监听再 invoke STATS_SUBSCRIBE**——main 侧 subscribe 内即 send 初始帧，监听须先
@@ -15,7 +15,6 @@ import { IPC_CHANNELS, STATS_TOPIC_EVENT, type StatsTopic } from '../../shared/i
 export interface StatsTopicIpc {
   /** invoke 订阅/退订（带 topic）；错误吞在 controller 内，不影响监听生命周期。 */
   invoke: (channel: string, args: { topic: StatsTopic }) => Promise<unknown>;
-  /** 监听某通道，返回退订函数。 */
   on: (channel: string, listener: (data: unknown) => void) => () => void;
 }
 

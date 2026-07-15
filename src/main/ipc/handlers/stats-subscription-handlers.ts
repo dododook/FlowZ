@@ -1,5 +1,5 @@
 /**
- * stats 订阅 IPC 处理器（batch3 §3.7 订阅驱动数据面）。
+ * stats 订阅 IPC 处理器（§3.7 订阅驱动数据面）。
  *
  * renderer 的 useStatsTopic 经 STATS_SUBSCRIBE / STATS_UNSUBSCRIBE 声明/撤销对某 topic（stats|aggregate|detail）的
  * 订阅；主进程据订阅集派生 worker demand（无订阅者逐级停机）+ 只 relay 给对应订阅者。订阅 wc 取 event.sender（其

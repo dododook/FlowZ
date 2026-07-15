@@ -118,17 +118,11 @@ export class ConfigManager implements IConfigManager {
     }
   }
 
-  /**
-   * 获取配置文件路径
-   */
   getConfigPath(): string {
     return this.configPath;
   }
 
-  /**
-   * 加载配置文件
-   * 如果文件不存在或损坏，返回默认配置
-   */
+  /** 如果文件不存在或损坏，返回默认配置。 */
   async loadConfig(): Promise<UserConfig> {
     void this.sweepStaleTmpFiles(); // 首次加载清扫原子写孤儿 tmp（fire-and-forget，不阻塞）
     try {
@@ -283,9 +277,6 @@ export class ConfigManager implements IConfigManager {
     }
   }
 
-  /**
-   * 保存配置文件
-   */
   async saveConfig(config: UserConfig): Promise<void> {
     // 验证配置
     this.validateConfig(config);
@@ -309,9 +300,6 @@ export class ConfigManager implements IConfigManager {
     this.currentConfig = config;
   }
 
-  /**
-   * 获取配置项
-   */
   get<T>(key: keyof UserConfig): T | undefined {
     if (!this.currentConfig) {
       return undefined;
@@ -319,9 +307,6 @@ export class ConfigManager implements IConfigManager {
     return this.currentConfig[key] as T;
   }
 
-  /**
-   * 设置配置项
-   */
   async set(key: keyof UserConfig, value: any): Promise<void> {
     // 未加载守卫：currentConfig===null（loadConfig 从未成功跑过）时，绝不能用 createDefaultConfig 兜底后
     // 直接 saveConfig——那会用默认配置整份覆盖磁盘上真实的 config.json，静默清空用户 servers/订阅/规则。
@@ -365,9 +350,6 @@ export class ConfigManager implements IConfigManager {
     }
   }
 
-  /**
-   * 验证配置有效性
-   */
   validateConfig(config: UserConfig): void {
     // 验证必填字段
     if (!config) {
@@ -742,7 +724,7 @@ export class ConfigManager implements IConfigManager {
           sanitizedIssues++;
         }
       }
-      // 多条件 conditions/combineMode sanitize（批J）：旁路注入可塞入非数组 conditions、非法
+      // 多条件 conditions/combineMode sanitize：旁路注入可塞入非数组 conditions、非法
       // 类型 / 非字符串值 / 非法 combineMode，会让生成期 ruleConditions() 遍历崩溃。结构非法
       // 的整条 conditions 丢弃（退化为单条件 type/values），值非法仅告警保留（同 values 策略）。
       if (rule.conditions !== undefined) {
@@ -927,7 +909,7 @@ export class ConfigManager implements IConfigManager {
     }
 
     // §2 待应用差集开关：归一为严格 boolean（默认 false=OFF=进待应用）。UI 经 setBool 只写 boolean，但手编 config
-    // 写非布尔值（"yes" 等）会被 switchMode 的 !newConfig.restartOnNodeChange 真值强转成 ON → 显式规整杜绝（review Low-2）。
+    // 写非布尔值（"yes" 等）会被 switchMode 的 !newConfig.restartOnNodeChange 真值强转成 ON → 显式规整杜绝。
     config.restartOnNodeChange = config.restartOnNodeChange === true;
 
     // bypassProcesses 是可选字段，兼容旧配置
@@ -1123,9 +1105,6 @@ export class ConfigManager implements IConfigManager {
     }
   }
 
-  /**
-   * 创建默认配置
-   */
   private createDefaultConfig(): UserConfig {
     return {
       subscriptions: [],

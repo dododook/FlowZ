@@ -1,7 +1,3 @@
-/**
- * 路由规则管理 IPC 处理器
- */
-
 import { IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
 import type { Rule } from '../../../shared/types';
@@ -19,11 +15,7 @@ function assertValidRule(rule: Rule): void {
   }
 }
 
-/**
- * 注册路由规则相关的 IPC 处理器
- */
 export function registerRulesHandlers(configManager: ConfigManager): void {
-  // 获取所有规则
   registerIpcHandler<void, Rule[]>(
     IPC_CHANNELS.RULES_GET_ALL,
     async (_event: IpcMainInvokeEvent) => {
@@ -32,7 +24,6 @@ export function registerRulesHandlers(configManager: ConfigManager): void {
     }
   );
 
-  // 添加规则
   registerIpcHandler<Rule, Rule>(
     IPC_CHANNELS.RULES_ADD,
     async (_event: IpcMainInvokeEvent, rule: Rule) => {
@@ -49,7 +40,6 @@ export function registerRulesHandlers(configManager: ConfigManager): void {
       config.customRules.push(newRule);
       await configManager.saveConfig(config);
 
-      // 广播和触发事件
       ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
       mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
 
@@ -57,7 +47,6 @@ export function registerRulesHandlers(configManager: ConfigManager): void {
     }
   );
 
-  // 更新规则
   registerIpcHandler<Rule, void>(
     IPC_CHANNELS.RULES_UPDATE,
     async (_event: IpcMainInvokeEvent, rule: Rule) => {
@@ -76,13 +65,11 @@ export function registerRulesHandlers(configManager: ConfigManager): void {
       config.customRules[index] = rule;
       await configManager.saveConfig(config);
 
-      // 广播和触发事件
       ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
       mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
     }
   );
 
-  // 删除规则
   registerIpcHandler<{ ruleId: string }, void>(
     IPC_CHANNELS.RULES_DELETE,
     async (_event: IpcMainInvokeEvent, args: { ruleId: string }) => {
@@ -100,7 +87,6 @@ export function registerRulesHandlers(configManager: ConfigManager): void {
       config.customRules.splice(index, 1);
       await configManager.saveConfig(config);
 
-      // 广播和触发事件
       ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
       mainEventEmitter.emit(MAIN_EVENTS.CONFIG_CHANGED, config);
     }

@@ -176,8 +176,6 @@ export function ResourceCatalogDialog({
     onOpenChange(false);
   };
 
-  // 单行卡片（Conduit .rsc-lib-row）：勾选框 + 名称(mono, 搜索高亮) + 分类 pill + 大小(内置可得) + 状态徽标。
-  // 可下载项 = 启用勾选框 + 全行 label 点击；已内置/已下载/文件缺失 = 禁用勾选框 + 对应徽标。
   const renderRow = (d: DisplayItem) => (
     <label key={d.id} className={cn('rsc-lib-row', !d.selectable && 'disabled')}>
       <input

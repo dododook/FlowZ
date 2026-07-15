@@ -146,9 +146,6 @@ export class CoreUpdateService {
     this.eventSender = fn;
   }
 
-  /**
-   * 检查核心更新
-   */
   async checkUpdate(): Promise<CoreUpdateCheckResult> {
     try {
       this.logManager.addLog('info', '正在检查 Sing-box 核心更新...', 'CoreUpdateService');
@@ -266,9 +263,6 @@ export class CoreUpdateService {
     }
   }
 
-  /**
-   * 执行更新
-   */
   async updateCore(downloadUrl: string): Promise<boolean> {
     if (this.isUpdating) {
       throw new Error('更新正在进行中');
@@ -415,7 +409,7 @@ export class CoreUpdateService {
     if ((process.platform === 'darwin' || process.platform === 'linux') && this.helperManager) {
       const st = await this.helperManager.getStatus();
       if (this.helperSupportsInstallCore(st)) {
-        await this.backupCurrentCore(); // 备份现役(受保护/受管核可读)→userData，供首启失败回滚（[HIGH-1]）
+        await this.backupCurrentCore(); // 备份现役(受保护/受管核可读)→userData，供首启失败回滚
         onBackupDone?.();
         await resourceManager.ensureCronetBeside(sourceDir);
         const res = await this.helperManager.installCore(sourceDir);
@@ -523,7 +517,7 @@ export class CoreUpdateService {
   }
 
   /** 置「待首启验证」闩 + 抑制自动重启 + 超时兜底。bundle 落位与 macOS install-core 落位共用，保证两条路径都有
-   *  「首启 crash → autoRollback」保护网（修 [HIGH-2]：install-core 分支原本早退跳过此闩）。 */
+   *  「首启 crash → autoRollback」保护网（install-core 分支原本早退跳过此闩）。 */
   private armPendingValidation(version: string | null): void {
     // 同时抑制 ProxyManager 自动重启——让新核心首次异常退出立即上报，而非在坏核心上空转重试。
     this.pendingUpdateVersion = version;
@@ -1071,9 +1065,6 @@ export class CoreUpdateService {
     }
   }
 
-  /**
-   * 获取当前核心版本
-   */
   async getCurrentVersion(force = true): Promise<string> {
     // 默认 force=true 读活二进制：版本记录/回滚/兼容带(verifiedCeiling)决策等准确性敏感点必须读真实当前核心——
     // 换核/回滚不经 startInternal 的 force 刷新，若吃 getCoreVersion 缓存会读到陈旧失败版本 → 记错版本、回滚 fail-safe 失效。
@@ -1102,9 +1093,7 @@ export class CoreUpdateService {
     }
   }
 
-  /**
-   * 记录成功启动的版本（在代理成功启动后调用）
-   */
+  /** 在代理成功启动后调用。 */
   async recordSuccessfulVersion(): Promise<void> {
     try {
       const version = await this.getCurrentVersion();
@@ -1126,7 +1115,7 @@ export class CoreUpdateService {
       }
 
       // 若处于"更新后待验证"窗口：'started' 仅代表存活 1s、可能假成功，不立即删备份；改启动稳定
-      // 观察期，期内无 error 才判稳定→删备份（详见 startStabilityWatch / 修 review #3 假成功删备份）
+      // 观察期，期内无 error 才判稳定→删备份（详见 startStabilityWatch，修复假成功删备份问题）
       if (this.pendingUpdateVersion) {
         this.startStabilityWatch();
       }
@@ -1136,9 +1125,6 @@ export class CoreUpdateService {
     }
   }
 
-  /**
-   * 检查是否存在备份版本
-   */
   hasBackup(): boolean {
     return fs.existsSync(this.getBackupPath());
   }
@@ -1196,7 +1182,7 @@ export class CoreUpdateService {
       throw new Error('没有可用的备份版本');
     }
     // 回滚（手动 / autoRollbackIfPendingUpdate 自动）使旧「版本已变更」通知作废：清 pendingChangeNotice 防陈旧误弹
-    // （核已回退，通知的 A→B 不再成立；回滚本身即反馈，无需再弹。复审 LOW：自动回滚不经 banner show→ack 之补口）。
+    // （核已回退，通知的 A→B 不再成立；回滚本身即反馈，无需再弹。自动回滚不经 banner show→ack 之补口）。
     this.ackPendingChangeNotice();
 
     if (this.proxyManager) {
@@ -1214,7 +1200,7 @@ export class CoreUpdateService {
     try {
       const backupPath = this.getBackupPath();
       // B 块 macOS（helper v5）：受保护目录 root-only，经 helper install-core 把 backup 写回（连带 libcronet）。普通
-      // fs.copy 写不了；且读路径优先受保护目录，必须写那里，否则「写了读不到」（修 [HIGH-1]）。
+      // fs.copy 写不了；且读路径优先受保护目录，必须写那里，否则「写了读不到」。
       if (await this.isProtectedCoreActive()) {
         await this.installSingleCoreViaHelper(backupPath);
         try {
@@ -1715,7 +1701,7 @@ export class CoreUpdateService {
     const backupPath = this.getBackupPath();
     if (!fs.existsSync(backupPath)) return;
     try {
-      // B 块 macOS（helper v5）：经 helper install-core 把 backup 写回受保护目录（与 rollbackCore 同源，[HIGH-1]）。
+      // B 块 macOS（helper v5）：经 helper install-core 把 backup 写回受保护目录（与 rollbackCore 同源）。
       if (await this.isProtectedCoreActive()) {
         await this.installSingleCoreViaHelper(backupPath);
         this.logManager.addLog('info', '已从备份恢复核心（受保护目录）', 'CoreUpdateService');
@@ -1744,11 +1730,9 @@ export class CoreUpdateService {
     if (this.privilegeService) return this.privilegeService.copyFileElevated(src, dest);
     const { execSync } = require('child_process') as typeof import('child_process');
 
-    // Escape single quotes in paths for PowerShell
     const escapedSrc = src.replace(/'/g, "''");
     const escapedDest = dest.replace(/'/g, "''");
 
-    // Ensure destination directory exists
     const destDir = path.dirname(dest);
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });

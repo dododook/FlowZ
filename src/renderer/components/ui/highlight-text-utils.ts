@@ -15,7 +15,6 @@ export interface HighlightSegment {
 }
 
 /**
- * 按 query（trim 后，大小写不敏感）把 text 切成交替片段。
  * 空 query 或无命中 → 单个 { text, match:false }，渲染层原样输出不引入额外节点。
  * 保留原文大小写：命中片段用 text 中的实际子串，不替换为 query。
  */
@@ -25,7 +24,7 @@ export function splitByQuery(text: string, query: string): HighlightSegment[] {
 
   // 捕获组 → split 结果交替为 [非命中, 命中, 非命中, 命中, ...]
   const parts = text.split(new RegExp(`(${escapeRegExp(q)})`, 'gi'));
-  if (parts.length === 1) return [{ text, match: false }]; // 无命中
+  if (parts.length === 1) return [{ text, match: false }];
 
   const lowerQ = q.toLowerCase();
   return parts

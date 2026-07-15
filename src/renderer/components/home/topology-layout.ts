@@ -88,7 +88,6 @@ export function computeTopologyLayout(
     o.count,
   ]);
 
-  // --- Layout Calculation (Responsive) ---
   const nodeList: Node[] = [];
   const availableHeight = canvasHeight - 2 * PADDING_Y;
 
@@ -101,7 +100,6 @@ export function computeTopologyLayout(
   const totalMiddleGap = Math.max(0, middleCount - 1) * NODE_GAP;
   const totalOutboundGap = Math.max(0, outboundCount - 1) * NODE_GAP;
 
-  // Scale Logic: Ensure items fit in height.
   const maxContentHeight = availableHeight - Math.max(totalMiddleGap, totalOutboundGap);
   const autoScale = maxContentHeight / (totalConnections || 1);
   const MAX_SCALE = 30; // Max pixels per connection (prevents single connection from being massive)
@@ -109,7 +107,6 @@ export function computeTopologyLayout(
 
   const SHIFT_RIGHT = 35; // Shift the entire layout right to fill empty space
 
-  // Source Node
   const sourceNode: Node = {
     id: 'source',
     name: t('home.myDevice'),
@@ -123,15 +120,12 @@ export function computeTopologyLayout(
   sourceNode.y = (canvasHeight - sourceNode.height) / 2;
   nodeList.push(sourceNode);
 
-  // Middle Nodes
-  // Center the group vertically
   const middleGroupHeight =
     sortedMiddle.reduce((acc, [_, d]) => acc + Math.max(2, d.value * scale), 0) + totalMiddleGap;
   let currentY = (canvasHeight - middleGroupHeight) / 2;
 
   const midNodeParams = new Map<string, Node>();
-  // Responsive X positions
-  const middleX = width * 0.45 + SHIFT_RIGHT; // 45% of width + shift
+  const middleX = width * 0.45 + SHIFT_RIGHT;
 
   sortedMiddle.forEach(([name, data]) => {
     const h = Math.max(2, data.value * scale);
@@ -150,7 +144,6 @@ export function computeTopologyLayout(
     currentY += h + NODE_GAP;
   });
 
-  // Outbound Nodes
   const outGroupHeight =
     sortedOutbounds.reduce((acc, [_, v]) => acc + Math.max(2, v * scale), 0) + totalOutboundGap;
   currentY = (canvasHeight - outGroupHeight) / 2;
@@ -177,10 +170,8 @@ export function computeTopologyLayout(
     currentY += h + NODE_GAP;
   });
 
-  // --- 4. Links ---
   const linkList: Link[] = [];
 
-  // Source -> Middle
   let sourceCursor = sourceNode.y;
   sortedMiddle.forEach(([name, data]) => {
     const midNode = midNodeParams.get(name)!;
@@ -208,7 +199,6 @@ export function computeTopologyLayout(
     sourceCursor += h;
   });
 
-  // Middle -> Outbound
   sortedMiddle.forEach(([name, data]) => {
     const midNode = midNodeParams.get(name)!;
     let midCursor = midNode.y;

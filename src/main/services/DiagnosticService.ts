@@ -1,6 +1,4 @@
 /**
- * DiagnosticService —— 一键诊断报告的汇集层（[[issue-diagnostics-and-support]] P0）。
- *
  * 把「运行态系统里已有的诊断事实」汇成单个脱敏 Markdown：环境快照 + 运行态 + 脱敏 UserConfig +
  * 脱敏「实际下发给内核的 sing-box 配置」（#57 类一眼可见 DNS/route 根因）+ app.log/singbox.log 近期 tail。
  *
@@ -84,7 +82,6 @@ export class DiagnosticService {
     }
   }
 
-  /** 生成完整诊断报告 Markdown 字符串。 */
   async buildReport(): Promise<string> {
     const config: UserConfig = await this.configManager.loadConfig();
 

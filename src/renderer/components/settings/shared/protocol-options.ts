@@ -18,7 +18,7 @@ export const PROTOCOL_OPTIONS: { value: ProtocolType; label: string }[] = [
   { value: 'snell', label: 'Snell' },
   { value: 'socks', label: 'SOCKS5' },
   { value: 'ssh', label: 'SSH' },
-  // Tailscale 不再从「添加节点」协议下拉加入——已抽离为组网 tab 顶部的单例「连接」卡（批3，设计文档④）。
+  // Tailscale 不再从「添加节点」协议下拉加入——已抽离为组网 tab 顶部的单例「连接」卡（设计文档④）。
   // 仅移除「添加」入口；数据层（ServerConfig protocol='tailscale'）与路由/出口引用照常，TailscaleForm 经单例卡设置复用。
   { value: 'trojan', label: 'Trojan' },
   { value: 'tuic', label: 'TUIC' },
@@ -38,7 +38,6 @@ export const resolveProtocolLabel = (value: ProtocolType, label: string, t: TFun
 /**
  * 返回按「实际显示标签 + 当前语言 collation」排序的协议选项；custom（自定义出站 JSON）恒置列表末尾。
  * 取代直接消费硬编码 PROTOCOL_OPTIONS 顺序：中/英文按当前 UI 语言 localeCompare 实排，custom 不参与排序、固定垫底。
- * @param t i18n 翻译函数
  * @param language 当前 UI 语言（localeCompare collation，如 'zh-CN' / 'en-US'）
  * @param filter 可选：仅保留命中的协议 value（节点列表按当前分组实际存在的协议过滤）
  */

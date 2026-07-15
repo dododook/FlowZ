@@ -45,7 +45,6 @@ export interface DnsInterfaceWatcherDeps {
   debounceMs: number;
   /** schedule = setTimeout（注入便于 fake timers）；返回句柄交 clearSchedule。 */
   schedule: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
-  /** clearSchedule = clearTimeout。 */
   clearSchedule: (handle: ReturnType<typeof setTimeout>) => void;
   /** 告警 sink（best-effort 失败仅 warn）。 */
   onWarn: (level: LogLevel, message: string) => void;

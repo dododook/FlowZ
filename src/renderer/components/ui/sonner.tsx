@@ -12,7 +12,6 @@ const notMacPlatform = window.electron?.platform !== 'darwin';
 const Toaster = ({ richColors, ...props }: ToasterProps) => {
   const { theme } = useTheme();
 
-  // 获取实际主题（处理 system 情况）
   const resolvedTheme =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches

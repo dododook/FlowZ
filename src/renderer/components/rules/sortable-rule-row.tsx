@@ -140,7 +140,6 @@ export function SortableRuleRow({
     zIndex: isDragging ? 1 : undefined,
   };
 
-  // ── 排序编辑态：`.rl-sortrow`（拖拽手柄 + 名称 + 策略 pill + 方向按钮） ──
   if (isOrderEditing) {
     return (
       <div
@@ -199,7 +198,6 @@ export function SortableRuleRow({
     );
   }
 
-  // ── 常态：`.rl-tr` 网格行（含 CSS 悬浮详情卡） ──
   const summary = rule.remarks ? ruleSummary(rule) : '';
   return (
     <div ref={setNodeRef} style={style} className={`rl-tr${rule.enabled ? '' : ' off'}`}>

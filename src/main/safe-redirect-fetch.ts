@@ -1,7 +1,7 @@
 /**
  * 带逐跳 SSRF 复检的安全重定向 fetch（订阅 / flowz-icon:// 统一安全拉取入口）。
  *
- * 抽出动机（审计类3）：订阅、图标协议各自内联同一段「redirect:'manual' 自管链 + 每跳 Location 过
+ * 抽出动机：订阅、图标协议各自内联同一段「redirect:'manual' 自管链 + 每跳 Location 过
  * assertHostAllowed + drainBody 上一跳 + 重定向上限」。默认 redirect:'follow' 会让首 URL 过 guard 后被
  * 30x 跳到内网而不复检，构成 SSRF 绕过；逐跳复检是安全关键，分散在多处易漏。收口到本 helper：新入口直接
  * 复用，不会再出现「首 URL 校验了、redirect 没逐跳校验」。

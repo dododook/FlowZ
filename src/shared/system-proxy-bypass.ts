@@ -124,7 +124,7 @@ export function formatBypassForMac(list: string[]): string[] {
  */
 export function formatBypassForWindows(list: string[], onUnsafe?: (entry: string) => void): string {
   const out: string[] = [];
-  // 攻击面 review M1：Windows ProxyOverride 经 execAsync（cmd /c shell）写入，cmd 双引号内 &|<>^% 仍是
+  // 攻击面：Windows ProxyOverride 经 execAsync（cmd /c shell）写入，cmd 双引号内 &|<>^% 仍是
   // 元字符（与 POSIX 不同）。白名单校验 bypass 合法字符（域名/CIDR/通配 *.x/<local>/IPv6 冒号/括号）；
   // 含非法字符的项**整项跳过并告警**（onUnsafe），不逐字符剥除——剥除会把 intra_net 静默改写成 intranet
   // 等悄悄路由到错误主机；整项跳过则该项不进 bypass（其流量走代理，fail-safe），告警可见、不静默篡改。

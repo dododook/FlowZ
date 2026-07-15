@@ -261,7 +261,7 @@ export function buildRouteConfig(
         .filter((c): c is string => c !== null),
     ],
     // :53=UDP / :443=DoH（恒）。DoT(:853) 二期未实现——race server queryOneUpstream 不支持 dot、
-    // parseCustomUpstream 已拒 tls://，故无任何 DoT 上游，不为永不工作的协议开无用端口（review #5）。
+    // parseCustomUpstream 已拒 tls://，故无任何 DoT 上游，不为永不工作的协议开无用端口。
     // 待 DoT 落地后再按「上游中确有 dot」精确放行 853，而非按「有自定义上游」的浅条件。
     port: dedupe([53, 443, ...(customDomesticDns ? [customDomesticDns.port] : [])]),
     action: 'route',
@@ -745,8 +745,8 @@ export function buildRouteConfig(
   // 智能分流的「地区分流」geo 基线层（仅 smart + region.enabled）：enabled=false → 跳整块，
   // 只剩自定义规则 + final（≈近全局，规则仍生效）。region 决定用哪套 geo，reverse 决定方向。
   if (proxyMode === 'smart' && region.enabled) {
-    // 已移除 ::/0 block，因为 block 是静默丢包，会导致 Chrome 等浏览器在发起 TCP SYN 包时陷入漫长的 21 秒重传等待（Happy Eyeballs 假死），
-    // 从而让用户以为“所有的海外网站全都打不开了”。我们必须依靠浏览器的原生 fallback，或者直接让 Mac 本机关闭 IPv6 分配。
+    // 已移除 ::/0 block：block 静默丢包会让 Chrome 等浏览器在 TCP SYN 时陷入 21 秒重传等待（Happy Eyeballs 假死），
+    // 误以为海外网站全打不开；改依赖浏览器原生 fallback（或用户在 Mac 本机关闭 IPv6 分配）。
     const localGeo = REGION_LOCAL_GEO[region.region];
     const foreignGeo = REGION_FOREIGN_GEO[region.region];
     // 正向：本地直连·海外代理；反向（如回国）：本地代理·海外直连。
@@ -863,7 +863,7 @@ export function buildRouteConfig(
 
   // rule_set 按 tag 去重（保留首次=本地 .srs 优先于远程）：用户加 geosite/geoip cn 等规则时，其远程
   // rule_set tag 会与 getLocalGeoRuleSets 的本地 geosite-cn/geoip-cn 撞名 → sing-box 启动 FATAL
-  // (duplicate rule-set tag)。去重后撞名项复用本地 .srs，行为更优（无需下载）。(修 review P0)
+  // (duplicate rule-set tag)。去重后撞名项复用本地 .srs，行为更优（无需下载）。
   if (routeConfig.rule_set && routeConfig.rule_set.length > 0) {
     const seenTags = new Set<string>();
     routeConfig.rule_set = routeConfig.rule_set.filter((rs) => {

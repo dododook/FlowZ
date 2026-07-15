@@ -216,7 +216,7 @@ export function classifyDnsResponse(resp: Uint8Array, qtype: number): DnsRespons
     const view = new DataView(resp.buffer, resp.byteOffset, resp.byteLength);
     const flags = view.getUint16(2);
     if ((flags & 0x8000) === 0) return 'FAIL'; // QR=0：非响应
-    if (flags & 0x0200) return 'FAIL'; // TC=1 截断（仅 UDP 上游可达）：当上游故障，不把部分 A 当权威转发，让他者/SERVFAIL 兜（review M）
+    if (flags & 0x0200) return 'FAIL'; // TC=1 截断（仅 UDP 上游可达）：当上游故障，不把部分 A 当权威转发，让他者/SERVFAIL 兜
     const rcode = flags & 0x000f;
     if (rcode === RCODE_NXDOMAIN) return 'EMPTY';
     if (rcode !== RCODE_NOERROR) return 'FAIL'; // SERVFAIL/REFUSED/…
@@ -233,7 +233,7 @@ export function classifyDnsResponse(resp: Uint8Array, qtype: number): DnsRespons
       const type = view.getUint16(off);
       const klass = view.getUint16(off + 2);
       const rdlength = view.getUint16(off + 8);
-      if (type === qtype && klass === CLASS_IN) return 'HIT'; // class=IN，与 decodeDnsAnswers 同口径（review L）
+      if (type === qtype && klass === CLASS_IN) return 'HIT'; // class=IN，与 decodeDnsAnswers 同口径
       off = off + 10 + rdlength;
       if (off > resp.length) return 'FAIL';
     }

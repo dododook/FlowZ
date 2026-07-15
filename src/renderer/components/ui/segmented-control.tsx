@@ -4,7 +4,6 @@ import { cn } from '@/lib/utils';
 export interface SegmentedOption<T extends string> {
   value: T;
   label: React.ReactNode;
-  /** 悬停提示（如模式说明） */
   title?: string;
   disabled?: boolean;
 }

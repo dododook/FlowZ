@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * Conduit 设置面板原语（`.srow` / `.swt` / `.set-collapse`）——仅供本 settings/* 面板 1:1 移植消费。
- * 与 agent D 的 SettingsRow/SettingsCollapsible 解耦：原型卡结构（.set-h 标题、.set-collapse 折叠、
+ * 与既有 SettingsRow/SettingsCollapsible 解耦：原型卡结构（.set-h 标题、.set-collapse 折叠、
  * .excl、.ng-group、.danger-zone、.ctl-group）无法经既有 SettingsRow API 表达，故本组以原型 DOM 为准自绘。
  */
 

@@ -179,13 +179,11 @@ if (process.platform === 'linux') {
   app.disableHardwareAcceleration();
 }
 
-// 单实例锁：防止开启多个软件实例
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
-    // 当有人试图运行第二个实例时，聚焦并显示主窗口
     showWindow();
   });
 }
@@ -210,20 +208,12 @@ function isUiBroadcastActive(): boolean {
   return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !isDragging;
 }
 
-// Privacy Mode State (Main Process)
 let isPrivacyMode = false;
 
-/**
- * 获取隐私模式状态
- */
 export function getPrivacyMode(): boolean {
   return isPrivacyMode;
 }
 
-/**
- * 设置隐私模式状态
- * @param value 是否开启
- */
 export function setPrivacyMode(value: boolean): void {
   if (isPrivacyMode === value) return;
   isPrivacyMode = value;
@@ -235,7 +225,6 @@ export function setPrivacyMode(value: boolean): void {
       .then((cfg) => logManager.setLogLevel(effectiveLogLevel(cfg.logLevel || 'info', value)))
       .catch(() => {});
   }
-  // 通知所有窗口同步此状态
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(
       value ? IPC_CHANNELS.EVENT_ENTER_PRIVACY_MODE : IPC_CHANNELS.EVENT_EXIT_PRIVACY_MODE
@@ -282,7 +271,7 @@ async function checkIdleAutoModes(): Promise<void> {
   }
 }
 
-// 渲染进程内存 watchdog（issue #242 §4 视图生命周期）：批次 2/3 的 change-driven / 订阅驱动只把更新降频，泄漏
+// 渲染进程内存 watchdog（issue #242 §4 视图生命周期）：change-driven / 订阅驱动只把更新降频，泄漏
 // 本体（若在 Blink/V8/Electron 层）未根除；本 watchdog 是对其的**确定性兜底**——渲染 RSS 超阈值时隐藏态 destroy
 // 窗口全额回收、可见态只告警。定位=lifecycle hygiene（同浏览器 tab discard），非泄漏修复。high 阈值 1.5GB 远超
 // 正常 ~250MB，隐藏态回收对用户透明 → 「用户永远看不到 2GB」。**always-on 安全网**（非 gate 在 autoLightweightMode：
@@ -504,14 +493,12 @@ async function promptHelperGate(
   return 'proceed';
 }
 
-// 全局异常捕获 - 主进程
 process.on('uncaughtException', (error: Error) => {
   console.error('Uncaught Exception:', error);
   if (logManager) {
     logManager.addLog('fatal', `未捕获的异常: ${error.message}\n${error.stack}`, 'Main');
   }
 
-  // 在开发环境显示错误对话框
   if (isDevelopment) {
     const electronApp = require('electron').app;
     if (electronApp?.isReady()) {
@@ -532,7 +519,6 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
     logManager.addLog('error', `未处理的 Promise 拒绝: ${errorMessage}\n${errorStack}`, 'Main');
   }
 
-  // 在开发环境显示错误对话框
   if (isDevelopment && reason instanceof Error) {
     const electronApp = require('electron').app;
     if (electronApp?.isReady()) {
@@ -545,10 +531,6 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
 
 // 开发环境启用热重载 (moved and unmounted since it causes app undefined bug in electron)
 
-/**
- * 显示主窗口
- * 如果窗口不存在则创建，如果已存在则显示并聚焦
- */
 // 创建中记忆：createWindow 在 new BrowserWindow 前 await loadConfig，多入口（启动/activate/托盘/second-instance）
 // 在「无窗口」态并发触发会各自越过检查、建出两个窗口（首个泄漏）→ 所有入口共享同一次进行中的创建。
 let creatingWindow: Promise<void> | null = null;
@@ -739,7 +721,7 @@ async function createWindow(forceShow = false) {
   }
   // 初始深浅以 nativeTheme.shouldUseDarkColors 为准（themeSource 已按 uiTheme 设定，'system' 跟随 OS）。
   // 不能用 cfg.uiTheme==='dark' 字面判：uiTheme='system'+OS 深色会被误判为浅色，致标题栏/背景与内容初始不一致，
-  // 而 onThemeUpdated 仅在 OS 主题「切换」时修正、初始不跑（review #3）。
+  // 而 onThemeUpdated 仅在 OS 主题「切换」时修正、初始不跑。
   const isDarkInitial = nativeTheme.shouldUseDarkColors;
   // 图形兼容逃生门（windowEffects，默认开=`!== false`）：D 类合成层向量（Windows Mica bug 群 / macOS 透明+vibrancy）
   // 跨平台对齐——关闭时 Win 不设 Mica、mac 不开 transparent+vibrancy，一律回落实色窗口底，供合成失效白屏时自救。
@@ -762,13 +744,13 @@ async function createWindow(forceShow = false) {
     show: false, // 先不显示，等待加载完成
     backgroundColor: useMacTransparent ? '#00000000' : solidBackground,
     transparent: useMacTransparent,
-    autoHideMenuBar: true, // 自动隐藏菜单栏
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      devTools: isDevelopment, // 仅在开发环境启用开发者工具，生产环境禁用（除非特殊需求）
+      devTools: isDevelopment,
       // OS 偏好语言注入 preload（同步、无 IPC 时序问题）：供 i18n「自动跟随系统」解析。
       //   app.getLocale() 恒返 app bundle locale=en（与系统脱钩，代码多处实证），故必须用 getPreferredSystemLanguages。
       // 界面语言选择注入 preload（config.language 单一真值源）：供 i18n 初始化直接用，取代旧 localStorage 真值源。
@@ -881,12 +863,10 @@ async function createWindow(forceShow = false) {
     });
   }
 
-  // 移除默认菜单栏（Windows/Linux）
   if (process.platform !== 'darwin') {
     mainWindow.setMenu(null);
   }
 
-  // 注册窗口到 IPC 事件发送器，以便接收广播事件
   ipcEventEmitter.registerWindow(mainWindow);
 
   // 刷新持有窗口引用的各服务（关窗默认销毁重建后，构造时只捕获一次的引用会永久指向已销毁窗口，
@@ -952,7 +932,6 @@ async function createWindow(forceShow = false) {
       win.loadURL('http://localhost:5173').catch((err) => {
         logManager.addLog('error', `Failed to load dev server: ${err.message}`, 'Main');
       });
-      // win.webContents.openDevTools(); // 移除自动打开，改为手动打开 (Cmd+Option+I)
     } else {
       const indexPath = path.join(__dirname, '../../renderer/index.html');
       win.loadFile(indexPath).catch((err) => {
@@ -1183,9 +1162,9 @@ async function createWindow(forceShow = false) {
     });
   }
 
-  // 处理窗口关闭事件：默认保活（隐藏到托盘，reopen=show() 即显，恢复 4.1.8 语义）——batch2/3/4 后隐藏态
+  // 处理窗口关闭事件：默认保活（隐藏到托盘，reopen=show() 即显，恢复 4.1.8 语义）——隐藏态
   // 推送归零、水位死平（异常增长有 renderer-memory watchdog 兜底），无需靠关窗销毁渲染进程重置水位（d6ae203
-  // 的收益在这三批落地后已冗余，代价是 100% reopen 冷重建，见 #251）。仅当 shouldQuitOnAllWindowsClosed
+  // 的收益已冗余，代价是 100% reopen 冷重建，见 #251）。仅当 shouldQuitOnAllWindowsClosed
   // （minimizeToTray=false / 无托盘非 mac）才 destroy + 退出（避免无窗口无托盘的僵尸进程）；是否退出在销毁的
   // 这一刻就算好存进 pendingQuitOnAllClosed（仅 destroy 分支写），供 window-all-closed 消费。
   mainWindow.on('close', (event) => {
@@ -1210,7 +1189,7 @@ async function createWindow(forceShow = false) {
       releaseWindowMemory({ window, logManager, reason: 'close' });
     } else {
       // 保活：隐藏到托盘，reopen 走 show() 即显（无冷重建死区）。'hide' 事件由上方 macOS 钩子消费摘 Dock；
-      // hide 不减窗口计数、不触发 window-all-closed，故 pendingQuitOnAllClosed 保持不动（Fable 复审坐实安全）。
+      // hide 不减窗口计数、不触发 window-all-closed，故 pendingQuitOnAllClosed 保持不动。
       window.hide();
       logManager.addLog('info', 'Window hidden to tray', 'Main');
     }
@@ -1334,11 +1313,6 @@ export function getTrayManager(): TrayManager | null {
   return trayManager;
 }
 
-/**
- * 更新托盘菜单状态
- * @param isProxyRunning 代理是否正在运行
- * @param hasError 是否存在连接错误
- */
 async function updateTrayMenuState(isProxyRunning: boolean, hasError?: boolean): Promise<void> {
   if (!trayManager) return;
 
@@ -1354,7 +1328,6 @@ async function updateTrayMenuState(isProxyRunning: boolean, hasError?: boolean):
       proxyModeType: config.proxyModeType,
     });
 
-    // 同时更新托盘图标状态
     trayManager.updateTrayIcon(isProxyRunning ? 'connected' : 'idle');
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1405,13 +1378,12 @@ if (gotTheLock) {
       () => proxyManager?.getSpeedTestMainCoreProbe() ?? null,
       () => proxyManager?.getLifecycleGeneration() ?? 0
     );
-    // 批次 B：把日志 sink 注入「原本裸 console、不进 app.log」的服务，补排障盲区（系统代理/配置/资源/协议）
+    // 把日志 sink 注入「原本裸 console、不进 app.log」的服务，补排障盲区（系统代理/配置/资源/协议）
     configManager.setLogManager(logManager);
     protocolParser.setLogManager(logManager);
     systemProxyManager.setLogManager(logManager);
     systemDnsManager.setLogManager(logManager);
     resourceManager.setLogManager(logManager);
-    // 记录应用启动日志
     logManager.addLog('info', 'Application started', 'Main');
 
     // Windows toast 前置：设 AppUserModelID（与 electron-builder appId 一致），提升 portable 版通知可靠性（无 NSIS 注册时）。
@@ -1499,7 +1471,6 @@ if (gotTheLock) {
       logManager.setLogLevel(effectiveLogLevel(config.logLevel || 'info', getPrivacyMode()));
       logManager.addLog('info', 'Configuration loaded successfully', 'Main');
 
-      // 检查配置是否为默认配置（可能是因为加载失败）
       if (config.servers.length === 0 && config.selectedServerId === null) {
         // 这可能是首次启动或配置文件损坏
         logManager.addLog('warn', 'Using default configuration', 'Main');
@@ -1508,7 +1479,6 @@ if (gotTheLock) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logManager.addLog('error', `Failed to load configuration: ${errorMessage}`, 'Main');
 
-      // 显示错误对话框通知用户
       dialog.showErrorBox(
         '配置加载失败',
         `无法加载配置文件，将使用默认配置。\n\n错误信息: ${errorMessage}`
@@ -1544,7 +1514,7 @@ if (gotTheLock) {
     // Phase 1（更新网络统一层）：更新链路（检查/资源/应用）统一会话层——独立 partition 会话按 mainSessionViaProxy
     // ×proxyRunning 选经代理(socks 入站)/直连，取代裸 net.request 走 default session。proxyManager 已就绪。
     const updateNetwork = new UpdateNetwork();
-    // 类2：主更新链路 viaProxy/port 决策 providers 一次注入 UpdateNetwork（共享 configManager/proxyManager）；
+    // 主更新链路 viaProxy/port 决策 providers 一次注入 UpdateNetwork（共享 configManager/proxyManager）；
     // UpdateService/RuleResourceManager/CoreDownloader 三处只调 resolveSessionForMainUpdate，不再各自重复决策（防漂移）。
     updateNetwork.setMainUpdateProviders({
       configProvider: () => configManager.loadConfig(),
@@ -1674,7 +1644,7 @@ if (gotTheLock) {
     // 本宿主 fork/看护 worker、缓存最新快照、按 isUiBroadcastActive(可见 && !拖动) 门控后 sendToAll——把 Status/
     // Connections 长流的 per-frame 解析+物化移出主线程，消除拖动期事件循环争用。worker 据 getStatsApiEndpoint 重建
     // 自己的 gRPC client（端口随每次启动可能变 → 'api-client-ready' 时经 resubscribe 重发）。
-    // batch3 §3.7：订阅驱动数据面。registry 持 topic→订阅 wc 集，订阅即回初始帧（合并原 CONNECTIONS_AGGREGATE_GET/
+    // §3.7：订阅驱动数据面。registry 持 topic→订阅 wc 集，订阅即回初始帧（合并原 CONNECTIONS_AGGREGATE_GET/
     // CONNECTIONS_GET 初值 pull）、只 relay 给对应 topic 订阅者、订阅变化即驱动 host demand。demand 源从「窗口可见」
     // (isUiActive) 换成「渲染端按 topic 订阅」——非首页可见视图（设置页）下拓扑/明细流亦停（无订阅者逐级停机）；
     // isUiActive 降为 relay 侧兜底安全门（订阅在但窗口不可见——如 Windows 拖动期——仍不发）。
@@ -1805,7 +1775,7 @@ if (gotTheLock) {
       if (unlockSelfRunTimer) clearTimeout(unlockSelfRunTimer);
       unlockSelfRunTimer = setTimeout(() => {
         unlockSelfRunTimer = null;
-        // issue 2 review#1：self-run 终态**广播回渲染端 store**。fresh commit 已经 onComplete 广播（幂等），但
+        // self-run 终态**广播回渲染端 store**。fresh commit 已经 onComplete 广播（幂等），但
         // blockedReason（exit-invalid/proxy-not-running）/ S-gate notReady / cache-hit 等早退**不发 onComplete** →
         // 若不在此广播，渲染端「检测中」永卡（切到无效出口后 spinner 不灭、刷新钮禁用无自愈）。applyUnlockSnapshot
         // 会把 blockedReason/notReady 正确折叠成 idle。
@@ -1830,7 +1800,7 @@ if (gotTheLock) {
       whenExitSettled: () => proxyManager?.whenSelectorSettled(4000) ?? Promise.resolve(),
       onProgress: (p) => ipcEventEmitter.sendToAll(IPC_CHANNELS.EVENT_UNLOCK_PROGRESS, p),
       onInvalidated: () => {
-        // issue 2 review#1/#3：带主进程核真态（渲染端 connectionStatus/proxyBlocked 常陈旧——invalidate 先于
+        // 带主进程核真态（渲染端 connectionStatus/proxyBlocked 常陈旧——invalidate 先于
         // EVENT_PROXY_STARTED / IP_INFO_UPDATED 抵达）→ 渲染端据此正确判「显示检测中 vs idle」，不再用陈旧本地视图。
         const running = proxyManager?.getStatus().running ?? false;
         const exitBlocked = running && !!proxyManager?.selectedTsExitBlock();
@@ -1865,14 +1835,12 @@ if (gotTheLock) {
       )
       .catch(() => {});
 
-    // 初始化自动换节点服务
     autoSwitchService = new AutoSwitchService(
       configManager,
       proxyManager,
       logManager,
       () => mainWindow
     );
-    // 根据当前配置决定是否启用
     {
       const cfg = await configManager.loadConfig().catch(() => null);
       if (cfg?.autoSwitchNode) {
@@ -1999,7 +1967,7 @@ if (gotTheLock) {
       });
     });
 
-    // item 1 事件驱动出口 re-probe：选中的账号制（TS）节点隧道翻 Running（就绪）→ 立即重测代理出口，
+    // 事件驱动出口 re-probe：选中的账号制（TS）节点隧道翻 Running（就绪）→ 立即重测代理出口，
     // 不等首连退避耗尽。ProxyManager 在 STATUS 流上升沿去重发射，故此处无需再防抖；refreshProxy 经 enqueue
     // 链式排到在途首探之后，隧道一就绪即取到真出口 IP（消除「转圈直到退避耗尽」的长盲等）。
     proxyManager.on('tailscale-selected-running', () => {
@@ -2070,7 +2038,7 @@ if (gotTheLock) {
     registerServerHandlers(protocolParser, configManager, logManager);
     registerLogHandlers(logManager, proxyManager, isUiBroadcastActive);
     registerProxyHandlers(proxyManager, configManager);
-    // batch3 §3.7：STATS_SUBSCRIBE/STATS_UNSUBSCRIBE（渲染端 useStatsTopic 声明/撤销 topic 订阅）。
+    // §3.7：STATS_SUBSCRIBE/STATS_UNSUBSCRIBE（渲染端 useStatsTopic 声明/撤销 topic 订阅）。
     registerStatsSubscriptionHandlers(statsSubscriptionRegistry);
     registerIpInfoHandlers(ipInfoService);
     registerUnlockHandlers(unlockService);
@@ -2080,11 +2048,9 @@ if (gotTheLock) {
 
     registerRulesHandlers(configManager);
 
-    // 注册核心更新处理器
     setCoreUpdateService(coreUpdateService, logManager);
     registerCoreUpdateHandlers();
 
-    // 注册自启动处理器
     registerAutoStartHandlers();
 
     // 注册订阅处理器。§16.3.4b：手动更新节点集变化 → force-restart 入池（call-time 取 proxyManager，防循环依赖）。
@@ -2128,10 +2094,8 @@ if (gotTheLock) {
       registerDiagnosticHandlers(diagnosticService);
     }
 
-    // 注册提权 helper 处理器（macOS 免提权启停）
     registerHelperHandlers(helperManager, proxyManager);
 
-    // 同步自启动状态
     const autoStartManager = createAutoStartManager();
     autoStartManager.setLogManager(logManager);
     const config = await configManager.loadConfig();
@@ -2157,7 +2121,6 @@ if (gotTheLock) {
     // IPC 处理器全部注册完成（汇总一条，取代各 handler 模块的逐条启动日志）
     logManager.addLog('info', 'IPC handlers 注册完成', 'Main');
 
-    // 设置托盘状态更新回调
     setTrayStateCallback((isRunning: boolean, hasError?: boolean) => {
       updateTrayMenuState(isRunning, hasError);
     });
@@ -2192,7 +2155,6 @@ if (gotTheLock) {
       return mainWindow?.isMaximized() ?? false;
     });
 
-    // 创建托盘图标
     trayManager = new TrayManager(
       mainWindow,
       logManager,
@@ -2224,7 +2186,6 @@ if (gotTheLock) {
     // 此处用持有的最近值兜底（幂等：默认 false 时 no-op）。覆盖「持久 true 偏好在冷启被丢、托盘整会话停默认序」。
     trayManager.setSortByLatency(currentNodeSortByLatency);
 
-    // 初始化托盘菜单状态
     updateTrayMenuState(false);
 
     // 启动期延迟任务（自动连接 + 自动检查更新）已抽到 startup-tasks.scheduleStartupTasks。
@@ -2315,23 +2276,18 @@ app.on('window-all-closed', () => {
   }
 });
 
-// 使用 will-quit 事件来清理资源
 app.on('will-quit', async (_event) => {
   if (!gotTheLock) return;
-  // 阻止默认退出，先清理资源
   _event.preventDefault();
 
   try {
-    // 清理资源
     await cleanupResources();
 
-    // 清理托盘图标
     if (trayManager) {
       trayManager.destroyTray();
       trayManager = null;
     }
 
-    // 现在可以安全退出了
     app.exit(0);
   } catch (error) {
     console.error('Error during app quit:', error);
@@ -2340,7 +2296,6 @@ app.on('will-quit', async (_event) => {
   }
 });
 
-// 处理 SIGINT 和 SIGTERM 信号
 process.on('SIGINT', async () => {
   console.log('Received SIGINT, cleaning up...');
   await cleanupResources();

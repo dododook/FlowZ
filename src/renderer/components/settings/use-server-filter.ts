@@ -21,7 +21,6 @@ export function useServerFilter(servers: ServerConfigWithId[], latencyMap: Recor
   const setSortKey = useServerSortStore((s) => s.setSortKey);
   const setSortOrder = useServerSortStore((s) => s.setSortOrder);
 
-  // 过滤 + 排序
   // 协议筛选项按【当前分组实际存在的协议】动态生成：订阅组不再列 WG/WARP/Tailscale 等不可能出现的协议，
   // 自建/组网组也各只列自己有的——降低无意义选项的理解成本。顺序经 getSortedProtocolOptions 按显示名 locale 排序、custom 置末。
   const availableProtocols = useMemo(() => {
@@ -39,7 +38,6 @@ export function useServerFilter(servers: ServerConfigWithId[], latencyMap: Recor
   const filteredServers = useMemo(() => {
     let list = servers;
 
-    // 搜索
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
@@ -50,7 +48,6 @@ export function useServerFilter(servers: ServerConfigWithId[], latencyMap: Recor
       );
     }
 
-    // 协议过滤
     if (filterProtocol !== 'all') {
       list = list.filter((s) => s.protocol.toLowerCase() === filterProtocol);
     }

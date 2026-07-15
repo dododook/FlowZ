@@ -1,13 +1,4 @@
-/**
- * 运行时状态类型定义
- * 代理状态、连接快照、helper 状态、流量统计、IP 信息等运行态类型
- */
-
 import type { LogLevel, ServerConfig } from '../types';
-
-// ============================================================================
-// 代理状态
-// ============================================================================
 
 export interface ProxyStatus {
   running: boolean;
@@ -181,10 +172,6 @@ export interface HelperStatus {
   installedSingboxPath: string | null;
 }
 
-// ============================================================================
-// 系统代理状态
-// ============================================================================
-
 export interface SystemProxyStatus {
   enabled: boolean;
   httpProxy?: string;
@@ -193,10 +180,6 @@ export interface SystemProxyStatus {
   bypassList?: string[];
 }
 
-// ============================================================================
-// 日志条目
-// ============================================================================
-
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
@@ -204,10 +187,6 @@ export interface LogEntry {
   source: string;
   stack?: string;
 }
-
-// ============================================================================
-// 流量统计
-// ============================================================================
 
 export interface TrafficStats {
   uploadSpeed: number;
@@ -246,10 +225,6 @@ export interface IpInfoSnapshot {
   proxyBlocked?: ProxyExitBlock;
 }
 
-// ============================================================================
-// API 响应
-// ============================================================================
-
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -257,18 +232,10 @@ export interface ApiResponse<T = any> {
   code?: string;
 }
 
-// ============================================================================
-// 自启动状态
-// ============================================================================
-
 export interface AutoStartStatus {
   enabled: boolean;
   path?: string;
 }
-
-// ============================================================================
-// 平台信息
-// ============================================================================
 
 export interface PlatformInfo {
   platform: NodeJS.Platform;

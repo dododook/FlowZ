@@ -1,5 +1,5 @@
 /**
- * 配置变更监听器 —— 从 index.ts whenReady 抽出（index.ts 拆分 Phase 3 step D）。
+ * 配置变更监听器 —— 从 index.ts whenReady 抽出。
  *
  * 监听 MAIN_EVENTS.CONFIG_CHANGED：logLevel 热同步 / 托盘刷新 / 运行中切配置(switchMode 热切换) /
  * 自动换节点开关同步 / 内核自动更新 kick。经 deps 注入主进程服务与可变引用
@@ -65,7 +65,6 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
         (changedConfig as { desktopNotifications?: boolean } | undefined)?.desktopNotifications
       );
 
-      // 1. 更新托盘菜单
       const isRunning = proxyManager?.getStatus().running ?? false;
       updateTrayMenuState(isRunning);
 
@@ -74,7 +73,6 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
       //    而 UI 显新节点（bug#5 真机实证）。busy 时 switchMode 内部暂存、settle 后重放对账。
       if (proxyManager && (isRunning || proxyManager.isLifecycleBusy())) {
         try {
-          // 重新加载配置以确保使用最新值
           const latestConfig = await configManager.loadConfig();
           await proxyManager.switchMode(latestConfig);
           logManager.addLog('info', 'Applied configuration change', 'Main');
@@ -84,7 +82,6 @@ export function registerConfigChangeListener(deps: ConfigChangeDeps): void {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           logManager.addLog('error', `Failed to apply config change: ${errorMessage}`, 'Main');
-          // 应用失败，更新托盘状态为停止
           updateTrayMenuState(false, true);
         }
       }

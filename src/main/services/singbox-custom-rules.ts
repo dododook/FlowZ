@@ -297,7 +297,6 @@ function applyRuleAction(
   // P3a：route action TLS spoof（成对的 spoof SNI + 方法）。block 规则不挂（reject 无握手）。
   tlsSpoof?: { spoof?: string; method?: string }
 ): void {
-  // 设置出站
   if (action === 'proxy') {
     // anti-drift（铁律）：指定了目标节点的规则 → 指向独立 rule-sel-<ruleId> selector，**绝不直绑节点、
     // 绝不经共享 proxy-selector**。直绑节点会让热切全局节点后这条固定规则漂走（复活旧 quirk）；经共享
@@ -320,7 +319,6 @@ function applyRuleAction(
   } else if (action === 'block') {
     singboxRule.outbound = 'block';
   } else {
-    // 如果没有指定，默认使用主节点
     singboxRule.outbound = selectedServerTag;
   }
 

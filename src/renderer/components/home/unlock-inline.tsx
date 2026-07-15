@@ -71,8 +71,7 @@ export function UnlockInline() {
     return (
       <HoverCard key={s.id} openDelay={500} closeDelay={40}>
         <HoverCardTrigger asChild>
-          {/* Low-4 a11y：状态原本仅靠色点 + hover-only HoverCard（非可聚焦 span）传达，键盘/屏阅不可达。
-              补 aria-label「服务名: 状态」，配合下方滚动容器 role=group + tabIndex 使其可被读到。 */}
+          {/* a11y：状态原本仅靠色点 + hover-only HoverCard（非可聚焦 span）传达，键盘/屏阅不可达；补 aria-label「服务名: 状态」，配合下方滚动容器 role=group + tabIndex 使其可被读到。 */}
           <span
             className="inline-flex cursor-default items-center gap-1 whitespace-nowrap"
             aria-label={`${s.name}: ${statusText}`}
@@ -116,7 +115,7 @@ export function UnlockInline() {
   return (
     // 刷新按钮钉死在滚动区外（shrink-0），只有中段服务点分组随窄窗横向滚动 —— 保证刷新永不被挤出。
     <div className="flex min-w-0 items-center gap-2">
-      {/* Low-4 a11y：滚动容器补 role=group + tabIndex + aria-label——键盘可 Tab 聚焦、屏阅可作为一组解锁状态读出。 */}
+      {/* a11y：滚动容器补 role=group + tabIndex + aria-label——键盘可 Tab 聚焦、屏阅可作为一组解锁状态读出。 */}
       <div
         className="flex min-w-0 flex-1 items-center gap-2.5 overflow-x-auto"
         role="group"

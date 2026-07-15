@@ -1,8 +1,3 @@
-/**
- * 版本信息 IPC 处理器
- * 处理版本信息相关的 IPC 请求
- */
-
 import { IpcMainInvokeEvent, app, shell } from 'electron';
 import { release } from 'node:os';
 import { IPC_CHANNELS } from '../../../shared/ipc-channels';
@@ -28,9 +23,6 @@ interface VersionInfo {
 
 import { CoreUpdateService } from '../../services/CoreUpdateService';
 
-/**
- * 注册版本信息相关的 IPC 处理器
- */
 export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): void {
   registerIpcHandler<void, VersionInfo>(
     IPC_CHANNELS.VERSION_GET_INFO,
@@ -62,7 +54,6 @@ export function registerVersionHandlers(coreUpdateService?: CoreUpdateService): 
     }
   );
 
-  // 打开外部链接
   registerIpcHandler<string, boolean>(
     IPC_CHANNELS.SHELL_OPEN_EXTERNAL,
     async (_event: IpcMainInvokeEvent, url: string) => {

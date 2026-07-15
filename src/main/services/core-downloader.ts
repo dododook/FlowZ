@@ -97,7 +97,7 @@ export class CoreDownloader {
           // 已 buffer 的帧仍会触发 data，若继续累加会徒增内存峰值。
           if (settled) return;
           data += chunk.toString();
-          // OOM 防护（审计 #2）：GitHub api 被劫持/WAF 接管可回灌 GB 级响应撞 V8 堆/512MB string 上限。
+          // OOM 防护：GitHub api 被劫持/WAF 接管可回灌 GB 级响应撞 V8 堆/512MB string 上限。
           // 超 16MiB 即 abort + 单点收口 finish（releases JSON 实际 < 数 MB；与超时同路径）。
           if (data.length > MAX_GITHUB_JSON_BYTES) {
             try {
@@ -138,7 +138,6 @@ export class CoreDownloader {
   }
 
   async downloadFile(url: string, isRetry = false): Promise<string> {
-    // 根据系统平台设置合理的默认扩展名
     let ext = process.platform === 'win32' ? '.zip' : '.tar.gz';
     try {
       const urlObj = new URL(url);
@@ -156,8 +155,7 @@ export class CoreDownloader {
       this.logManager.addLog('warn', `解析下载 URL 后缀失败: ${e}`, 'CoreDownloader');
     }
 
-    // 如果是 Windows，且后缀不是 .zip，强制使用 .zip (因为 Sing-box Windows 构建通常是 zip)
-    // 这是一个保险措施
+    // Windows 且后缀不是 .zip → 强制使用 .zip（Sing-box Windows 构建通常是 zip）
     if (process.platform === 'win32' && ext !== '.zip') {
       ext = '.zip';
     }
@@ -264,24 +262,19 @@ export class CoreDownloader {
   }
 
   async extractCore(filePath: string): Promise<{ corePath: string; extractDir: string }> {
-    // 这是一个简化实现，处理 zip 和 tar.gz 需要引入 adm-zip 或 tar 库
-    // 假设项目中可能有这些依赖，或者使用系统命令
-    // 为了稳健性，这里使用系统命令 (tar / powershell Expand-Archive)
+    // 简化实现：不引入 adm-zip/tar 库，为稳健性改用系统命令（tar / powershell Expand-Archive）。
 
     const extractDir = path.join(app.getPath('temp'), `sing-box-extracted-${Date.now()}`);
     fs.mkdirSync(extractDir);
 
     try {
       if (process.platform === 'win32') {
-        // Windows: 使用 PowerShell 解压 zip
         const { execSync } = require('child_process');
         execSync(
           `"${powershellPath()}" -command "Expand-Archive -Path '${filePath}' -DestinationPath '${extractDir}' -Force"`
         );
       } else {
-        // macOS/Linux: 使用 tar
         const { execSync } = require('child_process');
-        // 检测是 zip 还是 tar.gz
         if (filePath.endsWith('.zip')) {
           execSync(`unzip -o "${filePath}" -d "${extractDir}"`);
         } else {
@@ -292,7 +285,6 @@ export class CoreDownloader {
       // 查找解压后的可执行文件
       const exeName = process.platform === 'win32' ? 'sing-box.exe' : 'sing-box';
 
-      // 递归查找
       const findFile = (dir: string): string | null => {
         const files = fs.readdirSync(dir);
         for (const file of files) {

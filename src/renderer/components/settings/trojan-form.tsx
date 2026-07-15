@@ -65,7 +65,6 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
   const { t } = useTranslation();
   const trojanFormSchema = createTrojanSchema(t);
 
-  // 标准化 security（转小写匹配 schema）。
   const normalizeSecurity = (s: string | undefined): 'none' | 'tls' => {
     const lower = (s || 'tls').toLowerCase();
     return lower === 'none' ? 'none' : 'tls';

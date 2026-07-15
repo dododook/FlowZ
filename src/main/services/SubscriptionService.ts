@@ -246,7 +246,7 @@ export class SubscriptionService {
       delete copy.id;
       delete copy.createdAt;
       delete copy.updatedAt;
-      delete copy.providerName; // M1：归属元数据非节点连接内容，不计入比较（否则加该字段会让存量节点首次升级误刷 updatedAt）
+      delete copy.providerName; // 归属元数据非节点连接内容，不计入比较（否则加该字段会让存量节点首次升级误刷 updatedAt）
       return JSON.stringify(copy);
     };
     const oldBuckets = new Map<string, ServerConfig[]>();
@@ -290,7 +290,7 @@ export class SubscriptionService {
   }
 
   /**
-   * M1：partial 失败时的 merge-only leftover（provider 级精确）。被删旧节点中只保留「失败 provider 名下」的
+   * partial 失败时的 merge-only leftover（provider 级精确）。被删旧节点中只保留「失败 provider 名下」的
    * （防该 provider 临时故障穿仓），成功 provider 的真下架节点不在此列、正常删除。providerName=undefined 的
    * 旧节点（迁移前存量 / 内联 proxies / 非 Clash 订阅）无归属信息 → 保守保留，不冒误删风险。failedProviders
    * 缺失/空（rejected 兜底等 partial 但失败名未知）→ 全部保守保留，退回旧的整订阅级 merge-only。
@@ -308,10 +308,6 @@ export class SubscriptionService {
     );
   }
 
-  /**
-   * 解析 Subscription-UserInfo header
-   * 格式: upload=xxx; download=xxx; total=xxx; expire=xxx
-   */
   private parseUserInfo(header: string | null): SubscriptionConfig['userInfo'] | undefined {
     if (!header) return undefined;
     const result: SubscriptionConfig['userInfo'] = {};
@@ -328,10 +324,6 @@ export class SubscriptionService {
     return Object.keys(result).length > 0 ? result : undefined;
   }
 
-  /**
-   * 将 sing-box outbounds 数组转换为 ServerConfig 列表
-   * 支持: shadowsocks, vless, trojan, hysteria2
-   */
   private parseSingboxOutbounds(
     outbounds: SingboxOutbound[],
     subscriptionId: string
@@ -730,7 +722,7 @@ export class SubscriptionService {
       ...(signal ? { signal } : {}),
     });
     // §16.3.4：304 Not Modified → 短路，不读 body、不 parse/reconcile（零节点扰动、省流省渲染）。
-    // **仅当本次确实发了条件头才认 304**（M-2 fail-safe）：provider 拉取从不带条件头，若某 CDN/缓存对无验证器请求
+    // **仅当本次确实发了条件头才认 304**（fail-safe）：provider 拉取从不带条件头，若某 CDN/缓存对无验证器请求
     // 违规返 304，认它会得空 body→0 节点→permanent 删节点；此时应维持原「304 非 ok → throw」→ transient → merge-only 保留。
     if (response.status === 304 && Object.keys(condHeaders).length > 0) {
       try {
@@ -744,7 +736,7 @@ export class SubscriptionService {
       throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
     }
 
-    // M2：content-length 预检（早拒超大响应）。
+    // content-length 预检（早拒超大响应）。
     const cl = response.headers.get('content-length');
     if (cl) {
       const n = parseInt(cl, 10);
@@ -764,7 +756,7 @@ export class SubscriptionService {
     // §16.3.4：回传本次 200 的验证器供回写 sub（下次条件 GET）。
     const etag = response.headers.get('etag') ?? undefined;
     const lastModified = response.headers.get('last-modified') ?? undefined;
-    // M2：流式读取并按字节累计上限（content-length 可缺失/撒谎，读取侧硬校验兜底）。
+    // 流式读取并按字节累计上限（content-length 可缺失/撒谎，读取侧硬校验兜底）。
     const text = await this.readBodyCapped(response);
     return { text, userInfo, etag, lastModified };
   }
@@ -836,7 +828,7 @@ export class SubscriptionService {
   ): Promise<{ servers: ServerConfig[]; partial?: boolean; failedProviders?: string[] }> {
     const throwOnEmpty = ctx.throwOnEmpty !== false;
     // ── 1. JSON: sing-box outbounds 或 JSON 编码的 Clash ──────────────
-    // HIGH-1（数据穿仓）：try 只包 JSON.parse 本身，catch 仅消化「非 JSON」(SyntaxError) 以 fall through；
+    // 数据穿仓风险：try 只包 JSON.parse 本身，catch 仅消化「非 JSON」(SyntaxError) 以 fall through；
     // 分流调用（parseSingboxOutbounds/handleClashDoc）移出 catch 作用域 —— 否则 handleClashDoc 的
     // 「0 节点必须 throw」会被这个 catch 吞掉，fall through 到 Base64 返回空集，reconcile 删光节点。
     let json: unknown;
@@ -856,7 +848,7 @@ export class SubscriptionService {
           'Subscription'
         );
         const servers = this.parseSingboxOutbounds(obj.outbounds, subscriptionId);
-        // M5：0 节点必须 throw（与 Clash 分支对齐），不返回空集 → 防 reconcile 删光存量 + 清 selectedServerId。
+        // 0 节点必须 throw（与 Clash 分支对齐），不返回空集 → 防 reconcile 删光存量 + 清 selectedServerId。
         if (servers.length === 0) {
           if (throwOnEmpty) throw new Error('sing-box 订阅解析得到 0 个可用节点');
           return { servers: [] };
@@ -943,7 +935,7 @@ export class SubscriptionService {
     }
 
     if (servers.length === 0) {
-      // M5：URL-list/Base64 分支 0 节点也必须 throw（与 Clash/sing-box 对齐），不返回空集 →
+      // URL-list/Base64 分支 0 节点也必须 throw（与 Clash/sing-box 对齐），不返回空集 →
       // 防 reconcile 删光存量节点 + 清 selectedServerId（正常订阅不会 0 节点）。
       const hadUrlLines = lines.some((l) => l.includes('://'));
       if (throwOnEmpty) {
@@ -1010,7 +1002,7 @@ export class SubscriptionService {
             return text;
           },
           parseContent: async (text) => {
-            // LOW-1：provider 响应复用主解析（allowProviders:false → 不递归 providers；触发 handleClashDoc
+            // provider 响应复用主解析（allowProviders:false → 不递归 providers；触发 handleClashDoc
             // 的「再嵌套 proxy-providers → warn 不递归」活分支）。throwOnEmpty:false → 0 节点返回空集，
             // 交由 resolveProxyProviders 按 permanent 0-node 处理（不消失成功节点、不误判 transient）。
             const r = await this.parseSubscriptionContent(text, subscriptionId, {
@@ -1093,7 +1085,7 @@ export class SubscriptionService {
     notModified?: boolean;
   }> {
     try {
-      // M6：url 常含 ?token=，日志脱敏（去 query）防 token 落 app.log。
+      // url 常含 ?token=，日志脱敏（去 query）防 token 落 app.log。
       this.logManager.addLog(
         'info',
         `正在拉取订阅: ${SubscriptionService.redactUrl(url)}（${viaProxy ? '经代理' : '直连'}）`,
@@ -1101,7 +1093,7 @@ export class SubscriptionService {
       );
 
       const ua = userAgent?.trim() || defaultSubscriptionUserAgent();
-      // M3：主订阅 fetch 加超时（30s，比 provider 15s 宽）→ 防 slow-loris 挂死 scheduler.isRunning 永真。
+      // 主订阅 fetch 加超时（30s，比 provider 15s 宽）→ 防 slow-loris 挂死 scheduler.isRunning 永真。
       // §16.3.4：conditional 由调用方决定是否传（provider 型订阅豁免——见 subscription-handlers/scheduler）。
       const {
         text,
@@ -1127,7 +1119,7 @@ export class SubscriptionService {
 
       const trimmed = text.trim();
       // §16.3.4：hasProviders=含 Clash proxy-providers → 回写 sub，下次豁免条件 GET（主正文 304 会掩盖 provider 独立变化）。
-      // M-1：兼容 YAML（行首 `proxy-providers:`）与 JSON 形态（`"proxy-providers":`，同支持路径 handleClashDoc）两种键形，
+      // 兼容 YAML（行首 `proxy-providers:`）与 JSON 形态（`"proxy-providers":`，同支持路径 handleClashDoc）两种键形，
       // 避免 JSON 型 provider 订阅漏检 → 误发条件头 → 主正文恒 304 掩盖 provider 变化 → 节点无限期陈旧。宁可误判 true
       //（多一次全量拉取，零回归）不可漏判。
       const hasProviders =
@@ -1144,7 +1136,7 @@ export class SubscriptionService {
 
       return { servers, userInfo, partial, failedProviders, etag, lastModified, hasProviders };
     } catch (error: any) {
-      // M6：失败日志同样脱敏 url。
+      // 失败日志同样脱敏 url。
       this.logManager.addLog(
         'error',
         `拉取订阅失败 (${SubscriptionService.redactUrl(url)}): ${error.message}`,

@@ -90,7 +90,7 @@ export function createExitProbeLatencyRunner(
           await (deps.whenQuiet?.(quietCapMs) ?? Promise.resolve());
           const still = deps.getSelectedExit(); // 等待期间出口被切走 → 本轮放弃（Y2 pending 补跑新出口）
           if (!still || still.serverId !== exit.serverId) return;
-          // review#3：用等待后的最新 target——probeProxyPort 每次 start `listen(0)` 动态分配，等待窗（≤~14.5s）内核重启
+          // 用等待后的最新 target——probeProxyPort 每次 start `listen(0)` 动态分配，等待窗（≤~14.5s）内核重启
           // 后旧端口已死；仅比 serverId 通过却用旧端口测 → CONNECT 失败丢样。以 still 整体替换参与测量。
           effExit = still;
         }

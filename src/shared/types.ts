@@ -1,8 +1,3 @@
-/**
- * 共享类型定义
- * 用于主进程和渲染进程之间的数据传输
- */
-
 import type {
   NaiveSettings,
   Hysteria2Settings,
@@ -169,10 +164,6 @@ export interface SubscriptionConfig {
   hasProviders?: boolean;
 }
 
-// ============================================================================
-// 服务器配置
-// ============================================================================
-
 export interface ServerConfig {
   id: string;
   name: string;
@@ -183,7 +174,6 @@ export interface ServerConfig {
   // 代理链（前置代理）ID
   detour?: string;
 
-  // 关联的订阅ID
   subscriptionId?: string;
 
   // M1：节点归属的 Clash proxy-provider 名（仅经 proxy-providers 解析的节点有值；内联 proxies / 非 Clash
@@ -191,7 +181,6 @@ export interface ServerConfig {
   // 名下的下架节点，成功 provider 的真下架正常删除。
   providerName?: string;
 
-  // VLESS 特定
   uuid?: string;
   encryption?: string;
   flow?: string;
@@ -202,18 +191,14 @@ export interface ServerConfig {
   // Trojan 和 Hysteria2 通用
   password?: string;
 
-  // Naive 特定
   username?: string;
   naiveSettings?: NaiveSettings;
 
-  // VMess 特定
   alterId?: number;
   vmessSecurity?: string;
 
-  // Hysteria2 特定
   hysteria2Settings?: Hysteria2Settings;
 
-  // TUIC 特定
   tuicSettings?: TuicSettings;
 
   // WireGuard 特定（sing-box endpoint）
@@ -225,40 +210,32 @@ export interface ServerConfig {
   // 自定义协议（raw-JSON 透传，第三方内核用）
   customSettings?: CustomSettings;
 
-  // AnyTLS 特定
   anyTlsSettings?: AnyTlsSettings;
 
   // Multiplex 多路复用（vless/trojan/vmess/ss；reality+vision 不兼容，生成侧 guard）
   multiplexSettings?: MultiplexSettings;
 
-  // Shadowsocks 特定
   shadowsocksSettings?: ShadowsocksSettings;
 
   // Snell 特定（psk 复用通用 password 字段，同 trojan/hysteria2 惯例）
   snellSettings?: SnellSettings;
 
-  // SSH 特定
   sshSettings?: SshSettings;
 
   // Shadow-TLS 插件（可附加在任意协议上，常用于 SS2022）
   shadowTlsSettings?: ShadowTlsSettings;
 
-  // 传输层配置
   network?: Network;
   security?: Security;
 
-  // TLS 配置
   tlsSettings?: TlsSettings;
 
-  // Reality 配置
   realitySettings?: RealitySettings;
 
-  // 传输层特定配置
   wsSettings?: WebSocketSettings;
   grpcSettings?: GrpcSettings;
   httpSettings?: HttpSettings;
 
-  // 元数据
   createdAt?: string;
   updatedAt?: string;
 }
@@ -287,10 +264,6 @@ export interface ImportParseResult {
   format: ImportFormat;
 }
 
-// ============================================================================
-// TUN 模式配置
-// ============================================================================
-
 export interface TunModeConfig {
   mtu: number;
   stack: TunStack;
@@ -314,7 +287,6 @@ export interface TunModeConfig {
   inboundExcludeCidrs?: string[];
 }
 
-// DNS 配置
 export interface DnsConfig {
   domesticDns: string; // 国内 DNS，默认 https://doh.pub/dns-query
   foreignDns: string; // 海外 DNS，默认 https://dns.google/dns-query
@@ -378,10 +350,6 @@ export interface RegionRoutingConfig {
   reverse: boolean; // 反向：本地走代理·海外直连（region=cn+reverse=回国）
 }
 
-// ============================================================================
-// 用户配置
-// ============================================================================
-
 /**
  * §2 待应用差集：节点集相对运行核启动快照（runningServersFingerprint）的差异。
  * added=新增未入核（徽标「待入池」）；modified=已编辑未生效（徽标「待生效」+dirty）。
@@ -394,7 +362,6 @@ export interface PendingNodeChanges {
 }
 
 export interface UserConfig {
-  // 订阅配置
   subscriptions?: SubscriptionConfig[];
 
   // 服务器配置
@@ -411,7 +378,6 @@ export interface UserConfig {
   // undefined=未迁移（旧配置）；新装由 createDefaultConfig 置 true。详见 ConfigManager.migrateTunStack。
   tunStackMigrated?: boolean;
 
-  // 路由规则
   customRules: Rule[];
 
   // 地区分流（4.1.0）：智能分流 geo 基线场景。undefined=默认中国大陆正向(=今日行为，零迁移)。
@@ -470,10 +436,8 @@ export interface UserConfig {
   // 窗口尺寸（仅在 rememberWindowSize 启用时使用）
   windowBounds?: { width: number; height: number };
 
-  // DNS 配置
   dnsConfig?: DnsConfig;
 
-  // 自定义规则集
   customRuleSets?: CustomRuleSet[];
 
   // 已下载的本地规则资源（.srs）
@@ -497,7 +461,6 @@ export interface UserConfig {
   // 防每次启动回灌（用户删掉某预设规则后不会被重新补回）。新装由 createDefaultConfig 直接置 true。
   appRulesSeeded?: boolean;
 
-  // 用户自定义的应用分流预设
   customAppPresets?: CustomAppPreset[];
 
   // 端口配置
@@ -576,6 +539,5 @@ export interface UserConfig {
   // macOS 提权 helper：用户已忽略「后台运行被系统禁用」引导弹窗（不再提示）。设置页 helper 卡保留常驻入口。
   helperDisabledPromptDismissed?: boolean;
 
-  // UI 设置
   uiTheme?: 'light' | 'dark' | 'system';
 }

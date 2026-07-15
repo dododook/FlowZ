@@ -50,7 +50,7 @@ const GITHUB_REPO = 'FlowZ';
 
 /**
  * 单次下载的取消 token（per-call，非实例共享）：弹窗流持有自己的 token，取消只作用于它；关于页手动下载
- * 不传 token（不可取消、天然隔离）。避免两流并发时共享实例态互相误取消 / 吞镜像重试（#292 review Med-1）。
+ * 不传 token（不可取消、天然隔离）。避免两流并发时共享实例态互相误取消 / 吞镜像重试。
  */
 interface DownloadControl {
   cancelled: boolean;
@@ -70,7 +70,7 @@ export class UpdateService {
   private popupActionListenerBound = false;
   // 上次弹窗内容高度：仅态切换（高度变）时 setContentSize+重定位，避免进度每帧重设致抖动。
   private lastPopupHeight = 0;
-  // 最近下发的弹窗状态：renderer 崩溃/重载后 did-finish-load 重放，避免空白挂死窗（#292 review Low-4）。
+  // 最近下发的弹窗状态：renderer 崩溃/重载后 did-finish-load 重放，避免空白挂死窗。
   private lastPopupState: UpdatePopupState | null = null;
   // 弹窗流当前下载的取消 token（progress 态 × / OS 关窗时取消它；仅弹窗流持有，与手动下载隔离）。
   private popupDownloadControl: DownloadControl | null = null;
@@ -115,7 +115,7 @@ export class UpdateService {
   /**
    * 更新链路（检查/下载）统一会话。viaProxy/port 决策收口到 UpdateNetwork.resolveSessionForMainUpdate（类2，
    * 三链路单点防漂移）：mainSessionViaProxy×proxyRunning×updateInPort 求值、端口不可用/读 config 失败回落直连、
-   * 经 sessionForOrDirect 绝不消费 default session（M1）。未注入 updateNetwork → undefined（旧行为兜底）；
+   * 经 sessionForOrDirect 绝不消费 default session。未注入 updateNetwork → undefined（旧行为兜底）；
    * 极罕见 direct 也 reject → undefined 守 net.request「绝不抛」契约。
    */
   private async updateSession(): Promise<Session | undefined> {
@@ -155,7 +155,6 @@ export class UpdateService {
 
       const releases = await this.fetchReleases();
 
-      // 过滤并排序
       const validReleases = releases
         .filter((r: any) => includePrerelease || !r.prerelease)
         .sort(
@@ -173,14 +172,12 @@ export class UpdateService {
       const currentVersion = app.getVersion();
       const latestVersion = latestRelease.tag_name.replace(/^v/, '');
 
-      // 检查是否为新版本
       if (!this.isNewerVersion(latestVersion, currentVersion)) {
         this.logManager.addLog('info', `当前已是最新版本: ${currentVersion}`, 'UpdateService');
         this.updateProgress({ status: 'no-update', percentage: 0, message: '当前已是最新版本' });
         return { hasUpdate: false };
       }
 
-      // 查找适合当前平台的安装包
       const asset = this.findSuitableAsset(latestRelease.assets);
 
       if (!asset) {
@@ -204,7 +201,6 @@ export class UpdateService {
         fileName: asset.name,
       };
 
-      // 检查是否被跳过
       if (this.skippedVersion === latestVersion) {
         this.logManager.addLog('info', `版本 ${latestVersion} 已被用户跳过`, 'UpdateService');
         this.updateProgress({ status: 'no-update', percentage: 0, message: '此版本已被跳过' });
@@ -248,9 +244,6 @@ export class UpdateService {
     }
   }
 
-  /**
-   * 下载更新
-   */
   async downloadUpdate(updateInfo: UpdateInfo): Promise<string | null> {
     // 手动下载不传 cancel token → 不可取消、与弹窗流的取消 token 完全隔离（无跨流污染）。
     try {
@@ -260,7 +253,6 @@ export class UpdateService {
       const downloadDir = app.getPath('temp');
       const filePath = path.join(downloadDir, updateInfo.fileName);
 
-      // 如果文件已存在，先删除
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -284,9 +276,6 @@ export class UpdateService {
     }
   }
 
-  /**
-   * 安装更新（打开下载的安装包）
-   */
   /** Linux deb 安装态判定（双守卫，与 installUpdate 分派逻辑同源）：非 AppImage 运行 + .deb 资产。 */
   private isDebUpdateForm(installerPath: string): boolean {
     return process.platform === 'linux' && !process.env.APPIMAGE && installerPath.endsWith('.deb');
@@ -314,7 +303,6 @@ export class UpdateService {
     try {
       this.logManager.addLog('info', `准备安装更新: ${installerPath}`, 'UpdateService');
 
-      // 检查文件是否存在
       if (!fs.existsSync(installerPath)) {
         this.logManager.addLog('error', `安装包不存在: ${installerPath}`, 'UpdateService');
         return false;
@@ -351,7 +339,7 @@ export class UpdateService {
         const vbsPath = path.join(app.getPath('temp'), 'flowz_update.vbs');
 
         const portableTarget = process.env.PORTABLE_EXECUTABLE_FILE || null;
-        // B（移入新版本名 + 删旧版本名）：新版本名文件放回原目录（原目录 + 下载件文件名），保留 GitHub release
+        // 移入新版本名 + 删旧版本名：新版本名文件放回原目录（原目录 + 下载件文件名），保留 GitHub release
         // 带版本号的命名。
         const portableNewPath = portableTarget
           ? path.join(path.dirname(portableTarget), path.basename(installerPath))
@@ -422,7 +410,7 @@ export class UpdateService {
         // 两路统一走 spawn detached bash 脚本（不再依赖系统默认 .deb 关联）。
         const appImageTarget = process.env.APPIMAGE || null;
         const isAppImage = !!appImageTarget && installerPath.endsWith('.AppImage');
-        // deb 脚本严格按【运行形态 + 资产形态】双守卫（review Med-2）：仅「非 AppImage 运行（=deb 安装态）+ .deb 资产」
+        // deb 脚本严格按【运行形态 + 资产形态】双守卫：仅「非 AppImage 运行（=deb 安装态）+ .deb 资产」
         // 才走 root apt 安装。杜绝「AppImage(loose) 用户因 release 只发 deb 被跨形态兜底选中 → 被 system-wide 装 deb」。
         const isDeb = this.isDebUpdateForm(installerPath); // 与顶部确认框谓词同源（双守卫单一真值）
         if (isAppImage || isDeb) {
@@ -477,18 +465,12 @@ export class UpdateService {
     }
   }
 
-  /**
-   * 跳过此版本
-   */
   skipVersion(version: string): void {
     this.skippedVersion = version.replace(/^v/, '');
     this.saveSkippedVersion();
     this.logManager.addLog('info', `已跳过版本: ${version}`, 'UpdateService');
   }
 
-  /**
-   * 打开 GitHub Releases 页面
-   */
   openReleasesPage(): void {
     shell.openExternal(`https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`);
   }
@@ -520,9 +502,6 @@ export class UpdateService {
     return action === 'skip' ? 'skip' : 'later'; // later / __closed__（关窗）
   }
 
-  /**
-   * 获取当前下载进度
-   */
   getProgress(): UpdateProgress {
     return { ...this.downloadProgress };
   }
@@ -588,7 +567,7 @@ export class UpdateService {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
-        // 当前界面语言注入 preload：弹窗页据此设 <html lang/dir>（fa=rtl），修 lang 写死 zh-CN（review Nit）。
+        // 当前界面语言注入 preload：弹窗页据此设 <html lang/dir>（fa=rtl），修 lang 写死 zh-CN。
         additionalArguments: [`--flowz-popup-lang=${getMainLanguage()}`],
       },
     });
@@ -613,7 +592,7 @@ export class UpdateService {
       this.positionPopup(win, width, popupHeightFor(state.phase));
       win.showInactive(); // 不抢键盘焦点（角落 toast 语义，非打断式 dialog）
     });
-    // 内容就绪即重放最近状态（非 once：renderer 崩溃/重载后重新渲染当前态，避免空白挂死窗，Low-4）。
+    // 内容就绪即重放最近状态（非 once：renderer 崩溃/重载后重新渲染当前态，避免空白挂死窗）。
     win.webContents.on('did-finish-load', () => {
       if (this.updatePopupWindow === win && this.lastPopupState)
         this.sendPopupState(this.lastPopupState);
@@ -631,11 +610,11 @@ export class UpdateService {
 
     win.on('closed', () => {
       // 仅当关闭的是当前活跃弹窗才复位 + 解 awaiter：防 close→closed 异步间隙内已被新流程替换时，
-      // 旧窗 closed 误清新窗引用 / 误 resolve 新 awaiter（Low：竞态僵尸窗）。
+      // 旧窗 closed 误清新窗引用 / 误 resolve 新 awaiter（竞态僵尸窗）。
       if (this.updatePopupWindow !== win) return;
       this.updatePopupWindow = null;
       this.lastPopupHeight = 0;
-      // Med-2：progress 态经 OS 关窗（Alt+F4/Cmd+W）视同取消——中断在途下载，防「关了窗仍静默下完 + 杀 app 装更新」。
+      // progress 态经 OS 关窗（Alt+F4/Cmd+W）视同取消——中断在途下载，防「关了窗仍静默下完 + 杀 app 装更新」。
       // 与「×」取消收敛到同一 token 收尾；无在途下载（remind/error）时 control 为 null，此段 no-op。
       if (this.popupDownloadControl) {
         this.popupDownloadControl.cancelled = true;
@@ -655,7 +634,7 @@ export class UpdateService {
 
   /** 向弹窗整帧下发状态；态切换（高度变）时才 setContentSize + 保角锚点重定位。 */
   private sendPopupState(state: UpdatePopupState): void {
-    this.lastPopupState = state; // 记录供 did-finish-load 崩溃/重载重放（Low-4）。
+    this.lastPopupState = state; // 记录供 did-finish-load 崩溃/重载重放。
     const win = this.updatePopupWindow;
     if (!win || win.isDestroyed()) return;
     const height = popupHeightFor(state.phase);
@@ -715,7 +694,7 @@ export class UpdateService {
       return;
     }
     if (action === 'manualDownload' && this.currentUpdateInfo) {
-      // 仅放行 https（防被篡改的非 http(s) scheme 经 openExternal 触发协议处理器，review Nit）。
+      // 仅放行 https（防被篡改的非 http(s) scheme 经 openExternal 触发协议处理器）。
       const url = this.currentUpdateInfo.downloadUrl;
       if (/^https:\/\//i.test(url)) shell.openExternal(url);
     }
@@ -788,7 +767,7 @@ export class UpdateService {
           percentage: 100,
           labels: this.popupLabels(),
         });
-        // 捕获当前窗引用：800ms 后仅当仍是这个弹窗才关（防期间被新流程复用后误关新窗，Low 竞态）。
+        // 捕获当前窗引用：800ms 后仅当仍是这个弹窗才关（防期间被新流程复用后误关新窗竞态）。
         const doneWin = this.updatePopupWindow;
         setTimeout(() => {
           if (this.updatePopupWindow === doneWin) this.closeUpdatePopup();
@@ -827,7 +806,7 @@ export class UpdateService {
     }
   }
 
-  /** 把下载错误的（中文）内部消息按类别映射为本地化文案，供 5 语弹窗 error 态展示；原始详情仍进日志（review Low-5）。 */
+  /** 把下载错误的（中文）内部消息按类别映射为本地化文案，供 5 语弹窗 error 态展示；原始详情仍进日志。 */
   private localizeDownloadError(raw: string): string {
     if (
       /停滞超时|超时|ETIMEDOUT|ECONNRESET|DISCONNECTED|NETWORK_CHANGED|socket hang up|中断|拦截/i.test(
@@ -894,7 +873,7 @@ export class UpdateService {
           // 已 buffer 的帧仍会触发 data，若继续累加会徒增内存峰值。
           if (settled) return;
           data += chunk.toString();
-          // OOM 防护（审计 #2）：GitHub api 被劫持/WAF 接管可回灌 GB 级响应撞 V8 堆/512MB string 上限。
+          // OOM 防护：GitHub api 被劫持/WAF 接管可回灌 GB 级响应撞 V8 堆/512MB string 上限。
           // 启动后 5s 自动检查更新即可被诱发。超 16MiB 即 abort + 单点收口 finish（releases JSON 实际 < 数 MB）。
           if (data.length > MAX_GITHUB_JSON_BYTES) {
             try {
@@ -1106,7 +1085,7 @@ export class UpdateService {
           }
           handleError(new Error('下载已取消'));
         };
-        // Low-3：取消可能落在建请求前的 await 间隙（resolveGhPrefix/updateSession，含端口探测）——彼时 ctl.abort 尚为
+        // 取消可能落在建请求前的 await 间隙（resolveGhPrefix/updateSession，含端口探测）——彼时 ctl.abort 尚为
         // null、abort() 是 no-op。到此请求已建、abort 钩子已装，若期间已置取消则立即收尾，避免白下整包才被完成后检查丢弃。
         if (ctl.cancelled) {
           handleError(new Error('下载已取消'));
@@ -1197,7 +1176,6 @@ export class UpdateService {
 
   private updateProgress(progress: UpdateProgress): void {
     this.downloadProgress = progress;
-    // 发送进度到渲染进程
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(IPC_CHANNELS.EVENT_UPDATE_PROGRESS, progress);
     }
@@ -1205,7 +1183,6 @@ export class UpdateService {
 
   private loadSkippedVersion(): void {
     try {
-      // 使用统一的路径工具，确保始终使用正确的用户数据路径
       const configPath = path.join(getUserDataPath(), 'skipped_version.txt');
       if (fs.existsSync(configPath)) {
         this.skippedVersion = fs.readFileSync(configPath, 'utf-8').trim();
@@ -1217,7 +1194,6 @@ export class UpdateService {
 
   private saveSkippedVersion(): void {
     try {
-      // 使用统一的路径工具，确保始终使用正确的用户数据路径
       const configPath = path.join(getUserDataPath(), 'skipped_version.txt');
       if (this.skippedVersion) {
         fs.writeFileSync(configPath, this.skippedVersion);

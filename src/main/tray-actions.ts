@@ -1,5 +1,5 @@
 /**
- * 托盘动作回调构造 —— 从 index.ts whenReady 抽出（index.ts 拆分 Phase 3 step B）。
+ * 托盘动作回调构造 —— 从 index.ts whenReady 抽出。
  *
  * 把 TrayManager 的 13 个点击回调（启停代理 / 切节点·模式·接管 / 设置·更新·管理服务器 / 测速 / 隐私模式）
  * 从 whenReady 闭包搬出，经 deps 注入主进程服务与可变引用（mainWindow/trayManager/proxyManager 用 getter
@@ -73,7 +73,6 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
           await proxyManager.start(config);
 
           logManager.addLog('info', 'Proxy started from tray', 'Main');
-          // 更新托盘菜单状态
           updateTrayMenuState(true);
         }
       } catch (error) {
@@ -90,7 +89,6 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
           await proxyManager.ensureSystemProxyCleared().catch(() => {});
           await proxyManager.stop();
           logManager.addLog('info', 'Proxy stopped from tray', 'Main');
-          // 更新托盘菜单状态
           updateTrayMenuState(false);
         }
       } catch (error) {
@@ -126,10 +124,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
           logManager.addLog('info', 'Applied server switch from tray', 'Main');
         }
 
-        // 更新托盘菜单
         updateTrayMenuState(proxyManager?.getStatus().running ?? false);
-
-        // 通知渲染进程配置已更新
         ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -150,10 +145,7 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
           logManager.addLog('info', 'Proxy restarted with new mode', 'Main');
         }
 
-        // 更新托盘菜单
         updateTrayMenuState(proxyManager?.getStatus().running ?? false);
-
-        // 通知渲染进程配置已更新
         ipcEventEmitter.sendToAll('event:configChanged', { newValue: config });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -196,19 +188,16 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     onOpenSettings: () => {
       const mainWindow = getMainWindow();
       showWindow();
-      // 发送导航事件到渲染进程
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/settings');
       }
     },
     onCheckUpdate: async () => {
       const mainWindow = getMainWindow();
-      // 检查更新并显示对话框
       const result = await updateService.checkForUpdate();
       if (result.hasUpdate && result.updateInfo) {
         const action = await updateService.showUpdateDialog(result.updateInfo);
         if (action === 'update') {
-          // 使用带进度窗口的下载方法
           const filePath = await updateService.downloadUpdateWithProgress(result.updateInfo);
           if (filePath) {
             await updateService.installUpdate(filePath);
@@ -232,7 +221,6 @@ export function buildTrayCallbacks(deps: TrayActionDeps) {
     onManageServers: () => {
       const mainWindow = getMainWindow();
       showWindow();
-      // 发送导航事件到渲染进程
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(IPC_CHANNELS.EVENT_NAVIGATE, '/server');
       }

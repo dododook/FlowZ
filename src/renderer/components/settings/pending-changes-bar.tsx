@@ -19,7 +19,7 @@ export function PendingChangesBar() {
   const { t } = useTranslation();
   const pending = useAppStore((s) => s.pendingChanges);
   const [applying, setApplying] = useState(false);
-  // 兜底复位定时器引用：供卸载/重触发时 clear，防卸载后 setApplying 空跑（Nit-1）。
+  // 兜底复位定时器引用：供卸载/重触发时 clear，防卸载后 setApplying 空跑。
   const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const total = pending.added.length + pending.modified.length;
@@ -45,7 +45,7 @@ export function PendingChangesBar() {
     void api.proxy
       .applyPendingChanges()
       .then((res) => {
-        // 据实际应用状态分流反馈，避免「无论是否真重启一律成功」的死信息（review #291 finding 4）。
+        // 据实际应用状态分流反馈，避免「无论是否真重启一律成功」的死信息。
         if (res.status === 'applied') toast.success(t('servers.pendingApplying'));
         else if (res.status === 'deferred')
           toast.info(t('servers.pendingApplyDeferred')); // 换核/操作中 → 稍后自动生效

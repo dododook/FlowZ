@@ -7,7 +7,6 @@ import type { BackupInfo } from '@/ipc/api-client';
 import { BACKUP_CATEGORIES, type BackupCategory } from '../../../shared/backup-categories';
 import { BackupCategoryDialog, CATEGORY_META } from './backup-category-dialog';
 
-// localStorage key for last export timestamp
 const LAST_EXPORT_KEY = 'flowz_last_backup_export';
 
 /** 数据备份卡（Conduit 高级面板 `.card.set-card`）：概览条 `.bk-overview` + 操作 `.bk-actions` + 选类对话框。 */
@@ -170,7 +169,6 @@ export function BackupRestoreSection() {
       </div>
 
       <div className="set-pad">
-        {/* 配置概览条 */}
         {hasData ? (
           <div className="bk-overview">
             <div className="bk-stat">
@@ -210,7 +208,6 @@ export function BackupRestoreSection() {
           </div>
         )}
 
-        {/* 操作 + 上次导出 */}
         <div className="bk-actions">
           <button
             id="backup-export-btn"
@@ -255,7 +252,6 @@ export function BackupRestoreSection() {
         </div>
       </div>
 
-      {/* 导出：选类别对话框（全部 6 类可选，默认全选） */}
       <BackupCategoryDialog
         open={showExportDialog}
         onOpenChange={setShowExportDialog}

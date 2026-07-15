@@ -123,11 +123,8 @@ function ExitNodePicker({
 }
 
 /**
- * 首页连接控制卡（Conduit `.card.conn-card`）：出口节点 `.npick` 一步选 + 连接圆钮三态
- * （未连 teal ▶ `.conn-toggle.off` / 已连 红 ‖ `.on` / 错误 橘 ! `.err`）+ 接管方式 `.seg2`（系统/TUN/手动，
- * 切换时若已连弹重连确认）+ 分流策略 `.seg2`（智能/全局/直连）。功能全保留：空态引导、就地测速/延迟排序、
- * TS 出口警示、选中详情、组网回退提示、manual 提示、置灰原因。接管方式的 FakeIP-TUN 待纠正 / native gate
- * 引导逻辑逐字迁移。附加状态（空态/提示/详情/重连确认）以同一 conduit 语言渲染在卡片下方，自然承接。
+ * 首页连接控制卡（Conduit `.card.conn-card`）：出口节点选择 + 连接圆钮三态 + 接管方式/分流策略。
+ * 从原 ConnectionStatusCard 完整迁移，功能全保留；接管方式的 FakeIP-TUN 纠正与 native gate 引导逻辑需逐字保留。
  */
 export function ConnectionControlCard() {
   const { t } = useTranslation();
@@ -208,7 +205,7 @@ export function ConnectionControlCard() {
     if (!config) return;
     // issue 3：选中「待入池/待生效」节点将使其变被引用 → 触发自动整核重启、待应用动作条随即消失。
     // 先判后 save（save 成功即触发重启清差集），成功后给一次性提示，解释「动作条为何消失」。
-    // pendingChanges 在 handler 内即时读取（getState），不订阅——否则每次 configChanged 广播都重渲整卡（Nit-11）。
+    // pendingChanges 在 handler 内即时读取（getState），不订阅——否则每次 configChanged 广播都重渲整卡。
     const willRestart = willRestartOnSelect(useAppStore.getState().pendingChanges, serverId);
     try {
       await saveConfig({ ...config, selectedServerId: serverId });
@@ -230,7 +227,6 @@ export function ConnectionControlCard() {
     await startProxy();
   };
 
-  // ── 接管方式（proxyModeType）──────────────────────────────────────────────────────────────────
   const applyTakeover = async (modeType: ProxyModeType) => {
     if (!config) return;
     try {
@@ -262,7 +258,6 @@ export function ConnectionControlCard() {
     setPendingModeType(null);
   };
 
-  // ── 分流策略（proxyMode）─────────────────────────────────────────────────────────────────────
   const handleRoutingChange = async (next: ProxyMode) => {
     setRoutingBusy(true);
     try {
@@ -328,7 +323,6 @@ export function ConnectionControlCard() {
   return (
     <div className="flex flex-col gap-3">
       <div className="card conn-card">
-        {/* 出口节点：一步选下拉 + 测速/排序 + 连接圆钮三态 */}
         <div className="field">
           {/* 出口节点标签行：右侧内联解锁检测（解锁态 ↔ 出口节点强绑，零挤占垂直空间） */}
           <div className="flex items-center gap-3">
@@ -338,7 +332,6 @@ export function ConnectionControlCard() {
             </div>
           </div>
           {isEmptyState ? (
-            // 空态引导：无节点 → 添加节点/订阅（连接圆钮同排但置灰）。
             <div className="cc-node-row">
               <div className="flex flex-1 flex-wrap items-center gap-2 rounded-[9px] border border-dashed border-[hsl(var(--line))] bg-[hsl(var(--surface-2))] p-3">
                 <span className="text-[12.5px] text-[hsl(var(--fg-dim))]">
@@ -422,7 +415,6 @@ export function ConnectionControlCard() {
 
         <div className="cc-hair" />
 
-        {/* 接管方式 + 分流策略：两列等宽 seg2 */}
         <div className="mode-grid">
           <div className="field">
             <div className="field-lbl">{t('home.takeoverMethod')}</div>
@@ -469,7 +461,6 @@ export function ConnectionControlCard() {
 
       {/* 附加状态（同一 conduit 语言，承接卡片下方；不适用时各自渲 null，不占位）───────────────── */}
 
-      {/* 有节点未选中：行内提示（选出口）。直连不触发。 */}
       {servers.length > 0 && !selectedServer && !isDirect && (
         <p className="flex items-center gap-1.5 text-xs text-warning">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />

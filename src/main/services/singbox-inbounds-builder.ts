@@ -155,7 +155,7 @@ export function buildInbounds(
     // 但是在 Windows 下，Wintun 如果不排除局域网物理网关，发往本地路由器的 DHCP/网关查询会被死循环拦截，导致全局断网。
     // FakeIP 护栏：Win TUN 排除清单同样剔除与 fakeip 段相交的条目，否则假 IP 被排除出 TUN→sing-box 收不到→断（同 route 侧）。
     // fakeipRanges 仅供 Windows carve（computeWinBypassExclude）与 inboundExclude 的 computeUserTunExclude（mac/win）
-    // 消费——Linux 加法态两者都不走（excludeAddr 恒空、inboundExclude 忽略+warn 短路），故加 linux 守卫避免死计算（复审 NIT-1）。
+    // 消费——Linux 加法态两者都不走（excludeAddr 恒空、inboundExclude 忽略+warn 短路），故加 linux 守卫避免死计算。
     const fakeipRanges =
       usesFakeIp(config) && process.platform !== 'linux'
         ? [FAKEIP_INET4_RANGE, ...(config.enableIPv6 ? [FAKEIP_INET6_RANGE] : [])]
@@ -362,7 +362,7 @@ export function buildInbounds(
       }
     }
 
-    // 恢复至对应平台最稳定的网段。Windows 在 v3.4.0 使用 /16 时非常完美；Mac 在 v3.3.18 使用 /30 时最完美。
+    // 恢复至对应平台最稳定的网段：Windows v3.4.0 用 /16、Mac v3.3.18 用 /30 最稳定。
     const tunAddress = [
       config.tunConfig?.inet4Address ||
         (process.platform === 'darwin' ? '172.19.0.1/30' : '172.19.0.1/16'),
@@ -373,9 +373,8 @@ export function buildInbounds(
       tunAddress.push(config.tunConfig?.inet6Address || 'fdfe:dcba:9876::1/126');
     }
 
-    // macOS (3.3.18) 最稳定 MTU 为 1400。Windows (3.4.0) 下 MTU=1350 最完美。
-    // 9000 为历史默认值（UI 不暴露 MTU 设置项），等同"未自定义"，必须回退到平台最优值，
-    // 否则巨型 MTU 会让上面精心调优的平台值成为永不生效的死代码。
+    // macOS(3.3.18) 最稳定 MTU=1400，Windows(3.4.0)=1350。9000 为历史默认值（UI 不暴露 MTU 设置项），
+    // 等同"未自定义"，必须回退到平台最优值，否则巨型 MTU 会让上面调优的平台值成为永不生效的死代码。
     const platformDefaultMtu = process.platform === 'darwin' ? 1400 : 1350;
     const userMtu = config.tunConfig?.mtu;
     const effectiveMtu = !userMtu || userMtu === 9000 ? platformDefaultMtu : userMtu;

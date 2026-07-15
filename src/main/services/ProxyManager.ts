@@ -125,10 +125,6 @@ import {
 import coreManifest from '../../shared/core-manifest.json';
 
 /**
- * 私有 IP 地址段（CIDR 格式）
- * 用于路由规则中的直连配置
- */
-/**
  * 私有 IP 地址正则表达式
  * 用于日志过滤中识别内网请求
  */
@@ -140,7 +136,7 @@ const PRIVATE_IP_PATTERNS = [
   /\b169\.254\.\d{1,3}\.\d{1,3}/,
 ];
 
-// 性能 review M2：promisify(execFile) 提到模块级——isProcessAliveAsync 是每 10s 的周期热路径，
+// promisify(execFile) 提到模块级——isProcessAliveAsync 是每 10s 的周期热路径，
 // 不应每次调用都内联 require('util').promisify(require('child_process').execFile) 重建包装。
 const healthProbeExecFile = promisify(execFile);
 
@@ -676,7 +672,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.runningServersFingerprint = this.computeServersFingerprint(config.servers);
 
     // Linux：解析现役核（helper 模式=root 受管核，setcap 兜底=userData 可写核）并维护 userData 兜底核。每次 start
-    // 重解析（对齐 darwin/win HIGH-1）：探测/校验/实跑对准同一核。ensureWritableCore 内按平台维护 + 返回现役核。
+    // 重解析（与 darwin/win 一致）：探测/校验/实跑对准同一核。ensureWritableCore 内按平台维护 + 返回现役核。
     if (process.platform === 'linux') {
       try {
         this.singboxPath = await resourceManager.ensureWritableCore();
@@ -685,12 +681,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
     } else if (process.platform === 'darwin') {
       // B 块：受保护目录是 macOS 现役核单一真相，install-core 换核后路径不变、内容变；每次 start 重解析
-      // this.singboxPath，消除「同会话换核/装 helper 后仍用构造时缓存的旧（bundle）路径」（修 review HIGH-1）。
+      // this.singboxPath，消除「同会话换核/装 helper 后仍用构造时缓存的旧（bundle）路径」。
       this.singboxPath = this.getSingBoxPath();
     } else if (process.platform === 'win32') {
-      // 对齐 darwin HIGH-1：Windows 现役核恒为可写核（getSingBoxPath 优先 userData/core_update），CoreUpdateService
+      // 与 darwin 一致：Windows 现役核恒为可写核（getSingBoxPath 优先 userData/core_update），CoreUpdateService
       // 同会话换核写入该处后路径不变、内容变；每次 start 重解析 this.singboxPath，消除「同会话换核后仍用构造时
-      // 缓存的随包路径 → version 探测/check/spawn 全走旧核 → 换核静默 no-op」（修 #168 review MED-2）。
+      // 缓存的随包路径 → version 探测/check/spawn 全走旧核 → 换核静默 no-op」（#168）。
       this.singboxPath = this.getSingBoxPath();
     }
 
@@ -909,7 +905,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             'warn',
             `sing-box 起核较慢，正在自动重试（第 ${attempt} 次）: ${error.message}`
           );
-          // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置（review P1-4）。
+          // 端口被占（含探针端口在 osascript 授权窗口内被抢占）→ 重分配探针端口并重写配置。
           // retry 在 onRetry 后有 2s+ 退避，足够这段 ms 级异步完成。
           if (/address already in use|in use|bind|eaddrinuse/i.test(error.message)) {
             void (async () => {
@@ -1500,9 +1496,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     }
   }
 
-  /**
-   * 重启代理
-   */
   async restart(config: UserConfig, options: { interactive?: boolean } = {}): Promise<void> {
     this.beginLifecycleOp();
     try {
@@ -1647,8 +1640,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     try {
       await fs.mkdir(dir, { recursive: true });
       // 孤儿清扫：裸 custom-rule-*.json（主目标：删规则/禁用/转 inline/改 id/direct 切换的遗留）
-      // + atomicWrite 残留的 .tmp。writeFileAtomic 用唯一后缀 .<pid>.<rand6hex>.tmp（架构 review：
-      // 原固定 .tmp 正则不匹配新后缀）——正则放宽匹配任意中间段的 .tmp，且把 .tmp 段整体设为**可选**
+      // + atomicWrite 残留的 .tmp。writeFileAtomic 用唯一后缀 .<pid>.<rand6hex>.tmp（原固定 .tmp
+      // 正则不匹配新后缀）——正则放宽匹配任意中间段的 .tmp，且把 .tmp 段整体设为**可选**
       // 以保留裸 .json 清扫（否则强制 .tmp$ 会让删规则后的 .json 孤儿永久残留）。
       let existing: string[] = [];
       try {
@@ -1713,7 +1706,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
   /** 原子写：临时文件 + rename（与 RuleResourceManager 同形；rename-over 触发 sing-box fswatch 热重载）。 */
   private async atomicWrite(filePath: string, content: string): Promise<void> {
-    // 架构 review：改用 utils/writeFileAtomic（唯一后缀 .tmp 防多 writer 撞车），消除本处复刻的固定
+    // 改用 utils/writeFileAtomic（唯一后缀 .tmp 防多 writer 撞车），消除本处复刻的固定
     // `${filePath}.tmp`——正是 util 已修掉的形态（多 writer 写同一 .tmp 致字节交错损坏正本）。
     await writeFileAtomic(filePath, content);
   }
@@ -1734,7 +1727,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 静默丢弃，且用户按 UI 指引重试订阅刷新时遇 304/contentChanged=false → 不再触发 force-restart → 死循环。故有
     // lifecycle 操作在飞（depth>0）时置 restartPending，由 endLifecycleOp 在 depth 归 0 时排空一次。**且写 pending 专用
     // 配置字段**——in-flight start 腿会覆盖 currentConfig，drain 须读 pendingForceRestartConfig 才能重启到本 cfg（否则
-    // 重启回旧 cfg、复现死循环，复审 H-1 残留 race）。
+    // 重启回旧 cfg、复现死循环——H-1 遗留的 race）。
     if (this.lifecycleDepth > 0) {
       this.pendingForceRestartConfig = newConfig;
       this.restartPending = true;
@@ -1766,7 +1759,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       return;
     }
 
-    // bug#5 review#1：newConfig 与 currentConfig **逐字节全等**（无任何变化）→ 仅更新引用即返回，不进 planHotSwitch /
+    // bug#5：newConfig 与 currentConfig **逐字节全等**（无任何变化）→ 仅更新引用即返回，不进 planHotSwitch /
     // degraded 桥 / 重启。否则 C 的 started-对账在 config 未变时会走到 no-op 腿的 `if(customRuleFilesDegraded)
     // scheduleDebouncedRestart`：外化文件持续写失败（磁盘满/EIO）时每次 start 自触发重启→再写失败→无限重启循环
     // （原桥仅真实 CONFIG_CHANGED 触发、有界）；瞬时写失败也会多付一次无谓重启。全等用 stableStringify（键序不敏感）；
@@ -1897,10 +1890,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * 是否可走 clash_api 热切换：当且仅当唯一变化是「切到一个已在运行中 selector 里的节点」，
-   * 其余影响配置生成的项（模式/端口/TUN/customRules/servers 集合/appRules/interrupt 开关）都未变。
-   */
-  /**
    * Windows TUN 热切换 guard：system 栈放行（实测零环路），非 system（gvisor/mixed）未实测保守退回重启。
    * 全局节点热切换与规则目标热切换共用（rule-sel selector 切换同理可能触发 Wintun 回捕）。
    * 注：必须用 resolveTunStack 把 'auto' 解析成【具体】栈再判——Win 上 'auto'→system，应走零断流快路径；
@@ -1923,7 +1912,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private planHotSwitch(newConfig: UserConfig): {
     kind: 'none' | 'global' | 'rules' | 'both';
     puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[];
-    // §2 P2-B（review F1）：kind='none' 但**规则目标变更无法热切**（目标 dirty/不在 selector）→ 必须重启（否则规则走旧
+    // §2 P2-B：kind='none' 但**规则目标变更无法热切**（目标 dirty/不在 selector）→ 必须重启（否则规则走旧
     //   目标、且 targetServerId 出 norm 使 no-op 腿误吞 → 静默不生效不自愈）。仅此路径置 true；其余 none 落 canSkip 正常分流。
     mustRestart?: boolean;
   } {
@@ -1990,7 +1979,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 查 selectorTag、从 newConfig 的 idToTagMap（= 启动时映射，结构等价所以不变）解析新 memberTag。
     const rulePuts = this.planRuleHotSwitch(old, newConfig);
     // 任一规则目标节点不在 selector（新节点未入核）或 dirty（已编辑未生效）→ 无法热切 → 必须重启（mustRestart 防被
-    // no-op/canSkip 腿吞：targetServerId 出 norm，no-op 看不到规则目标变更，会误判无变化 defer，review F1）。
+    // no-op/canSkip 腿吞：targetServerId 出 norm，no-op 看不到规则目标变更，会误判无变化 defer）。
     if (rulePuts === null) return { kind: 'none', puts: [], mustRestart: true };
     puts.push(...rulePuts);
 
@@ -2255,7 +2244,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /** 节点生成指纹（剔时间戳、键序无关）：canSkip③、runningServersFingerprint 快照、待应用差集、dirty 判定**共用单一
-   *  真值**——防「差集/UI 显示 vs switchMode 重启决策」用不同指纹而撕裂（§2 Fable R1）。 */
+   *  真值**——防「差集/UI 显示 vs switchMode 重启决策」用不同指纹而撕裂（§2）。 */
   private serverFingerprint(s: ServerConfig): string {
     const c: Record<string, unknown> = { ...s };
     delete c.updatedAt;
@@ -2284,7 +2273,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (!snap || !this.getStatus().running) return { added: [], modified: [] };
     // 差集只报「可 defer（未引用）」变更。被引用节点（选中/规则目标/detour 链/endpoint）的增/改会即刻去抖重启
     // （canSkip③/④返 false），仅在 ~1.5s 去抖窗口内因快照尚旧而瞬态出现在差集里——那不是真「待应用」（它正在重启）。
-    // 按引用集过滤 added/modified，消动作条/徽标在自动重启窗口的误报闪动（review Low-1；差集语义收敛为「仅 deferrable」）。
+    // 按引用集过滤 added/modified，消动作条/徽标在自动重启窗口的误报闪动（差集语义收敛为「仅 deferrable」）。
     // F-2：**removed 不进差集**——删被引用节点恒即刻重启（F-1 恒 emit → canSkip③ 拦）仅瞬态；删未引用节点的核内
     // orphan 是惰性 selector 成员：无 UI 锚点、不可被选、「应用」无可观测收益（不影响活流量/选路），下次自然重启清。
     // 全代码库无逻辑消费 removed 计数（仅显示消费）→ 显它是负价值 cosmetic（侵蚀徽标可信度），类型级删除。
@@ -2701,8 +2690,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       // engage：符合条件 且 明确需要交互登录（NeedsLogin / 过期）。
       // 注意：**不**因「已 engaged」提前 return。原短路信任「flag=engaged ⟹ selector=direct」不变量，但 reassert 预置
       // 与本 reconcile 是两个独立 proxy-selector 写者（reassert 的 raw selectOutbound 不在单飞内），expired-startup 下
-      // reassert 可能 PUT 死 tag 后落地、而 flag 已被本分支置 engaged → 短路会让健康检查永不重 PUT direct → 死锁复活无自愈
-      // （review round-2 N1）。改为 NeedsLogin 时每次都重 PUT direct（gRPC 选同成员=核侧 no-op，无害）→ 10s 健康检查即自愈；
+      // reassert 可能 PUT 死 tag 后落地、而 flag 已被本分支置 engaged → 短路会让健康检查永不重 PUT direct → 死锁复活无自愈。
+      // 改为 NeedsLogin 时每次都重 PUT direct（gRPC 选同成员=核侧 no-op，无害）→ 10s 健康检查即自愈；
       // markLoginFallbackEngaged 的 first 守卫保证 UI 只 emit 一次，不刷屏。
       if (eligible && backendState === 'NeedsLogin') {
         const ok = await this.hotSwitchSelector('proxy-selector', 'direct');
@@ -2764,9 +2753,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.sendEventToRenderer(IPC_CHANNELS.EVENT_MESH_LOGIN_FALLBACK, { engaged: false });
   }
 
-  /**
-   * 获取代理状态
-   */
   getStatus(): ProxyStatus {
     // 判定依据：是否经「包装进程」启动（macOS osascript / Windows UAC）。
     //   · 包装进程模式：this.pid 是 osascript/PowerShell 的 PID，真实 sing-box PID 在 singboxPid。
@@ -2900,9 +2886,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.coreVersion = await this.getCoreVersion(true);
   }
 
-  /**
-   * 获取核心版本
-   */
   async getCoreVersion(force = false): Promise<string> {
     // 缓存命中：启动时(startInternal :716)已检测并写入 this.coreVersion；此后 About 页/版本查询直接返回缓存，
     // 不再每次都 spawn `sing-box version` 子进程（45MB 内核，Windows 进程创建+AV 扫描尤慢 → 进「关于」页转圈）。
@@ -2985,8 +2968,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     try {
       this.coreVersion = targetVersion;
       // preflight 只验「新核能否 check 通过此 config schema」，不应引用 live race server——其端口随新核重启会重分配、
-      // 且 check 不连该 server。临时 raceServerPort=0 强制 race-off，使预检配置不含 dns-node-race（review #6：
-      // 注释曾声称 preflight 恒 race-off，但代理运行时 raceServerPort>0 会让它误带 live race server）。
+      // 且 check 不连该 server。临时 raceServerPort=0 强制 race-off，使预检配置不含 dns-node-race（注释曾声称
+      // preflight 恒 race-off，但代理运行时 raceServerPort>0 会让它误带 live race server）。
       this.raceServerPort = 0;
       const cfg = this.generateSingBoxConfig(this.currentConfig);
       return JSON.stringify(cfg, null, 2);
@@ -3061,7 +3044,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    * 端口被占。失败（极少见）则置 null，generateInbounds/generateRouteConfig 据此跳过探针，不影响代理。
    */
   private async allocateProbePorts(config?: UserConfig): Promise<void> {
-    // 排除用户自配端口与 clash_api，避免 listen(0) 偶撞用户端口段致 sing-box bind FATAL（review P1-4）
+    // 排除用户自配端口与 clash_api，避免 listen(0) 偶撞用户端口段致 sing-box bind FATAL
     const exclude = new Set<number>([controlApiPort(config ?? {})]);
     if (config) {
       if (config.httpPort) exclude.add(config.httpPort);
@@ -3402,7 +3385,7 @@ done
           this.tailscaleStatusGen.get(id) === this.lifecycleGeneration
         );
       },
-      // §2（review F-B）：直接比**传入待测节点**的指纹 vs 运行核启动快照——待测列表来自 ConfigManager 最新 config，
+      // §2：直接比**传入待测节点**的指纹 vs 运行核启动快照——待测列表来自 ConfigManager 最新 config，
       // 故避开 currentConfig 在「订阅 OFF 自动刷新（不经 switchMode）」路径的滞后（那会漏判 dirty、仍测旧参数出口失真）。
       // 快照无此 id（新增未入核）→ false（那由 hasTag/notInPool 既有判据挡）。
       isDirty: (server: ServerConfig): boolean => {
@@ -3480,7 +3463,7 @@ done
       if (!selectedServer) {
         throw new Error('Selected server not found');
       }
-      // 选中节点不可用（naive 缺 libcronet）→ 明确报错，不静默切到别的节点（修 review M1）
+      // 选中节点不可用（naive 缺 libcronet）→ 明确报错，不静默切到别的节点
       if (!isNodeUsable(selectedServer)) {
         throw new Error(this.naiveUnavailableReason(selectedServer));
       }
@@ -3600,7 +3583,7 @@ done
     }
 
     // 路由规则若指向「已被跳过/不存在的出站」（如缺 libcronet 被跳过的 naive 节点），sing-box 会以
-    // "outbound not found" 启动失败。统一把这类死引用修正为 selector（修 review H2：app/custom 分流
+    // "outbound not found" 启动失败。统一把这类死引用修正为 selector（app/custom 分流
     // 指向被跳过 naive 节点的情况）。抽成方法供 gate 剔除后复用（A5 等价重构）。
     this.fixRouteDeadReferences(singboxConfig);
 
@@ -3641,17 +3624,10 @@ done
     this.privacyProvider = fn;
   }
 
-  /**
-   * 获取 sing-box 日志文件路径
-   */
   private getLogFilePath(): string {
     return getSingBoxLogPath();
   }
 
-  /**
-   * 清空 sing-box 日志文件
-   * 在 Windows 和 macOS 上都能工作
-   */
   async clearSingBoxLogFile(): Promise<void> {
     const logFilePath = this.getLogFilePath();
     try {
@@ -3719,9 +3695,6 @@ done
     }
   }
 
-  /**
-   * 写入 sing-box 配置文件
-   */
   private async writeSingBoxConfig(config: SingBoxConfig): Promise<void> {
     // 纵深防御（fail-closed 后通常为 no-op）：fail-closed 改造后 generateRouteConfig 已不生成任何 type:'remote'
     // rule_set（所有 srs 统一本地、缺失剪悬空引用），故此处恒早退、零开销；保留作回滚锚点 + 防御任何未来/旁路
@@ -3760,7 +3733,7 @@ done
 
   /** 自定义协议兼容性 probe 的结果缓存：键 = 内核身份(版本) + outbound 规范化哈希；换核（版本变）键变、天然失效。 */
   private probeCache = new Map<string, { ok: boolean; error?: string }>();
-  // probeCache 上限（性能 review M1 / issue #210 OOM 审计 Low #1）：原无上限，每次内核升级(binId 变) +
+  // probeCache 上限（issue #210 OOM 审计）：原无上限，每次内核升级(binId 变) +
   // 节点反复编辑(新 sha1)产生新 key，旧 key 永不清除 → 慢速泄漏。2048 覆盖真实长会话工作集
   // （大订阅 300-500 节点 + 多次换核/编辑累积，实测 ~1130 key），单条结果对象仅 ~150 字节（2048 条 ~300KB），
   // 内存代价可忽略，换取高命中率——未命中意味着重新 spawn sing-box check 子进程（50-300ms，批量 probe 可感）。
@@ -3835,7 +3808,7 @@ done
       }
     }
     this.probeCache.set(key, result);
-    // 性能 review M1：probeCache 超上限驱逐最旧（近似 LRU）。Map 保持插入序，keys().next() 取最旧。
+    // probeCache 超上限驱逐最旧（近似 LRU）。Map 保持插入序，keys().next() 取最旧。
     while (this.probeCache.size > ProxyManager.MAX_PROBE_CACHE) {
       const oldest = this.probeCache.keys().next().value;
       if (oldest === undefined) break;
@@ -4044,13 +4017,6 @@ done
   }
 
   /**
-   * selector default 命中被剔节点时的回落（MED-1）：
-   * - rule-sel-*：回落 'proxy-selector'（跟全局，与 generateRuleSelectors「目标无效→proxy-selector」语义一致），
-   *   而非剩余首个**节点**——后者会令固定节点规则静默绑到「碰巧排第一的节点」、违背 anti-drift 设计意图。
-   * - proxy-selector / urltest 自身：仍落剩余首成员（首存活节点是正确兜底）。
-   * 注：rule-sel 的 outbounds 恒含 'proxy-selector'（generateRuleSelectors emit），故该回落目标必有效。
-   */
-  /**
    * route 规则指向「已被剔除/不存在的出站」（死引用）→ 统一修正为 proxy-selector，避免 sing-box 以
    * "outbound not found" 启动失败。从 generateSingBoxConfig 末尾抽出的纯等价重构（A5），gate 剔除后复用。
    */
@@ -4116,13 +4082,6 @@ done
       );
     }
   }
-
-  /**
-   * 纯逻辑剪枝（无 I/O，可单测）：从 singbox 配置中剔除 `unreachable` 集合内的 rule_set tag —
-   *   ① 删 route.rule_set 中的对应定义；
-   *   ② 路由规则的 `rule_set`（string | string[]）剔除这些 tag；剔空则整条规则丢弃（含 logical 子规则递归）。
-   * 返回实际丢弃的 rule_set tag 列表。本地 bundled rule_set（geosite-cn 等，非 remote）永不入 `unreachable`，不受影响。
-   */
 
   /**
    * HEAD 预检单个远程 rule_set URL 是否存在。仅"确定缺失"(404/403/410) 返回 false→剪枝；2xx/3xx 返回 true；
@@ -4291,9 +4250,6 @@ done
     }
   }
 
-  /**
-   * 启动 sing-box 进程
-   */
   /** macOS root 看护脚本路径（osascript 以 root 执行它来托管 sing-box）。 */
   private getWrapperScriptPath(): string {
     return path.join(getUserDataPath(), 'singbox-wrapper.sh');
@@ -4630,7 +4586,6 @@ exit 0
       // 运行中崩溃 → handleProcessExit 自动重启」，杜绝启动期 reject 与 attemptAutoRestart 双启动流并发竞跑。
       let startupResolved = false;
       try {
-        // 检查 sing-box 可执行文件是否存在
         const fs = require('fs');
         if (!fs.existsSync(this.singboxPath)) {
           const error = new Error(`找不到 sing-box 可执行文件: ${this.singboxPath}`);
@@ -4794,7 +4749,7 @@ exit 0
         // 硬切 1.14 + §5 守卫剥离——live 核恒 ≥1.14、配置亦不再含 sniff_override_destination，U盾域名走路由规则）。
         const spawnEnv = { ...process.env };
 
-        // 复位上次启动错误输出（R2 review M3）：lastErrorOutput 仅在 stderr handler 赋值，Linux TUN 下 stderr 静默
+        // 复位上次启动错误输出：lastErrorOutput 仅在 stderr handler 赋值，Linux TUN 下 stderr 静默
         // → 该字段保留上次非 TUN 模式的陈旧内容 → parseStartupError 会给本次启动失败喂错误分类。每次 spawn 前清零。
         this.lastErrorOutput = '';
 
@@ -4808,7 +4763,6 @@ exit 0
           windowsHide: true,
         });
 
-        // 记录启动信息
         this.pid = this.singboxProcess.pid || null;
         this.startTime = new Date();
 
@@ -4820,7 +4774,6 @@ exit 0
           this.logToManager('info', `正在启动 sing-box 进程 (PID: ${this.pid})...`);
         }
 
-        // 监听进程输出
         if (this.singboxProcess.stdout) {
           this.singboxProcess.stdout.on('data', (data: Buffer) => {
             this.handleProcessOutput(data.toString());
@@ -4845,7 +4798,6 @@ exit 0
           this.startLogFileWatcher();
         }
 
-        // 监听进程事件
         this.singboxProcess.on('error', (error) => {
           this.logToManager('error', `sing-box process error: ${error.message}`);
           // 同 exit 分支：置位阻止 1s setTimeout 误判成功发幻影 started（H1/L-2）。
@@ -5010,7 +4962,7 @@ exit 0
         );
       }
       // 删了某节点 state（<userData>/tailscale/<serverId>/...）→ 该节点登录态已失效。通知渲染端清登录缓存，
-      // 否则陈旧 loggedIn=true 与已清空的磁盘 state 撕裂（#173 review MED-4）。state_directory 键即 serverId
+      // 否则陈旧 loggedIn=true 与已清空的磁盘 state 撕裂（#173）。state_directory 键即 serverId
       // （tailscaleStateDir = <userData>/tailscale/<serverId>），取 tsRoot 下首段路径段还原 serverId。渲染端消费另接。
       const clearedServerIds = new Set<string>();
       for (const deletedPath of r.deleted) {
@@ -5028,9 +4980,6 @@ exit 0
     }
   }
 
-  /**
-   * 解析进程启动错误
-   */
   private parseLaunchError(error: Error): string {
     const errorCode = (error as NodeJS.ErrnoException).code;
 
@@ -5046,9 +4995,6 @@ exit 0
     }
   }
 
-  /**
-   * 解析启动阶段的错误
-   */
   private parseStartupError(exitCode: number, errorOutput: string): string {
     // 首先尝试从错误输出中提取有用信息
     if (errorOutput) {
@@ -5106,9 +5052,6 @@ exit 0
     }
   }
 
-  /**
-   * 停止 sing-box 进程
-   */
   private async stopSingBoxProcess(opts?: { quitting?: boolean }): Promise<void> {
     // 杀核前先静默 StatsService：停其到管理 API 的 Status/Connections gRPC 流（核将死，提前 cancel 避免 RST 噪音）。
     // 同步、不阻塞。tailscaleApiClient 自身的 Tailscale 状态流由上层 stop() 另行 stop（gRPC 客户端各自管理生命周期）。
@@ -5248,9 +5191,6 @@ exit 0
     });
   }
 
-  /**
-   * 使用 sudo 停止 sing-box 进程（macOS TUN 模式）
-   */
   private async stopSingBoxWithSudo(opts?: { quitting?: boolean }): Promise<void> {
     if (!this.singboxPid) {
       this.cleanup();
@@ -5347,7 +5287,7 @@ exit 0
 
   /**
    * 停止 sing-box 进程（Windows TUN 模式）
-   * 主路径（批2 Win-B）：写 stopflag → 提权看护脚本 ~1s 内 Stop-Process 收割 —— 停止零 UAC。
+   * 主路径：写 stopflag → 提权看护脚本 ~1s 内 Stop-Process 收割 —— 停止零 UAC。
    * 兜底：等待超时（跨版本旧直起无看护 / 看护异常）且非退出语境 → RunAs taskkill（一次 UAC，
    * 与旧版语义一致）；退出语境恪守零弹框不变量 → 仅 log 跳过（父进程消失后看护脚本自行收割，
    * 确无看护的残留交下次启动的提权清扫）。
@@ -5442,13 +5382,12 @@ exit 0
   }
 
   /**
-   * 等待进程退出。
    * T16 子 commit 3：改 public 供 PlatformPrivilegeService.ctx.waitForProcessExit 回调注入（stopElevated 用）。
    */
   async waitForProcessExit(pid: number, timeout: number): Promise<boolean> {
     const startTime = Date.now();
     // win32 的 isProcessAlive 走 tasklist execSync（每次阻塞主循环 ~50-100ms）→ 放宽轮询到 400ms 降低阻塞；
-    // mac/linux 走 ps（轻量）→ 维持 100ms 更快感知退出。(批2 P2-3，VM 实测收割 0.5-0.7s 远小于超时)
+    // mac/linux 走 ps（轻量）→ 维持 100ms 更快感知退出。（VM 实测收割 0.5-0.7s 远小于超时）
     const pollMs = process.platform === 'win32' ? 400 : 100;
     while (Date.now() - startTime < timeout) {
       if (!this.isProcessAlive(pid)) {
@@ -5459,9 +5398,6 @@ exit 0
     return !this.isProcessAlive(pid);
   }
 
-  /**
-   * 强制终止进程
-   */
   private async forceKillProcess(pid: number): Promise<boolean> {
     await new Promise<void>((resolve) => {
       const killProcess = spawn('/usr/bin/osascript', [
@@ -5514,9 +5450,6 @@ exit 0
     });
   }
 
-  /**
-   * 清理资源
-   */
   private cleanup(): void {
     this.stopLogFileWatcher();
     this.stopHealthCheck();
@@ -5657,8 +5590,6 @@ exit 0
   }
 
   /**
-   * 检查进程是否存活
-   *
    * 统一使用系统命令检测进程，避免 Node.js process.kill(pid, 0) 在检测
    * 特权进程时的不可靠性（macOS/Windows TUN 模式下 sing-box 以管理员权限运行）
    *
@@ -5693,7 +5624,7 @@ exit 0
   }
 
   /**
-   * 异步版进程探活（性能 review M2）。原 isProcessAlive 用 execSync 同步阻塞 event loop——
+   * 异步版进程探活。原 isProcessAlive 用 execSync 同步阻塞 event loop——
    * performHealthCheck 每 10s 调一次，Windows tasklist ~50-100ms/次 → 周期性主进程卡顿（拖拽/动画可感）。
    * 本方法用 execFileAsync 不阻塞，仅供 performHealthCheck（周期热路径）用；同步清理/kill 链仍用 isProcessAlive
    * （那些是进程已死/停止路径，同步语义 + 短暂阻塞可接受）。判定逻辑与 isProcessAlive 严格一致。
@@ -5717,17 +5648,14 @@ exit 0
     }
   }
 
-  /**
-   * 启动健康检查定时器
-   */
   private startHealthCheck(): void {
     if (this.healthCheckTimer) {
       return;
     }
 
     this.healthCheckTimer = setInterval(() => {
-      // performHealthCheck 现为 async（性能 review M2 异步探活），fire-and-forget 显式吞 rejection
-      // 避免边角路径（BrowserWindow 已销毁等）变 unhandledRejection（review Medium-1）。对齐项目既有
+      // performHealthCheck 现为 async（异步探活），fire-and-forget 显式吞 rejection
+      // 避免边角路径（BrowserWindow 已销毁等）变 unhandledRejection。对齐项目既有
       // void this.x().catch() 规约（index.ts:1370/1373）。全局 unhandledRejection 兜底已防 crash。
       void this.performHealthCheck().catch(() => {});
     }, ProxyManager.HEALTH_CHECK_INTERVAL);
@@ -5735,9 +5663,6 @@ exit 0
     this.logToManager('debug', '已启动进程健康检查');
   }
 
-  /**
-   * 停止健康检查定时器
-   */
   private stopHealthCheck(): void {
     if (this.healthCheckTimer) {
       clearInterval(this.healthCheckTimer);
@@ -5809,9 +5734,6 @@ exit 0
     return this.memoryTimeline.frames();
   }
 
-  /**
-   * 执行健康检查
-   */
   private async performHealthCheck(): Promise<void> {
     // 如果正在重启中，跳过检查
     if (this.isRestarting) {
@@ -5833,7 +5755,7 @@ exit 0
       return;
     }
 
-    // 性能 review M2：改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。
+    // 改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。
     if (!(await this.isProcessAliveAsync(activePid))) {
       // 尝试获取更多退出信息
       const exitInfo = this.getProcessExitInfo();
@@ -5882,9 +5804,6 @@ exit 0
     void this.reconcileLoginFallback(this.selectedExitBackendState());
   }
 
-  /**
-   * 检查是否应该自动重启
-   */
   private shouldAutoRestart(): boolean {
     if (!this.autoRestartEnabled || !this.currentConfig) {
       return false;
@@ -5936,9 +5855,6 @@ exit 0
     );
   }
 
-  /**
-   * 尝试自动重启
-   */
   private async attemptAutoRestart(): Promise<void> {
     // 幂等去重：进程 exit 事件与健康检查轮询可能对同一次崩溃同时触发，已有重启在途则跳过
     if (this.isRestarting) {
@@ -6203,7 +6119,7 @@ exit 0
       if (!status?.enabled) return;
       const proxy = status.httpProxy || status.httpsProxy || status.socksProxy || '';
       // 防自指：若残留指向 FlowZ 自己的本地端口(127.0.0.1:mixedPort)=我们自己的代理清理半失败(非外部)，不报「外部残留」
-      //（会误导）。仅 ensureSystemProxyCleared 的清理偶发部分失败时出现；下个终态点会重试清。修 round-2 MED:mac/linux 误报。
+      //（会误导）。仅 ensureSystemProxyCleared 的清理偶发部分失败时出现；下个终态点会重试清（mac/linux 误报修复）。
       const ownHostPort = `127.0.0.1:${localProxyPort(this.currentConfig ?? {})}`;
       if ([status.httpProxy, status.httpsProxy, status.socksProxy].some((p) => p === ownHostPort)) {
         this.logToManager(
@@ -6341,26 +6257,16 @@ exit 0
     }
   }
 
-  /**
-   * 设置是否启用自动重启
-   */
   setAutoRestartEnabled(enabled: boolean): void {
     this.autoRestartEnabled = enabled;
     this.logToManager('info', `自动重启已${enabled ? '启用' : '禁用'}`);
   }
 
-  /**
-   * 重置重启计数（用于用户手动启动后）
-   */
   private resetRestartCount(): void {
     this.restartCount = 0;
     this.lastRestartTime = 0;
   }
 
-  /**
-   * 获取进程退出信息（用于诊断）
-   * 尝试从系统日志或 sing-box 日志文件中获取退出原因
-   */
   private getProcessExitInfo(): string {
     const info: string[] = [];
 
@@ -6411,11 +6317,7 @@ exit 0
     return info.length > 0 ? info.join('; ') : '';
   }
 
-  /**
-   * 等待 PID 文件被写入（macOS/Windows TUN 模式）
-   *
-   * 重要：在调用此方法前，必须先删除旧的 PID 文件，否则可能读到旧的 PID
-   */
+  /** 重要：在调用此方法前，必须先删除旧的 PID 文件，否则可能读到旧的 PID（macOS/Windows TUN 模式）。 */
   private async waitForPidFile(): Promise<void> {
     const pidFile = this.getPidFilePath();
     const maxWaitTime = 60000; // 最多等待 60 秒（给 macOS 权限提升过程留足时间）
@@ -6456,9 +6358,6 @@ exit 0
     }
   }
 
-  /**
-   * 获取 PID 文件路径
-   */
   private getPidFilePath(): string {
     return getSingBoxPidPath();
   }
@@ -6480,9 +6379,6 @@ exit 0
     }
   }
 
-  /**
-   * 启动日志文件监控（用于 macOS TUN 模式）
-   */
   private startLogFileWatcher(): void {
     if (this.logFileWatcher) {
       return;
@@ -6526,12 +6422,11 @@ exit 0
           const newContent = buffer.toString('utf-8');
           this.lastLogFileSize = stats.size;
 
-          // R2 review M1（闭合 H2）+ R3 Nit-1（正则口径统一）+ R4 Low-1（兑现注释承诺）：
           // watcher 读到的内容若含【结构化错误/崩溃】特征，同步更新 lastErrorOutput，使 parseStartupError/
           // classifyCoreError 在 TUN 模式（日志写文件、stderr 静默）下拿到具体错误，而非通用退出码文案。
           // 匹配两类特征（与 inferUnparsedLevel 口径统一）：
           //  1) sing-box 级别 token ERROR/FATAL（恒大写，见 parseSingBoxLog）—— 大小写敏感，不匹配正文小写 error
-          //     （R4 Low-1：原 /i 标志让 "connection to error-host" 误命中，与注释自相矛盾）。
+          //     （原 /i 标志让 "connection to error-host" 误命中，与注释自相矛盾）。
           //  2) Go runtime 裸堆栈 panic:/fatal error:/goroutine[running]（行首锚定，带 i 容小写）。
           // 覆盖 mac/win/Linux TUN（watcher 共用）。slice(-2048) 取本增量块尾部（非全文件尾）避免无限增长。
           if (
@@ -6554,9 +6449,6 @@ exit 0
     }, 500);
   }
 
-  /**
-   * 停止日志文件监控
-   */
   private stopLogFileWatcher(): void {
     if (this.logFileWatcher) {
       clearInterval(this.logFileWatcher);
@@ -6565,9 +6457,6 @@ exit 0
     this.lastLogFileSize = 0;
   }
 
-  /**
-   * 处理进程输出
-   */
   private handleProcessOutput(data: string): void {
     // 移除 ANSI 颜色代码
     const cleanData = this.removeAnsiCodes(data);
@@ -6580,9 +6469,6 @@ exit 0
     }
   }
 
-  /**
-   * 移除 ANSI 颜色代码
-   */
   private removeAnsiCodes(text: string): string {
     // eslint-disable-next-line no-control-regex
     return text.replace(/\x1b\[[0-9;]*m/g, '');
@@ -6623,15 +6509,15 @@ exit 0
   }
 
   /**
-   * 未解析日志行的级别启发式（issue #210 review M2 / R2 收窄 / R3 注释精准化）。
+   * 未解析日志行的级别启发式（issue #210）。
    * parseSingBoxLog 失败的行原一律标 info。本函数兜住 **Go runtime 裸堆栈**（进程崩溃时 runtime 旁路 logger
    * 直接打印、不带 sing-box timestamp 前缀的行）：panic 堆栈首行 `panic: ...`、`goroutine N [running]:`、
    * `fatal error: ...`。这类行 parseSingBoxLog（要求行首时间戳 + 级别 token）解析不了，落本分支。
    *
    * **不**兜 sing-box 业务级 FATAL（如 `2026-... FATAL[...] config error`）——那些带时间戳前缀，由
-   * parseSingBoxLog 成功解析走解析分支，不进本函数（R3 Nit-4：原注释把 sing-box FATAL 列为命中对象不精确）。
+   * parseSingBoxLog 成功解析走解析分支，不进本函数。
    *
-   * 刻意不用宽松 \berror\b/\bwarn\b（R2 review M2）：误升面太大（续行正文常含 error/warning），与
+   * 刻意不用宽松 \berror\b/\bwarn\b：误升面太大（续行正文常含 error/warning），与
    * parseSingBoxLog 级别 token 锚定行首的设计冲突。panic/fatal 误判面远小，且 fatal 误升代价可接受。
    */
   private inferUnparsedLevel(line: string): 'info' | 'fatal' {
@@ -6639,9 +6525,6 @@ exit 0
     return 'info';
   }
 
-  /**
-   * 解析并记录日志行
-   */
   private parseAndLogLine(line: string): void {
     // Tailscale 交互登录：核打印 `endpoint/tailscale[<tag>]: Waiting for authentication: <url>`，
     // 须在 dedup/低价值过滤之前抓出 → 推 renderer 弹「打开登录页」，保证必达。
@@ -6679,7 +6562,7 @@ exit 0
     } else {
       // 无法解析的日志，尝试对原始行也进行标签转换
       const resolvedLine = this.resolveTagsToNames(line);
-      // M2：未解析行的级别启发式（issue #210 review M2）。parseSingBoxLog 失败的行（多行堆栈/续行/非标准格式）
+      // 未解析行的级别启发式（issue #210）。parseSingBoxLog 失败的行（多行堆栈/续行/非标准格式）
       // 原一律标 info —— 真实的 FATAL/panic（sing-box 启动崩溃、配置错误多行 traceback）会被误标 info 淹没。
       // 按行内关键词轻量推断级别，再经 singboxLogLevel（已知预期噪音仍降级 debug）。仅作兜底，不追求精确。
       const inferredLevel = this.inferUnparsedLevel(resolvedLine);
@@ -6836,7 +6719,7 @@ exit 0
           'sing-box'
         );
         // 超时=登录未完成：杀核 → proc 'exit' → finalize 统一发空 authUrl 清渲染端缓存（退出「登录中」回「需登录」）。
-        // 不在此处单独发：空 authUrl 已下沉 finalize，覆盖取消/崩溃/超时全路径（#174 review MED-5），避免重复/分叉。
+        // 不在此处单独发：空 authUrl 已下沉 finalize，覆盖取消/崩溃/超时全路径（#174），避免重复/分叉。
         this.killTailscaleLogin(server.id);
       }, ms);
     };
@@ -6852,7 +6735,7 @@ exit 0
       finalized = true;
       // 统一收尾点：所有退出路径（用户取消 cancelTailscaleLogin、核自行崩溃、登录超时、spawn 失败）都经此。
       // 登录未成功 → 发空 authUrl 清渲染端缓存，卡片/表单退出「登录中」回「需登录」，杜绝取消/崩溃后 UI 卡死
-      // （#174 review MED-5：原空 authUrl 只挂在超时回调，取消/崩溃路径不清 → tailscaleAuthUrls[id] 永留 → 卡死）。
+      // （#174：原空 authUrl 只挂在超时回调，取消/崩溃路径不清 → tailscaleAuthUrls[id] 永留 → 卡死）。
       // 成功路径（loginCompleted）的 authUrl 由 setTailscaleLoginState(true)/STATUS 清，此处不重复发（否则 clobber）。
       if (!handle.loginCompleted) {
         this.sendEventToRenderer(IPC_CHANNELS.EVENT_TAILSCALE_AUTH_URL, {
@@ -6947,7 +6830,7 @@ exit 0
     // 'data' 的 `if(this.stopped)return` 守卫也挡住重入。
     if (ep.backendState === 'Running') {
       // 登录已成功（state 落盘）→ 标记 loginCompleted，让随后的 finalize 不再发空 authUrl（成功态的 authUrl 清理
-      // 由 setTailscaleLoginState(true)/STATUS 承担；finalize 的空 authUrl 仅用于取消/崩溃/超时收尾，见 #174 review MED-5）。
+      // 由 setTailscaleLoginState(true)/STATUS 承担；finalize 的空 authUrl 仅用于取消/崩溃/超时收尾，见 #174）。
       const handle = this.tailscaleLoginCores.get(server.id);
       if (handle) handle.loginCompleted = true;
       this.killTailscaleLogin(server.id);
@@ -7017,7 +6900,7 @@ exit 0
       // item 1 事件驱动出口 re-probe：选中节点是账号制 TS 且其隧道 STATUS 翻 Running（DERP/peer 握手完成、路由已下发
       // =就绪）→ 触发一次代理出口 re-probe（不等满退避）。仅选中节点、仅 Running 上升沿（lastTsSelectedRunningId 去重）。
       // 注：出口让位 engage/restore 已【不再】复用此去重（改由下方 reconcileLoginFallback 每帧对账，杜绝 PUT 失败被
-      // 去重扼杀永卡 direct，见 review finding 2）；此去重只服务 re-probe。
+      // 去重扼杀永卡 direct）；此去重只服务 re-probe。
       if (
         server.id === selectedId &&
         isAccountBasedProtocol(server.protocol) &&
@@ -7195,11 +7078,6 @@ exit 0
     }
   }
 
-  /**
-   * 检查是否为低价值日志（应该被过滤）
-   * 保留：路由决策、错误、启动/停止等重要日志
-   * 过滤：频繁的连接关闭、握手细节等日志
-   */
   private isLowValueLog(line: string): boolean {
     const lowerLine = line.toLowerCase();
 
@@ -7280,9 +7158,6 @@ exit 0
   /** 最近处理过的日志消息，用于去重，最多缓存 10 条 */
   private recentLogHistory: string[] = [];
 
-  /**
-   * 检查是否为重复日志
-   */
   private isDuplicateLog(message: string): boolean {
     const now = Date.now();
     const trimmedMessage = message.trim();
@@ -7318,9 +7193,6 @@ exit 0
     return false;
   }
 
-  /**
-   * 解析 sing-box 日志
-   */
   private parseSingBoxLog(
     line: string
   ): { level: 'debug' | 'info' | 'warn' | 'error' | 'fatal'; message: string } | null {
@@ -7393,10 +7265,6 @@ exit 0
     return resolvedMessage;
   }
 
-  /**
-   * 翻译错误消息为友好的中文提示
-   * 返回格式：友好提示 + 原始错误（如果有翻译）
-   */
   /** 当前配置的全部节点域名集（address + serverName，去 IP 字面量，小写）。错误归因判定被解析域名是否为节点域名。 */
   private collectNodeDomains(): Set<string> {
     const set = new Set<string>();
@@ -7598,9 +7466,6 @@ exit 0
     return this.classifyExitCode(code);
   }
 
-  /**
-   * 记录日志到 LogManager
-   */
   private logToManager(
     level: 'debug' | 'info' | 'warn' | 'error' | 'fatal',
     message: string,
@@ -7612,9 +7477,6 @@ exit 0
     }
   }
 
-  /**
-   * 处理进程错误
-   */
   private handleProcessError(error: Error): void {
     const errorMessage = this.translateErrorMessage(error.message);
 
@@ -7632,9 +7494,6 @@ exit 0
     });
   }
 
-  /**
-   * 处理进程退出
-   */
   private handleProcessExit(code: number | null, signal: NodeJS.Signals | null): void {
     // 解析退出原因
     const exitReason = this.parseExitReason(code, signal);
@@ -7697,9 +7556,6 @@ exit 0
     this.cleanup();
   }
 
-  /**
-   * 解析退出原因
-   */
   private parseExitReason(code: number | null, signal: NodeJS.Signals | null): string {
     if (signal) {
       return `信号 ${signal}`;
@@ -7710,9 +7566,6 @@ exit 0
     return '未知原因';
   }
 
-  /**
-   * 解析退出错误
-   */
   private parseExitError(code: number): string {
     // 尝试从最后的错误输出中提取错误信息
     if (this.lastErrorOutput) {
@@ -7741,18 +7594,12 @@ exit 0
     }
   }
 
-  /**
-   * 发送事件到渲染进程
-   */
   private sendEventToRenderer(channel: string, data: any): void {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(channel, data);
     }
   }
 
-  /**
-   * 获取 sing-box 可执行文件路径
-   */
   private getSingBoxPath(): string {
     return resourceManager.getSingBoxPath();
   }

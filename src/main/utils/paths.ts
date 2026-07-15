@@ -12,13 +12,8 @@ import * as fs from 'fs';
  */
 let cachedUserDataPath: string | null = null;
 
-/**
- * 检测便携模式下的数据路径
- * 检查环境变量或可执行文件同级目录是否存在 userdata 或 data 文件夹
- */
 function getPortableDataPath(): string | null {
-  // 1. 优先检查 electron-builder 设置的便携版环境变量
-  // PORTABLE_EXECUTABLE_DIR 是 Windows 便携版 EXE 所在的目录
+  // PORTABLE_EXECUTABLE_DIR 是 electron-builder 为 Windows 便携版设置的 EXE 所在目录
   if (process.env.PORTABLE_EXECUTABLE_DIR) {
     return path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'data');
   }
@@ -29,7 +24,6 @@ function getPortableDataPath(): string | null {
     const exePath = app.getPath('exe');
     let appDir = path.dirname(exePath);
 
-    // macOS 特殊处理：.app 包的同级目录
     if (process.platform === 'darwin') {
       // FlowZ.app/Contents/MacOS/FlowZ -> FlowZ.app/Contents/MacOS -> FlowZ.app/Contents -> FlowZ.app -> Parent
       appDir = path.join(appDir, '../../..');
@@ -48,7 +42,7 @@ function getPortableDataPath(): string | null {
 
 /**
  * 提权（root）运行时解析「真实登录用户」的家目录；普通用户 / 解析失败返回 null（用 Electron 默认）。
- * 不硬编码 /home 或 /Users 前缀——兼容 usermod -d 改过的非标准家目录（架构 review #12）。
+ * 不硬编码 /home 或 /Users 前缀——兼容 usermod -d 改过的非标准家目录。
  *
  * 优先级：
  *  1) HOME 指向真实用户家（多数 sudoers 保留 HOME；取决于 env_reset/always_set_home）→ 直接采信，兼容自定义路径；
@@ -155,7 +149,6 @@ export function initUserDataPath(): void {
   const portablePath = getPortableDataPath();
   if (portablePath) {
     cachedUserDataPath = portablePath;
-    // 确保便携版数据目录存在
     if (!fs.existsSync(cachedUserDataPath)) {
       try {
         fs.mkdirSync(cachedUserDataPath, { recursive: true });
@@ -179,37 +172,22 @@ export function initUserDataPath(): void {
   cachedUserDataPath = app.getPath('userData');
 }
 
-/**
- * 获取配置文件路径
- */
 export function getConfigPath(): string {
   return path.join(getUserDataPath(), 'config.json');
 }
 
-/**
- * 获取 sing-box 配置文件路径
- */
 export function getSingBoxConfigPath(): string {
   return path.join(getUserDataPath(), 'singbox_config.json');
 }
 
-/**
- * 获取 sing-box 日志文件路径
- */
 export function getSingBoxLogPath(): string {
   return path.join(getUserDataPath(), 'singbox.log');
 }
 
-/**
- * 获取 sing-box PID 文件路径
- */
 export function getSingBoxPidPath(): string {
   return path.join(getUserDataPath(), 'singbox.pid');
 }
 
-/**
- * 获取缓存数据库路径
- */
 export function getCachePath(): string {
   return path.join(getUserDataPath(), 'cache.db');
 }
@@ -229,9 +207,6 @@ export function getCustomRulesDir(): string {
   return path.join(getUserDataPath(), 'custom-rules');
 }
 
-/**
- * 获取日志目录路径
- */
 export function getLogsPath(): string {
   return path.join(getUserDataPath(), 'logs');
 }
