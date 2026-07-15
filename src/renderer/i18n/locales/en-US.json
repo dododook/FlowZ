@@ -290,6 +290,8 @@
     "modeSmartDesc": "Direct connection for domestic, proxy for foreign",
     "modeDirectDesc": "All traffic goes directly, without proxy",
     "connectionTopology": "Connection Topology",
+    "searchTopology": "Search domain / IP / outbound",
+    "searchTopologyNoMatch": "No matches (excludes connections merged into “Others”)",
     "others": "Others",
     "myDevice": "My Device",
     "type": "Type",

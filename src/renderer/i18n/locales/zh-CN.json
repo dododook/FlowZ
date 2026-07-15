@@ -290,6 +290,8 @@
     "modeSmartDesc": "国内直连，国外走代理",
     "modeDirectDesc": "所有流量直连，不走代理",
     "connectionTopology": "连接拓扑",
+    "searchTopology": "搜索域名 / IP / 出口节点",
+    "searchTopologyNoMatch": "无匹配结果（不含「其他」内已聚合的连接）",
     "others": "其他",
     "myDevice": "我的设备",
     "type": "类型",

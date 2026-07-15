@@ -290,6 +290,8 @@
     "modeSmartDesc": "國內直連，國外走代理",
     "modeDirectDesc": "所有流量直連，不走代理",
     "connectionTopology": "連線拓撲",
+    "searchTopology": "搜尋網域 / IP / 出口節點",
+    "searchTopologyNoMatch": "無相符結果（不含「其他」內已彙整的連線）",
     "others": "其他",
     "myDevice": "我的裝置",
     "type": "類型",

@@ -34,6 +34,59 @@ const PADDING_X = 20;
 const PADDING_LEFT = 20; // 左内边距：维持左侧「块状」对齐（按设计调回 20）
 export const NODE_WIDTH = 6; // 节点条宽（偏细）
 const NODE_GAP = 12; // 同列堆叠节点间距（偏紧，避免缎带过"粗"）
+const SOURCE_HEIGHT = 80; // source 条恒定高度：设备只有单个，不随流量缩放，作视觉锚
+const PER_CONN_MAX = 80; // 每连接高度上限：单连接时中/右列与 source 等高
+const MID_TOTAL_RATIO = 0.8; // 中列总高上限 = 可容纳高度 * 此比例
+const OUT_TOTAL_SINGLE = 80; // 右列总高上限：单出口（与 source 等高）
+const OUT_TOTAL_MULTI = 120; // 右列总高上限：多出口分列
+
+/**
+ * 从焦点节点出发收集整条链路上的节点 id + 缎带 id（`link-<i>`）——hover 与检索共用同一套高亮语义。
+ * 沿链路向上游(target→source)与下游(source→target)各做一次 BFS，收敛即停；两端都在链路集内的缎带一并纳入。
+ * focusNodes 为空 → 返回空集（调用方据此判定"无命中"，与"未激活"是两回事）。
+ */
+export function collectLinkedIds(links: Link[], focusNodes: string[]): Set<string> {
+  const set = new Set<string>(focusNodes);
+  if (focusNodes.length === 0) return set;
+
+  const walk = (forward: boolean) => {
+    const acc = new Set<string>(focusNodes);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      links.forEach((l) => {
+        const [from, to] = forward ? [l.source, l.target] : [l.target, l.source];
+        if (acc.has(from) && !acc.has(to)) {
+          acc.add(to);
+          changed = true;
+        }
+      });
+    }
+    return acc;
+  };
+
+  const pathNodes = new Set([...walk(false), ...walk(true)]);
+  pathNodes.forEach((id) => set.add(id));
+  links.forEach((l, i) => {
+    if (pathNodes.has(l.source) && pathNodes.has(l.target)) set.add(`link-${i}`);
+  });
+  return set;
+}
+
+/**
+ * 检索匹配：大小写不敏感子串，命中 host 节点名（域名或 IP——main 侧本就是同一字段，见 connections-aggregate
+ * 的 hostNameOf）与出口节点名。source 节点不参与匹配（它是设备锚，非检索目标）。
+ * 空 query → 空数组（调用方据此判定未检索）。
+ *
+ * 注意：被 Top-N 合并进「其他」的 host，其名字在 main 侧聚合时即已丢弃，载荷里不存在 → 此处无从匹配。
+ */
+export function matchNodeIds(nodes: Node[], query: string): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return nodes
+    .filter((n) => n.type !== 'source' && n.name.toLowerCase().includes(q))
+    .map((n) => n.id);
+}
 
 /** Sankey 缎带路径：两段三次贝塞尔（顶/底）+ 直线闭合。纯字符串数学。 */
 export function getSankeyPath(
@@ -55,7 +108,11 @@ export function getSankeyPath(
 /**
  * 把【main 已聚合好的】连接快照摆成三列 Sankey（source / host / outbound）节点与缎带坐标。
  * 聚合（Top-15 host + others 合并 + 出口分布）已下沉 main 的 aggregateConnections（issue #227）——本函数不再
- * 遍历全量连接明细，只做坐标布局。高度按连接数比例缩放（MAX_SCALE 封顶）；各列垂直居中。
+ * 遍历全量连接明细，只做坐标布局。各列垂直居中。
+ *
+ * 三列各自独立 scale（issue #303）：source 恒定高度（设备只有单个，不表达流量）；中/右列按 PER_CONN_MAX 与各自
+ * 总量上限取小——少连接时每条 PER_CONN_MAX，连接多了才被上限压下去。故三列高度互不守恒（有意为之）：
+ * 缎带两端本就按各自列的比例独立计算（见 heightSource/heightTarget），异 scale 不影响缎带正确性。
  */
 export function computeTopologyLayout(
   aggregate: ConnectionsAggregate,
@@ -101,9 +158,11 @@ export function computeTopologyLayout(
   const totalOutboundGap = Math.max(0, outboundCount - 1) * NODE_GAP;
 
   const maxContentHeight = availableHeight - Math.max(totalMiddleGap, totalOutboundGap);
-  const autoScale = maxContentHeight / (totalConnections || 1);
-  const MAX_SCALE = 30; // Max pixels per connection (prevents single connection from being massive)
-  const scale = Math.min(autoScale > 0 ? autoScale : MAX_SCALE, MAX_SCALE);
+  // 上限是天花板不是目标值：连接少时每条 PER_CONN_MAX，多了才被总量上限压下去。
+  const midCap = maxContentHeight * MID_TOTAL_RATIO;
+  const outCap = outboundCount === 1 ? OUT_TOTAL_SINGLE : OUT_TOTAL_MULTI;
+  const scale = Math.min(PER_CONN_MAX, midCap / (totalConnections || 1));
+  const outScale = Math.min(PER_CONN_MAX, outCap / (totalConnections || 1));
 
   const SHIFT_RIGHT = 35; // Shift the entire layout right to fill empty space
 
@@ -114,7 +173,7 @@ export function computeTopologyLayout(
     value: totalConnections,
     x: PADDING_LEFT + SHIFT_RIGHT,
     y: PADDING_Y,
-    height: Math.max(2, totalConnections * scale),
+    height: SOURCE_HEIGHT,
     color: 'fill-primary', // Conduit token(双主题自适配,见 connection-topology rect className)
   };
   sourceNode.y = (canvasHeight - sourceNode.height) / 2;
@@ -145,7 +204,7 @@ export function computeTopologyLayout(
   });
 
   const outGroupHeight =
-    sortedOutbounds.reduce((acc, [_, v]) => acc + Math.max(2, v * scale), 0) + totalOutboundGap;
+    sortedOutbounds.reduce((acc, [_, v]) => acc + Math.max(2, v * outScale), 0) + totalOutboundGap;
   currentY = (canvasHeight - outGroupHeight) / 2;
 
   const outNodeParams = new Map<string, Node>();
@@ -153,7 +212,7 @@ export function computeTopologyLayout(
   const outboundX = width - PADDING_X - 120 + SHIFT_RIGHT; // Right side with padding for text + shift
 
   sortedOutbounds.forEach(([name, val]) => {
-    const h = Math.max(2, val * scale);
+    const h = Math.max(2, val * outScale);
     const node: Node = {
       id: `out-${name}`,
       name: name,

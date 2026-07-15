@@ -81,6 +81,10 @@
   .conn-toggle:hover { filter: brightness(0.94); }
   /* 拓扑 hero：唯一图形化元素，高度自适应吃满剩余空间 */
   .topo-card { padding: 17px; flex: 1; min-height: 180px; display: flex; flex-direction: column; }
+  /* 卡头行：左标题+hint，右检索框（.topo-search 尺寸须定义在 .rl-search-box 之后，见该处注释） */
+  .topo-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .topo-head > span:first-child { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+  .topo-head > span:first-child small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sankey { width: 100%; flex: 1; min-height: 0; display: block; }
   .sk-label { font-size: 10px; fill: hsl(var(--fg-dim)); } .sk-title { font-size: 10px; font-weight: 640; fill: hsl(var(--fg-faint)); letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -662,6 +666,9 @@
 .rl-toolbar { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid hsl(var(--hair)); flex-wrap: wrap; }
 .rl-toolbar-r { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .rl-search { width: 200px; height: 32px; }
+/* 拓扑卡头检索框（首页）：皮肤复用 .rl-search-box，仅覆盖尺寸——必须定义在 .rl-search-box 之后，
+   否则其 width:100% 会反压本条（同特异性时后者胜），把卡头标题挤成竖排。.rl-search 同理故并列于此。 */
+.topo-search { width: 240px; height: 30px; flex: none; }
 
 .rl-table { display: flex; flex-direction: column; }
 .rl-thead, .rl-tr { display: grid; grid-template-columns: 40px minmax(0, 1.7fr) minmax(0, 1.5fr) 64px; align-items: center; column-gap: 12px; }
@@ -844,6 +851,8 @@
 @media (max-width: 780px) {
   .rl-thead, .rl-tr { grid-template-columns: 36px minmax(0, 1.6fr) minmax(0, 1.4fr) 58px; column-gap: 9px; }
   .rl-search { width: 150px; }
+  /* 拓扑检索框同步收窄；再窄则由 .topo-head 的 hint 让位（见 connection-topology 卡头） */
+  .topo-search { width: 150px; }
 }
   /* ==page-apppolicy== 应用分流页 · 复用 token；teal 只给 active/主操作；策略 dot+文字 形色双编码；hairline；8px 网格；卡 12px 圆角 */
   /* 页头：实验性 pill + 总开关 */
