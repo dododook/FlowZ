@@ -38,6 +38,15 @@ function App() {
   const setPrivacyMode = useAppStore((state) => state.setPrivacyMode);
   const nodeSortByLatency = useNodeSortStore((state) => state.sortByLatency);
 
+  // 主进程 mount 健康门就绪信号（GAP-1a，最先注册的 effect）：App 成功 render+commit 后发一次。若 App 函数体/
+  // provider 在 render 前抛错，此 effect 永不触发 → 主进程 RENDERER_READY_TIMEOUT_MS 超时兜底（reload→静态错误页）。
+  // 这是唯一能从主进程侧侦测「renderer 进程活着但 DOM 空（模块级 import 死 / render 抛错）」的手段——该故障不发
+  // 任何主进程事件。用 preload 暴露的 invoke 单向发送（fire-and-forget，主进程 webContents.ipc.handle 收，忽略返回）；
+  // window.electron 缺省（浏览器预览）时可选链短路，不报错。
+  useEffect(() => {
+    window.electron?.ipcRenderer?.invoke(IPC_CHANNELS.RENDERER_READY).catch(() => {});
+  }, []);
+
   // 语言真值源迁移（存量）：旧配置无 config.language，i18n 已从旧 localStorage 解析出 initialLanguageChoice 显示，
   // 此处把它一次性回填进 config，使主进程下次启动能直接读到用户语言（否则主进程只会用系统语言兜底托盘/通知）。
   // 幂等：config.language 有值即 no-op；回填后 config 更新、守卫即止。新装 config.language 默认 'auto'，天然跳过。

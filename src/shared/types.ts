@@ -428,6 +428,14 @@ export interface UserConfig {
   language?: string;
   autoCheckUpdate: boolean;
   autoLightweightMode: boolean;
+  // 图形兼容逃生门（默认 false=不改现有行为，纯 opt-in 用户自救；均需重启生效）：
+  // disableHardwareAcceleration（全平台）：true → app ready 前调 app.disableHardwareAcceleration()，规避 GPU 进程反复崩溃/白屏。
+  //   早期同步读（app ready 前 ConfigManager 未初始化），判定见 main/services/graphics-compat。Linux 已无条件禁用硬件加速
+  //   → 本开关在 Linux 是 no-op（设置页 Linux 整卡隐藏，避免死开关谎称「硬件加速开启」）；实际生效面 = Win/mac。
+  disableHardwareAcceleration?: boolean;
+  // disableWindowEffects（仅 Windows Mica）：true → 创建主窗不设 backgroundMaterial:'mica'（回落 DWM 实色底），
+  //   规避 electron Mica 合成失效（#38743/#46753/#28255/#48031）的 hide/show 白屏。默认 false=Mica 仍开。
+  disableWindowEffects?: boolean;
   desktopNotifications?: boolean; // 桌面通知总开关（默认开）：当前仅严重错误事件发系统通知，关闭则一概不发
   autoUpdateSubscriptionOnStart: boolean; // 订阅自动更新总开关（启动补更陈旧订阅 + 运行期周期更新）
   subscriptionUpdateIntervalHours?: number; // 订阅自动更新周期/陈旧阈值（小时），默认 12

@@ -389,7 +389,13 @@
       "autoConnectDesc": "Restore the last exit node and takeover mode, then connect",
       "behaviorSub": "Update prompts, window and privacy mask",
       "autoCheckUpdateDesc": "Notify on the About page when a new version is found",
-      "rememberWindowSizeDesc": "Restore the last window layout the next time you open it"
+      "rememberWindowSizeDesc": "Restore the last window layout the next time you open it",
+      "groupGraphics": "Graphics compatibility",
+      "graphicsSub": "Recovery options for a blank window or display glitches",
+      "disableHardwareAcceleration": "Disable hardware acceleration",
+      "disableHardwareAccelerationDesc": "Enable if the window stays blank, shows artifacts, or the GPU process keeps crashing; falls back to software rendering to work around graphics issues. Restart FlowZ to take effect.",
+      "disableWindowEffects": "Disable window material effects",
+      "disableWindowEffectsDesc": "Enable if the Windows Mica material leaves the window blank after minimizing or restoring; uses a solid background instead. Restart FlowZ to take effect."
     },
     "coreVersion": {
       "changedTitle": "sing-box Core Updated",

@@ -19,6 +19,22 @@ export interface ReleaseWindowMemoryDeps {
 }
 
 /**
+ * 主窗渲染进程崩溃自愈的崩溃循环检测（纯逻辑，供单测）。滑动窗口内累计崩溃次数超阈值 → 判为崩溃循环
+ * （损坏安装 / 持续 OOM），调用方据此停止自动重建，防 destroy→重建→再崩的 CPU 空转。
+ * @returns recent 剪枝并追加本次时刻后的时间戳数组；isLoop 是否超阈值。
+ */
+export function detectRenderCrashLoop(
+  timestamps: number[],
+  now: number,
+  windowMs = 60_000,
+  maxCrashes = 3
+): { recent: number[]; isLoop: boolean } {
+  const recent = timestamps.filter((t) => now - t < windowMs);
+  recent.push(now);
+  return { recent, isLoop: recent.length > maxCrashes };
+}
+
+/**
  * 供「关窗释放内存」（index.ts 主窗口 close 处理）与「托盘/空闲轻量模式」（TrayManager 经
  * tray-actions.ts 的 onLightweightMode）共用，避免两处各自维护一份销毁逻辑。
  */

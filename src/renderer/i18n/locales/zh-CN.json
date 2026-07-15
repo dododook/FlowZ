@@ -389,7 +389,13 @@
       "autoConnectDesc": "恢复上次的出口节点与接管方式并连接",
       "behaviorSub": "更新提示、窗口与隐私遮罩",
       "autoCheckUpdateDesc": "发现新版本时在关于页提示",
-      "rememberWindowSizeDesc": "下次打开时还原上次的窗口布局"
+      "rememberWindowSizeDesc": "下次打开时还原上次的窗口布局",
+      "groupGraphics": "图形兼容",
+      "graphicsSub": "界面白屏或显示异常时的自救选项",
+      "disableHardwareAcceleration": "禁用硬件加速",
+      "disableHardwareAccelerationDesc": "界面持续白屏、花屏或 GPU 进程反复崩溃时启用，改用软件渲染绕开显卡问题。需重启 FlowZ 生效。",
+      "disableWindowEffects": "禁用窗口材质效果",
+      "disableWindowEffectsDesc": "Windows 下 Mica 云母材质导致窗口最小化/恢复后白屏时启用，改用纯色背景。需重启 FlowZ 生效。"
     },
     "coreVersion": {
       "changedTitle": "sing-box 内核已更新",

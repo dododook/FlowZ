@@ -3,7 +3,7 @@
  * 供「关窗释放内存」（index.ts，默认不清日志）与「托盘/空闲轻量模式」（TrayManager 经
  * tray-actions.ts，clearLogsAndGc:true）共用，两处不再各自维护一份。
  */
-import { releaseWindowMemory } from '../window-memory';
+import { releaseWindowMemory, detectRenderCrashLoop } from '../window-memory';
 
 const makeLogger = () => ({ addLog: jest.fn(), clearLogs: jest.fn() }) as any;
 
@@ -102,5 +102,32 @@ describe('releaseWindowMemory', () => {
       'Window destroyed to release memory',
       'Main'
     );
+  });
+});
+
+describe('detectRenderCrashLoop（主窗崩溃自愈的崩溃循环闸门）', () => {
+  it('窗口内首次崩溃 → 非循环，允许重建', () => {
+    const { recent, isLoop } = detectRenderCrashLoop([], 1000);
+    expect(recent).toEqual([1000]);
+    expect(isLoop).toBe(false);
+  });
+
+  it('60s 内累计 3 次 → 非循环（阈值边界：第 3 次仍允许重建）', () => {
+    const { recent, isLoop } = detectRenderCrashLoop([20_000, 40_000], 55_000);
+    expect(recent).toEqual([20_000, 40_000, 55_000]); // 两条都在 60s 窗口内 + 本次 = 3
+    expect(isLoop).toBe(false);
+  });
+
+  it('60s 内累计 >3 次 → 判崩溃循环，停止自动重建', () => {
+    const { recent, isLoop } = detectRenderCrashLoop([10_000, 20_000, 30_000], 40_000);
+    expect(recent).toHaveLength(4);
+    expect(isLoop).toBe(true);
+  });
+
+  it('陈旧时间戳滑出窗口后被剪枝 → 不累计成假循环', () => {
+    // 三次都在很久以前（>60s），本次是窗口内第一次 → 非循环
+    const { recent, isLoop } = detectRenderCrashLoop([1000, 2000, 3000], 200_000);
+    expect(recent).toEqual([200_000]);
+    expect(isLoop).toBe(false);
   });
 });

@@ -79,6 +79,14 @@ export const IPC_CHANNELS = {
   LOGS_GET: 'logs:get',
   LOGS_CLEAR: 'logs:clear',
 
+  // 渲染端就绪信号（renderer -> main，单向 fire-and-forget）：App 成功 render+commit（或根级 ErrorBoundary
+  // fallback 挂上）后发一次，供主进程 mount 健康门确认「renderer 进程活着且 DOM 真的挂上了」。C 类白屏（进程活着但
+  // DOM 空）不发任何主进程事件，此信号缺席（超时）是唯一侦测手段。经 webContents.ipc.handle 按窗甄别（用 invoke）。
+  RENDERER_READY: 'renderer:ready',
+  // 终局错误页「重新加载」按钮（renderer -> main）：主进程复位 mount 门 + 对本窗重新 loadFile 真实应用。经主进程
+  // 驱动的 loadFile 绕开 Chromium 对 data: 顶层导航/reload 的拦截（错误页是 data: 页，自身 location.reload 恢复不了应用）。
+  FATAL_RETRY: 'fatal:retry',
+
   // 自启动管理
   AUTO_START_SET: 'autoStart:set',
   AUTO_START_GET_STATUS: 'autoStart:getStatus',

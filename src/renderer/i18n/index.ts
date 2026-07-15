@@ -44,6 +44,19 @@ function getInjectedLanguageChoice(): string {
   return typeof c === 'string' ? c : '';
 }
 
+/**
+ * 存量兜底读旧 localStorage['app-language']（仅注入为空时用）。裸 localStorage.getItem 在受限渲染上下文
+ * （storage 被禁/沙箱）会抛错——本模块在 `import './i18n'` 时同步执行，一抛即拖垮整个 renderer bundle=C1 白屏。
+ * 故 try/catch 兜 null（同仓 use-tailscale-login-cache-store 等的写法）。
+ */
+function readLegacyLanguageChoice(): string | null {
+  try {
+    return localStorage.getItem('app-language');
+  } catch {
+    return null;
+  }
+}
+
 // RTL 语言集合：以语言前缀匹配（fa / fa-IR / ar / he / ur / ...），新增 RTL 语言时在此追加前缀。
 const RTL_LANGUAGE_PREFIXES = ['fa', 'ar', 'he', 'ur'];
 
@@ -65,8 +78,7 @@ function applyDocumentDirection(lng: string): void {
 // 用 `||` 而非 `??` 兜底：不仅拦 null/undefined，也拦空串 ''——否则解析出 '' 会让 App.tsx 迁移 effect 的
 // `!config.language` 守卫永不收敛（无限 saveConfig）。initialLanguageChoice 恒为非空（最小 'auto'）。
 export const initialLanguageChoice: string =
-  migrateLanguageCode(getInjectedLanguageChoice() || localStorage.getItem('app-language')) ||
-  AUTO_LANGUAGE;
+  migrateLanguageCode(getInjectedLanguageChoice() || readLegacyLanguageChoice()) || AUTO_LANGUAGE;
 
 // 有效界面语言：'auto'/未设 → 按系统偏好（getPreferredSystemLanguages）解析；否则用具体码。
 // 注：绝不能用 app.getLocale()（恒返 app bundle locale=en，与系统脱钩）——故系统语言经 additionalArguments 注入。

@@ -5,7 +5,14 @@ import { ConfigManager } from './services/ConfigManager';
 import { ProtocolParser } from './services/ProtocolParser';
 import { LogManager } from './services/LogManager';
 import { TrayManager } from './services/TrayManager';
-import { releaseWindowMemory } from './services/window-memory';
+import { releaseWindowMemory, detectRenderCrashLoop } from './services/window-memory';
+import {
+  reduceMountGate,
+  initialMountGateState,
+  type MountGateState,
+} from './services/mount-health-gate';
+import { fatalErrorPageDataUrl } from './services/error-page';
+import { admitConsoleMessage, truncateConsoleMessage } from './services/console-forward';
 import {
   parseRendererRssLimitMb,
   rendererRssMbFromMetrics,
@@ -82,7 +89,8 @@ import { buildTrayCallbacks } from './tray-actions';
 import { scheduleStartupTasks } from './startup-tasks';
 import { registerConfigChangeListener } from './config-change-handler';
 import { mainEventEmitter, MAIN_EVENTS } from './ipc/main-events';
-import { initUserDataPath } from './utils/paths';
+import { initUserDataPath, getConfigPath } from './utils/paths';
+import { shouldDisableHardwareAcceleration } from './services/graphics-compat';
 import { IPC_CHANNELS, type StatsTopic } from '../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../shared/constants';
 import { effectiveLogLevel } from '../shared/log-level';
@@ -131,6 +139,20 @@ runCliEarlyExit({
 // 初始化用户数据路径（必须在 app.requestSingleInstanceLock() 之前调用）
 // 以确保便携模式下，锁文件和所有 Electron 数据都重定向到正确的目录
 initUserDataPath();
+
+// 图形兼容逃生门（用户自救）：disableHardwareAcceleration 为 true 时禁用硬件加速。
+// app.disableHardwareAcceleration() 必须在 app ready **之前**调用（Electron 硬约束），此时 ConfigManager 尚未
+// 初始化 → 只能早期同步读 config.json 原文本（initUserDataPath 已把 userData 路径下沉，getConfigPath 可用）。
+// 判定抽成纯函数 shouldDisableHardwareAcceleration（可单测）；容错第一：文件缺失/损坏/字段缺 → 当 false，绝不抛
+//（早期崩 = 整个启动失败）。此为显式用户控制，实际只对 Win/mac 有意义——Linux 见下方已**无条件**禁用硬件加速，
+// 故 Linux 上本开关是 no-op（设置页对 Linux 整卡隐藏，不给死开关）。重复调用 disableHardwareAcceleration 幂等无害。
+try {
+  if (shouldDisableHardwareAcceleration(fs.readFileSync(getConfigPath(), 'utf-8'))) {
+    app.disableHardwareAcceleration();
+  }
+} catch {
+  // 文件不存在（新装/首启）/无权限/读失败：视为未开启，静默忽略（绝不阻断启动）。
+}
 
 // Windows LTSC / 精简版系统兼容处理
 // 如果用户是 LTSC 且黑屏，建议他们通过设置开启“禁用硬件加速”选项
@@ -270,6 +292,10 @@ const RENDERER_MEM_WARN_COOLDOWN_MS = 5 * 60 * 1000; // 可见态告警冷却 5m
 let lastRendererWarnAt = 0;
 let rendererDiscardCount = 0; // 本会话隐藏态回收次数（诊断导出）
 let rendererWarnCount = 0; // 本会话可见态告警次数（诊断导出）
+
+// 主进程 mount 健康门超时（GAP-1a）：did-finish-load 后等 RENDERER_READY 的窗口；到点未收到 = C 类白屏（进程活着
+// 但 DOM 空）。12s 给足慢机首屏 React 挂载 + 首帧 effect，又不至于让真崩溃时用户空等太久。
+const RENDERER_READY_TIMEOUT_MS = 12_000;
 
 /**
  * 渲染进程内存 watchdog 一轮采样 + 处置（接在 idleCheckInterval 的 60s 节拍，watchdog 对小时级泄漏足够，不新增
@@ -528,6 +554,9 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
 let creatingWindow: Promise<void> | null = null;
 // 显式唤出请求：在途创建（可能属 silent 启动 forceShow=false）完成后由 ready-to-show 消费 → 绘制完成才显示，免未绘制帧闪现。
 let pendingForceShow = false;
+// 主窗渲染进程崩溃自愈：app 级 child-process-gone 只注册一次；render-process-gone 崩溃时刻用于崩溃循环检测。
+let childProcessGoneBound = false;
+let renderGoneTimestamps: number[] = [];
 function ensureWindow(forceShow = false): Promise<void> {
   if (mainWindow && !mainWindow.isDestroyed()) return Promise.resolve();
   if (!creatingWindow) {
@@ -751,7 +780,10 @@ async function createWindow(forceShow = false) {
     ...(isWindows && {
       titleBarStyle: 'hidden',
       titleBarOverlay: overlayColors(isDarkInitial),
-      backgroundMaterial: 'mica',
+      // Mica 逃生门（disableWindowEffects）：默认设 backgroundMaterial:'mica'（Win11 材质）；用户开了逃生门则不设，
+      // 回落 DWM 实色底（backgroundColor 已是实色主题色，不会黑），规避 electron Mica 合成失效
+      //（#38743/#46753/#28255/#48031）的 hide/show 白屏。titleBarStyle/overlay 等其它 Windows 项保持不变。
+      ...(!cfg.disableWindowEffects && { backgroundMaterial: 'mica' as const }),
     }),
     // Linux：无系统 titleBarOverlay API → frameless（frame:false）+ 渲染端自绘标题栏（拖拽区 + min/max/close 按钮），
     // 与 Mac/Win 嵌入式视觉对齐。frameless 窗口 Electron 默认仍保留边缘 resize（resizable 未关）。
@@ -902,31 +934,229 @@ async function createWindow(forceShow = false) {
     setTimeout(() => void presentWindow(), 300);
   });
 
-  // 开发环境加载 Vite 开发服务器
-  if (isDevelopment) {
-    mainWindow.loadURL('http://localhost:5173').catch((err) => {
-      logManager.addLog('error', `Failed to load dev server: ${err.message}`, 'Main');
-    });
-    // mainWindow.webContents.openDevTools(); // 移除自动打开，改为手动打开 (Cmd+Option+I)
-  } else {
-    // 生产环境加载打包后的文件
-    let indexPath: string;
+  // 加载真实应用内容（初始 + 终局兜底「重新加载」复用）：dev 走 vite dev server，prod 走打包 index.html。
+  // 开发者工具在生产环境**已禁用**（webPreferences.devTools=isDevelopment，见上方 BrowserWindow 构造）——快捷键也
+  // 开不了。（原注释自述「devTools 仍 enable、可用快捷键打开」与代码矛盾，已更正。）
+  const loadAppContent = (win: BrowserWindow) => {
+    if (isDevelopment) {
+      win.loadURL('http://localhost:5173').catch((err) => {
+        logManager.addLog('error', `Failed to load dev server: ${err.message}`, 'Main');
+      });
+      // win.webContents.openDevTools(); // 移除自动打开，改为手动打开 (Cmd+Option+I)
+    } else {
+      const indexPath = path.join(__dirname, '../../renderer/index.html');
+      win.loadFile(indexPath).catch((err) => {
+        logManager.addLog('error', `Failed to load index.html: ${err.message}`, 'Main');
+      });
+    }
+  };
+  loadAppContent(mainWindow);
 
-    // 生产环境默认不打开开发者工具
-    // 如果需要调试，可以通过快捷键 (Cmd/Ctrl+Shift+I) 打开，
-    // 因为 webPreferences.devTools 仍然是 enable 的
+  // ── C 类白屏兜底（GAP-1a）：renderer 进程活着但 DOM 空（模块级 import 死 / App 函数体或 provider render 前抛错）──
+  // 该故障 Electron 既不发 render-process-gone（进程没死）也不发 did-fail-load（HTML 加载成功了），A/B 自愈全漏。
+  // 唯一手段：约定 renderer mount 成功回发 RENDERER_READY（App.tsx 最先注册的 effect），did-finish-load 后武装超时；
+  // 到点未收到 → 首次 reload（覆盖瞬态），再次 → 终局静态错误页 + 对话框。纯状态机在 mount-health-gate.ts（单测），
+  // 此处只接线计时器 / reload / 错误页副作用。
+  const gateWin = mainWindow; // 捕获本窗：陈旧事件（旧 webContents 迟到）经 !== mainWindow 甄别，不误伤已重建的新窗
+  let mountGateState: MountGateState = initialMountGateState();
+  let mountTimer: NodeJS.Timeout | null = null;
+  let terminalEntered = false; // 终局兜底幂等位（防多路径重复 dialog/loadURL）；fatal:retry 复位后清零。
 
-    indexPath = path.join(__dirname, '../../renderer/index.html');
+  // 终局兜底（GAP-1a 二次超时 / GAP-3 二次加载失败共用）：加载零依赖静态错误页替换空白 bundle + 强制呈现 +
+  // 系统对话框 + fatal 日志。必置 finalized 停用健康门，否则静态错误页自身的 did-finish-load 会再武装 → loadURL 死循环。
+  const enterTerminalFallback = (title: string, message: string) => {
+    if (terminalEntered) return; // N1 幂等：已进终局则早退，防重复 dialog/loadURL
+    terminalEntered = true;
+    mountGateState = { ...mountGateState, finalized: true };
+    if (mountTimer) {
+      clearTimeout(mountTimer);
+      mountTimer = null;
+    }
+    // 退出管线中不弹对话框/不重载（与 render-process-gone 同守卫）：退出期窗口在拆、加载常被取消，兜底纯噪音。
+    if (isQuitting || !gateWin || gateWin.isDestroyed()) return;
+    logManager.addLog('fatal', `主窗兜底：${title} — ${message}`, 'Main');
+    gateWin.webContents
+      .loadURL(
+        fatalErrorPageDataUrl({
+          title,
+          message,
+          reloadLabel: '重新加载 / Reload',
+          retryChannel: IPC_CHANNELS.FATAL_RETRY, // 按钮经此通道请主进程 loadFile 真实应用（绕 data: 导航拦截）
+        })
+      )
+      .catch(() => {});
+    if (!gateWin.isVisible()) gateWin.show(); // 强制呈现：让用户至少看到反馈而非纯底
+    gateWin.focus();
+    dialog.showErrorBox(title, message);
+  };
 
-    mainWindow.loadFile(indexPath).catch((err) => {
-      logManager.addLog('error', `Failed to load index.html: ${err.message}`, 'Main');
+  const runMountGate = (event: Parameters<typeof reduceMountGate>[1]) => {
+    // 退出管线中不动作（reload/兜底纯噪音）；甄别本窗 + 存活：窗口已换 / 已销毁的迟到事件一律丢弃（防多窗/重建串味）。
+    if (isQuitting || !gateWin || gateWin.isDestroyed() || gateWin !== mainWindow) return;
+    const { state, action } = reduceMountGate(mountGateState, event);
+    mountGateState = state;
+    switch (action) {
+      case 'arm':
+        if (mountTimer) clearTimeout(mountTimer);
+        // N3：超时/reload/fatal 升级链**仅生产武装**。dev 下 vite 未起 / 迭代期 render bug 由 vite overlay + devtools
+        // 兜住，若也武装会在 ~24s 后弹终局 dialog 盖掉 overlay。console-message 转发无害，保留（见下）。
+        mountTimer = isDevelopment
+          ? null
+          : setTimeout(() => runMountGate('timeout'), RENDERER_READY_TIMEOUT_MS);
+        break;
+      case 'clear':
+        if (mountTimer) {
+          clearTimeout(mountTimer);
+          mountTimer = null;
+        }
+        logManager.addLog('info', 'Renderer mount ready (RENDERER_READY)', 'Main');
+        break;
+      case 'reload':
+        if (mountTimer) {
+          clearTimeout(mountTimer);
+          mountTimer = null;
+        }
+        logManager.addLog(
+          'error',
+          `Renderer mount timeout (${RENDERER_READY_TIMEOUT_MS}ms, no RENDERER_READY) → reloading once`,
+          'Main'
+        );
+        gateWin.webContents.reload(); // did-finish-load 将再触发 → reduceMountGate 自动重新武装（不叠加计时器）
+        break;
+      case 'fatal':
+        enterTerminalFallback(
+          'FlowZ 界面无响应 / Interface not responding',
+          '界面重复加载失败，已停止自动重试；请尝试重新加载或重启 FlowZ。/ The interface repeatedly failed to load. Please reload or restart FlowZ.'
+        );
+        break;
+      case 'none':
+        break;
+    }
+  };
+
+  // RENDERER_READY：用 webContents.ipc（本 webContents 私有 IpcMain）而非全局 ipcMain.handle——per-window 天然按窗
+  // 甄别、跨 reload 存活（reload 不销毁 webContents）、随 webContents 销毁自动清理，且避免窗口重建时全局 handle 重复
+  // 注册报错。renderer 用 invoke（preload 未暴露单向 send），故用 .handle（fire-and-forget，返回 undefined）。
+  gateWin.webContents.ipc.handle(IPC_CHANNELS.RENDERER_READY, () => {
+    runMountGate('rendererReady');
+    return undefined;
+  });
+  // 终局错误页「重新加载」（L3）：主进程复位健康门 + 对本窗重新 loadFile 真实应用。经主进程 loadFile 绕开 Chromium
+  // 对 data: 顶层导航/reload 的拦截（错误页是 data: 页，自身 location.reload 恢复不了应用）。复位后重新监护该次加载。
+  gateWin.webContents.ipc.handle(IPC_CHANNELS.FATAL_RETRY, () => {
+    if (!gateWin || gateWin.isDestroyed()) return undefined;
+    mountGateState = initialMountGateState();
+    terminalEntered = false;
+    if (mountTimer) {
+      clearTimeout(mountTimer);
+      mountTimer = null;
+    }
+    logManager.addLog('info', 'Fatal error page retry → reloading app', 'Main');
+    loadAppContent(gateWin);
+    return undefined;
+  });
+  // did-finish-load 每次 load（含 reload）都触发，是**唯一武装点**（reduceMountGate 保证 reload 后自动重武装、不叠加）；
+  // 与上方 presentWindow 的 .once('did-finish-load') 各自独立，互不干扰。
+  gateWin.webContents.on('did-finish-load', () => runMountGate('loadFinished'));
+  gateWin.once('closed', () => {
+    if (mountTimer) clearTimeout(mountTimer);
+    mountTimer = null;
+  });
+
+  // ── GAP-1c 可观测性：转发 renderer console 错误到 app.log ──────────────────────────────────────────
+  // renderer 未捕获错误 / 主动 console.error（含 main.tsx 全局 handler 与 mount 兜底注入）是「进程活着但可能 DOM 空」的
+  // 可观测信号——Electron 不发主进程事件。限频（防错误风暴刷爆 logManager）+ 截断（防超长 message 撑爆单行）。
+  // Electron ^42 的 console-message 回调签名为 details 对象（level 是 'info'|'warning'|'error'|'debug' 字符串，
+  // 旧的 (event,level:number,message,line,sourceId) 位置参数已 deprecated）。只转 error 级。
+  let consoleForwardTimes: number[] = [];
+  gateWin.webContents.on('console-message', (details) => {
+    if (details.level !== 'error') return;
+    const now = Date.now();
+    const { recent, admit } = admitConsoleMessage(consoleForwardTimes, now);
+    consoleForwardTimes = recent;
+    if (!admit) return;
+    logManager.addLog('error', `[renderer] ${truncateConsoleMessage(details.message)}`, 'Renderer');
+  });
+
+  // 处理窗口加载错误：仅主 frame 失败才有白屏风险（子 frame/资源失败不算）；ERR_ABORTED 是正常导航取消，忽略。
+  // 首次主 frame 加载失败自动 reload 一次（覆盖瞬态失败）；二次仍失败 → 终局静态错误页 + 对话框（GAP-3），
+  // 避免旧实现「二次失败只记日志、窗口持续空白」。首次 reload / 二次终局两态由 mainFrameLoadRetried 协调。
+  let mainFrameLoadRetried = false;
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, _url, isMainFrame) => {
+      if (!isMainFrame || errorCode === -3 /* ERR_ABORTED */) return;
+      logManager.addLog(
+        'error',
+        `Window failed to load: ${errorDescription} (${errorCode})`,
+        'Main'
+      );
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (!mainFrameLoadRetried) {
+        mainFrameLoadRetried = true;
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+        }, 500);
+      } else if (!isDevelopment) {
+        // 二次主 frame 失败（生产）：不再空转 reload，落终局兜底（与 GAP-1a 二次超时共用 enterTerminalFallback）。
+        // 与 N3 一致，dev **不**弹终局模态：dev 下 vite 未起是常见工作流，Chromium 原生连接错误页 + devtools 更利排障。
+        enterTerminalFallback(
+          'FlowZ 加载失败 / Failed to load',
+          `界面加载重复失败（${errorDescription}）；请检查安装完整性或重启 FlowZ。/ The interface repeatedly failed to load (${errorDescription}). Please check the installation or restart FlowZ.`
+        );
+      }
+    }
+  );
+
+  // 渲染进程崩溃（OOM kill / GPU 驱动重置 / Chromium 内部崩溃）：窗口对象仍存活（isDestroyed()===false）但
+  // renderer 无帧输出 → 窗口只剩 backgroundColor 纯底 + OS 绘制的标题栏按钮；而 showWindow/ensureWindow 只查
+  // isDestroyed() 会误判其健康 → 永不自愈（关窗保活档下隐藏期崩溃尤其致命：重开即空白，需彻底重启）。
+  // 治本：销毁窗口，让 isDestroyed() 健康门自然触发冷重建。可见态立即重建+显示（带 skeleton=重载观感而非空白）；
+  // 隐藏态不急重建，下次 showWindow/托盘唤出经 ensureWindow 天然冷重建，省隐藏期资源。
+  const rpgWindow = mainWindow; // 捕获注册时的窗口：陈旧事件（旧 webContents 迟到）不误伤已替换的新窗
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    // 退出管线中 renderer 先亡（reason=clean-exit/killed）→ 不重建，避免与 will-quit 清理竞态/退出中闪窗。
+    if (isQuitting) return;
+    const win = mainWindow;
+    if (!win || win !== rpgWindow || win.isDestroyed()) return;
+    const wasVisible = win.isVisible();
+    const { recent, isLoop } = detectRenderCrashLoop(renderGoneTimestamps, Date.now());
+    renderGoneTimestamps = recent;
+    logManager.addLog(
+      'error',
+      `主窗渲染进程终止（reason=${details.reason}, exitCode=${details.exitCode}, visible=${wasVisible}${isLoop ? ', 崩溃循环' : ''}）→ ${isLoop ? '停止自动重建' : '冷重建'}`,
+      'Main'
+    );
+    // GAP-4 + L4：销毁窗口后**不会自动重建**的两种情形——崩溃循环停建（isLoop），或隐藏态非 loop（不立即重建、
+    // 等下次显式唤出）——若又无托盘（无 UI 可唤出），进程就成了无窗无托盘的僵尸。故仅当「本次不会重建」时，用与
+    // close 分支（:1019-1023）同款谓词判定，无托盘该退出则**销毁前**置 pendingQuitOnAllClosed，供随后 window-all-closed
+    // 消费退出；有托盘则维持现状（托盘唤出手动重试）。可见态非 loop 会立即 ensureWindow 重建、窗口计数不归零，不需处理。
+    const willRebuild = !isLoop && wasVisible;
+    if (!willRebuild) {
+      const minimizeToTray = configManager.get<boolean>('minimizeToTray') ?? true;
+      if (
+        shouldQuitOnAllWindowsClosed(process.platform, minimizeToTray, !!trayManager?.hasTray())
+      ) {
+        pendingQuitOnAllClosed = true;
+      }
+    }
+    releaseWindowMemory({ window: win, logManager, reason: 'render-gone' }); // destroy → 'closed' 置 mainWindow=null
+    // 60s 内崩溃 >3 次判为崩溃循环（损坏安装/持续 OOM）：停止自动重建防 CPU 空转，用户经托盘/重启手动重试。
+    if (isLoop) return;
+    if (wasVisible) void ensureWindow(true); // 可见态立即重建并显示；隐藏态延后到下次显式唤出
+  });
+
+  // GPU / utility 子进程崩溃：多数不直接致主窗空白（Chromium 常自恢复），但原先零痕迹；留日志供排障。仅注册一次。
+  if (!childProcessGoneBound) {
+    childProcessGoneBound = true;
+    app.on('child-process-gone', (_event, details) => {
+      logManager.addLog(
+        'warn',
+        `子进程终止（type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}）`,
+        'Main'
+      );
     });
   }
-
-  // 处理窗口加载错误
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
-    logManager.addLog('error', `Window failed to load: ${errorDescription} (${errorCode})`, 'Main');
-  });
 
   // macOS：Cmd+H（app.hide()）系统级隐藏、或关窗保活档（minimizeToTray）走 window.hide() 时摘 Dock 图标（仅驻留
   // 菜单栏，不占 Dock / Cmd-Tab），重新显示时恢复。两条路径都触发 'hide' → 本钩子摘 Dock；仅真退出档（shouldQuit）
