@@ -85,7 +85,7 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
         security: normalizeSecurity(serverConfig.security),
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
-        tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'none',
+        tlsFingerprint: (serverConfig.tlsSettings?.fingerprint || 'none').toLowerCase(),
         tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         alpn: serverConfig.tlsSettings?.alpn?.join(',') || '',
         ...readTransportDefaults(serverConfig),
