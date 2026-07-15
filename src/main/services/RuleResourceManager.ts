@@ -7,8 +7,14 @@ import * as fs from 'fs/promises';
 import * as fssync from 'fs';
 import * as path from 'path';
 import { getRuleResourcesPath } from '../utils/paths';
+import { writeFileAtomic } from '../utils/atomic-write';
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
-import { applyGhProxy, ghMirrorUrl, normalizeGhProxyPrefix } from '../../shared/gh-proxy';
+import {
+  applyGhProxy,
+  ghMirrorUrl,
+  isGithubHost,
+  normalizeGhProxyPrefix,
+} from '../../shared/gh-proxy';
 import {
   mrdRawUrl,
   RULE_RESOURCE_CATALOG,
@@ -44,7 +50,6 @@ const IDLE_TIMEOUT_MS = 15_000;
 const OVERALL_TIMEOUT_MS = 120_000;
 const MAX_SIZE = 64 * 1024 * 1024;
 const POOL_SIZE = 3;
-const GITHUB_HOSTS = ['raw.githubusercontent.com', 'github.com'];
 
 type FetchResult =
   | { ok: true; buf: Buffer }
@@ -423,7 +428,7 @@ export class RuleResourceManager {
     const finalUrl = applyGhProxy(prefix, sourceUrl);
     let r = await this.fetchBuffer(finalUrl, onChunk);
     if (!r.ok && prefix) r = await this.fetchBuffer(sourceUrl, onChunk);
-    if (!r.ok && this.isGithub(sourceUrl)) {
+    if (!r.ok && isGithubHost(sourceUrl)) {
       r = await this.fetchBuffer(ghMirrorUrl(sourceUrl), onChunk);
     }
     if (!r.ok) return { ok: false, errorCode: r.errorCode };
@@ -432,14 +437,7 @@ export class RuleResourceManager {
       return { ok: false, errorCode: 'invalid_content' };
     }
     await fs.mkdir(path.dirname(destPath), { recursive: true });
-    const tmp = `${destPath}.download`;
-    try {
-      await fs.writeFile(tmp, r.buf);
-      await fs.rename(tmp, destPath);
-    } catch (e) {
-      await fs.unlink(tmp).catch(() => {}); // 清理半写 tmp，避免运行时/资源目录脏文件堆积
-      throw e;
-    }
+    await writeFileAtomic(destPath, r.buf);
     return { ok: true, size: r.buf.length };
   }
 
@@ -459,7 +457,7 @@ export class RuleResourceManager {
 
   /**
    * 更新内置 geo 规则集：从 SagerNet 源重下载到运行时目录（<userData>/rules）。
-   * 同名 tmp→rename 原子替换 → sing-box ≥1.10 fswatch 热重载，零重启零断流（条目已在非 direct 模式挂载）。
+   * 唯一后缀 tmp→rename 原子替换 → sing-box ≥1.10 fswatch 热重载，零重启零断流（条目已在非 direct 模式挂载）。
    */
   async updateBuiltin(
     tag: string,
@@ -538,9 +536,7 @@ export class RuleResourceManager {
       }
       const dest = path.join(getRuleSetRuntimeDir(), b.fileName);
       await fs.mkdir(path.dirname(dest), { recursive: true });
-      const tmp = `${dest}.reset`;
-      await fs.copyFile(src, tmp);
-      await fs.rename(tmp, dest);
+      await writeFileAtomic(dest, await fs.readFile(src));
       await this.setBuiltinUpdatedAt(tag, null); // 回到「出厂版」状态
       return { ok: true, id, name: b.tag, existedBefore: true };
     } catch (e) {
@@ -553,14 +549,6 @@ export class RuleResourceManager {
       };
     } finally {
       this.inflight.delete(id);
-    }
-  }
-
-  private isGithub(url: string): boolean {
-    try {
-      return GITHUB_HOSTS.includes(new URL(url).hostname);
-    } catch {
-      return false;
     }
   }
 
@@ -666,11 +654,13 @@ export class RuleResourceManager {
       if (items.length < 50) throw new Error('catalog too small');
       const fetchedAt = Date.now();
       await fs.mkdir(this.dir(), { recursive: true });
-      // 原子写：tmp → rename，与 .srs 落盘一致，防撕裂文件
-      const cachePath = this.catalogCachePath();
-      const tmp = `${cachePath}.tmp`;
-      await fs.writeFile(tmp, JSON.stringify({ schemaVersion: 1, fetchedAt, items }), 'utf-8');
-      await fs.rename(tmp, cachePath);
+      // 原子写（唯一后缀 tmp → rename）：本函数无 inflight 保护、IPC 层无去抖——当前唯一调用方靠按钮
+      // disabled 挡住连点，但那是 UI 侧的偶然防线；多窗口/未来非 UI 调用方即可并发写同一固定名 tmp 致
+      // 字节交错。唯一后缀让各 writer 写各自临时文件，不依赖调用方自律。
+      await writeFileAtomic(
+        this.catalogCachePath(),
+        JSON.stringify({ schemaVersion: 1, fetchedAt, items })
+      );
       this.catalogCache = { items, fetchedAt, source: 'remote' };
       return this.catalogCache;
     } catch (e) {

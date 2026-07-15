@@ -52,16 +52,25 @@ const GH_HOSTS = [
 ];
 
 /**
- * 拼接加速前缀 + 完整原 URL（同 gh-proxy 用法）。非前缀 / 非 GitHub 域 → 原样返回。
- * 注意：api.github.com 不在 GH_HOSTS（Trees API 刷新不走加速）。
+ * URL 是否属 GitHub 家族域（= 值得走镜像加速/兜底重试）。GH_HOSTS 的唯一消费入口：
+ * 消费方一律调本函数，禁止各自复制域名表——RuleResourceManager 曾有一份 2 域的本地副本，
+ * 与本表 5 域漂移，导致同一 URL 在「加速」时算 GitHub、在「镜像兜底」时不算，三级兜底自相矛盾。
+ * 注意：api.github.com **不在** GH_HOSTS（Trees API 刷新不走加速）。解析失败（非法 URL）→ false。
+ */
+export function isGithubHost(url: string): boolean {
+  try {
+    return GH_HOSTS.includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 拼接加速前缀 + 完整原 URL（同 gh-proxy 用法）。无前缀 / 非 GitHub 域 / 非法 URL → 原样返回。
  */
 export function applyGhProxy(prefix: string | undefined, url: string): string {
   if (!prefix) return url;
-  try {
-    if (!GH_HOSTS.includes(new URL(url).hostname)) return url;
-  } catch {
-    return url;
-  }
+  if (!isGithubHost(url)) return url;
   return prefix + url;
 }
 
