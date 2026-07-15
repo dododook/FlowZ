@@ -647,6 +647,9 @@ export class UpdateService {
 
     this.updatePopupWindow = win;
     this.registerPopupActionListener();
+    // 下发初始状态：写 lastPopupState 供 did-finish-load 重放（页面 onState 监听晚于此 send 时兜底）。
+    // 缺此行则 remind 态 lastPopupState 恒 null → did-finish-load 不重放 → 页面永空 → 白卡片挂死窗（#300）。
+    this.sendPopupState(state);
     return win;
   }
 

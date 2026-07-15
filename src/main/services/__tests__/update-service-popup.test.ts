@@ -11,7 +11,22 @@ const TMP = fsSync.mkdtempSync(path.join(os.tmpdir(), 'flowz-updsvc-test-'));
 jest.mock('electron', () => ({
   app: { getPath: () => TMP, getVersion: () => '1.0.0', isPackaged: false, getAppPath: () => TMP },
   shell: {},
-  BrowserWindow: class {},
+  // 可实例化的 BrowserWindow 桩：让 createUpdatePopup 走完新建路径，暴露 webContents.send 以断言初始态下发。
+  BrowserWindow: class {
+    webContents = { setWindowOpenHandler: () => {}, on: () => {}, send: jest.fn() };
+    loadFile = () => Promise.resolve();
+    loadURL = () => Promise.resolve();
+    setMenu = () => {};
+    once = () => {};
+    on = () => {};
+    isDestroyed = () => false;
+    setContentSize = () => {};
+    setPosition = () => {};
+    close = () => {};
+  },
+  nativeTheme: { shouldUseDarkColors: false },
+  screen: { getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
+  ipcMain: { on: () => {} },
   dialog: { showMessageBox: jest.fn() },
   net: {},
   session: {},
@@ -32,6 +47,19 @@ describe('UpdateService.showUpdateDialog 并发流互斥闸门', () => {
     );
     // 断言未触碰弹窗创建（updatePopupWindow 仍是注入的假窗，未被替换）
     expect(typeof svc.updatePopupWindow.isDestroyed).toBe('function');
+  });
+});
+
+describe('UpdateService.createUpdatePopup 新建窗口路径下发初始状态（#300 回归）', () => {
+  const state = { phase: 'remind' as const, theme: 'light' as const, version: 'v2.0.0' };
+
+  it('新建弹窗后 seed lastPopupState 并向 renderer 下发（防 did-finish-load 无态可重放 → 白卡片挂死窗）', () => {
+    const svc = new UpdateService(log) as any;
+    const win = svc.createUpdatePopup(state);
+    // lastPopupState 必须被写入：否则 did-finish-load 重放条件恒 false，remind 态永不渲染。
+    expect(svc.lastPopupState).toEqual(state);
+    // 同步向 renderer 下发一次当前态（页面 onState 晚注册时由 did-finish-load 兜底重放同一 lastPopupState）。
+    expect(win.webContents.send).toHaveBeenCalledWith(expect.anything(), state);
   });
 });
 
