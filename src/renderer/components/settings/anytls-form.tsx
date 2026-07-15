@@ -74,7 +74,7 @@ export function AnyTlsForm({ serverConfig, onSubmit }: AnyTlsFormProps) {
           ? 'reality'
           : 'tls') as 'tls' | 'reality',
         tlsServerName: serverConfig.tlsSettings?.serverName || '',
-        tlsFingerprint: serverConfig.tlsSettings?.fingerprint || 'chrome',
+        tlsFingerprint: (serverConfig.tlsSettings?.fingerprint || 'chrome').toLowerCase(),
         tlsEngine: serverConfig.tlsSettings?.engine || 'go',
         tlsAllowInsecure: serverConfig.tlsSettings?.allowInsecure || false,
         realityPublicKey: serverConfig.realitySettings?.publicKey || '',
