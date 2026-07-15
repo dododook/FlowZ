@@ -11,7 +11,6 @@ import { api } from '@/ipc/api-client';
 import { useAppStore } from '@/store/app-store';
 import { runTailscaleLogin } from '../../lib/tailscale-login';
 import { tailscaleLoginUiState } from './server-list-helpers';
-import { FormButtons } from './shared/form-buttons';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { SwitchField } from './shared/switch-field';
 import { ExitNodeField } from './shared/exit-node-field';
@@ -189,7 +188,15 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         {/* 基础：仅出网必需项（账号 + 出口节点）。 */}
         <p className="text-xs text-muted-foreground">
           {t(
@@ -470,8 +477,6 @@ export function TailscaleForm({ serverConfig, onSubmit, hideLoginSection }: Tail
             )}
           </FieldGrid>
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

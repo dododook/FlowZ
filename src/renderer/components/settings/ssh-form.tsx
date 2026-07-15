@@ -6,7 +6,6 @@ import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
-import { FormButtons } from './shared/form-buttons';
 import { splitTextList } from './shared/parse-list';
 import type { ServerConfig } from '@/bridge/types';
 import { useTranslation } from 'react-i18next';
@@ -148,7 +147,15 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <AddressField control={form.control} t={t} />
           <PortField control={form.control} t={t} placeholder="22" />
@@ -340,8 +347,6 @@ export function SshForm({ serverConfig, onSubmit }: SshFormProps) {
             />
           </FieldGrid>
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

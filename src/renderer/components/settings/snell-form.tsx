@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FormButtons } from './shared/form-buttons';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { SwitchField } from './shared/switch-field';
@@ -141,7 +140,15 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         {coreLacksSnell && (
           <div className="rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-400/30 dark:bg-amber-950/40 dark:text-amber-400">
             {t(
@@ -307,8 +314,6 @@ export function SnellForm({ serverConfig, onSubmit }: SnellFormProps) {
             </FieldSpan>
           </FieldGrid>
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

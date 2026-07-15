@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Shield } from 'lucide-react';
-import { FormButtons } from './shared/form-buttons';
 import { MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
@@ -141,7 +140,15 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <FieldSpan>
             <FormField
@@ -351,8 +358,6 @@ export function SsForm({ serverConfig, onSubmit }: SsFormProps) {
 
           <MultiplexFields control={form.control} t={t} disabled={false} />
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

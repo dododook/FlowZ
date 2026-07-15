@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FormButtons } from './shared/form-buttons';
 import { EchField } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, AllowInsecureField } from './shared/tls-fields';
@@ -175,7 +174,15 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <AddressField control={form.control} t={t} />
           <PortField control={form.control} t={t} placeholder="443" />
@@ -408,8 +415,6 @@ export function Hysteria2Form({ serverConfig, onSubmit }: Hysteria2FormProps) {
             />
           </FieldGrid>
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

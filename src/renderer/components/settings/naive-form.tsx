@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { AddressField, PortField } from './shared/basic-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
-import { FormButtons } from './shared/form-buttons';
 import { InfoTooltip } from './shared/info-tooltip';
 import type { ServerConfig } from '@/bridge/types';
 
@@ -78,7 +77,15 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <AddressField control={form.control} t={t} />
           <PortField control={form.control} t={t} placeholder="443" />
@@ -145,8 +152,6 @@ export function NaiveForm({ serverConfig, onSubmit }: NaiveFormProps) {
             </FieldSpan>
           </FieldGrid>
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

@@ -16,7 +16,6 @@ import { TlsAdvancedFields } from './shared/tls-fields';
 import { WsPathField, WsHostField, GrpcServiceNameField } from './shared/transport-fields';
 import { FormSection, FieldGrid, FieldSpan } from './shared/form-layout';
 import { normalizeNetworkLower } from './shared/normalize-network';
-import { FormButtons } from './shared/form-buttons';
 import {
   echSchemaShape,
   multiplexSchemaShape,
@@ -154,7 +153,15 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <AddressField control={form.control} t={t} />
           <PortField control={form.control} t={t} placeholder="443" />
@@ -239,8 +246,6 @@ export function TrojanForm({ serverConfig, onSubmit }: TrojanFormProps) {
 
           <MultiplexFields control={form.control} t={t} disabled={false} />
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

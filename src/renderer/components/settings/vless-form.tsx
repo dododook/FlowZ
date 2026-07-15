@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FormButtons } from './shared/form-buttons';
 import { MultiplexFields } from './shared/anti-censor-fields';
 import { AddressField, PortField } from './shared/basic-fields';
 import { TlsServerNameField, FingerprintField, TlsAdvancedFields } from './shared/tls-fields';
@@ -182,7 +181,15 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <AddressField control={form.control} t={t} />
           <PortField control={form.control} t={t} placeholder="443" />
@@ -339,8 +346,6 @@ export function VlessForm({ serverConfig, onSubmit }: VlessFormProps) {
             )}
           />
         </FormSection>
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

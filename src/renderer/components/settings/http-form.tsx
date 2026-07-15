@@ -4,7 +4,6 @@ import * as z from 'zod';
 import { Form, FormField, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { FormButtons } from './shared/form-buttons';
 import { AddressField, PortField } from './shared/basic-fields';
 import {
   TlsServerNameField,
@@ -107,7 +106,15 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col gap-[13px]">
+      <form
+        id="node-cfg-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        onReset={(e) => {
+          e.preventDefault();
+          form.reset();
+        }}
+        className="flex flex-col gap-[13px]"
+      >
         <FieldGrid cols={2}>
           <AddressField control={form.control} t={t} />
           <PortField control={form.control} t={t} placeholder={isHttps ? '443' : '80'} />
@@ -179,8 +186,6 @@ export function HttpForm({ serverConfig, onSubmit }: HttpFormProps) {
             <TlsSpoofField control={form.control} t={t} />
           </FieldGrid>
         )}
-
-        <FormButtons isSubmitting={form.formState.isSubmitting} onReset={() => form.reset()} />
       </form>
     </Form>
   );

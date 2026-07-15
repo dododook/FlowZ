@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   Select,
@@ -121,6 +121,9 @@ export function ServerConfigDialog({
   const [currentServerConfig, setCurrentServerConfig] = useState<any>(null);
   const [detour, setDetour] = useState<string | undefined>(undefined);
   const [nameError, setNameError] = useState('');
+  // 保存态：footer 的保存按钮固定在 dialog 底部（不随表单主体滚动），isSubmitting 不再由各表单内按钮承载，
+  // 故 dialog 层自持保存态驱动按钮 loading/禁用。
+  const [saving, setSaving] = useState(false);
 
   const isEditing = !!server;
   // 锁协议**只针对组网节点**（WireGuard/WARP/Tailscale）：协议=组网身份不可变，换协议=删了重建 → 杜绝把
@@ -181,6 +184,7 @@ export function ServerConfigDialog({
       ...protocolConfig,
     };
 
+    setSaving(true);
     try {
       await onSave(serverConfig);
       onOpenChange(false);
@@ -189,6 +193,8 @@ export function ServerConfigDialog({
       toast.error(t('servers.saveFailed', 'Failed to save'), {
         description: e instanceof Error ? e.message : String(e),
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -520,6 +526,21 @@ export function ServerConfigDialog({
             </div>
           </FormSection>
         </div>
+
+        {/* 固定底部操作区：保存/重置贴 dialog 底、不随表单主体滚动。经 HTML form= 关联当前挂载的
+            协议表单（id="node-cfg-form"）——submit 触发其 RHF 校验+提交，reset 经表单 onReset 走 form.reset()。
+            warp（一键生成）/custom（JSON）自带按钮、不套用本 footer。 */}
+        {selectedProtocol !== 'warp' && selectedProtocol !== 'custom' && (
+          <div className="nd-dlg-foot">
+            <button type="reset" form="node-cfg-form" className="btn ghost sm" disabled={saving}>
+              {t('common.reset')}
+            </button>
+            <button type="submit" form="node-cfg-form" className="btn flow sm" disabled={saving}>
+              {saving && <Loader2 className="animate-spin" size={14} />}
+              {t('common.save')}
+            </button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
