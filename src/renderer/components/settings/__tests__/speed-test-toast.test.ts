@@ -3,7 +3,7 @@
  * 去重并集节点进度（union 去重、result serverId 去重）、全部结束一次 success/error、批次间隔离、归零退订。
  */
 jest.mock('sonner', () => ({
-  toast: { loading: jest.fn(), success: jest.fn(), error: jest.fn() },
+  toast: { loading: jest.fn(), success: jest.fn(), error: jest.fn(), warning: jest.fn() },
 }));
 
 let resultCb: ((d: { serverId: string; latency: number }) => void) | null = null;
@@ -42,6 +42,7 @@ beforeEach(() => {
   (toast.loading as jest.Mock).mockClear();
   (toast.success as jest.Mock).mockClear();
   (toast.error as jest.Mock).mockClear();
+  (toast.warning as jest.Mock).mockClear();
 });
 
 describe('聚合测速 toast 协调器（去重并集节点进度）', () => {
@@ -110,5 +111,29 @@ describe('聚合测速 toast 协调器（去重并集节点进度）', () => {
     result('x');
     endAggSpeedTest(false);
     expect(toast.success).toHaveBeenCalledWith('DONE', ID); // 批2 成功，不受批1失败污染
+  });
+
+  it('回归 #308：中断批写了副行 description，下批 loading 必须显式带 description:undefined 清副行', () => {
+    const richLabels = {
+      ...labels,
+      interruptedSummary: (tested: number, total: number) => `已完成 ${tested}/${total} 节点`,
+    };
+    // 批1：中断收尾 → warning 带副行 description（sonner 会把它写到 TOAST_ID 上）
+    beginAggSpeedTest(['a', 'b'], richLabels);
+    result('a');
+    endAggSpeedTest(false, undefined, 'interrupted');
+    expect(toast.warning).toHaveBeenCalledWith('INTERRUPTED', {
+      id: 'speedtest-aggregate',
+      description: '已完成 1/2 节点',
+    });
+    // 批2：换订阅重测 → loading 调用必须显式携带 description key（值 undefined），
+    // 否则 sonner 浅合并保留批1 的副行，跨订阅黏死（#308）。
+    beginAggSpeedTest(['x'], richLabels);
+    const calls = (toast.loading as jest.Mock).mock.calls;
+    const lastLoading = calls[calls.length - 1];
+    expect(lastLoading[0]).toBe('RUN:0/1');
+    // hasOwnProperty 直查：key 必须在场（toEqual/toHaveBeenCalledWith 会忽略 undefined 属性，抓不到本 bug）。
+    expect(Object.prototype.hasOwnProperty.call(lastLoading[1], 'description')).toBe(true);
+    expect(lastLoading[1].description).toBeUndefined();
   });
 });

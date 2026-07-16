@@ -47,7 +47,10 @@ let unsubResult: (() => void) | null = null;
 
 function render(): void {
   if (!labels || active === 0) return;
-  toast.loading(labels.running(tested.size, union.size), { id: TOAST_ID });
+  // description: undefined 是必需的显式清空——sonner 按 id 更新 toast 走浅合并（{...旧, ...新}），
+  // 不带的字段保留旧值。若上一批以 interrupted/skipped 收尾写过副行 description，loading 态
+  // （duration:Infinity 不自动消失）会一直残留那行「已完成 x/y 节点」并跨订阅黏死（#308）。
+  toast.loading(labels.running(tested.size, union.size), { id: TOAST_ID, description: undefined });
 }
 
 /** 一次测速开始：serverIds 并入 union、引用计数++；首个订阅 per-node result 事件累计已测唯一节点。 */
