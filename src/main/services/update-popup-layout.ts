@@ -12,13 +12,16 @@ export const UPDATE_POPUP_WIDTH = 380;
 
 /**
  * 各态窗口内容高度（px，内容驱动的固定值）：
- * remind 最高（图标+标题+当前版本+2 行说明+动作行+文字链）；error 含 2 行错误文本+动作行；
- * progress/done 仅图标行+进度条+计数行。实现期可按真机微调，纯函数便于随规格演进钉测试。
+ * remind（图标+标题+当前版本+动作行+文字链，无内联说明）；error 含 2 行错误文本+动作行；
+ * progress/done 仅图标行+进度条+计数行。纯函数便于随规格演进钉测试。
+ * headroom 约定：固定值在 Linux 自然内容高之上留 ~15px 余量（progress/done 实测 ~15.5、error ~30），
+ * 吸收 Win/Mac CJK 字体（PingFang/微软雅黑 vs Noto）行高差异——宁多留（margin-top:auto 吸成极小内部
+ * 间距、不可见）不裁切（overflow:hidden 会切底部行）。remind 自然高 146.5(Linux/Xvfb 实测)→160。
  */
 export function popupHeightFor(phase: UpdatePopupPhase): number {
   switch (phase) {
     case 'remind':
-      return 184;
+      return 160;
     case 'error':
       return 152;
     case 'progress':
@@ -49,18 +52,4 @@ export function popupPosition(
   const y =
     platform === 'darwin' ? workArea.y + inset : workArea.y + workArea.height - height - inset;
   return { x: Math.round(x), y: Math.round(y) };
-}
-
-/**
- * 发布说明预览：取前 maxLines 行、总长截 maxChars 字符（超出补省略号），去尾空白。
- * GitHub releaseNotes 可能很长/含 markdown——弹窗只展示概要，完整日志走「查看更新日志」外链。
- */
-export function previewReleaseNotes(raw: string, maxLines = 6, maxChars = 400): string {
-  const lines = (raw || '').split('\n').slice(0, maxLines).join('\n').trim();
-  if (lines.length <= maxChars) return lines;
-  let cut = lines.slice(0, maxChars);
-  // 防在 surrogate pair 中间截断（末字符为孤立 high surrogate → 渲染 �）：多退一个 code unit。
-  const lastCode = cut.charCodeAt(cut.length - 1);
-  if (lastCode >= 0xd800 && lastCode <= 0xdbff) cut = cut.slice(0, -1);
-  return `${cut.trimEnd()}…`;
 }

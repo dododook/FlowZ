@@ -10,7 +10,7 @@ const TMP = fsSync.mkdtempSync(path.join(os.tmpdir(), 'flowz-updsvc-test-'));
 
 jest.mock('electron', () => ({
   app: { getPath: () => TMP, getVersion: () => '1.0.0', isPackaged: false, getAppPath: () => TMP },
-  shell: {},
+  shell: { openExternal: jest.fn() },
   // 可实例化的 BrowserWindow 桩：让 createUpdatePopup 走完新建路径，暴露 webContents.send 以断言初始态下发。
   BrowserWindow: class {
     webContents = { setWindowOpenHandler: () => {}, on: () => {}, send: jest.fn() };
@@ -33,10 +33,12 @@ jest.mock('electron', () => ({
   Notification: class {},
 }));
 
+import { shell } from 'electron';
 import { UpdateService } from '../UpdateService';
 import { setMainLanguage, mt } from '../../i18n';
 
 const log = { addLog: () => {} } as any;
+const openExternal = shell.openExternal as unknown as jest.Mock;
 
 describe('UpdateService.showUpdateDialog 并发流互斥闸门', () => {
   it('已有活跃弹窗 → 直接返回 later，不新建弹窗（Med-1：防覆盖 resolver / 双下载）', async () => {
@@ -60,6 +62,34 @@ describe('UpdateService.createUpdatePopup 新建窗口路径下发初始状态�
     expect(svc.lastPopupState).toEqual(state);
     // 同步向 renderer 下发一次当前态（页面 onState 晚注册时由 did-finish-load 兜底重放同一 lastPopupState）。
     expect(win.webContents.send).toHaveBeenCalledWith(expect.anything(), state);
+  });
+});
+
+describe('UpdateService.openReleasesPage 直达本版本 changelog', () => {
+  const svc = new UpdateService(log) as any;
+  const RELEASES = 'https://github.com/dododook/FlowZ/releases';
+  beforeEach(() => openExternal.mockClear());
+
+  it('传 version（带 v 前缀）→ 直达该版本 tag 页', () => {
+    svc.openReleasesPage('v4.2.7');
+    expect(openExternal).toHaveBeenCalledWith(`${RELEASES}/tag/v4.2.7`);
+  });
+
+  it('version 缺 v 前缀 → 自动补 v 再定位', () => {
+    svc.openReleasesPage('4.2.7');
+    expect(openExternal).toHaveBeenCalledWith(`${RELEASES}/tag/v4.2.7`);
+  });
+
+  it('不传 version → 泛 releases 列表页（无版本上下文入口）', () => {
+    svc.openReleasesPage();
+    expect(openExternal).toHaveBeenCalledWith(RELEASES);
+  });
+
+  it('viewLog 动作用 currentUpdateInfo.version 直达本次更新的 changelog', () => {
+    svc.currentUpdateInfo = { version: 'v3.1.0' };
+    svc.updatePopupWindow = { webContents: {}, isDestroyed: () => false };
+    svc.onPopupAction({ sender: svc.updatePopupWindow.webContents }, 'viewLog');
+    expect(openExternal).toHaveBeenCalledWith(`${RELEASES}/tag/v3.1.0`);
   });
 });
 

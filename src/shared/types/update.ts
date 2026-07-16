@@ -88,8 +88,6 @@ export interface UpdatePopupState {
   version: string;
   /** remind：当前运行版本（如 v1.2.0）。 */
   currentVersion?: string;
-  /** remind：发布说明预览（已截断）。 */
-  notes?: string;
   /** progress/done：百分比 0-100。 */
   percentage?: number;
   /** progress：字节计数文本（如 "28.6 MB / 45.3 MB"）。 */

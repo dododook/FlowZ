@@ -15,12 +15,7 @@ import type {
   UpdatePopupAction,
   UpdatePopupLabels,
 } from '../../shared/types/update';
-import {
-  UPDATE_POPUP_WIDTH,
-  popupHeightFor,
-  popupPosition,
-  previewReleaseNotes,
-} from './update-popup-layout';
+import { UPDATE_POPUP_WIDTH, popupHeightFor, popupPosition } from './update-popup-layout';
 import { APP_USER_AGENT } from '../../shared/constants';
 import { MAX_GITHUB_JSON_BYTES } from '../utils/http-limits';
 import { getUserDataPath } from '../utils/paths';
@@ -471,8 +466,18 @@ export class UpdateService {
     this.logManager.addLog('info', `已跳过版本: ${version}`, 'UpdateService');
   }
 
-  openReleasesPage(): void {
-    shell.openExternal(`https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`);
+  /**
+   * 打开 GitHub releases 页。传 version（发布 tag，如 v4.2.7）→ 直达该版本的 changelog 页
+   * （/releases/tag/<tag>），精确定位本次更新说明；不传 → 泛列表页（About「查看所有版本」等无版本上下文入口）。
+   */
+  openReleasesPage(version?: string): void {
+    const base = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`;
+    if (version) {
+      const tag = version.startsWith('v') ? version : `v${version}`;
+      shell.openExternal(`${base}/tag/${encodeURIComponent(tag)}`);
+    } else {
+      shell.openExternal(base);
+    }
   }
 
   /**
@@ -492,7 +497,6 @@ export class UpdateService {
       theme: this.resolvedTheme(),
       version: updateInfo.version,
       currentVersion: `v${app.getVersion()}`,
-      notes: previewReleaseNotes(updateInfo.releaseNotes || ''),
       labels: this.popupLabels(),
     });
 
@@ -681,7 +685,8 @@ export class UpdateService {
     if (!this.updatePopupWindow || this.updatePopupWindow.isDestroyed()) return;
     if (event.sender !== this.updatePopupWindow.webContents) return; // 只认本弹窗
     if (action === 'viewLog') {
-      this.openReleasesPage(); // 打开 releases，弹窗保留在 remind 态（不 resolve）
+      // 直达本次更新版本的 changelog 页（currentUpdateInfo 在 showUpdateDialog 设）；弹窗保留在 remind 态（不 resolve）。
+      this.openReleasesPage(this.currentUpdateInfo?.version);
       return;
     }
     if (action === 'cancel') {

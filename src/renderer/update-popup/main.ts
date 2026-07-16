@@ -34,7 +34,7 @@ let current: UpdatePopupState | null = null;
 // 入场动画只播一次：仅首个全量 render 给 .upop 加 .enter（相变重建的 .upop 不带 → 不重播）。
 let firstRender = true;
 
-/** HTML 转义：version/notes/errorText 可能含 GitHub 侧内容，注入 innerHTML 前一律转义（防 XSS）。 */
+/** HTML 转义：version/errorText 可能含 GitHub 侧内容，注入 innerHTML 前一律转义（防 XSS）。 */
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
@@ -81,7 +81,6 @@ function render(s: UpdatePopupState): void {
         <button class="upop-x" type="button" data-act="later" aria-label="${esc(L.later)}">${ICON_X}</button>
       </div>
       ${s.currentVersion ? `<div class="upop-sub">${esc(L.currentPrefix)} ${esc(s.currentVersion)}</div>` : ''}
-      ${s.notes ? `<div class="upop-notes">${esc(s.notes)}</div>` : ''}
       <div class="upop-acts">
         <button class="btn flow sm" type="button" data-act="update">${esc(L.update)}</button>
         <button class="btn ghost sm" type="button" data-act="later">${esc(L.later)}</button>
