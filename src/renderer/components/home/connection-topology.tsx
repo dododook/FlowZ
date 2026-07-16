@@ -123,16 +123,26 @@ export function ConnectionTopology() {
     );
   }, [hovered]);
 
-  // fixed 定位 + 边界翻转：默认落指针右下；越过视口右/下缘则翻到左/上侧（原 absolute 会被卡片裁掉）。
+  // fixed 定位（原 absolute 挂 overflow-hidden 容器内会被裁）+ 约束在图容器内：
+  // 默认落指针右下，越界则翻到左/上侧，再 clamp 兜底——判据取容器边界而非视口，否则不裁但会溢出到卡片外。
   const tooltipPos = useMemo(() => {
     const OFFSET = 12;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const flipX = mousePos.x + OFFSET + tooltipSize.w > vw - 8;
-    const flipY = mousePos.y + OFFSET + tooltipSize.h > vh - 8;
+    const PAD = 8;
+    const b = containerRef.current?.getBoundingClientRect();
+    const minX = b ? b.left + PAD : PAD;
+    const maxX = (b ? b.right : window.innerWidth) - PAD;
+    const minY = b ? b.top + PAD : PAD;
+    const maxY = (b ? b.bottom : window.innerHeight) - PAD;
+
+    const flipX = mousePos.x + OFFSET + tooltipSize.w > maxX;
+    const flipY = mousePos.y + OFFSET + tooltipSize.h > maxY;
+    const left = flipX ? mousePos.x - OFFSET - tooltipSize.w : mousePos.x + OFFSET;
+    const top = flipY ? mousePos.y - OFFSET - tooltipSize.h : mousePos.y + OFFSET;
+
+    // clamp：翻转后仍越界（容器比 tooltip 还窄/矮）时贴边，绝不超出容器
     return {
-      left: Math.max(8, flipX ? mousePos.x - OFFSET - tooltipSize.w : mousePos.x + OFFSET),
-      top: Math.max(8, flipY ? mousePos.y - OFFSET - tooltipSize.h : mousePos.y + OFFSET),
+      left: Math.min(Math.max(minX, left), Math.max(minX, maxX - tooltipSize.w)),
+      top: Math.min(Math.max(minY, top), Math.max(minY, maxY - tooltipSize.h)),
     };
   }, [mousePos, tooltipSize]);
 
