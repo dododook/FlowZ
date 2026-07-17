@@ -35,6 +35,22 @@ const PROTOCOL_SHORT: Record<string, string> = {
   hysteria2: 'Hy2',
 };
 
+/**
+ * macOS 托盘位置持久化标识（#312）。Electron 的 `new Tray(image, guid)` 在 darwin 上经
+ * `electron_api_tray.cc` 的 `SetAutoSaveName(guid.AsLowercaseString())` 落到 NSStatusItem.autosaveName
+ * （`tray_icon_cocoa.mm` 的 `TrayIcon::Create(guid)` 本身忽略 guid，只实现 SetAutoSaveName），系统据此把
+ * 菜单栏位置存进本 app 的 preferences domain（键 `NSStatusItem Preferred Position <guid>`）；
+ * 不传则 AppKit 自动选名，位置不跨启动保留（electron#47838）。
+ * 格式须为合法 UUID：`guid_converter.h` 走 `base::Uuid::ParseCaseInsensitive` + `is_valid`，非法则 `Tray::New`
+ * 抛 "Invalid GUID format" → 被 createTray 的 try/catch 吞掉 → **托盘静默消失**（比丢位置严重）。
+ *
+ * **一次性生成后永久写死，跨版本不得变更**——改了等于换 autosaveName，用户已拖好的位置会丢。
+ * **仅 darwin 传**：Electron 文档明确警告 Windows 上未签名 exe 的 GUID 会与 exe 路径永久绑定，路径一变托盘
+ * 创建即失败；FlowZ 无 Authenticode 签名且 portable 形态每版换文件名（见 update-install-script.ts 便携态注释）
+ * → win32 传 guid 会直接弄坏 portable 更新后的托盘。Linux 忽略此参数。
+ */
+const MACOS_TRAY_GUID = 'ba2b1484-56c4-430d-a3a9-18e6cc3f45dd';
+
 export type TrayIconState = 'idle' | 'connected' | 'connecting';
 
 export interface TrayMenuData {
@@ -148,7 +164,8 @@ export class TrayManager implements ITrayManager {
     try {
       const icon = this.loadTrayIcon('idle');
 
-      this.tray = new Tray(icon);
+      // darwin 传 guid（= NSStatusItem.autosaveName）保住用户拖放的菜单栏位置；win32/linux 必须不传，见 MACOS_TRAY_GUID。
+      this.tray = process.platform === 'darwin' ? new Tray(icon, MACOS_TRAY_GUID) : new Tray(icon);
       this.tray.setToolTip('FlowZ');
 
       // 托盘点击行为：

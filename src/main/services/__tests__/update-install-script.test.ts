@@ -56,12 +56,32 @@ describe('buildWindowsUpdateVbs', () => {
     expect(s).toContain('oldExe = "D:\\\\Apps\\\\FlowZ.exe"');
   });
 
-  it('NSIS 态：跑下载的 setup、无 CopyFile（原行为）', () => {
+  it('NSIS 态：跑下载的 setup 且带 --updated、无 CopyFile', () => {
     const s = buildWindowsUpdateVbs({ installerPath: tmp, portableTarget: null });
+    // VBS 展开后为:  WshShell.Run "<setup 绝对路径>" --updated, 1, False
     expect(s).toContain(
-      'WshShell.Run """C:\\\\Users\\\\u\\\\AppData\\\\Local\\\\Temp\\\\FlowZ-4.1.7-win-x64-portable.exe"""'
+      'WshShell.Run """C:\\\\Users\\\\u\\\\AppData\\\\Local\\\\Temp\\\\FlowZ-4.1.7-win-x64-portable.exe"" --updated", 1, False'
     );
     expect(s).not.toContain('fso.CopyFile');
+  });
+
+  // #312：缺 --updated → NSIS ${isUpdated} 为假 → 旧卸载器 WinShell::UninstShortcut 取消任务栏固定。
+  // 钉死「参数在 VBS 里位于闭合引号之外」——写成 """...--updated""" 会被当成路径的一部分传给 ShellExecute，
+  // 静默退化回丢 pin 的旧行为且无任何报错。
+  it('NSIS 态：--updated 在 VBS 字符串闭合引号之外（不得混进 exe 路径）', () => {
+    const s = buildWindowsUpdateVbs({ installerPath: 'C:\\T\\s.exe', portableTarget: null });
+    expect(s).toContain('WshShell.Run """C:\\\\T\\\\s.exe"" --updated", 1, False');
+    expect(s).not.toContain('--updated"""');
+    expect(s).not.toContain('s.exe --updated');
+  });
+
+  it('便携态不得带 --updated（无 NSIS 安装器，参数会被当文件名）', () => {
+    const s = buildWindowsUpdateVbs({
+      installerPath: tmp,
+      portableTarget: 'D:\\Apps\\FlowZ-4.1.5-win-x64-portable.exe',
+      portableNewPath: 'D:\\Apps\\FlowZ-4.1.7-win-x64-portable.exe',
+    });
+    expect(s).not.toContain('--updated');
   });
 });
 

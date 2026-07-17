@@ -108,11 +108,29 @@ export function buildWindowsUpdateVbs(opts: {
       'fso.DeleteFile WScript.ScriptFullName, True',
     ].join('\r\n');
   }
-  // NSIS 安装态：与旧 installUpdate 逐字等价（运行 setup + 删自身）。NSIS 据注册表记住的目录原位升级、不动 %APPDATA% data。
+  // NSIS 安装态：运行 setup + 删自身。NSIS 据注册表记住的目录原位升级、不动 %APPDATA% data。
+  //
+  // `--updated` 不可省（#312 任务栏固定每次更新丢失的根因）：NSIS 的 ${isUpdated} 谓词 = 「命令行含 --updated」
+  // （StdUtils.TestParameter，见 app-builder-lib templates/nsis/include/*.nsh）。本项目设了
+  // allowToChangeInstallationDirectory → installUtil.nsh 的 setIsTryToKeepShortcuts 在 ${ifNot} ${isUpdated}
+  // 时把 $isTryToKeepShortcuts 置 false → 新安装器不给旧版卸载器传 --keep-shortcuts → 旧卸载器执行
+  // WinShell::UninstShortcut（= IStartMenuPinnedList::RemoveFromList）**显式取消任务栏固定**；随后安装段只重建
+  // 桌面/开始菜单快捷方式，故症状是「唯独任务栏 pin 每次更新丢」。Windows 无程序化重新固定的 API，删了只能手动加回。
+  // **滞后一版生效**：本 VBS 由「当前运行的旧版 app」生成 → 升级到含本修复的那一版时，跑脚本的仍是不带
+  // --updated 的旧版，pin 仍会丢最后一次；自本版 → 下一版起才保住。（旧版卸载器本身支持 --keep-shortcuts，
+  // 缺的只是旧版 VBS 不传 --updated。）release note 需写明，否则会收到「升级到修复版还是丢了」的无效反馈。
+  //
+  // 附带行为变化两条：
+  // ① 激活 skipPageIfUpdated → 更新时跳过欢迎/目录页（已装机不再问安装目录，杜绝装出第二个目录）。
+  // ② $keepShortcuts=true 后 addStartMenuLink/addDesktopLink（installer.nsh:189-243）不再无条件重建快捷方式
+  //    → 用户手动删掉的桌面/开始菜单快捷方式，更新后不再被重建（FlowZ createDesktopShortcut:true 非 "always"、
+  //    无 RECREATE define）。此为 electron-updater 生态标准语义，算改进。注意上文第 6 环描述的「安装段重建
+  //    快捷方式」是**修复前**的行为，勿与此处混读。
+  // 与 electron-updater 官方行为一致（NsisUpdater.ts 恒传 ["--updated"]）。
   return [
     'WScript.Sleep 2000',
     'Set WshShell = CreateObject("WScript.Shell")',
-    `WshShell.Run """${src}""", 1, False`,
+    `WshShell.Run """${src}"" --updated", 1, False`,
     'Set fso = CreateObject("Scripting.FileSystemObject")',
     'fso.DeleteFile WScript.ScriptFullName, True',
   ].join('\r\n');
