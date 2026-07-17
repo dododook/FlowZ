@@ -49,3 +49,139 @@
     RMDir /r "$APPDATA\flowz"
   ${endif}
 !macroend
+
+; ================================================================
+; #312 后续：已安装 + 手动双击 setup.exe 的 maintenance mode。
+;
+; 诉求：用户绕过 app 内更新器、手动双击新版 setup.exe 时（该路径无 --updated，
+; ${isUpdated} 恒假），当前行为 = 显示目录页（可改路径，能装出第二个目录）+ 旧
+; 卸载器跑 WinShell::UninstShortcut 取消任务栏固定（#312 在内置更新器修复后剩余
+; 的唯一 pin 丢失面）。改为：已安装时首页给「升级 / 卸载」二选一。
+;
+;   升级 → 以 `--updated /currentuser` 重启自身 = 与内置更新器（fix #312 的
+;          update-install-script.ts --updated）**同一链路**：skipPageIfUpdated
+;          跳过目录页（= 锁死目录，杜绝第二个安装目录）、keep-shortcuts 链路保住
+;          任务栏 pin、旧卸载器走 ${isUpdated} 分支跳过下方 customUnInstall
+;          （helper 服务不断流、无 UAC、用户数据不动）。
+;   卸载 → 启动已装的 Uninstall.exe（无 --updated = 真卸载语义：清 pin/helper
+;          服务/用户数据，走下方 customUnInstall 的 ${ifNot} ${isUpdated} 块，
+;          正确且与既有钩子零冲突）。
+;
+; 首装（检测不到已装）与内置更新器（--updated）两条路径均在 PRE 里 Abort → 零接触。
+; 静默 /S 不带参数 + 页面回调 silent 下不执行 → 天然绕过。portable.nsi 无这些
+; 插桩点 → 零影响。
+;
+; ---- mutex 竞态防护（升级分支 relaunch 的唯一工程难点）----
+; ALLOW_ONLY_ONE_INSTALLER_INSTANCE（installer.nsi:73/76）在 .onInit 里建命名
+; mutex（allowOnlyOneInstallerInstance.nsh:14），handle 用 `?e` 只压 GetLastError、
+; 从未存储 → 无法主动释放，只能随进程退出由内核回收。升级分支的 relaunch 只能发生
+; 在页面 Leave（用户点「升级」后），此时父实例 mutex 已持有 → 子实例直接 CreateMutex
+; 会撞 ERROR_ALREADY_EXISTS 被 Abort（且父窗口已销毁，FindWindow 前台化也无效，
+; 表现为「点了升级后再无任何窗口」）。
+; 解法：relaunch 带 /flowz-wait-pid=<父PID>；子实例的 preInit（installer.nsi:56，
+; **早于** :73 的 mutex 检查）里 WaitForSingleObject 等父进程退出（典型 <200ms，
+; 上限 10s 兜底）→ 走到 mutex 检查时父 mutex 已回收 → 干净拿到。等的是「父句柄
+; signaled」这个事实，非猜测时长；全程安装器自身代码，无 cmd/ping 外部进程链。
+; 降级安全：参数缺失/PID 无效/OpenProcess 失败 → 跳过等待；超时 → 走原 mutex 检查
+; （最坏 = 现状 Abort，不更劣）。
+;
+; System::Call 惯用法照模板：handle 用 `i` 类型接、`!= 0` 判定（getProcessInfo.nsh:118
+; + allowOnlyOneInstallerInstance.nsh:57），非 `p`/`P<>`。
+; ================================================================
+
+Var flowzExistingDir   ; 已装 per-user 安装目录（"" = 未装 / 不启用 maintenance）
+Var flowzExistingVer   ; 已装版本号（仅 header 展示用）
+Var flowzRadioUpgrade  ; 「升级」单选控件句柄
+Var flowzRadioRemove   ; 「卸载」单选控件句柄
+
+; 子实例侧：等待父安装器实例退出，规避 ALLOW_ONLY_ONE mutex 竞态。
+; 此宏在 .onInit 的 mutex 检查之前展开（installer.nsi:56 < :73），是等待的唯一有效时机。
+!macro preInit
+  Push $R0
+  Push $R1
+  Push $R2
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/flowz-wait-pid=" $R1
+  ${IfNot} ${Errors}
+  ${AndIf} $R1 != ""
+    ; OpenProcess(SYNCHRONIZE=0x00100000=1048576, bInheritHandle=0, pid) → handle（i 接，0=失败）
+    System::Call 'kernel32::OpenProcess(i 1048576, i 0, i $R1) i .R2'
+    ${If} $R2 != 0
+      ; 父进程退出即 signaled，立即返回；父若卡死则 10s 上限兜底后继续（走原 mutex 检查）
+      System::Call 'kernel32::WaitForSingleObject(i $R2, i 10000)'
+      System::Call 'kernel32::CloseHandle(i $R2)'
+    ${EndIf}
+  ${EndIf}
+  Pop $R2
+  Pop $R1
+  Pop $R0
+!macroend
+
+; 检测本机已安装（在 initMultiUser + SetRegView 64 之后展开，installer.nsi:80）。
+; 自读注册表，不依赖模板内部变量（$perUserInstallationFolder 等非稳定 API）。
+!macro customInit
+  ReadRegStr $flowzExistingDir HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ReadRegStr $flowzExistingVer HKCU "${UNINSTALL_REGISTRY_KEY}" DisplayVersion
+  ; 闸门 1：存在 per-machine（HKLM）安装（历史 /allusers 装出）→ 不启用，回默认流程，不恶化现状
+  ReadRegStr $R0 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $R0 != ""
+    StrCpy $flowzExistingDir ""
+  ${EndIf}
+  ; 闸门 2：注册表残留但主程序已不存在 → 当首装（避免对已删安装弹升级/卸载）
+  ${If} $flowzExistingDir != ""
+    ${IfNot} ${FileExists} "$flowzExistingDir\${APP_EXECUTABLE_FILENAME}"
+      StrCpy $flowzExistingDir ""
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; 已安装时的首页「升级 / 卸载」。原生 Page custom（非 MUI_PAGE_CUSTOMFUNCTION define
+; 机制）→ 与目录页的 skipPageIfUpdated PRE 槽零冲突。插在页序列第一位（assistedInstaller.nsh:9）。
+!macro customWelcomePage
+  Page custom flowzMaintenancePre flowzMaintenanceLeave
+
+  Function flowzMaintenancePre
+    ${If} ${isUpdated}             ; 内置更新器 / 我们自己的升级 relaunch：不介入
+      Abort
+    ${EndIf}
+    ${If} $flowzExistingDir == ""  ; 未安装（或被闸门置空）：首装流程零改变
+      Abort
+    ${EndIf}
+
+    ; 文案暂用英文字面量（PR 评审时如需随 $LANGUAGE 本地化再换 LangString）
+    !insertmacro MUI_HEADER_TEXT "FlowZ $flowzExistingVer is already installed" "Choose an operation"
+    nsDialogs::Create 1018
+    Pop $0
+    ${NSD_CreateLabel} 0u 0u 300u 20u "Existing installation: $flowzExistingDir"
+    Pop $0
+    ${NSD_CreateRadioButton} 10u 34u 285u 12u "Upgrade to ${VERSION} (keeps settings and taskbar pin)"
+    Pop $flowzRadioUpgrade
+    ${NSD_CreateRadioButton} 10u 52u 285u 12u "Uninstall FlowZ"
+    Pop $flowzRadioRemove
+    ${NSD_Check} $flowzRadioUpgrade   ; 默认选「升级」
+    nsDialogs::Show
+  FunctionEnd
+
+  Function flowzMaintenanceLeave
+    ${NSD_GetState} $flowzRadioRemove $0
+    ${If} $0 == ${BST_CHECKED}
+      ; —— 卸载：启动已装卸载器。不传 --updated//S → 真卸载 GUI（走下方 customUnInstall
+      ;    的 ${ifNot} ${isUpdated} 清理块）。Uninstall.exe 的 un.onInit 无 mutex 检查
+      ;    （uninstaller.nsh），无竞态。
+      ReadRegStr $R0 HKCU "${UNINSTALL_REGISTRY_KEY}" UninstallString
+      ${If} $R0 != ""
+        Exec '$R0'                  ; 值形如 "<dir>\Uninstall FlowZ.exe" /currentuser（已含引号）
+      ${EndIf}
+      SetErrorLevel 0
+      Quit
+    ${EndIf}
+    ; —— 升级：以内置更新器同款参数重启自身。--updated → 跳目录页(锁死目录)+keep-shortcuts
+    ;    (保 pin)+旧卸载器跳过 customUnInstall；/currentuser → 跳「为谁安装」页；
+    ;    /flowz-wait-pid → 子实例 preInit 等本进程退出后再抢 mutex。
+    System::Call 'kernel32::GetCurrentProcessId() i .r0'
+    Exec '"$EXEPATH" /currentuser --updated /flowz-wait-pid=$0'
+    SetErrorLevel 0
+    Quit
+  FunctionEnd
+!macroend
