@@ -89,10 +89,17 @@
 ; + allowOnlyOneInstallerInstance.nsh:57），非 `p`/`P<>`。
 ; ================================================================
 
-Var flowzExistingDir   ; 已装 per-user 安装目录（"" = 未装 / 不启用 maintenance）
-Var flowzExistingVer   ; 已装版本号（仅 header 展示用）
-Var flowzRadioUpgrade  ; 「升级」单选控件句柄
-Var flowzRadioRemove   ; 「卸载」单选控件句柄
+; 仅 installer 编译单元声明：这 4 个 Var 只被 customInit/customWelcomePage 引用，而这两个宏
+; 只在 !ifndef BUILD_UNINSTALLER 分支插入（installer.nsi）。electron-builder 把本文件同时 include
+; 进 installer 与 uninstaller 两个编译单元；若顶层无条件声明，uninstaller 单元里它们声明却无处引用
+; → makensis warning 6001「not referenced or never set」→ electron-builder `warning treated as error`
+; → 打包失败。（preInit 用 $R0-$R2 通用寄存器、不碰这些 Var，两单元都插入亦无碍。）
+!ifndef BUILD_UNINSTALLER
+  Var flowzExistingDir   ; 已装 per-user 安装目录（"" = 未装 / 不启用 maintenance）
+  Var flowzExistingVer   ; 已装版本号（仅 header 展示用）
+  Var flowzRadioUpgrade  ; 「升级」单选控件句柄
+  Var flowzRadioRemove   ; 「卸载」单选控件句柄
+!endif
 
 ; 子实例侧：等待父安装器实例退出，规避 ALLOW_ONLY_ONE mutex 竞态。
 ; 此宏在 .onInit 的 mutex 检查之前展开（installer.nsi:56 < :73），是等待的唯一有效时机。
