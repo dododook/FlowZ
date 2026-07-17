@@ -14,9 +14,26 @@
 ; perMachine:false 的卸载器默认以普通用户运行（无提权），而 sc delete / 删 ProgramData 需管理员 → 经
 ; PowerShell Start-Process -Verb RunAs -Wait 提权一次完成（仅路径 2 真正触发 UAC）。best-effort：失败仅残留，
 ; 下次安装的幂等清理（buildInstallScript 停删旧服务）兜底。
+; 安装器自定义文案 i18n（运行时按 $LANGUAGE 的 LCID 选简中/繁中，其余英文）。
+; 为何不用 electron-builder 的 messages.yml/LangString：其 LangString 在 sharedHeader 生成、
+; 早于 installer.nsi 的 addLangs（MUI_LANGUAGE 加载）→ LangString 定义先于语言加载 → makensis
+; warning 6040「language table 缺该 string」被 electron-builder 的 -WX 当 error → 打包失败。
+; 改运行时判断：本宏在函数体内 insert，届时 MUI_LANGUAGE 已加载、$LANGUAGE 为当前 LCID，纯数字
+; 比较（2052=SimpChinese、1028=TradChinese），不依赖任何编译期语言常量。app 的 ru/fa 无对应
+; NSIS .nlf、此处 fallback 英文（electron-builder 自带的 MUI 主体页面仍随系统语言）。
+!macro SelectLang OUT EN ZHCN ZHTW
+  StrCpy ${OUT} "${EN}"
+  ${If} $LANGUAGE == 2052
+    StrCpy ${OUT} "${ZHCN}"
+  ${ElseIf} $LANGUAGE == 1028
+    StrCpy ${OUT} "${ZHTW}"
+  ${EndIf}
+!macroend
+
 !macro customUnInstall
   ${ifNot} ${isUpdated}
-    DetailPrint "检查 FlowZ 提权 helper 服务..."
+    !insertmacro SelectLang $R8 "Checking FlowZ privileged helper service..." "检查 FlowZ 提权 helper 服务..." "檢查 FlowZ 提權 helper 服務..."
+    DetailPrint "$R8"
     ; System32 绝对路径调系统命令（$SYSDIR=System32），不依赖 PATH——规避部分设备 PATH 缺失 System32
     ; 致命令未找到（与 src/main 的 win-system32 硬化同根）。nsExec 经 CreateProcess（搜索序含 System32）本较稳，
     ; 但 .ps1 内的 sc.exe 由 PowerShell 走 PATH 解析（见下），必须绝对路径化；此处一并收口、兼防 cwd 劫持。
@@ -24,7 +41,8 @@
     Pop $R4 ; 退出码：0=服务存在，1060=不存在
     Pop $R5 ; 输出（丢弃）
     ${If} $R4 == 0
-      DetailPrint "清理 FlowZHelper 服务与 ProgramData（需一次管理员授权）..."
+      !insertmacro SelectLang $R8 "Removing FlowZHelper service and ProgramData (one admin authorization required)..." "清理 FlowZHelper 服务与 ProgramData（需一次管理员授权）..." "清理 FlowZHelper 服務與 ProgramData（需一次系統管理員授權）..."
+      DetailPrint "$R8"
       InitPluginsDir
       ; 把清理命令写入临时 .ps1（避免多层引号嵌套）。$$ → 字面 $（令 $env:ProgramData 在提权 PS 内展开）。
       FileOpen $R6 "$PLUGINSDIR\flowz-helper-uninstall.ps1" w
@@ -45,7 +63,8 @@
     ; $APPDATA\flowz = app.getPath('userData')（Windows appName 小写 flowz）；roaming 属当前用户，
     ; perMachine:false 卸载器以普通用户身份即可删，无需 UAC（与上面 ProgramData/服务清理的提权路径解耦）。
     ; 仅真卸载执行（位于 ${ifNot} ${isUpdated} 块内）——app 更新走 isUpdated 分支、不会误删用户数据。
-    DetailPrint "清理用户数据 $APPDATA\flowz ..."
+    !insertmacro SelectLang $R8 "Cleaning up user data" "清理用户数据" "清理使用者資料"
+    DetailPrint "$R8 $APPDATA\flowz ..."
     RMDir /r "$APPDATA\flowz"
   ${endif}
 !macroend
@@ -156,15 +175,21 @@
       Abort
     ${EndIf}
 
-    ; 文案暂用英文字面量（PR 评审时如需随 $LANGUAGE 本地化再换 LangString）
-    !insertmacro MUI_HEADER_TEXT "FlowZ $flowzExistingVer is already installed" "Choose an operation"
+    ; 文案经 SelectLang 运行时按 $LANGUAGE 选（见文件顶部宏注释）；运行时变量（$flowzExistingVer/
+    ; $flowzExistingDir）拼在选出的字符串外，译文内只含编译期 define ${VERSION}。$R8/$R9 中转即弃。
+    !insertmacro SelectLang $R8 "FlowZ is already installed" "检测到已安装 FlowZ" "偵測到已安裝 FlowZ"
+    !insertmacro SelectLang $R9 "Choose an operation" "请选择操作" "請選擇操作"
+    !insertmacro MUI_HEADER_TEXT "$R8" "$R9"
     nsDialogs::Create 1018
     Pop $0
-    ${NSD_CreateLabel} 0u 0u 300u 20u "Existing installation: $flowzExistingDir"
+    !insertmacro SelectLang $R8 "Existing installation:" "已安装位置：" "安裝位置："
+    ${NSD_CreateLabel} 0u 0u 300u 20u "$R8 $flowzExistingDir ($flowzExistingVer)"
     Pop $0
-    ${NSD_CreateRadioButton} 10u 34u 285u 12u "Upgrade to ${VERSION} (keeps settings and taskbar pin)"
+    !insertmacro SelectLang $R8 "Upgrade to ${VERSION} (keeps settings and taskbar pin)" "升级到 ${VERSION}（保留设置与任务栏固定）" "升級至 ${VERSION}（保留設定與工作列釘選）"
+    ${NSD_CreateRadioButton} 10u 34u 285u 12u "$R8"
     Pop $flowzRadioUpgrade
-    ${NSD_CreateRadioButton} 10u 52u 285u 12u "Uninstall FlowZ"
+    !insertmacro SelectLang $R8 "Uninstall FlowZ" "卸载 FlowZ" "解除安裝 FlowZ"
+    ${NSD_CreateRadioButton} 10u 52u 285u 12u "$R8"
     Pop $flowzRadioRemove
     ${NSD_Check} $flowzRadioUpgrade   ; 默认选「升级」
     nsDialogs::Show
