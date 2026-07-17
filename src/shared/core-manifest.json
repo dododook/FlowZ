@@ -1,11 +1,11 @@
 {
-  "bundledCoreVersion": "1.14.0-alpha.45",
+  "bundledCoreVersion": "1.14.0-alpha.46",
   "cronetVersion": "v148.0.7778.96-1",
   "coreArchiveSha256": {
-    "linux": "a4c6c66dce8d636179193bce56db76f01ab953a2d1bdf65f15d2dfc2a07195c4",
-    "win": "7e1cbc218d0cef4a0168c89d7afc8cc95e9dd77ded3a49f9a02e1fad2ed7ba4a",
-    "mac-x64": "fc661d35f373dd930be7291173bebe30eb680502e60aca56a47b2dc6f77cfeb0",
-    "mac-arm64": "5d9e6027e12082227a88490deecfdca4147f6f6acc16cffe844d59fbf039b443"
+    "linux": "b86f5bd46c399cb230931e53029aa2f08d66957d042f15b5dd1efa49cc16a18a",
+    "win": "5d300c0d988a11320d2080667ac2945288795b0b31dad5d893884f212f95a18a",
+    "mac-x64": "e89f55e418cb56f6795b5ee75a234ed0a82344558cd51623618cee901a17a7f9",
+    "mac-arm64": "13527b5c2ca14ed23951a2a04a493f5e9971e699c9c97924607e1a9a1a70ba9e"
   },
   "cronetArchiveSha256": {
     "linux": "dc7293a929dffa695aae1a89555e7366158fa0a3f40bbe3012d445bc05c99672",
