@@ -3,7 +3,13 @@
  * waitForCoreReady 注入 isAlive/isReady/sleep（零真实进程/计时器）；probeTcpReachable 用真实 net.Server 验通断。
  */
 import { createServer, type AddressInfo } from 'net';
-import { waitForCoreReady, probeTcpReachable } from '../core-readiness';
+import {
+  waitForCoreReady,
+  probeTcpReachable,
+  startMessageIsNonRetryable,
+  CoreStartRetryError,
+  CoreStartTunPersistentError,
+} from '../core-readiness';
 
 const noSleep = async (): Promise<void> => {};
 
@@ -106,6 +112,51 @@ describe('waitForCoreReady', () => {
       }
     );
     expect(r).toBe('superseded');
+  });
+});
+
+// issue #324：持续性 TUN 失败终态标记错误——独立类型，走 instanceof（不进 nonRetryableErrors 词表），非 CoreStartRetryError 子类。
+describe('CoreStartTunPersistentError (issue #324)', () => {
+  it('携默认可操作诊断文案，且与 CoreStartRetryError 互不 instanceof', () => {
+    const e = new CoreStartTunPersistentError();
+    expect(e).toBeInstanceOf(CoreStartTunPersistentError);
+    expect(e).toBeInstanceOf(Error);
+    expect(e).not.toBeInstanceOf(CoreStartRetryError); // 终态类 ≠ 可重试类：instanceof 判别不误重试
+    expect(new CoreStartRetryError('x')).not.toBeInstanceOf(CoreStartTunPersistentError);
+    expect(e.name).toBe('CoreStartTunPersistentError');
+    expect(e.message).toMatch(/wintun|TUN 适配器/); // 携指向 wintun/适配器的可操作提示
+  });
+
+  it('接受自定义文案', () => {
+    expect(new CoreStartTunPersistentError('自定义').message).toBe('自定义');
+  });
+});
+
+// review Low#5：起核 retry 词表判据守卫——issue #324 A1/A3 新增 CoreStartRetryError 文案必须**不**命中 nonRetryable 词表
+// （否则可重试文案被静默判为不可重试），且既有黑名单词照常命中（防未来加词漂移）。
+describe('startMessageIsNonRetryable (issue #176/#324 retry 词表守卫)', () => {
+  it('#324 A1「TUN 适配器未建立」文案 → 可重试（不命中词表）', () => {
+    expect(
+      startMessageIsNonRetryable('sing-box 已就绪但 TUN 适配器 flowz-tun0 未建立，正在自动重试')
+    ).toBe(false);
+  });
+  it('#324 A3「TUN 适配器从未创建」文案 → 可重试', () => {
+    expect(
+      startMessageIsNonRetryable(
+        'sing-box 启动期退出（TUN 适配器从未创建，疑 wintun 被拦/驱动异常），正在自动重试'
+      )
+    ).toBe(false);
+  });
+  it('既有「TUN 初始化未完成」dead 文案 → 可重试（不回归）', () => {
+    expect(
+      startMessageIsNonRetryable('sing-box 启动期退出（TUN 初始化未完成），正在自动重试')
+    ).toBe(false);
+  });
+  it('黑名单词照常命中不可重试（权限/找不到/坏配置，大小写不敏感）', () => {
+    expect(startMessageIsNonRetryable('管理员权限被拒绝')).toBe(true);
+    expect(startMessageIsNonRetryable('文件找不到')).toBe(true);
+    expect(startMessageIsNonRetryable('Invalid Config: bad field')).toBe(true); // 大写也命中
+    expect(startMessageIsNonRetryable('EACCES: permission denied')).toBe(true);
   });
 });
 

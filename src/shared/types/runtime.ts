@@ -33,6 +33,7 @@ export enum ProxyErrorCode {
   BINARY_NOT_EXECUTABLE = 'BINARY_NOT_EXECUTABLE', // 退出码 126
   BINARY_NOT_FOUND = 'BINARY_NOT_FOUND', // 退出码 127
   CRONET_LIB_MISSING = 'CRONET_LIB_MISSING', // 'cronet: library not found' / dlopen 失败（naive 出站缺/坏 libcronet → 整核 FATAL，自愈冷路径触发）
+  TUN_INIT_PERSISTENT = 'TUN_INIT_PERSISTENT', // issue #324：Windows wintun 适配器持续未建立（起核重试预算耗尽且全程未见适配器）→ 终态可操作诊断，非「正在自动重试」
   // 进程生命周期类 → ErrorCategory.Process
   STARTUP_FAILED = 'STARTUP_FAILED', // 退出码 1
   PROCESS_KILLED = 'PROCESS_KILLED', // 退出码 137

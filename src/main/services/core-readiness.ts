@@ -37,6 +37,49 @@ export class CoreStartSupersededError extends Error {
 }
 
 /**
+ * issue #324：Windows TUN「持续性初始化失败」终态标记错误。
+ * 与 CoreStartRetryError 的关键区别：**终态、不重试**。语义——单次 start 内起核重试预算耗尽，且全程（跨所有重试腿）
+ * 从未观测到自家 wintun 适配器出现、而适配器探测链路本身可用（排除杀软拦 PowerShell 的 unknown 误判）→ 判定
+ * 不是瞬态释放竞态（#159/#176），而是 wintun 驱动/被拦/冲突 VPN 类持续性故障，继续「正在自动重试」只会无限循环
+ * 误导用户。故转为携可操作诊断的终态错误上抛，由 start() 收口 + EVENT_PROXY_ERROR（errorCode=TUN_INIT_PERSISTENT）
+ * 驱动渲染端诊断卡。走 instanceof 判别（对齐 CoreStartSupersededError 先例），**不进 nonRetryableErrors 词表**。
+ * 不跨 start 累计计数（下次冷启环境可能已修复，应允许重试）——单次 start 内「预算耗尽且从未见适配器」已是强判据。
+ */
+export class CoreStartTunPersistentError extends Error {
+  // review Low#4：终态判据（预算耗尽 + 探测可用但全程未见适配器）对「非 wintun 类持续起核失败」（坏配置/端口占用/慢机
+  // 冷启拉 ruleset 超时）同样命中——那些场景适配器也从未创建。故文案**不独指 wintun**：先陈述观测事实 + 引导开诊断采集
+  // 定位（真正拍板证据），再把 wintun/冲突 VPN 列为常见原因之一。定向到具体根因的日志佐证留真机项 #1 后增强。
+  constructor(
+    message = 'TUN 适配器持续未能建立，起核重试均未成功——已停止无谓重试。常见原因：wintun 驱动被杀软拦截/损坏、其它 VPN/TUN 客户端占用，或内核/配置/端口导致起核失败。请开启「诊断采集」重导日志以定位；若确为 wintun，检查杀软隔离区的 wintun.dll 并关闭其它 TUN/VPN 客户端后重试。'
+  ) {
+    super(message);
+    this.name = 'CoreStartTunPersistentError';
+  }
+}
+
+/**
+ * 起核错误「按文案判不可重试」的关键词黑名单（issue #176 起核 retry 分类）。权限/找不到/坏配置类无论重试多少次
+ * 都不会好 → 直接失败。**新增 CoreStartRetryError 文案时务必不误命中这些词**（issue #324 A1「…未建立」/A3
+ * 「…从未创建」/「…初始化未完成」均已避开，由 startMessageIsNonRetryable 单测守卫，防未来加词静默把可重试文案变不可重试）。
+ */
+export const NON_RETRYABLE_START_ERROR_PATTERNS = [
+  '找不到',
+  '权限',
+  'permission',
+  'enoent',
+  'eacces',
+  'eperm',
+  '配置文件格式错误',
+  'invalid config',
+] as const;
+
+/** message 是否命中「不可重试」黑名单（大小写不敏感）。runStartWithRetry.shouldRetry 与单测共用同一判据，杜绝漂移。 */
+export function startMessageIsNonRetryable(message: string): boolean {
+  const m = message.toLowerCase();
+  return NON_RETRYABLE_START_ERROR_PATTERNS.some((p) => m.includes(p));
+}
+
+/**
  * TCP 可连探测（管理 API 已绑定即就绪）。零提权。连上 → true；超时/拒绝/错误 → false。
  */
 export function probeTcpReachable(host: string, port: number, timeoutMs = 1000): Promise<boolean> {

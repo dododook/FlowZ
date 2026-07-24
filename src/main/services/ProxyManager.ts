@@ -115,12 +115,23 @@ import {
   sampleProcessRssMb,
   type MemoryTimelineFrame,
 } from './process-sampler';
-import { probeWinTunAdapterPresent, waitForAdapterReleased } from './win-tun-adapter';
+import {
+  probeWinTunAdapterPresent,
+  waitForAdapterReleased,
+  probeWinTunAdapterPresence,
+  waitForAdapterPresent,
+  recordAdapterPresence,
+  isPersistentTunFailure,
+  type AdapterPresence,
+  type TunAdapterObservation,
+} from './win-tun-adapter';
 import {
   probeTcpReachable,
   waitForCoreReady,
+  startMessageIsNonRetryable,
   CoreStartRetryError,
   CoreStartSupersededError,
+  CoreStartTunPersistentError,
 } from './core-readiness';
 import coreManifest from '../../shared/core-manifest.json';
 
@@ -526,6 +537,19 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private static readonly CORE_READY_POLL_MS = 500;
   // 管理 API 可连探测（默认 TCP 直连）；注入式便于单测替换桩。
   private coreReadyProbe: (host: string, port: number) => Promise<boolean> = probeTcpReachable;
+
+  // issue #324：正向 TUN 就绪验证（仅 win32+TUN）。就绪窗内并行观测自家 wintun 适配器是否出现，落 sticky 标志——
+  //   死后验尸不可靠（适配器随进程句柄消失），故必须窗口内观测。就绪后 grace 内仍未见 = 本腿失败（硬闸，拒假连接）。
+  private adapterPresenceProbe: (name: string) => Promise<AdapterPresence> =
+    probeWinTunAdapterPresence;
+  // 就绪窗/grace 内的适配器观测轮询间隔（1s）。就绪窗 ≤12s → ≤~12 次 PS spawn；见到即停观测省 spawn。真机项 #2 校准。
+  private static readonly TUN_READY_OBSERVE_POLL_MS = 1000;
+  // 就绪（API 绑定）后再给适配器出现的 grace 上限（8s）：适配器晚于 API bind 出现属正常时序，避免误杀 #159/#176 瞬态。真机项 #2 校准。
+  private static readonly TUN_READY_GRACE_TIMEOUT_MS = 8000;
+  // issue #324 分类 tracker（start-scoped，win32+TUN 时于 startInternal 置对象、否则 null）。跨所有重试腿 sticky 累计观测：
+  //   adapterEverSeen=任一腿曾见适配器（→ 瞬态释放竞态族）；probeEverConclusive=探测链路曾给出 clean present/absent
+  //   （排除杀软拦 PS 的全 unknown 误判）。预算耗尽 && !adapterEverSeen && probeEverConclusive → 持续性 TUN 失败终态。
+  private tunReadyObservation: TunAdapterObservation | null = null;
   // issue #176 诊断计数：本次启动经几次「就绪重试」才成功（runStartWithRetry 累计）。>0 = 起核慢（多因 Windows
   // 重启争用下 wintun 适配器未及时释放），与「核崩溃自动重启」（restartCount/AUTO_RESTARTING）是不同轴，纳入诊断
   // 区分「核崩」vs「争用慢起」。每次 startInternal 复位。
@@ -846,6 +870,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     const startGen = this.lifecycleGeneration;
     let readyRetries = 0; // 本次启动累计的就绪重试次数（onRetry 自增），成功后落 lastStartReadyRetries 供诊断。
     this.lastStartReadyRetries = 0;
+    // issue #324：仅 win32+TUN 开正向适配器观测 tracker（否则 null → 全链路 no-op，macOS/Linux/非 TUN 零改动）。
+    //   start-scoped、跨所有重试腿 sticky——故置于 runStartWithRetry 之前、每次 start 一个新对象。
+    this.tunReadyObservation =
+      process.platform === 'win32' && isTunMode
+        ? { adapterEverSeen: false, probeEverConclusive: false }
+        : null;
 
     // 5. 启动 sing-box 进程（issue #159 的 wintun 适配器释放门控已下沉至 startSingBoxProcess 顶部，覆盖每次重试腿 + helper/UAC 两支路）
     // 双 TUN 竞态（mesh redesign R3）：system_interface（reverseMesh）节点在 TUN 模式下会建第二张内核 TUN。
@@ -866,6 +896,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           if (error instanceof CoreStartSupersededError) {
             return false;
           }
+          // issue #324：CoreStartTunPersistentError 的「不重试」是**结构性**的——它仅由 maybeToTunPersistentError 在
+          //   runStartWithRetry() reject 之后（startInternal catch 收口）生成，直达 start() catch，**永不经 retry()**，
+          //   故 shouldRetry 见不到它，无需在此加 instanceof 守卫（避免留测不到的防御死路径，YAGNI）。
           // 启动 gate 备用腿（补 check 盲区）：run 阶段 `dependency[X] not found` FATAL（detour/selector 幽灵
           // tag）→ 允许重试一次（onRetry 会解析 tag、pruneTagsClosure 修正重写盘），refFixAttempted 闸保证只修一次。
           if (/dependency\[(.+?)\] not found/i.test(error.message)) {
@@ -875,23 +908,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           if (this.isCronetLibError(error.message)) {
             return false;
           }
-          // 只对特定错误进行重试
-          const message = error.message.toLowerCase();
-
-          // 不重试的错误类型
-          const nonRetryableErrors = [
-            '找不到',
-            '权限',
-            'permission',
-            'enoent',
-            'eacces',
-            'eperm',
-            '配置文件格式错误',
-            'invalid config',
-          ];
-
-          // 如果是不可重试的错误，直接失败
-          if (nonRetryableErrors.some((pattern) => message.includes(pattern))) {
+          // 不重试的错误类型（权限/找不到/坏配置）：判据下沉 core-readiness.startMessageIsNonRetryable（单测守卫，
+          //   保证 issue #324 A1/A3 新增文案不被词表误命中而变不可重试，review Low#5）。
+          if (startMessageIsNonRetryable(error.message)) {
             return false;
           }
 
@@ -999,7 +1018,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           throw err;
         }
       } else {
-        throw err;
+        // issue #324：起核重试预算耗尽的收口——win32+TUN 且全程未见适配器（探测可用）→ 转持续性 TUN 失败终态诊断，
+        //   停「正在自动重试」误导；其余（含瞬态族/探测全 unknown/非 TUN）原样上抛。见 maybeToTunPersistentError。
+        throw this.maybeToTunPersistentError(err);
       }
     }
 
@@ -4469,6 +4490,29 @@ exit 0
     const port = this.tailscaleApiPort;
     if (!port) return; // 无管理 API 端口 → 不阻断
     const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+    // issue #324：仅 win32+TUN 开正向适配器观测（tunReadyObservation 非 null 即已由 startInternal 判定 win32+TUN）。
+    //   在就绪等待窗内并行探自家 wintun 适配器是否出现，sticky 落 tracker——即便本腿随后进程死（验尸不可靠），也已知
+    //   「本次 start 是否曾见适配器」。见到即停观测省 spawn。macOS/Linux/非 TUN：obs=null → 全程 no-op、零改动。
+    const obs = this.tunReadyObservation;
+    const adapterName = obs ? resolveWinTunInterfaceName(this.currentConfig as UserConfig) : '';
+    let observing = obs !== null;
+    const recordPresence = (p: AdapterPresence): void => {
+      if (obs) recordAdapterPresence(obs, p); // sticky monotonic 累计（纯函数，单测覆盖）
+    };
+    const observerDone: Promise<void> = observing
+      ? (async () => {
+          while (observing && !obs!.adapterEverSeen) {
+            const p = await this.adapterPresenceProbe(adapterName).catch(
+              () => 'unknown' as AdapterPresence
+            );
+            recordPresence(p);
+            if (!observing || obs!.adapterEverSeen) break;
+            await sleep(ProxyManager.TUN_READY_OBSERVE_POLL_MS);
+          }
+        })()
+      : Promise.resolve();
+
     const outcome = await waitForCoreReady(
       { timeoutMs: ProxyManager.CORE_READY_TIMEOUT_MS, pollMs: ProxyManager.CORE_READY_POLL_MS },
       {
@@ -4478,19 +4522,102 @@ exit 0
         isSuperseded: () => this.lifecycleGeneration !== startGen,
       }
     ).catch(() => 'timeout' as const);
-    if (outcome === 'ready') return;
-    // issue #176：被接管 → 静默让位，绝不 stopCore（接管方拥有拆核权，避免抢放适配器）。由 start() 包装吞掉。
+    observing = false; // 停就绪窗观测，等其 drain（在途 sleep 至多 1s；若卡在在途 probe，Get-NetAdapter 的 execFile timeout 4s 封顶）
+    await observerDone.catch(() => {});
+
+    // issue #176：被接管 → 静默让位，绝不 stopCore（接管方拥有拆核权，避免抢放适配器）。由 start() 包装吞掉。优先于一切。
     if (outcome === 'superseded') {
       throw new CoreStartSupersededError();
     }
+
+    if (outcome === 'ready') {
+      // issue #324 A1 正向硬闸（win32+TUN）：API 已绑但需验**本腿**自家 TUN 适配器真的建起。
+      //   review Med#2：**每腿独立验证**、不吃跨腿 sticky `adapterEverSeen`——前腿见过（可能是 #159 残留同名旧适配器）
+      //   不代表本腿的 TUN 已建，靠 sticky 免检会让假连接从门下漏过；sticky 仅供 A2/A3 分类。适配器真在时首轮 ~200ms 即早退，成本可忽略。
+      if (!obs) return; // 非 win32+TUN → 无正向门
+      const res = await waitForAdapterPresent(
+        adapterName,
+        {
+          timeoutMs: ProxyManager.TUN_READY_GRACE_TIMEOUT_MS,
+          pollMs: ProxyManager.TUN_READY_OBSERVE_POLL_MS,
+        },
+        // review High#1：grace 轮询注入 isSuperseded（镜像 waitForCoreReady）——被接管即让位，绝不 stopCore/发 started。
+        {
+          probe: (n) => this.adapterPresenceProbe(n),
+          sleep,
+          isSuperseded: () => this.lifecycleGeneration !== startGen,
+        }
+      ).catch(() => ({ outcome: 'unknown', polls: 0 }) as const);
+      // issue #176 High#1：grace 窗内被更新的 start/stop 接管 → 静默让位，**绝不 stopCore**（接管方拥有拆核权，避免抢放
+      //   适配器加剧风暴），也不对已被接管的腿发幻影 started。由 start() 包装吞掉（镜像上方 outcome==='superseded'）。
+      if (res.outcome === 'superseded') {
+        throw new CoreStartSupersededError();
+      }
+      if (res.outcome === 'present') {
+        recordPresence('present');
+        return;
+      }
+      if (res.outcome === 'unknown') {
+        // 探测链路全程 unknown（杀软拦 PS 等）→ fail-open 放行，绝不据此判失败（对齐 #159 反向门 fail-open 纪律）。
+        this.logToManager(
+          'warn',
+          `Windows TUN 适配器 ${adapterName} 存在性无法确认（探测失败），fail-open 继续`
+        );
+        return;
+      }
+      // res.outcome === 'absent-timeout'：探测可用但适配器确证未出现 → 硬闸失败本腿。停掉半死核（API 通但无 TUN =
+      //   假连接，比失败更糟），抛 CoreStartRetryError 交 retry；预算耗尽后由 maybeToTunPersistentError 升为终态诊断。
+      recordPresence('absent');
+      await this.helperManager?.stopCore().catch(() => {});
+      throw new CoreStartRetryError(
+        `sing-box 已就绪但 TUN 适配器 ${adapterName} 未建立，正在自动重试`
+      );
+    }
+
     // 失败：尽力停掉这个起不来的核（best-effort，其 wintun 适配器随即开始释放，给 retry 让路），再抛 CoreStartRetryError
     // ——startSingBoxProcess 的 helper catch 会透传它给 runStartWithRetry 静默重起（而非误判 helper 启动失败弹 UAC/osascript）。
     await this.helperManager?.stopCore().catch(() => {});
     if (outcome === 'dead') {
+      // issue #324 A3：dead 分支文案细分——win32+TUN 且探测可用（probeEverConclusive）却全程未见适配器 → 疑 wintun 被拦/
+      //   驱动异常（非瞬态释放竞态）。否则（曾见适配器=瞬态，或探测全 unknown 无从判定）保持原「TUN 初始化未完成」文案。
+      if (obs && isPersistentTunFailure(obs)) {
+        throw new CoreStartRetryError(
+          'sing-box 启动期退出（TUN 适配器从未创建，疑 wintun 被拦/驱动异常），正在自动重试'
+        );
+      }
       throw new CoreStartRetryError('sing-box 启动期退出（TUN 初始化未完成），正在自动重试');
     }
     // issue #176：软化文案——「未绑定」多因 Windows 重启争用下 wintun 适配器未及时释放致起核慢，非真失败。
     throw new CoreStartRetryError('sing-box 起核较慢（管理接口尚未就绪），正在自动重试');
+  }
+
+  /**
+   * issue #324 A2：起核重试预算耗尽后的持续性 TUN 失败终态转化。仅 win32+TUN（tunReadyObservation 非 null）且原错误
+   *   为可重试的 CoreStartRetryError 时判定；跨所有重试腿 sticky 观测：
+   *   - 曾见适配器（adapterEverSeen）→ 瞬态释放竞态族（#159/#176），保持原错误（照旧终态但不改语义）。
+   *   - 探测链路全程未给 clean 结论（!probeEverConclusive，全 unknown=杀软拦 PS）→ fail-open 保持瞬态，绝不误判终态。
+   *   - 探测可用且全程未见适配器 → 持续性 TUN init 失败：emit 结构化诊断（TUN_INIT_PERSISTENT）+ 转 CoreStartTunPersistentError。
+   * 不碰 retry 循环语义（blast radius 最小）；瞬态场景重试预算原封不动。
+   */
+  private maybeToTunPersistentError(err: unknown): unknown {
+    const obs = this.tunReadyObservation;
+    if (!obs) return err; // 非 win32+TUN → 原样（obs 仅 win32+TUN 时非 null）
+    if (!(err instanceof CoreStartRetryError)) return err; // 仅转化可重试的起核错误
+    // 曾出现 → 瞬态；探测全程 unknown（杀软拦 PS）→ fail-open 瞬态；两者非持续性 → 原样保持可重试终态。
+    if (!isPersistentTunFailure(obs)) return err;
+    // 探测可用且预算内从未见适配器 → 持续性 TUN init 失败终态。
+    const terminal = new CoreStartTunPersistentError();
+    this.logToManager(
+      'error',
+      `Windows TUN 适配器（${resolveWinTunInterfaceName(this.currentConfig as UserConfig)}）持续未建立，起核重试预算耗尽 → 终态诊断，停止无谓重试（常见 wintun 被拦/驱动异常/冲突 VPN，亦可能配置/端口/内核致起核失败——开诊断采集看日志拍板）`
+    );
+    // 经既有 EVENT_PROXY_ERROR 通道上渲染端（携结构化 code 驱动诊断卡）；start() 收口的 invoke rejection 另设 proxyError。
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
+      message: terminal.message,
+      errorCode: ProxyErrorCode.TUN_INIT_PERSISTENT,
+      code: -3,
+    });
+    return terminal;
   }
 
   private async startSingBoxProcess(startGen: number): Promise<void> {
