@@ -197,7 +197,9 @@ function handleProcessError(data: NativeEventData['processError']) {
 function handleConfigChanged(data: NativeEventData['configChanged']) {
   // 当收到配置变更事件时，直接使用事件中的新配置更新 store（即使外部并发改动也能即时同步）
   if (data.newValue) {
-    useAppStore.setState({ config: data.newValue });
+    // A2 护栏：不直接 setState，改走 applyConfigFromEvent（set config + invalidate 在飞 pull）——replay 使「push 与
+    // mount loadConfig 并发」每次挂载必然发生，裸 setState 会被迟到的旧 pull 快照覆盖（#325）。
+    useAppStore.getState().applyConfigFromEvent(data.newValue);
   } else {
     // 如果没有新配置数据，则重新加载；loadConfig 自带单飞，无需再用全局 isLoading 守卫
     useAppStore.getState().loadConfig();

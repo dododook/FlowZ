@@ -87,6 +87,7 @@ import type { HelperStatus, UserConfig } from '../shared/types';
 import { ipcEventEmitter } from './ipc/ipc-events';
 import { buildTrayCallbacks } from './tray-actions';
 import { scheduleStartupTasks } from './startup-tasks';
+import { replayConfigOnRendererReady } from './renderer-ready-replay';
 import { registerConfigChangeListener } from './config-change-handler';
 import { mainEventEmitter, MAIN_EVENTS } from './ipc/main-events';
 import { initUserDataPath, getConfigPath } from './utils/paths';
@@ -1028,6 +1029,15 @@ async function createWindow(forceShow = false) {
   // 注册报错。renderer 用 invoke（preload 未暴露单向 send），故用 .handle（fire-and-forget，返回 undefined）。
   gateWin.webContents.ipc.handle(IPC_CHANNELS.RENDERER_READY, () => {
     runMountGate('rendererReady');
+    // #325 config 重放：renderer 每次挂载后无条件补发一次终态 config，补偿 silent-start 期无窗口订阅者而被静默
+    // 丢弃的 event:configChanged（否则首页定格「无节点」直到退出重开）。fire-and-forget，绝不阻塞/打断 mount gate。
+    void replayConfigOnRendererReady<UserConfig>({
+      loadConfig: () => configManager.loadConfig(),
+      send: (config) =>
+        gateWin.webContents.send(IPC_CHANNELS.EVENT_CONFIG_CHANGED, { newValue: config }),
+      isAborted: () => isQuitting || gateWin.isDestroyed(),
+      warn: (message) => logManager.addLog('warn', message, 'Main'),
+    });
     return undefined;
   });
   // 终局错误页「重新加载」（L3）：主进程复位健康门 + 对本窗重新 loadFile 真实应用。经主进程 loadFile 绕开 Chromium
@@ -1855,6 +1865,11 @@ if (gotTheLock) {
       logManager,
       () => proxyManager?.getStatus().running ?? false,
       (cfg) => {
+        // #325 打点：silent-start 期（无窗口订阅者）该 configChanged 会被 sendToAll 静默丢弃 → 记 debug 使其可观测，
+        // 真机验证时与 RENDERER_READY 后的 replay 记录成对出现（钉窗口 + 验 replay 确实兜住丢失的事件）。
+        if (ipcEventEmitter.getWindowCount() === 0) {
+          logManager.addLog('debug', 'configChanged dropped: no window (silent-start?)', 'Main');
+        }
         ipcEventEmitter.sendToAll('event:configChanged', { newValue: cfg });
         // P2-2：后台订阅更新增删节点后刷新托盘「选择服务器」子菜单（updateTrayMenuState 重载最新 config）。
         // 走 tray-only 刷新、不发 MAIN_EVENTS.CONFIG_CHANGED → 不触发 switchMode 重启，守住「不打断连接」不变量。

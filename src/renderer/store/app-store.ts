@@ -79,6 +79,18 @@ function invalidateLoadConfig(): void {
   loadConfigInflight = null;
 }
 
+// TS 登录态缓存孤儿 GC：清不在当前 servers 的缓存条目——覆盖所有绕过渲染端 deleteServer 的删节点路径
+// （ConfigManager sanitize 丢多余 TS / 损坏备份导入 / 手改配置 / 订阅补更删节点），免 localStorage 缓存条目无上限泄漏。
+// 抽共用（loadConfig 回填 + applyConfigFromEvent push 落地双调），避免双写漂移——replay 作废在飞 pull 时那次 pull 的
+// GC 被 gen 守卫跳过，push 路径补跑一次使挂载期短窗也不漏 GC（#325 复审追零 Nit）。入参为权威 servers，无陈旧覆盖。
+function gcOrphanTailscaleLoginCache(servers: UserConfig['servers']): void {
+  const liveServerIds = new Set(servers.map((s) => s.id));
+  const loginCache = useTailscaleLoginCacheStore.getState();
+  for (const id of Object.keys(loginCache.cache)) {
+    if (!liveServerIds.has(id)) loginCache.removeCached(id);
+  }
+}
+
 /**
  * D4 删选中节点时的兜底出口候选（按列表序）：只纳入「可作真实全隧道出口」的剩余节点——
  *   ① isServerComplete（配置齐备、协议受支持、非空发射；已内含 !isMeshNodeUnroutable）；
@@ -233,6 +245,9 @@ interface AppState {
   // Configuration Actions
   loadConfig: () => Promise<void>;
   saveConfig: (config: UserConfig) => Promise<void>;
+  // 从 main 推送的 config 事件（handleConfigChanged newValue 路径）落地：写 config + 作废在飞旧 pull，
+  // 防「push 与 mount pull 并发」时旧 pull 迟到回填覆盖新 push（#325 A2 护栏）。
+  applyConfigFromEvent: (config: UserConfig) => void;
   updateProxyMode: (mode: ProxyMode) => Promise<void>;
   setConfigValue: (key: keyof UserConfig, value: any) => Promise<void>;
 
@@ -476,19 +491,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
 
         const isPrivacyMode = await api.config.getPrivacyMode();
-        // 代际护栏：拉取期间发生了 mutation（loadConfigGeneration 已变）→ 本快照陈旧，丢弃不回填 store，
-        // 交由 mutation 触发的新一轮 loadConfig 回填最新配置（防删节点后旧快照复活已删节点）。
+        // isPrivacyMode 是主进程权威即时态、与 config 代际语义无耦合 → **无条件**回填，不随 config 代际护栏一起被
+        // 作废。挂载期这是隐私态的唯一水合路径（silent-start autoPrivacyMode 空闲锁的 ENTER 事件同样无窗期丢失，
+        // 见 index.ts:229-233/266-268），若被 replay / mutation 作废在飞 pull 时连带丢弃 → isPrivacyMode 恒留初值
+        // false → 首开窗隐私遮罩不出现＝隐私锁旁路（#325 复审 High 1）。
+        set({ isPrivacyMode });
+        // 代际护栏：拉取期间发生了 mutation / applyConfigFromEvent（loadConfigGeneration 已变）→ 本 config 快照陈旧，
+        // 丢弃不回填 store，交由推侧 push / mutation 触发的新一轮回填最新配置（防删节点后旧快照复活已删节点）。
+        // 仅 config 与依赖 config.servers 的 TS 缓存 GC 受此护栏；isPrivacyMode 已在上方无条件回填。
         if (gen !== loadConfigGeneration) return;
-        set({ config, isPrivacyMode });
+        set({ config });
         // Tailscale 登录态不在此拉取：1.14 由 api STATUS 流（EVENT_TAILSCALE_STATUS，随主核起停持续推送）
         // 实时驱动 tailscaleLoginStates，无需 loadConfig 时整表 IPC 刷新（已剥离 refreshTailscaleLoginStates）。
-        // 登录态缓存 GC：清不在当前 servers 的孤儿条目——一劳永逸覆盖所有绕过渲染端 deleteServer 的删节点路径
-        // （ConfigManager sanitize 丢多余 TS / 损坏备份导入 / 手改配置），免 localStorage 缓存条目无上限泄漏。
-        const liveServerIds = new Set(config.servers.map((s) => s.id));
-        const loginCache = useTailscaleLoginCacheStore.getState();
-        for (const id of Object.keys(loginCache.cache)) {
-          if (!liveServerIds.has(id)) loginCache.removeCached(id);
-        }
+        gcOrphanTailscaleLoginCache(config.servers);
       } catch (error) {
         console.error('[Store] Exception loading config:', error);
         toast.error(i18n.t('common.configLoadFail'));
@@ -500,6 +515,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     })();
     return loadConfigInflight;
+  },
+
+  // main push 的 config 事件落地（#325 replay + 常规 configChanged newValue 路径）。写 config 后同步作废在飞旧
+  // pull——replay 使「push 与 mount loadConfig 并发」每次挂载必然发生，若不 invalidate，在飞旧 pull 迟到 resolve
+  // 会用旧快照覆盖刚 push 的新 config（代际护栏只防 renderer mutation、不防 main push）。顺序循 saveConfig：先 set 再
+  // invalidate。这是用护栏自己的 API 扩其覆盖面（新增合法自增点），单飞语义不变、内部护栏不外泄。
+  applyConfigFromEvent: (config) => {
+    set({ config });
+    // 追零：replay 作废在飞 mount pull → 那次 pull 的孤儿 GC 被 gen 守卫跳过；push 落地同样跑一次（入参为
+    // push 的权威 servers，无陈旧覆盖），使挂载期短窗也不漏清 TS 登录缓存孤儿条目（#325 复审追零 Nit）。
+    gcOrphanTailscaleLoginCache(config.servers);
+    invalidateLoadConfig();
   },
 
   saveConfig: async (config) => {
