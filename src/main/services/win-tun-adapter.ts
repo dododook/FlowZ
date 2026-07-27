@@ -14,6 +14,82 @@ import { execFile } from 'child_process';
 import { powershellPath } from '../utils/win-system32';
 import type { AddressUsage } from '../../shared/tun-address';
 
+/** 哨兵首行：脚本跑到这一行 == 探测链路可用（cmdlet 存在、模块加载成功、PS 未被拦）。 */
+const PROBE_SENTINEL = 'PROBE_OK';
+
+/** runPsProbe 结果。`ok=false` 表示探测链路本身不可用（调用方一律落 unknown / fail-open）。 */
+interface PsProbeResult {
+  /** 拿到哨兵 == 查询确实执行了；据此可把「查询成功且为空」与「查不了」区分开。 */
+  ok: boolean;
+  /** 哨兵之后的输出行（已 trim、已去空行）。 */
+  lines: string[];
+}
+
+/**
+ * 跑一段 PowerShell 探测管道，把「探测链路可用」与「查询结果为空」区分开。
+ *
+ * **为什么不能直接 `-Command <cmdlet ... -ErrorAction SilentlyContinue>`**（原实现，issue #324 真机实测推翻）：
+ * `-ErrorAction SilentlyContinue` 只抑制错误的**显示**，不改 `$?`——查不到对象时 `powershell.exe` 退出码仍是 **1**。
+ * Node `execFile` 据此把 `err` 置非 null，于是「查询成功且结果为空」（= absent / free，本模块最需要的那个结论）
+ * 被整片吞成 `unknown`。真机实测（Windows 11 26200）：
+ *   `Get-NetIPAddress -IPAddress <空闲地址>` → exit=1 stdout 空；`Get-NetAdapter -Name <不存在>` → exit=1 stdout 空。
+ * 后果是三条门在真实 Windows 上全部恒 fail-open：#159 释放门恒放行、#324 正向就绪门 `sawAbsent` 恒 false、
+ * #324 地址冲突预检永远返不出 `free`（候选池逐个落 unverified → `exhausted` → 退回被占用的首选地址，避让完全失效）。
+ * 单测把 `execFile` 整个替换成桩，从未验过这条真实契约，故 4 轮 review + 38 条变异全绿仍漏。
+ *
+ * 现在：脚本自己 `exit 0`，把「探测链路可用」用哨兵首行显式表达，结论完全由 stdout 承载；退出码只用来兜
+ * **真正的**执行失败（PS 缺失 / 被杀软拦 / 超时）。终止性错误（模块加载失败、cmdlet 不存在）落 catch → 无哨兵 → 同样 unknown。
+ *
+ * **哨兵不能无条件发**——这是第二个真机实测才看清的坑。`-ErrorAction SilentlyContinue` 吞掉的是**非终止性**错误，
+ * 它们不进 catch，管道照样空。若此时照发哨兵，「目标确实不存在」与「查询根本没跑通」就被合并成同一个结论 `absent`/`free`，
+ * 后果比原缺陷更糟：CIM/WMI 被 EDR 拦住的**健康**机器会被判成「TUN 网卡从未创建」→ `absent-timeout` → 硬闸 stopCore
+ * → 三腿耗尽 → `CoreStartTunPersistentError` 永久拒连。旧实现靠退出码 1 把这两类一起归进 `unknown`（fail-open，
+ * 安全但门失效），两者都不对。真机实测（`$Error` 的 CategoryInfo）显示这两类明确可分：
+ *   地址空闲 / 网卡不存在 → `ObjectNotFound`（`CmdletizationQuery_NotFound_*`）；CIM 会话不可用 → `ResourceUnavailable`。
+ * 故哨兵的发放条件是「零错误，或被吞的错误**全部**是 ObjectNotFound」。
+ *
+ * 脚本经 `-EncodedCommand`（UTF-16LE base64）传入，消掉命令行层的转义面；PowerShell 语法层仍靠调用方的
+ * 单引号转义 + 输入校验（IP 正则 / 网卡名字符集）把关。
+ *
+ * **stdout 只可用来比对 ASCII**：中文 Windows 的 PowerShell 按 OEM codepage（936）写 stdout，Node execFile
+ * 默认按 utf8 解码 → 非 ASCII 输出必成乱码（真机实测：网卡名「以太网」回传即乱码）。本模块的比对对象全是
+ * ASCII——IP 字面量、受 resolveWinTunInterfaceName 限制在 [A-Za-z0-9_-] 的自家网卡名、哨兵本身——故不受影响。
+ * 若将来要拿它比对用户可自定义的中文网卡名/别名，必须先在脚本里 `[Console]::OutputEncoding = [Text.Encoding]::UTF8`。
+ */
+function runPsProbe(pipeline: string): Promise<PsProbeResult> {
+  const script = [
+    `$ErrorActionPreference = 'SilentlyContinue'`,
+    `$Error.Clear()`,
+    `try {`,
+    `  $r = @(${pipeline})`,
+    `  if (@($Error | Where-Object { $_.CategoryInfo.Category -ne 'ObjectNotFound' }).Count -eq 0) {`,
+    `    Write-Output '${PROBE_SENTINEL}'`,
+    `    foreach ($x in $r) { Write-Output $x }`,
+    `  }`,
+    `} catch { }`,
+    `exit 0`,
+  ].join('\n');
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  return new Promise((resolve) => {
+    execFile(
+      powershellPath(),
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      { timeout: 4000, windowsHide: true },
+      (err, stdout) => {
+        if (err) return resolve({ ok: false, lines: [] });
+        const lines = String(stdout)
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
+        const at = lines.indexOf(PROBE_SENTINEL);
+        // 无哨兵 = 脚本没跑到那一行（终止性错误）或输出被截断 → 按探测失败处理，绝不当成「查询为空」。
+        if (at < 0) return resolve({ ok: false, lines: [] });
+        resolve({ ok: true, lines: lines.slice(at + 1) });
+      }
+    );
+  });
+}
+
 /**
  * 探测 Windows 上是否仍存在名为 `name` 的网卡（设备级，零提权）。#159 反向释放门用。
  * 命中 → true；查不到 / PowerShell 失败 / 超时 → false（宁判「已释放」放行，绝不卡死启动）。
@@ -75,27 +151,14 @@ export type AdapterPresence = 'present' | 'absent' | 'unknown';
  * 仅返回值语义更细：err（spawn/执行失败）→ 'unknown'；命中本名 → 'present'；查询成功但空 → 'absent'。
  */
 export function probeWinTunAdapterPresence(name: string): Promise<AdapterPresence> {
-  return new Promise((resolve) => {
-    const psName = name.replace(/'/g, "''");
-    execFile(
-      powershellPath(),
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `Get-NetAdapter -Name '${psName}' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name`,
-      ],
-      { timeout: 4000, windowsHide: true },
-      (err, stdout) => {
-        // err = PowerShell spawn/执行失败（PS 缺/被拦/超时）→ unknown（fail-open）。
-        // -ErrorAction SilentlyContinue 使「网卡不存在」不报错、输出为空 → 落 'absent'（证明 PS 本身可用）。
-        if (err) return resolve('unknown');
-        const hit = String(stdout)
-          .split(/\r?\n/)
-          .some((line) => line.trim() === name);
-        resolve(hit ? 'present' : 'absent');
-      }
-    );
+  const psName = name.replace(/'/g, "''");
+  // 哨兵在、命中本名 → present；哨兵在、无命中 → absent（查询确实跑过，可据此判「从未创建」）；
+  // 哨兵不在 → unknown（fail-open）。见 runPsProbe 头注：退出码不再参与「空结果」判定。
+  return runPsProbe(
+    `Get-NetAdapter -Name '${psName}' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name`
+  ).then((r) => {
+    if (!r.ok) return 'unknown';
+    return r.lines.some((line) => line === name) ? 'present' : 'absent';
   });
 }
 
@@ -225,23 +288,12 @@ export function probeWinIpv4AddressUsage(
   const aliasFilter = excludeInterfaceAlias
     ? ` | Where-Object { $_.InterfaceAlias -ne '${excludeInterfaceAlias.replace(/'/g, "''")}' }`
     : '';
-  return new Promise((resolve) => {
-    execFile(
-      powershellPath(),
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `Get-NetIPAddress -IPAddress '${ip}' -ErrorAction SilentlyContinue${aliasFilter} | Select-Object -ExpandProperty IPAddress`,
-      ],
-      { timeout: 4000, windowsHide: true },
-      (err, stdout) => {
-        if (err) return resolve('unknown');
-        const hit = String(stdout)
-          .split(/\r?\n/)
-          .some((line) => line.trim() === ip);
-        resolve(hit ? 'in-use' : 'free');
-      }
-    );
+  // 哨兵在、命中该地址 → in-use；哨兵在、无命中 → free（**这条是避让机制的全部价值所在**：旧实现因退出码 1
+  // 恒落 unknown，候选池永远给不出 free，冲突时经 exhausted 退回被占用的首选地址）。哨兵不在 → unknown。
+  return runPsProbe(
+    `Get-NetIPAddress -IPAddress '${ip}' -ErrorAction SilentlyContinue${aliasFilter} | Select-Object -ExpandProperty IPAddress`
+  ).then((r) => {
+    if (!r.ok) return 'unknown';
+    return r.lines.some((line) => line === ip) ? 'in-use' : 'free';
   });
 }

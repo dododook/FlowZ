@@ -11,6 +11,8 @@ jest.mock('child_process', () => ({
 import { execFile } from 'child_process';
 import {
   probeWinIpv4AddressUsage,
+  probeWinTunAdapterPresence,
+  probeWinTunAdapterPresent,
   waitForAdapterReleased,
   waitForAdapterPresent,
   recordAdapterPresence,
@@ -18,6 +20,7 @@ import {
   type AdapterPresence,
   type TunAdapterObservation,
 } from '../win-tun-adapter';
+import { powershellPath } from '../../utils/win-system32';
 import { resolveWinTunInterfaceName, FLOWZ_WIN_TUN_INTERFACE } from '../../../shared/tun-interface';
 import type { UserConfig } from '../../../shared/types';
 
@@ -274,30 +277,168 @@ describe('resolveWinTunInterfaceName', () => {
 // ============================================================================
 
 /** 桩 execFile：按 (err, stdout) 回调；返回本次实际下发的 -Command 串供断言。 */
-function stubExecFile(err: Error | null, stdout: string): { lastCommand: () => string } {
-  let cmd = '';
+function stubExecFile(
+  err: Error | null,
+  stdout: string
+): {
+  lastCommand: () => string;
+  lastArgs: () => string[];
+  lastBin: () => string;
+  lastOpts: () => Record<string, unknown>;
+} {
+  let lastArgs: string[] = [];
+  let lastBin = '';
+  let lastOpts: Record<string, unknown> = {};
   (execFile as unknown as jest.Mock).mockImplementation(
-    (_bin: string, args: string[], _opts: unknown, cb: (e: Error | null, o: string) => void) => {
-      cmd = args[args.length - 1];
+    (
+      bin: string,
+      args: string[],
+      opts: Record<string, unknown>,
+      cb: (e: Error | null, o: string) => void
+    ) => {
+      lastArgs = args;
+      lastBin = bin;
+      lastOpts = opts;
       cb(err, stdout);
       return undefined as never;
     }
   );
-  return { lastCommand: () => cmd };
+  return {
+    lastBin: () => lastBin,
+    lastOpts: () => lastOpts,
+    // 脚本经 -EncodedCommand（UTF-16LE base64）传入，还原回文本供断言。
+    lastCommand: () => {
+      const i = lastArgs.indexOf('-EncodedCommand');
+      return i < 0 || i + 1 >= lastArgs.length
+        ? ''
+        : Buffer.from(lastArgs[i + 1], 'base64').toString('utf16le');
+    },
+    lastArgs: () => lastArgs,
+  };
 }
+
+/**
+ * 探测链路可用时的 stdout：哨兵首行 + 若干结果行。
+ * 直接写裸结果（不带哨兵）的用例一律等价于「脚本没跑到哨兵那行」，必须落 unknown——这正是 #324 真机缺陷的守卫点。
+ */
+function okStdout(...lines: string[]): string {
+  return ['PROBE_OK', ...lines].join('\r\n') + '\r\n';
+}
+
+/**
+ * 真机实证过的脚本原文（逐字，issue #324）。
+ *
+ * **为什么是全文精确断言，而不是若干条 toContain/顺序断言**：这个字符串是与 `powershell.exe` 的**契约**，
+ * 它的每一段都在 Windows 真机上被实际执行验证过（空闲地址→free、占用→in-use、网卡不存在→absent、
+ * 网卡存在→present、CIM 被拦→unknown 五态）。子串与顺序断言挡不住产出侧被改坏——独立 review 用 38 条
+ * 变异实测出 15 条逃逸，其中 8 条会在真机重新触发 #324 的 P0，例如：
+ *   - 删 `foreach ($x in $r) { Write-Output $x }` → 结果行永不输出 → 恒 free + 恒 absent（原始 P0 原样回归）
+ *   - 删 `Select-Object -ExpandProperty` → 同上
+ *   - 把哨兵提出 if 块、留下空的 `if (...) { }` → 判据文本还在、顺序还对，但已不再门控哨兵
+ *   - `$ErrorActionPreference='Stop'` + 删内联 `-ErrorAction` → 恒 unknown
+ *   - `Get-NetAdapter` 拼写错（`indexOf` 返 -1，与正数比反而「通过」——顺序断言在最该报警时失效）
+ *
+ * **改动此处的纪律**：脚本文本变了就等于契约变了，必须重新在 Windows 真机上验完五态再同步这里的常量。
+ * 合法重构（改缩进、`-e` 简写、单行 join）也会让本组用例失败——**那是设计意图**：它逼你回去重验，
+ * 而不是让一次「看起来无害」的重写把避让机制静默改回失效状态。
+ */
+const SCRIPT_IP_PLAIN = `$ErrorActionPreference = 'SilentlyContinue'
+$Error.Clear()
+try {
+  $r = @(Get-NetIPAddress -IPAddress '172.19.0.1' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress)
+  if (@($Error | Where-Object { $_.CategoryInfo.Category -ne 'ObjectNotFound' }).Count -eq 0) {
+    Write-Output 'PROBE_OK'
+    foreach ($x in $r) { Write-Output $x }
+  }
+} catch { }
+exit 0`;
+
+const SCRIPT_IP_WITH_ALIAS = `$ErrorActionPreference = 'SilentlyContinue'
+$Error.Clear()
+try {
+  $r = @(Get-NetIPAddress -IPAddress '172.19.0.1' -ErrorAction SilentlyContinue | Where-Object { $_.InterfaceAlias -ne 'flowz-tun0' } | Select-Object -ExpandProperty IPAddress)
+  if (@($Error | Where-Object { $_.CategoryInfo.Category -ne 'ObjectNotFound' }).Count -eq 0) {
+    Write-Output 'PROBE_OK'
+    foreach ($x in $r) { Write-Output $x }
+  }
+} catch { }
+exit 0`;
+
+const SCRIPT_ADAPTER = `$ErrorActionPreference = 'SilentlyContinue'
+$Error.Clear()
+try {
+  $r = @(Get-NetAdapter -Name 'flowz-tun0' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+  if (@($Error | Where-Object { $_.CategoryInfo.Category -ne 'ObjectNotFound' }).Count -eq 0) {
+    Write-Output 'PROBE_OK'
+    foreach ($x in $r) { Write-Output $x }
+  }
+} catch { }
+exit 0`;
+
+describe('PowerShell 探测脚本形态（#324 真机契约）', () => {
+  beforeEach(() => (execFile as unknown as jest.Mock).mockReset());
+
+  it('地址探测（无别名）生成的脚本逐字等于真机实证过的原文', async () => {
+    const h = stubExecFile(null, okStdout());
+    await probeWinIpv4AddressUsage('172.19.0.1');
+    expect(h.lastCommand()).toBe(SCRIPT_IP_PLAIN);
+  });
+
+  it('地址探测（带别名排除）生成的脚本逐字等于真机实证过的原文', async () => {
+    const h = stubExecFile(null, okStdout());
+    await probeWinIpv4AddressUsage('172.19.0.1', 'flowz-tun0');
+    expect(h.lastCommand()).toBe(SCRIPT_IP_WITH_ALIAS);
+  });
+
+  it('网卡探测生成的脚本逐字等于真机实证过的原文', async () => {
+    const h = stubExecFile(null, okStdout());
+    await probeWinTunAdapterPresence('flowz-tun0');
+    expect(h.lastCommand()).toBe(SCRIPT_ADAPTER);
+  });
+
+  it('走 -EncodedCommand 而非 -Command（命令行转义面 + 脚本可含多行/exit）', async () => {
+    // 这条不在脚本文本里，故仍需单独断言 argv 形态。
+    const h = stubExecFile(null, okStdout());
+    await probeWinIpv4AddressUsage('172.19.0.1');
+    expect(h.lastArgs()).toContain('-EncodedCommand');
+    expect(h.lastArgs()).not.toContain('-Command');
+  });
+
+  it('spawn 的是 powershellPath() 的绝对路径，且带 timeout / windowsHide', async () => {
+    // 变异守卫：删 `timeout: 4000` → 被杀软挂住的 PowerShell 永不回调，起核卡死无兜底；
+    // 把 bin 换成裸名 'powershell' → PATH 劫持面。两者单测都能钉。
+    const h = stubExecFile(null, okStdout());
+    await probeWinIpv4AddressUsage('172.19.0.1');
+    expect(h.lastBin()).toBe(powershellPath());
+    expect(h.lastOpts()).toMatchObject({ timeout: 4000, windowsHide: true });
+  });
+});
 
 describe('probeWinIpv4AddressUsage', () => {
   beforeEach(() => (execFile as unknown as jest.Mock).mockReset());
 
   it('查到该地址 → in-use', async () => {
-    stubExecFile(null, '172.19.0.1\r\n');
+    stubExecFile(null, okStdout('172.19.0.1'));
     await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('in-use');
   });
 
-  it('查询成功但无输出 → free（证明探测链路可用）', async () => {
+  it('哨兵在、无结果行 → free（证明探测链路可用）', async () => {
     // 变异守卫：把 hit 判定反转 → 本例与上例同时失败。
-    stubExecFile(null, '');
+    stubExecFile(null, okStdout());
     await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('free');
+  });
+
+  it('stdout 空且无哨兵 → unknown，绝不是 free（#324 真机缺陷的核心守卫）', async () => {
+    // 旧实现在这里判 free，而真机给的正是「stdout 空」+ 退出码 1。哨兵把「查询确实跑过」变成可观测事实，
+    // 没有它就不许得出 free——否则 PowerShell 被杀软拦住的机器会被当成「所有候选都空闲」。
+    // 变异守卫：删掉 runPsProbe 里的 `if (at < 0)` 短路 → 本例得到 free 而失败。
+    stubExecFile(null, '');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('unknown');
+  });
+
+  it('有输出但无哨兵（脚本中途夭折 / 输出被截断）→ unknown', async () => {
+    stubExecFile(null, '172.19.0.1\r\n');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('unknown');
   });
 
   it('PowerShell 失败/超时 → unknown，绝不是 free 也绝不是 in-use', async () => {
@@ -307,34 +448,96 @@ describe('probeWinIpv4AddressUsage', () => {
     await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('unknown');
   });
 
+  it('err 非 null 且 stdout 已有完整哨兵输出（超时杀进程但输出已到）→ 仍是 unknown', async () => {
+    // 这个输入组合此前零覆盖，而它恰恰是 execFile 超时的真实形态：进程被 SIGTERM 前 stdout 已经写完。
+    // 变异守卫：把 err 短路改成 `if (err && !stdout.includes(哨兵))` → 本例得到 in-use 而失败。
+    // 为什么必须是 unknown：进程被中途杀掉时，stdout 可能只是「看起来完整」，不能据此判定查询真的跑完了。
+    stubExecFile(new Error('ETIMEDOUT'), okStdout('172.19.0.1'));
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('unknown');
+    stubExecFile(new Error('ETIMEDOUT'), okStdout());
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('unknown');
+  });
+
   it('多行输出里按整行 trim 精确匹配，不做子串匹配', async () => {
-    stubExecFile(null, '172.19.0.10\r\n172.19.0.100\r\n');
+    stubExecFile(null, okStdout('172.19.0.10', '172.19.0.100'));
     await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('free');
-    stubExecFile(null, '10.0.0.5\r\n  172.19.0.1  \r\n');
+    stubExecFile(null, okStdout('10.0.0.5', '  172.19.0.1  '));
     await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('in-use');
   });
 
   it('非法 IP 字面量 → unknown 且不 spawn（命令拼接面的纵深防御）', async () => {
-    stubExecFile(null, 'x');
+    stubExecFile(null, okStdout('x'));
     await expect(probeWinIpv4AddressUsage("1.2.3.4'; rm -rf /")).resolves.toBe('unknown');
     expect(execFile as unknown as jest.Mock).not.toHaveBeenCalled();
   });
 
   it('传入自家接口别名 → 命令里带 InterfaceAlias 排除（H1：自家残留不算冲突）', async () => {
-    const h = stubExecFile(null, '');
+    const h = stubExecFile(null, okStdout());
     await probeWinIpv4AddressUsage('172.19.0.1', 'flowz-tun0');
     expect(h.lastCommand()).toContain("$_.InterfaceAlias -ne 'flowz-tun0'");
   });
 
-  it('不传别名 → 命令里无 Where-Object（保持最简查询）', async () => {
-    const h = stubExecFile(null, '');
+  it('不传别名 → 查询管道里无 InterfaceAlias 过滤（保持最简查询）', async () => {
+    // 断言 InterfaceAlias 而非 Where-Object：脚本模板自身的 ObjectNotFound 判据也用 Where-Object，
+    // 拿它做否定断言等于把「有没有 alias 过滤」寄托在一个与语义无关的词上。
+    const h = stubExecFile(null, okStdout());
     await probeWinIpv4AddressUsage('172.19.0.1');
-    expect(h.lastCommand()).not.toContain('Where-Object');
+    expect(h.lastCommand()).not.toContain('InterfaceAlias');
   });
 
   it('别名里的单引号被转义（PowerShell 字面量闭合）', async () => {
-    const h = stubExecFile(null, '');
+    const h = stubExecFile(null, okStdout());
     await probeWinIpv4AddressUsage('172.19.0.1', "it's");
     expect(h.lastCommand()).toContain("-ne 'it''s'");
+  });
+});
+
+/**
+ * `probeWinTunAdapterPresence` 的 execFile 级契约（此前只有注入桩的 waitForAdapterPresent 用例，
+ * 这一层从未被覆盖——#324 的同源缺陷正是从这个缺口漏出去的）。
+ */
+describe('probeWinTunAdapterPresence', () => {
+  beforeEach(() => (execFile as unknown as jest.Mock).mockReset());
+
+  it('哨兵在、命中本名 → present', async () => {
+    stubExecFile(null, okStdout('flowz-tun0'));
+    await expect(probeWinTunAdapterPresence('flowz-tun0')).resolves.toBe('present');
+  });
+
+  it('哨兵在、无结果行 → absent（据此可判「从未创建」→ 硬闸失败本腿）', async () => {
+    // 真机上这正是「网卡不存在」的场景，旧实现因退出码 1 落 unknown → waitForAdapterPresent 的 sawAbsent
+    // 恒 false → outcome 恒 'unknown' → 硬闸永远 fail-open，#327 的就绪验证形同虚设。
+    stubExecFile(null, okStdout());
+    await expect(probeWinTunAdapterPresence('flowz-tun0')).resolves.toBe('absent');
+  });
+
+  it('无哨兵 → unknown，绝不是 absent（不把「查不了」误判成「确实没有」）', async () => {
+    stubExecFile(null, '');
+    await expect(probeWinTunAdapterPresence('flowz-tun0')).resolves.toBe('unknown');
+  });
+
+  it('PowerShell 失败/超时 → unknown（fail-open，绝不据此判终态失败）', async () => {
+    stubExecFile(new Error('spawn ENOENT'), '');
+    await expect(probeWinTunAdapterPresence('flowz-tun0')).resolves.toBe('unknown');
+  });
+
+  it('按整行精确匹配，同前缀网卡名不误判', async () => {
+    stubExecFile(null, okStdout('flowz-tun00', 'flowz-tun0-old'));
+    await expect(probeWinTunAdapterPresence('flowz-tun0')).resolves.toBe('absent');
+  });
+
+  it('网卡名里的单引号被转义（PowerShell 字面量闭合）', async () => {
+    const h = stubExecFile(null, okStdout());
+    await probeWinTunAdapterPresence("it's");
+    expect(h.lastCommand()).toContain("-Name 'it''s'");
+  });
+
+  it('布尔版 probeWinTunAdapterPresent：absent/unknown 均塌成 false（#159 反向门 fail-open）', async () => {
+    stubExecFile(null, okStdout());
+    await expect(probeWinTunAdapterPresent('flowz-tun0')).resolves.toBe(false);
+    stubExecFile(null, '');
+    await expect(probeWinTunAdapterPresent('flowz-tun0')).resolves.toBe(false);
+    stubExecFile(null, okStdout('flowz-tun0'));
+    await expect(probeWinTunAdapterPresent('flowz-tun0')).resolves.toBe(true);
   });
 });
