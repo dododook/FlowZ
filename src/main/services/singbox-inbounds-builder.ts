@@ -44,6 +44,12 @@ export interface InboundsDeps {
   probePoolPorts?: number[];
   /** 可选日志回调（记「连入来源排除」的 mesh/fakeip/物理 LAN 剔除告警）。缺省（单测）不记。 */
   log?: (level: 'debug' | 'info' | 'warn' | 'error' | 'fatal', message: string) => void;
+  /**
+   * issue #324：本次起核经冲突预检选出的 TUN IPv4 **裸地址**（不含掩码，掩码由本模块按平台拼）。
+   * 缺省/空 = 未预检（诊断报告、快照导出、单测等非起核路径）→ 沿用平台默认地址，行为零变化。
+   * 优先级低于用户显式配置的 `tunConfig.inet4Address`（用户指定即照办，不做避让）。
+   */
+  tunInet4Address?: string;
 }
 
 /**
@@ -53,8 +59,12 @@ export interface InboundsDeps {
  * 已知 efficacy 代价（可接受）：连入源经本机也接着的 overlay 接口（如本机也在同一 ZeroTier）到达时，其段与该接口段
  * 相交 → 被 guard 剔除 → 该段的排除 no-op；但此时连入源已是"经 overlay 的同段"、多半本就被 sing-tun 最长前缀保护，剔除无害。
  * 快照语义：在 buildInbounds 运行时读一次；换网络后由重生成刷新（M6 真机复核）。best-effort，取不到接口返空。
+ *
+ * 导出供 issue #324 的 TUN 地址冲突预检复用（候选地址不得落在本机接口网段内）——同一份「本机网段」口径，
+ * 不另写一套。注意它只看得到 **OperStatus=Up** 的接口（libuv 的 uv_interface_addresses 在 Windows 上跳过
+ * 非 Up 适配器），故不能用它代替地址占用探测：#324 的冲突源正是一张 Disconnected 的适配器。
  */
-function getOwnLanCidrs(): string[] {
+export function getOwnLanCidrs(): string[] {
   const out: string[] = [];
   try {
     for (const addrs of Object.values(os.networkInterfaces())) {
@@ -363,9 +373,12 @@ export function buildInbounds(
     }
 
     // 恢复至对应平台最稳定的网段：Windows v3.4.0 用 /16、Mac v3.3.18 用 /30 最稳定。
+    // issue #324：掩码恒按平台取，主机地址允许被冲突预检替换（deps.tunInet4Address）——换段只为避开占用，
+    // 前缀长度是平台调优结论、与冲突无关，不该跟着漂。用户显式配置的完整 CIDR 仍最高优先（照办不避让）。
+    const tunPrefix = process.platform === 'darwin' ? '/30' : '/16';
     const tunAddress = [
       config.tunConfig?.inet4Address ||
-        (process.platform === 'darwin' ? '172.19.0.1/30' : '172.19.0.1/16'),
+        (deps.tunInet4Address ? `${deps.tunInet4Address}${tunPrefix}` : `172.19.0.1${tunPrefix}`),
     ];
     // macOS 默认分配 IPv6 以提高与本地网络服务的兼容性，与 3.3.18 保持一致
     // （此前 darwin / 非 darwin 两分支逻辑完全相同，已合并消重）

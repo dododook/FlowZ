@@ -93,6 +93,7 @@ import { mainEventEmitter, MAIN_EVENTS } from './ipc/main-events';
 import { initUserDataPath, getConfigPath } from './utils/paths';
 import { shouldDisableHardwareAcceleration } from './services/graphics-compat';
 import { IPC_CHANNELS, type StatsTopic } from '../shared/ipc-channels';
+import { ProxyErrorCode } from '../shared/types/runtime';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../shared/constants';
 import { effectiveLogLevel } from '../shared/log-level';
 import { resolveAutoLanguage, resolveEffectiveLanguage } from '../shared/language';
@@ -1908,31 +1909,44 @@ if (gotTheLock) {
     // 说明：同节点「原地重启」由 ProxyManager 内部接管（handleProcessExit / 健康检查 → attemptAutoRestart，
     // 单一计数器 + 上限 + 冷却）。'error' 仅在「自动重启被抑制（核心更新校验窗口）或已达上限」时触发，
     // 故此处只需处理：核心回滚 → 放弃恢复并清理系统代理。崩溃不触发换节点（换节点交给心跳连通性检测）。
-    proxyManager.on('error', async (error: { message: string; code?: number }) => {
-      logManager.addLog('error', `Proxy error: ${error.message}`, 'Main');
-      // 严重错误桌面通知（受总开关管控）。正文用通用本地化文案（main i18n，5 语），不透传 error.message——
-      // 后者可能含端点地址；通知进系统通知中心/锁屏可见，避免泄漏节点身份。详情引导用户回应用内日志查看。
-      notifyUser(mt('proxyErrorTitle'), mt('proxyErrorBody'));
-      // 发生错误时，更新托盘显示为"连接异常"
-      updateTrayMenuState(false, true);
+    proxyManager.on(
+      'error',
+      async (error: { message: string; code?: number; errorCode?: string }) => {
+        logManager.addLog('error', `Proxy error: ${error.message}`, 'Main');
+        // 严重错误桌面通知（受总开关管控）。正文用通用本地化文案（main i18n，5 语），不透传 error.message——
+        // 后者可能含端点地址；通知进系统通知中心/锁屏可见，避免泄漏节点身份。详情引导用户回应用内日志查看。
+        notifyUser(mt('proxyErrorTitle'), mt('proxyErrorBody'));
+        // 发生错误时，更新托盘显示为"连接异常"
+        updateTrayMenuState(false, true);
 
-      // 1) 新核心首次启动失败（自动重启被抑制时）→ 自动回滚旧核心并重启
-      try {
-        const rolledBack = await coreUpdateService.autoRollbackIfPendingUpdate();
-        if (rolledBack) {
-          logManager.addLog('warn', '新核心启动失败，已自动回滚，正在以旧核心重启代理...', 'Main');
-          const cfg = await configManager.loadConfig();
-          await proxyManager?.start(cfg);
-          return;
+        // 1) 新核心首次启动失败（自动重启被抑制时）→ 自动回滚旧核心并重启。
+        //    issue #324：TUN 地址冲突（TUN_INIT_PERSISTENT）跳过回滚——它是**环境问题**（本机另一张网卡占了
+        //    同一地址），与核版本无关。若恰好紧跟一次核心更新发生，回滚会把健康的新核换掉、再以旧核重启一轮，
+        //    冲突照旧存在 → 白白回滚 + 多一轮重启，还把环境冲突误归因成「新核坏了」。
+        try {
+          const rolledBack =
+            error.errorCode === ProxyErrorCode.TUN_INIT_PERSISTENT
+              ? false
+              : await coreUpdateService.autoRollbackIfPendingUpdate();
+          if (rolledBack) {
+            logManager.addLog(
+              'warn',
+              '新核心启动失败，已自动回滚，正在以旧核心重启代理...',
+              'Main'
+            );
+            const cfg = await configManager.loadConfig();
+            await proxyManager?.start(cfg);
+            return;
+          }
+        } catch (rollbackErr) {
+          logManager.addLog('error', `自动回滚重启失败: ${rollbackErr}`, 'Main');
         }
-      } catch (rollbackErr) {
-        logManager.addLog('error', `自动回滚重启失败: ${rollbackErr}`, 'Main');
-      }
 
-      // 2) 系统代理清理同样不在此监听器做：'error' 由 giveUpAutoRestart / handleProcessExit 终态分支发出，
-      // 它们在 emit 之前已**同步门控**地调过 ensureSystemProxyCleared（stopping=false 的真终态会清）。此处再调
-      // 因前面有 await（核心回滚）会越过 stopping 门控（H-1），且属重复，故删除。
-    });
+        // 2) 系统代理清理同样不在此监听器做：'error' 由 giveUpAutoRestart / handleProcessExit 终态分支发出，
+        // 它们在 emit 之前已**同步门控**地调过 ensureSystemProxyCleared（stopping=false 的真终态会清）。此处再调
+        // 因前面有 await（核心回滚）会越过 stopping 门控（H-1），且属重复，故删除。
+      }
+    );
 
     // 主进程更新链路（应用/资源/订阅/核心）+ renderer 外部图片（图标库/自定义图标/国旗，经 flowz-icon://
     // 协议）已全迁 UpdateNetwork 专用会话经 update-in 入站；default session 不再 pin FlowZ http 入站，回归

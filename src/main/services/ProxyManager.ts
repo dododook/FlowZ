@@ -48,7 +48,7 @@ import {
 } from './singbox-config-helpers';
 import { buildDnsConfig } from './singbox-dns-builder';
 import { buildRouteConfig } from './singbox-route-builder';
-import { buildInbounds } from './singbox-inbounds-builder';
+import { buildInbounds, getOwnLanCidrs } from './singbox-inbounds-builder';
 import { buildLogConfig } from './singbox-log-builder';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
 import { LOGIN_ITEMS_SETTINGS_URL } from '../../shared/constants';
@@ -126,6 +126,7 @@ import {
   isPersistentTunFailure,
   type AdapterPresence,
   type TunAdapterObservation,
+  probeWinIpv4AddressUsage,
 } from './win-tun-adapter';
 import {
   probeTcpReachable,
@@ -135,6 +136,20 @@ import {
   CoreStartSupersededError,
   CoreStartTunPersistentError,
 } from './core-readiness';
+import {
+  classifySingBoxFatal,
+  extractLastFatal,
+  sliceSinceRunStart,
+  type SingBoxFatalInfo,
+} from '../../shared/singbox-fatal';
+import {
+  pickTunInet4Address,
+  ipv4InInterfaceMap,
+  excludeOwnTunCidrs,
+  TUN_INET4_CANDIDATES,
+  type AddressUsage,
+  type TunAddressPick,
+} from '../../shared/tun-address';
 import coreManifest from '../../shared/core-manifest.json';
 
 /**
@@ -558,6 +573,17 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   //   adapterEverSeen=任一腿曾见适配器（→ 瞬态释放竞态族）；probeEverConclusive=探测链路曾给出 clean present/absent
   //   （排除杀软拦 PS 的全 unknown 误判）。预算耗尽 && !adapterEverSeen && probeEverConclusive → 持续性 TUN 失败终态。
   private tunReadyObservation: TunAdapterObservation | null = null;
+  // issue #324 P0-1：本次 start 内从核 stderr（singbox_startup.log）捞到的最后一条 FATAL 的分类结果。核自己写的
+  //   失败原因，比任何按适配器存在性做的反推都准，且**跨平台**。每次 startInternal 复位；dead 分支填；
+  //   终态转化（maybeToTunPersistentError）与日志共用。
+  private lastStartupFatal: SingBoxFatalInfo | null = null;
+  // issue #324 P0-1：本腿起核前 singbox_startup.log 的字节大小，作 run 边界锚点。sing-box 的 `FATAL[0000]` 只有
+  //   启动相对秒、无墙钟时间戳，而 helper 写侧是 O_APPEND 永不截断——不锚点就会把几个月前的残留 FATAL 当成本次
+  //   原因（比不报更糟）。每条启动腿在 startSingBoxProcess 顶部刷新。
+  private startupLogOffset = 0;
+  // issue #324 P0-2：本次起核经冲突预检选定的 TUN IPv4 裸地址（掩码由 buildInbounds 按平台拼）。null=未预检
+  //   （非 TUN / 用户已显式配置 / 预检未跑）→ 沿用平台默认，行为零变化。每次 startInternal 重算。
+  private effectiveTunInet4Address: string | null = null;
   // issue #176 诊断计数：本次启动经几次「就绪重试」才成功（runStartWithRetry 累计）。>0 = 起核慢（多因 Windows
   // 重启争用下 wintun 适配器未及时释放），与「核崩溃自动重启」（restartCount/AUTO_RESTARTING）是不同轴，纳入诊断
   // 区分「核崩」vs「争用慢起」。每次 startInternal 复位。
@@ -762,6 +788,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 修复可能被 root 创建的文件权限（从 TUN 模式切换到系统代理模式时）
     await this.fixFilePermissions();
 
+    // 3.2 issue #324：TUN 地址冲突预检**在此发起**，与下面的节点域名预解析 / race server 启动并行跑，
+    //   到生成配置前才 await。探测是 PowerShell spawn（4s 超时封顶，候选连撞时串行多次），串在起核关键
+    //   路径上会给 Windows 冷启加 0.5–2s；这些前置步骤本就是异步等待，白等不如并行。
+    //   语义见 applyTunAddressPreflight 的 await 点（3.9.5）。
+    this.lastStartupFatal = null;
+    const tunAddressPick = this.startTunAddressPreflight(config, isTunMode);
+
     // 检查是否选择了服务器
     if (!config.selectedServerId) {
       throw new Error('No server selected');
@@ -852,6 +885,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     的本地 server 起停 + effective config 降级见下（startNodeDnsRaceServer）。
     await this.startNodeDnsRaceServer(config);
 
+    // 3.9.5 issue #324：收 3.2 发起的地址冲突预检结果（此刻必须落定：地址要随本次配置下发给核）。
+    await this.applyTunAddressPreflight(tunAddressPick);
+
     // 4. 生成 sing-box 配置文件
     const singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
 
@@ -899,32 +935,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         maxRetries: startRetryBudget.maxRetries,
         delay: startRetryBudget.delay,
         exponentialBackoff: startRetryBudget.exponentialBackoff,
-        shouldRetry: (error) => {
-          // issue #176：被更新的 start/stop 接管（CoreStartSupersededError）→ 绝不重试（接管方拥有生命周期）。
-          if (error instanceof CoreStartSupersededError) {
-            return false;
-          }
-          // issue #324：CoreStartTunPersistentError 的「不重试」是**结构性**的——它仅由 maybeToTunPersistentError 在
-          //   runStartWithRetry() reject 之后（startInternal catch 收口）生成，直达 start() catch，**永不经 retry()**，
-          //   故 shouldRetry 见不到它，无需在此加 instanceof 守卫（避免留测不到的防御死路径，YAGNI）。
-          // 启动 gate 备用腿（补 check 盲区）：run 阶段 `dependency[X] not found` FATAL（detour/selector 幽灵
-          // tag）→ 允许重试一次（onRetry 会解析 tag、pruneTagsClosure 修正重写盘），refFixAttempted 闸保证只修一次。
-          if (/dependency\[(.+?)\] not found/i.test(error.message)) {
-            return !this.refFixAttempted;
-          }
-          // libcronet 缺库 FATAL：内层裸重试无意义（库还是坏的）→ 不重试，交由外层 cronet 自愈闭环 strong 重拷后整体重启一次。
-          if (this.isCronetLibError(error.message)) {
-            return false;
-          }
-          // 不重试的错误类型（权限/找不到/坏配置）：判据下沉 core-readiness.startMessageIsNonRetryable（单测守卫，
-          //   保证 issue #324 A1/A3 新增文案不被词表误命中而变不可重试，review Low#5）。
-          if (startMessageIsNonRetryable(error.message)) {
-            return false;
-          }
-
-          // 其他错误可以重试
-          return true;
-        },
+        shouldRetry: (error) => this.shouldRetryStartError(error),
         onRetry: (error, attempt) => {
           readyRetries = attempt; // issue #176 诊断：累计就绪重试次数
           // issue #176：软化文案——多数是「起核较慢/争用」而非真失败，避免「启动失败」吓到用户（#176 即因此报 bug）。
@@ -1017,13 +1028,15 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
             await runStartWithRetry();
           } catch (e) {
             // 重拷成功但重启仍失败（库与核版本不匹配等）→ 计失败数（否则诊断「触发但最终失败」漏计），抛出由 start() 收口。
+            // 经 maybeToTunPersistentError：二败若是 TUN 地址冲突/持续性 TUN 失败，同样该转终态诊断而非继续
+            // 「正在自动重试」（对非 CoreStartRetryError 是 no-op，零风险）。
             this.cronetHealFailedCount++;
-            throw e;
+            throw this.maybeToTunPersistentError(e);
           }
         } else {
           // 未恢复（拷贝失败/无内置库）→ 计失败数 + 抛原错误（含 cronet 文案，UI 引导改协议/查权限）。
           this.cronetHealFailedCount++;
-          throw err;
+          throw this.maybeToTunPersistentError(err);
         }
       } else {
         // issue #324：起核重试预算耗尽的收口——win32+TUN 且全程未见适配器（探测可用）→ 转持续性 TUN 失败终态诊断，
@@ -3564,6 +3577,8 @@ done
         // §15 主核测速探测池：注入 K 个 probe-in-k http 入站。空=不注入。
         probePoolPorts: this.probePoolPorts,
         log: (level, message) => this.logToManager(level, message),
+        // issue #324：起核前冲突预检选出的 TUN 地址（null=未预检，如诊断/快照路径）→ builder 回落平台默认。
+        tunInet4Address: this.effectiveTunInet4Address ?? undefined,
       }),
       outbounds: outboundsResult.outbounds,
       route: buildRouteConfig(config, idToTagMap, {
@@ -4527,9 +4542,29 @@ rm -f "$STOPFLAG"
     // ——startSingBoxProcess 的 helper catch 会透传它给 runStartWithRetry 静默重起（而非误判 helper 启动失败弹 UAC/osascript）。
     await this.helperManager?.stopCore().catch(() => {});
     if (outcome === 'dead') {
+      // issue #324 P0-1：核死了 → 它自己写的 FATAL 就在 stderr 里，先捞出来。这是唯一的一手证据，比下面
+      //   任何按适配器存在性做的反推都准。sticky 存起来供预算耗尽后的终态转化（maybeToTunPersistentError）用。
+      //   **绝不拼进 CoreStartRetryError.message**：NON_RETRYABLE_START_ERROR_PATTERNS 含 permission/eacces/
+      //   enoent 等词，FATAL 原文极易命中，会把本可重试的起核失败静默判成终态。真因只走日志 + 终态错误。
+      //   世代守卫：`waitForCoreReady` 返回 dead 后还要 drain 在途适配器观测（execFile 4s 封顶），这个窗口里
+      //   新 start 可能已接管——它已清空 lastStartupFatal 并改写了 startupLogOffset。此时本腿再读会用**接管方
+      //   的锚点**切片（错锚），再把结果写回去污染接管方的判据。故被接管就整段跳过（不改控制流：仍按原逻辑
+      //   抛可重试错误，由上层 supersede 处理收口）。
+      const superseded = this.lifecycleGeneration !== startGen;
+      const fatal = superseded ? null : this.readLastStartupFatal();
+      // **无条件覆盖**（含 null）：本腿的观测就是最新事实。若只在捞到时赋值，上一腿的 FATAL 会残留下来——
+      // 第 1 腿撞地址冲突、第 2 腿因别的原因死且没写 FATAL 时，终态转化会拿着陈旧的地址冲突结论下判断。
+      if (!superseded) this.lastStartupFatal = fatal;
+      if (fatal) {
+        this.logToManager('error', `sing-box 启动失败：${fatal.message}`);
+        this.logToManager('debug', `sing-box FATAL 原文：${fatal.raw}`);
+      }
       // issue #324 A3：dead 分支文案细分——win32+TUN 且探测可用（probeEverConclusive）却全程未见适配器 → 疑 wintun 被拦/
       //   驱动异常（非瞬态释放竞态）。否则（曾见适配器=瞬态，或探测全 unknown 无从判定）保持原「TUN 初始化未完成」文案。
-      if (obs && isPersistentTunFailure(obs)) {
+      //   P2 收敛：**拿到 FATAL 真因且真因不是「适配器创建失败」时，不再输出这条推断**——#324 实证它会把
+      //   地址冲突误导成杀软/驱动方向，白白浪费用户几轮排查。有一手证据时推断必须让位。
+      const inferenceContradicted = !!fatal && fatal.kind !== 'tun-adapter-create';
+      if (obs && isPersistentTunFailure(obs) && !inferenceContradicted) {
         throw new CoreStartRetryError(
           'sing-box 启动期退出（TUN 适配器从未创建，疑 wintun 被拦/驱动异常），正在自动重试'
         );
@@ -4541,6 +4576,236 @@ rm -f "$STOPFLAG"
   }
 
   /**
+   * 起核失败是否该重试（runStartWithRetry 的 shouldRetry 判据，单一真值）。
+   *
+   * 抽成方法而非内联闭包，是为了可直接单测——它决定「确定性终态会不会被塞回重试循环」，而那个错误只有在
+   * 跑完整条起核链路时才碰得到，内联版本实际上无门可拦（issue #324 R2 复审指出的活逃逸）。
+   */
+  private shouldRetryStartError(error: Error): boolean {
+    // issue #176：被更新的 start/stop 接管（CoreStartSupersededError）→ 绝不重试（接管方拥有生命周期）。
+    if (error instanceof CoreStartSupersededError) {
+      return false;
+    }
+    // issue #324：CoreStartTunPersistentError = 确定性终态，**绝不重试**。
+    //   这条守卫是必需的，不是防御性死代码：H2 之后它有了**两个产地**——除了 maybeToTunPersistentError
+    //   （在 retry 之后、startInternal catch 收口生成，确实见不到），buildWrapperStartFailure 会在 **retry
+    //   循环内部**（startSingBoxProcess 的 setTimeout 回调）reject 它。没有这条守卫它会落到末尾的
+    //   `return true`：每腿重弹 UAC + 空等 waitForPidFile 60s + 重复发诊断卡——恰是本 issue 要消灭的 UX。
+    if (error instanceof CoreStartTunPersistentError) {
+      return false;
+    }
+    // 启动 gate 备用腿（补 check 盲区）：run 阶段 `dependency[X] not found` FATAL（detour/selector 幽灵
+    // tag）→ 允许重试一次（onRetry 会解析 tag、pruneTagsClosure 修正重写盘），refFixAttempted 闸保证只修一次。
+    if (/dependency\[(.+?)\] not found/i.test(error.message)) {
+      return !this.refFixAttempted;
+    }
+    // libcronet 缺库 FATAL：内层裸重试无意义（库还是坏的）→ 不重试，交由外层 cronet 自愈闭环 strong 重拷后整体重启一次。
+    if (this.isCronetLibError(error.message)) {
+      return false;
+    }
+    // 不重试的错误类型（权限/找不到/坏配置）：判据下沉 core-readiness.startMessageIsNonRetryable（单测守卫，
+    //   保证 issue #324 A1/A3 新增文案不被词表误命中而变不可重试，review Low#5）。
+    if (startMessageIsNonRetryable(error.message)) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * issue #324 H2：wrapper（Windows UAC 看护 / macOS osascript）路径拿不到 PID 时的失败构造。
+   *
+   * 这是该路径的启动期失败汇合点：核 FATAL 自杀后 PID 文件写不出来，此前只报一句「无法获取进程 PID」——
+   * 真因就在 startup log 里却没人读。#324 报告者走的正是这条路径（其日志首行的 watchdog banner 由 UAC 看护
+   * 脚本写出），helper 路径的 dead 分支对他完全不生效。
+   *
+   * 抽成方法而非内联在 setTimeout 回调里，是为了可单测——内联在那里只能靠跑完整个 startSingBoxProcess 才碰得到。
+   */
+  private buildWrapperStartFailure(startGen: number): Error {
+    // 世代守卫：前置的 waitForPidFile 可空转 **60s**，是比 dead 分支 drain（≤4s）宽一个量级的接管窗口。
+    // 期间新 start B 接管后会改写 startupLogOffset、复位 startedViaWrapper、清空 lastStartupFatal——本腿此刻
+    // 再读会错锚、写会污染 B，甚至对着 B 的会话发一张终态诊断卡。被接管就退回原始语义，不读不写不发事件。
+    if (this.lifecycleGeneration !== startGen) {
+      return new Error('启动 sing-box 进程失败：无法获取进程 PID');
+    }
+    const fatal = this.readLastStartupFatal();
+    this.lastStartupFatal = fatal;
+    if (fatal) {
+      this.logToManager('error', `sing-box 启动失败：${fatal.message}`);
+      this.logToManager('debug', `sing-box FATAL 原文：${fatal.raw}`);
+    }
+    const error = '启动 sing-box 进程失败：无法获取进程 PID';
+    this.logToManager('error', error);
+    // 地址冲突是确定性失败（重试一万次也不会好）→ 直接给终态，跳过外层 retry 预算。其余情况保持原有普通
+    // Error 语义不变（交 runStartWithRetry 按既有规则判重试）。
+    return fatal?.kind === 'tun-address-conflict' && this.isTunModeNow()
+      ? this.buildTunAddressConflictError(fatal)
+      : new Error(error);
+  }
+
+  /**
+   * issue #324：把「TUN 地址冲突」的 FATAL 结论构造成终态错误 + 上报渲染端诊断卡。
+   *
+   * 三条起核路径共用（helper 的预算耗尽收口 / wrapper 的 PID 等待失败 / 运行期崩溃回调），避免文案与事件
+   * 三处漂移。地址冲突是**确定性**失败：占用方不挪走，重试一万次也不会好，继续「正在自动重试」纯属误导。
+   */
+  private buildTunAddressConflictError(fatal: SingBoxFatalInfo): CoreStartTunPersistentError {
+    // 文案只承诺当前真能做到的动作：TUN 地址尚未开放配置（P1-1 未落地），故引导「移除/禁用占用方网卡」，
+    // 不写「到设置里改地址」——UI 上没有那个入口，那是把用户支到死路。
+    const terminal = new CoreStartTunPersistentError(
+      `${fatal.message}请断开或禁用占用该地址的网卡（其它 VPN/TUN 客户端的残留适配器），然后重试。`
+    );
+    this.logToManager('error', `TUN 地址冲突，停止重试：${fatal.raw}`);
+    this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_ERROR, {
+      message: terminal.message,
+      errorCode: ProxyErrorCode.TUN_INIT_PERSISTENT,
+      code: -3,
+    });
+    return terminal;
+  }
+
+  /**
+   * issue #324 P0-2：发起 TUN 地址冲突预检（不阻塞，结果由 applyTunAddressPreflight 收）。
+   *
+   * 硬编码的 `172.19.0.1` 撞上本机已有的同址接口时，sing-box 在 `configure tun interface: set ipv4 address`
+   * 直接 FATAL 自杀（Windows: `CreateUnicastIpAddressEntry` → ERROR_OBJECT_ALREADY_EXISTS），外层只会无限
+   * 重试、用户无从得知。起核前探一次，**确证冲突**才换到备选；探不了或无冲突一律沿用默认（fail-open——
+   * 换地址本身有代价：用户钉着旧地址的路由/防火墙规则会失效，不能因一次探测失败就乱换）。
+   *
+   * 不预检的两种情况都返回 null（沿用平台默认，行为零变化）：
+   *  - 非 TUN 模式；
+   *  - 用户显式配置了 `tunConfig.inet4Address` —— 用户显式约束优先于「更优解」，照办不避让。
+   */
+  private async startTunAddressPreflight(
+    config: UserConfig,
+    isTunMode: boolean
+  ): Promise<TunAddressPick | null> {
+    // 上次避让结果的捕获与复位都归本方法（而不是留在 startInternal）：这两步与下面的「旧核在跑就沿用上次」
+    // 是同一个决策的组成部分，拆到调用方会让接线本身无法被单测覆盖——测试直调本方法就绕过了捕获逻辑，
+    // 变异「prev 恒 null」将无门可拦（issue #324 R3 实测过这条逃逸）。
+    const prevAddress = this.effectiveTunInet4Address;
+    this.effectiveTunInet4Address = null;
+    if (!isTunMode || config.tunConfig?.inet4Address) return null;
+    // 旧核仍在跑（#176 supersede 交错：用户连点连接）→ **跳过探测**。此刻本机接口上挂着的 `172.19.0.1` 是
+    // **我们自己**的 TUN，探成 in-use 会让新腿静默切到备选、下次正常重启又切回——地址乒乓。Windows 侧已由
+    // InterfaceAlias 过滤挡住（自家网卡名固定），但 macOS 的 utun 名由内核分配、无法按名排除，只能从状态侧堵。
+    //
+    // 关键：跳过探测 ≠ 回落默认。**沿用上次选定的地址**——在默认地址真冲突的机器上回落默认，等于把已经工作
+    // 着的避让扔掉再撞一次同样的 FATAL（而上一秒它还好好的）。reason 用 'default' 使调用方零日志（这不是一次
+    // 新的避让决策，只是延续既有选择）。
+    if (this.activeCorePid()) {
+      return prevAddress ? { address: prevAddress, reason: 'default', skipped: [] } : null;
+    }
+    const ownTunAlias =
+      process.platform === 'win32' ? resolveWinTunInterfaceName(config) : undefined;
+    return pickTunInet4Address(TUN_INET4_CANDIDATES, {
+      probe: (ip) => this.probeIpv4AddressUsage(ip, ownTunAlias),
+      ownLanCidrs: () => excludeOwnTunCidrs(getOwnLanCidrs(), TUN_INET4_CANDIDATES),
+    }).catch(() => null); // 预检是诊断增强，任何异常都不得阻断起核
+  }
+
+  /** issue #324 P0-2：收预检结果并落地为本次起核的 TUN 地址（必须在 generateSingBoxConfig 之前完成）。 */
+  private async applyTunAddressPreflight(pending: Promise<TunAddressPick | null>): Promise<void> {
+    const pick = await pending;
+    if (!pick) return;
+    this.effectiveTunInet4Address = pick.address;
+    const describe = (c: TunAddressPick['skipped'][number]['cause']): string =>
+      c === 'in-use' ? '已被本机接口占用' : c === 'own-lan' ? '与本机网段重叠' : '探测不可用';
+    if (pick.reason === 'fallback') {
+      this.logToManager(
+        'warn',
+        `TUN 地址冲突已避让：${pick.skipped
+          .map((s) => `${s.address}（${describe(s.cause)}）`)
+          .join(
+            '、'
+          )} → 本次改用 ${pick.address}。占用方常是其它 VPN/TUN 客户端的残留网卡（可能已断开或隐藏，设备管理器默认不显示）`
+      );
+    } else if (pick.reason === 'exhausted') {
+      // 逐条列出淘汰原因：只报「全部不可用」而回落到其中一个，读起来自相矛盾，也丢掉了「备选是探测不可用
+      // 而非确证冲突」这个关键区别。
+      this.logToManager(
+        'warn',
+        `TUN 地址候选池无一可用（${pick.skipped
+          .map((s) => `${s.address}=${describe(s.cause)}`)
+          .join('、')}），回落默认 ${pick.address}——若起核失败请检查本机是否有占用该网段的残留网卡`
+      );
+    }
+  }
+
+  /**
+   * issue #324 P0-2：探某个裸 IPv4 是否已被本机任一接口占用（起核前 TUN 地址冲突预检）。
+   *
+   * Windows 走 PowerShell `Get-NetIPAddress`（见 win-tun-adapter.probeWinIpv4AddressUsage 的说明：Node 的
+   * 接口枚举看不到 Disconnected 适配器，而 #324 的冲突源正是那种）。其它平台用 os.networkInterfaces()——
+   * 零 spawn，覆盖 Up 接口的撞车（macOS 默认 172.19.0.1/30 同样会撞）；对非 Up 接口的漏检是已知代价，
+   * 该平台的完整探测留待真实案例出现再补，不预先引入未验证的 ifconfig/ip 解析。
+   */
+  private async probeIpv4AddressUsage(
+    ip: string,
+    excludeInterfaceAlias?: string
+  ): Promise<AddressUsage> {
+    if (process.platform === 'win32') return probeWinIpv4AddressUsage(ip, excludeInterfaceAlias);
+    try {
+      return ipv4InInterfaceMap(ip, require('os').networkInterfaces()) ? 'in-use' : 'free';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * issue #324 P0-1：从核 stderr（singbox_startup.log）捞本腿写入的最后一条 FATAL 并分类。
+   *
+   * 为什么必须读这个文件：sing-box 启动失败的 FATAL 只写 stderr，永不进 config 里 `log.output` 指定的
+   * singbox.log（见 shared/singbox-fatal.ts 文件头）。#324 之前只有诊断报告导出时才读它，起核失败路径靠
+   * 适配器存在性反推，真因躺在文件里三天没人看见。
+   *
+   * run 边界：按 startSingBoxProcess 顶部记的 startupLogOffset 切（helper 写侧 O_APPEND 永不截断，
+   * FATAL[0000] 又没有墙钟时间戳——不切就会读到上一次甚至几个月前的 FATAL）。读失败一律返回 null（诊断
+   * 增强绝不能反过来影响起核流程）。
+   */
+  private readLastStartupFatal(): SingBoxFatalInfo | null {
+    try {
+      const fsSync = require('fs');
+      const logPath = getSingBoxStartupLogPath();
+      const st = fsSync.statSync(logPath);
+      // 只读尾部：helper 写侧 O_APPEND 永不截断，真机上这个文件可以有几 MB，整读是白费。64KB 与诊断报告
+      // 的 tail 预算同量级，足够容纳一次起核的全部输出。同步 I/O：只在起核失败路径上跑一次、文件小，
+      // 且异步版会与单测的 fake timer 纠缠（fs/promises 的回调派发被 fake 掉 → 永不 settle）。
+      const cap = Math.min(st.size, 64 * 1024);
+      if (cap <= 0) return null;
+      const fd = fsSync.openSync(logPath, 'r');
+      let text: string;
+      try {
+        const buf = Buffer.alloc(cap);
+        // 必须用 readSync 的返回值：stat 与 read 之间文件被外部截短时读不满 cap，buf 余下是 \0，
+        // 整块 toString 会把 NUL 带进行尾（trim 不剥 NUL）并落进 raw 日志。
+        const n = fsSync.readSync(fd, buf, 0, cap, st.size - cap);
+        text = buf.subarray(0, n).toString('utf-8');
+      } finally {
+        fsSync.closeSync(fd);
+      }
+      // 写侧决定 run 边界怎么切（两侧语义相反，见 sliceSinceRunStart 的适用边界）：
+      //  · wrapper 路径（Windows UAC 看护的 -RedirectStandardError / macOS wrapper 的 `> "$LOG"`）**每次起核
+      //    截断** → 文件里的内容就是本次会话的，整读；套 offset 差分反而会在「重复失败腿写出逐字节相同内容」
+      //    时把 sizeNow===offset 误判成零写入，FATAL 系统性丢失。
+      //  · helper 路径 `O_APPEND` 永不截断 → 必须按锚点切，否则读到上次甚至几个月前的残留。
+      const text2 = this.startedViaWrapper
+        ? text
+        : sliceSinceRunStart(text, this.startupLogOffset, st.size);
+      const line = extractLastFatal(text2);
+      if (!line) return null;
+      // 下发给核的实际地址：优先用户显式配置，其次本次预检选定值，最后平台默认——三者与 buildInbounds 同源，
+      // 用于把「地址已被占用」这类文案点名到具体地址。
+      const tunAddress =
+        this.currentConfig?.tunConfig?.inet4Address ||
+        this.effectiveTunInet4Address ||
+        TUN_INET4_CANDIDATES[0];
+      return classifySingBoxFatal(line, { tunAddress });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * issue #324 A2：起核重试预算耗尽后的持续性 TUN 失败终态转化。仅 win32+TUN（tunReadyObservation 非 null）且原错误
    *   为可重试的 CoreStartRetryError 时判定；跨所有重试腿 sticky 观测：
    *   - 曾见适配器（adapterEverSeen）→ 瞬态释放竞态族（#159/#176），保持原错误（照旧终态但不改语义）。
@@ -4549,9 +4814,20 @@ rm -f "$STOPFLAG"
    * 不碰 retry 循环语义（blast radius 最小）；瞬态场景重试预算原封不动。
    */
   private maybeToTunPersistentError(err: unknown): unknown {
+    if (!(err instanceof CoreStartRetryError)) return err; // 仅转化可重试的起核错误
+
+    // issue #324 P0-1：核自己写的 FATAL 是最强判据，先于适配器观测判定，且**跨平台**——地址冲突在 macOS
+    //   同样会发生（那里默认同址 /30）。地址冲突属确定性失败：重试一万次也不会好，且本案里适配器**创建成功**
+    //   （adapterEverSeen=true）→ isPersistentTunFailure 恒 false → 光靠观测判据会永远重试下去，正是 #324
+    //   报告者看到的现象。故这里独立成一路。
+    //   只把 tun-address-conflict 列为确定性：wintun 创建失败可能是驱动加载竞态（瞬态），保守留给预算耗尽判。
+    const fatal = this.lastStartupFatal;
+    if (fatal?.kind === 'tun-address-conflict' && this.isTunModeNow()) {
+      return this.buildTunAddressConflictError(fatal);
+    }
+
     const obs = this.tunReadyObservation;
     if (!obs) return err; // 非 win32+TUN → 原样（obs 仅 win32+TUN 时非 null）
-    if (!(err instanceof CoreStartRetryError)) return err; // 仅转化可重试的起核错误
     // 曾出现 → 瞬态；探测全程 unknown（杀软拦 PS）→ fail-open 瞬态；两者非持续性 → 原样保持可重试终态。
     if (!isPersistentTunFailure(obs)) return err;
     // 探测可用且预算内从未见适配器 → 持续性 TUN init 失败终态。
@@ -4577,6 +4853,17 @@ rm -f "$STOPFLAG"
     // 同上：包装进程标志也每腿复位，由下方实际启动路径置位（helper 路径保持 false——helper 起核时 singboxPid
     // 即核本身，非包装进程）。
     this.startedViaWrapper = false;
+
+    // issue #324 P0-1：记本腿起核前 startup log 的字节大小作 run 边界锚点。三个写侧的截断语义相反（helper
+    //   O_APPEND 永不截断 / UAC 的 -RedirectStandardError 与 macOS wrapper 每次截断），而 sing-box 的
+    //   `FATAL[0000]` 只有启动相对秒、没有墙钟时间戳——不锚点就无法判断读到的 FATAL 属于哪次会话。置于本方法
+    //   顶部（而非 startInternal）→ helper / UAC / osascript 三条支路与每个重试腿都对齐各自的边界。
+    //   stat 失败（文件还不存在）→ 0，即「整文件都是本次的」，与首启语义一致。
+    try {
+      this.startupLogOffset = require('fs').statSync(getSingBoxStartupLogPath()).size;
+    } catch {
+      this.startupLogOffset = 0; // 文件还不存在（首启）→ 整文件都是本次的
+    }
 
     // issue #159：起核前（win32&&TUN）等上一轮自家 wintun 适配器释放。置于本方法顶部（而非 startInternal）→ 每次
     //   runStartWithRetry 重启腿、以及下方 helper / UAC 两条启动支路都经此门控（不止首次），杜绝重试立刻再撞僵尸适配器。
@@ -4995,11 +5282,10 @@ rm -f "$STOPFLAG"
               startupResolved = true;
               resolve();
             } else {
-              const error = '启动 sing-box 进程失败：无法获取进程 PID';
-              this.logToManager('error', error);
+              const failure = this.buildWrapperStartFailure(startGen);
               // 启动失败，清理状态，避免健康检查使用错误的 PID
               this.cleanup();
-              reject(new Error(error));
+              reject(failure);
             }
           } else {
             // 系统代理模式或 Linux
@@ -5850,14 +6136,34 @@ rm -f "$STOPFLAG"
       return;
     }
 
+    // 世代快照：下面的异步探活（Windows tasklist ~50-100ms）与分支体之间存在 TOCTOU 窗口。`isRestarting` 只挡
+    //   attemptAutoRestart 的重启腿，**不挡用户手动重连**——旧核死、用户点重连、新 startInternal 在途时，这个
+    //   tick 的分支体会对着新 start 执行：清它刚设的 pid、写它的 lastStartupFatal，而地址冲突短路更会直接
+    //   emit 'error'+'stopped'+cleanup()，把一次本可能成功的启动打掉并给渲染端发终态卡。
+    const healthGen = this.lifecycleGeneration;
     // 改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。
     if (!(await this.isProcessAliveAsync(activePid))) {
+      // 新 start 已接管 → pid/状态归它管，本 tick 静默让位（同时保护既有自动重启分支与新增的终态短路）。
+      if (this.lifecycleGeneration !== healthGen) return;
       // 尝试获取更多退出信息
       const exitInfo = this.getProcessExitInfo();
       this.logToManager(
         'error',
         `检测到 sing-box 进程 (PID: ${activePid}) 已意外退出${exitInfo ? `，${exitInfo}` : ''}`
       );
+
+      // issue #324 H2：**这里才是 wrapper（Windows UAC 看护 / macOS osascript）路径核死于 'started' 之后的
+      //   唯一检测通道**——那种核是 detached、由看护脚本托管，不是子进程，死亡不产生 'exit' 事件；launcher
+      //   自身退出码 0 时 exit 回调显式早退不调 handleProcessExit。#324 最高概率的时序正是：看护脚本写 PID →
+      //   waitForPidFile 抓到活核（核存活 0.2–0.8s）→ emit('started') → 核自杀 → 由本方法 10s 节拍发现。
+      //   读取放在状态复位之前：当前复位的是 startedViaHelper、不含 readLastStartupFatal 依赖的
+      //   startedViaWrapper，故这个前置眼下是空约束——留着是防将来有人在此追加复位（写侧判定会跟着坏）。
+      const exitFatal = this.readLastStartupFatal();
+      if (exitFatal) {
+        this.lastStartupFatal = exitFatal;
+        this.logToManager('error', `sing-box 退出原因：${exitFatal.message}`);
+        this.logToManager('debug', `sing-box FATAL 原文：${exitFatal.raw}`);
+      }
 
       // 清理资源（但不停止健康检查，因为可能要重启）
       this.singboxProcess = null;
@@ -5866,6 +6172,25 @@ rm -f "$STOPFLAG"
       // 进程已死 → 复位 helper 标志，避免随后自动重启若回退非 helper 路径时，停止仍误走 helper 分支。
       this.startedViaHelper = false;
       this.stopLogFileWatcher();
+
+      // 地址冲突是确定性失败：占用方不挪走，重启多少次都是同一条 FATAL。放进自动重启循环只会烧完预算、
+      //   期间反复抢建/拆除适配器（wrapper 路径还会每腿弹 UAC），且全程显示「正在自动重试」误导用户——
+      //   #324 报告者看到的就是这个。故**先于 shouldAutoRestart 短路**，终态闭环镜像下方 else 分支。
+      if (exitFatal?.kind === 'tun-address-conflict' && this.isTunModeNow()) {
+        const terminal = this.buildTunAddressConflictError(exitFatal); // 内部已 log + 发诊断卡
+        // payload 携 errorCode：index.ts 的 'error' 监听头号动作是「新核待验证时自动回滚」，而地址冲突是
+        // 环境问题、与核版本无关，回滚健康的新核纯属误伤（见设计 doc）。
+        this.emit('error', {
+          message: terminal.message,
+          errorCode: ProxyErrorCode.TUN_INIT_PERSISTENT,
+          code: -3,
+        });
+        this.emit('stopped');
+        this.sendEventToRenderer(IPC_CHANNELS.EVENT_PROXY_STOPPED, {});
+        void this.ensureSystemProxyCleared();
+        this.cleanup();
+        return;
+      }
 
       // 尝试自动重启
       if (this.shouldAutoRestart()) {

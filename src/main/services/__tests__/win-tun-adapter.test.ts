@@ -3,7 +3,14 @@
  * 注入 probe/sleep，零真实计时器、零真实网卡：验早退 / 超时 fail-open / 轮次与 sleep 次数。
  * 真实 Get-NetAdapter 探测属真机项（无 Windows 环境，不在单测覆盖）。
  */
+jest.mock('child_process', () => ({
+  ...jest.requireActual('child_process'),
+  execFile: jest.fn(),
+}));
+
+import { execFile } from 'child_process';
 import {
+  probeWinIpv4AddressUsage,
   waitForAdapterReleased,
   waitForAdapterPresent,
   recordAdapterPresence,
@@ -259,5 +266,75 @@ describe('resolveWinTunInterfaceName', () => {
     expect(resolveWinTunInterfaceName(cfg({ tunConfig: { interfaceName: 'flowz_tun-1' } }))).toBe(
       'flowz_tun-1'
     );
+  });
+});
+
+// ============================================================================
+// issue #324 P0-2：TUN 地址占用探测（Windows 侧 fail-open 的另一半，纯逻辑层的用例杀不到这里）。
+// ============================================================================
+
+/** 桩 execFile：按 (err, stdout) 回调；返回本次实际下发的 -Command 串供断言。 */
+function stubExecFile(err: Error | null, stdout: string): { lastCommand: () => string } {
+  let cmd = '';
+  (execFile as unknown as jest.Mock).mockImplementation(
+    (_bin: string, args: string[], _opts: unknown, cb: (e: Error | null, o: string) => void) => {
+      cmd = args[args.length - 1];
+      cb(err, stdout);
+      return undefined as never;
+    }
+  );
+  return { lastCommand: () => cmd };
+}
+
+describe('probeWinIpv4AddressUsage', () => {
+  beforeEach(() => (execFile as unknown as jest.Mock).mockReset());
+
+  it('查到该地址 → in-use', async () => {
+    stubExecFile(null, '172.19.0.1\r\n');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('in-use');
+  });
+
+  it('查询成功但无输出 → free（证明探测链路可用）', async () => {
+    // 变异守卫：把 hit 判定反转 → 本例与上例同时失败。
+    stubExecFile(null, '');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('free');
+  });
+
+  it('PowerShell 失败/超时 → unknown，绝不是 free 也绝不是 in-use', async () => {
+    // 变异守卫：err 分支 resolve('free') 或 'in-use' → 本例失败。这是 fail-open 在 Windows 侧的落点：
+    // 判 free 会让预检对被杀软拦住的机器形同虚设；判 in-use 会让所有这类机器无谓换地址。
+    stubExecFile(new Error('spawn ENOENT'), '');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('unknown');
+  });
+
+  it('多行输出里按整行 trim 精确匹配，不做子串匹配', async () => {
+    stubExecFile(null, '172.19.0.10\r\n172.19.0.100\r\n');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('free');
+    stubExecFile(null, '10.0.0.5\r\n  172.19.0.1  \r\n');
+    await expect(probeWinIpv4AddressUsage('172.19.0.1')).resolves.toBe('in-use');
+  });
+
+  it('非法 IP 字面量 → unknown 且不 spawn（命令拼接面的纵深防御）', async () => {
+    stubExecFile(null, 'x');
+    await expect(probeWinIpv4AddressUsage("1.2.3.4'; rm -rf /")).resolves.toBe('unknown');
+    expect(execFile as unknown as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('传入自家接口别名 → 命令里带 InterfaceAlias 排除（H1：自家残留不算冲突）', async () => {
+    const h = stubExecFile(null, '');
+    await probeWinIpv4AddressUsage('172.19.0.1', 'flowz-tun0');
+    expect(h.lastCommand()).toContain("$_.InterfaceAlias -ne 'flowz-tun0'");
+  });
+
+  it('不传别名 → 命令里无 Where-Object（保持最简查询）', async () => {
+    const h = stubExecFile(null, '');
+    await probeWinIpv4AddressUsage('172.19.0.1');
+    expect(h.lastCommand()).not.toContain('Where-Object');
+  });
+
+  it('别名里的单引号被转义（PowerShell 字面量闭合）', async () => {
+    const h = stubExecFile(null, '');
+    await probeWinIpv4AddressUsage('172.19.0.1', "it's");
+    expect(h.lastCommand()).toContain("-ne 'it''s'");
   });
 });

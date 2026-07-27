@@ -88,6 +88,64 @@ describe('buildInbounds — mixed + probe', () => {
   });
 });
 
+describe('buildInbounds — TUN 地址（issue #324 冲突避让）', () => {
+  it('未预检（deps 缺省）→ 平台默认地址，字节与历史一致', () => {
+    expect(
+      byTag(
+        withPlatform('win32', () =>
+          buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+        ),
+        'tun-in'
+      ).address
+    ).toEqual(['172.19.0.1/16']);
+    expect(
+      byTag(
+        withPlatform('darwin', () =>
+          buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
+        ),
+        'tun-in'
+      ).address
+    ).toEqual(['172.19.0.1/30']);
+  });
+
+  it('预检选出备选地址 → 主机地址替换，掩码仍按平台取', () => {
+    // 变异守卫：掩码跟着候选一起漂（如恒用 /16）→ macOS 断言失败。前缀长度是平台调优结论，与冲突无关。
+    const d = deps({ tunInet4Address: '172.20.0.1' });
+    expect(
+      byTag(
+        withPlatform('win32', () => buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, d)),
+        'tun-in'
+      ).address
+    ).toEqual(['172.20.0.1/16']);
+    expect(
+      byTag(
+        withPlatform('darwin', () => buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, d)),
+        'tun-in'
+      ).address
+    ).toEqual(['172.20.0.1/30']);
+  });
+
+  it('用户显式配置的 inet4Address 优先于预检结果（用户显式约束不被「更优解」覆盖）', () => {
+    const ibs = withPlatform('win32', () =>
+      buildInbounds(
+        cfg({
+          proxyModeType: 'tun',
+          tunConfig: {
+            mtu: 9000,
+            stack: 'auto',
+            autoRoute: true,
+            strictRoute: true,
+            inet4Address: '10.7.7.1/24',
+          },
+        }),
+        undefined,
+        deps({ tunInet4Address: '172.20.0.1' })
+      )
+    );
+    expect(byTag(ibs, 'tun-in').address).toEqual(['10.7.7.1/24']);
+  });
+});
+
 describe('buildInbounds — TUN', () => {
   it('TUN：增 tun-in；route_exclude_address 含回环；macOS gvisor 栈 + http_proxy platform', () => {
     const ibs = withPlatform('darwin', () =>

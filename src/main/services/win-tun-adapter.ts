@@ -12,6 +12,7 @@
  */
 import { execFile } from 'child_process';
 import { powershellPath } from '../utils/win-system32';
+import type { AddressUsage } from '../../shared/tun-address';
 
 /**
  * 探测 Windows 上是否仍存在名为 `name` 的网卡（设备级，零提权）。#159 反向释放门用。
@@ -192,4 +193,55 @@ export function recordAdapterPresence(obs: TunAdapterObservation, p: AdapterPres
  */
 export function isPersistentTunFailure(obs: TunAdapterObservation): boolean {
   return !obs.adapterEverSeen && obs.probeEverConclusive;
+}
+
+// ============================================================================
+// issue #324：TUN IPv4 地址占用探测（起核前冲突预检用，见 shared/tun-address.ts）。
+// ============================================================================
+
+/**
+ * 探测某个裸 IPv4 是否已存在于本机任一接口（Windows，零提权）。
+ *
+ * **必须走 Get-NetIPAddress，不能用 os.networkInterfaces()**：后者（libuv `uv_interface_addresses`）在
+ * Windows 上跳过 `OperStatus != IfOperStatusUp` 的适配器，而 #324 的冲突源正是一张 **Disconnected** 的
+ * TAP-Windows 适配器——地址条目仍在系统 IP 表里占位（AddressState=Tentative）、照样让
+ * `CreateUnicastIpAddressEntry` 返回 ERROR_OBJECT_ALREADY_EXISTS，但 Node 的接口枚举完全看不到它。
+ * Get-NetIPAddress 查的是 IP 地址表本身，不受接口 OperStatus 限制（#324 报告者机器实证命中）。
+ *
+ * 三态语义与 probeWinTunAdapterPresence 一致：err（PS 缺/被拦/超时）→ 'unknown'（fail-open，绝不据此换地址）。
+ */
+export function probeWinIpv4AddressUsage(
+  ip: string,
+  excludeInterfaceAlias?: string
+): Promise<AddressUsage> {
+  // 纵深防御：调用方只传候选池常量，但仍拒绝非法字面量（PowerShell 命令拼接面）。
+  if (!/^[0-9]{1,3}(\.[0-9]{1,3}){3}$/.test(ip)) return Promise.resolve('unknown');
+  // **必须排除自家 TUN 接口**：预检跑在 startInternal，**早于** #159 的适配器释放门（在 startSingBoxProcess
+  // 顶部）。节点切换重启 / 崩溃自动重启时，上一个核的 wintun 适配器连同它的地址条目还滞留着（#159 的存在
+  // 本身就是这个滞留的证据）→ 不排除就会把自家残留判成「别人占用」→ 换地址；下次重启地址已释放 → 换回。
+  // 地址在重启之间乒乓漂移，恰好造成避让机制声称要避免的代价（用户钉着旧地址的规则失效），且日志会把
+  // 自家残留误导性归因为「其它 VPN 客户端」。别名经 resolveWinTunInterfaceName 校验（仅 [A-Za-z0-9_-]），
+  // 单引号转义后无注入面。
+  const aliasFilter = excludeInterfaceAlias
+    ? ` | Where-Object { $_.InterfaceAlias -ne '${excludeInterfaceAlias.replace(/'/g, "''")}' }`
+    : '';
+  return new Promise((resolve) => {
+    execFile(
+      powershellPath(),
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Get-NetIPAddress -IPAddress '${ip}' -ErrorAction SilentlyContinue${aliasFilter} | Select-Object -ExpandProperty IPAddress`,
+      ],
+      { timeout: 4000, windowsHide: true },
+      (err, stdout) => {
+        if (err) return resolve('unknown');
+        const hit = String(stdout)
+          .split(/\r?\n/)
+          .some((line) => line.trim() === ip);
+        resolve(hit ? 'in-use' : 'free');
+      }
+    );
+  });
 }
