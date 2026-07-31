@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Network, Search } from 'lucide-react';
+import { Merge, Network, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/store/app-store';
 import { useStatsTopic } from '@/hooks/use-stats-topic';
@@ -12,6 +12,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { RulePickDialog } from '@/components/rules/rule-pick-dialog';
+import { RULE_TYPE_NAME } from '@/components/rules/rule-type-meta';
+import {
+  analyzeDomainCoverage,
+  appendValueToRule,
+  isRuleableHost,
+  NEW_COND_TYPE,
+  ruleAppendTargets,
+  type RuleAppendTarget,
+} from '@/components/rules/rule-append';
 import {
   collectLinkedIds,
   computeTopologyLayout,
@@ -43,6 +53,8 @@ export function ConnectionTopology() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; domain: string } | null>(
     null
   );
+  /** 「加入已有规则…」选择器的目标域名（null = 未打开）。 */
+  const [pickDomain, setPickDomain] = useState<string | null>(null);
   const { t } = useTranslation();
   const config = useAppStore((state) => state.config);
   const saveConfig = useAppStore((state) => state.saveConfig);
@@ -247,8 +259,9 @@ export function ConnectionTopology() {
     // Only allow right-click on domain (middle/rule) nodes, not source or outbound
     if (node.type !== 'rule') return;
     if (node.name === t('home.others')) return;
-    // Only show menu for domain-like names (contains dots or is a valid host)
-    if (!node.name.includes('.') && !node.name.includes(':')) return;
+    // 只对「能当规则值」的名字弹菜单（中列节点名可能是 host / destIP / rule 名）。判据与
+    // rule-append 共用一份，防这里放行的名字在选择器里全被判成 valueUnfit。
+    if (!isRuleableHost(node.name)) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -264,27 +277,47 @@ export function ConnectionTopology() {
     });
   };
 
+  const customRules = useMemo(() => config?.customRules ?? [], [config]);
+
+  /**
+   * 右键那个域名今天被哪条**已启用**规则先命中（issue #336）。
+   *
+   * 两个用途，都只是**提示不是门**：① 有命中时把「加入已有规则…」排到「加入自定义规则」之上并显示
+   * 命中的那条 —— 判据是新规则恒落列表末尾（下方 `[...customRules, newRule]`）+ 路由「先匹配先生效」，
+   * 那种情况下新建的那条压根不生效；② 选择器里的「前面可能先命中」角标。
+   * 判定是渲染端启发式（geo/进程类条件这里判不了，权威匹配器在内核），故绝不据此阻断新建。
+   */
+  const coverage = useMemo(
+    () => analyzeDomainCoverage(customRules, contextMenu?.domain ?? ''),
+    [customRules, contextMenu?.domain]
+  );
+  const coveringRule = coverage.firstId
+    ? (customRules.find((r) => r.id === coverage.firstId) ?? null)
+    : null;
+  const coveringName = coveringRule
+    ? coveringRule.remarks?.trim() ||
+      t(`rules.types.${coveringRule.type}.name`, RULE_TYPE_NAME[coveringRule.type])
+    : '';
+
   const addDomainRule = async (domain: string, action: RuleAction) => {
     if (!config) return;
     setContextMenu(null);
 
-    // Extract root domain (e.g. 'sub.example.com' -> 'example.com')
-    const parts = domain.split('.');
-    const rootDomain = parts.length > 2 ? parts.slice(-2).join('.') : domain;
-
-    const isDomainType = (r: Rule) =>
-      r.type === 'domain' || r.type === 'domainSuffix' || r.type === 'domainKeyword';
-    const existing = config.customRules.find(
-      (r) => isDomainType(r) && (r.values.includes(domain) || r.values.includes(rootDomain))
-    );
-    if (existing) {
+    // 「已存在」只认**同一个值真的已经在某条域名族条件里**（口径与选择器的 contains 档一致）。
+    // 旧实现按 `parts.slice(-2)` 猜根域再比对，不看条件类型：一条 `domain: foo.com` 的精确规则
+    // 会把 `cdn.foo.com` 的新建挡掉，而它其实并不覆盖后者 —— 那是把一个错的启发式当成了闸门。
+    // 真正的「新建可能不生效」由菜单排序 + 选择器角标如实提示，不阻断。
+    // 直接复用选择器那套判据（而不是在这里重列一份域名类型表）：两处对「已存在」的口径结构上不可能漂。
+    const dup = ruleAppendTargets(customRules, domain).some((tg) => tg.block === 'contains');
+    if (dup) {
       toast.info(t('home.domainAlreadyInRule', { domain }));
       return;
     }
 
     const newRule: Rule = {
       id: `topology-${Date.now()}`,
-      type: 'domainSuffix',
+      // 与「加入已有规则」的新开条件腿同一个常量：同一个菜单不该产出两种规则类型。
+      type: NEW_COND_TYPE,
       values: [domain],
       action,
       enabled: true,
@@ -293,7 +326,7 @@ export function ConnectionTopology() {
     try {
       await saveConfig({
         ...config,
-        customRules: [...config.customRules, newRule],
+        customRules: [...customRules, newRule],
       });
       const actionLabel =
         action === 'proxy'
@@ -304,6 +337,31 @@ export function ConnectionTopology() {
       toast.success(t('home.domainRuleAdded', { domain, action: actionLabel }));
     } catch {
       toast.error(t('home.domainRuleAddFail'));
+    }
+  };
+
+  /** 追加到已有规则（issue #336）—— 整条 Rule 原地替换，写入变换在 `appendValueToRule`。 */
+  const appendToRule = async (domain: string, target: RuleAppendTarget) => {
+    if (!config) return;
+    const base = customRules.find((r) => r.id === target.ruleId) ?? null;
+    const next = base ? appendValueToRule(base, target, domain) : null;
+    if (!next) {
+      // `null` 有两种由来：**已包含**（成功的无事可做）与**目标漂移**（选中后规则被别处改了）。
+      // 前者不该报错吓人，后者不该假装成功。
+      if (target.block === 'contains') toast.info(t('home.domainAlreadyInRule', { domain }));
+      else toast.error(t('rules.appendFail'));
+      return;
+    }
+    const label =
+      next.remarks?.trim() || t(`rules.types.${next.type}.name`, RULE_TYPE_NAME[next.type]);
+    try {
+      await saveConfig({
+        ...config,
+        customRules: customRules.map((r) => (r.id === next.id ? next : r)),
+      });
+      toast.success(t('rules.appendDone', { domain, rule: label }));
+    } catch {
+      toast.error(t('rules.appendFail'));
     }
   };
 
@@ -381,13 +439,33 @@ export function ConnectionTopology() {
               />
             </DropdownMenuTrigger>
             {contextMenu && (
-              <DropdownMenuContent align="start" collisionPadding={8} className="min-w-[180px] p-0">
+              <DropdownMenuContent align="start" collisionPadding={8} className="min-w-[200px] p-0">
                 <div className="border-b border-border px-3 py-2">
-                  <p className="max-w-[160px] truncate font-medium" title={contextMenu.domain}>
+                  <p className="max-w-[180px] truncate font-medium" title={contextMenu.domain}>
                     {contextMenu.domain}
                   </p>
                   <p className="text-xs text-muted-foreground">{t('home.addToRule')}</p>
                 </div>
+                {/* 直写三动作（新建规则，落列表末尾）与「加入已有规则…」的**先后按事实自适应**：
+                    已被某条启用规则先命中时，新建的那条不生效 ⇒ 默认动作不该指向一条无效路径。
+                    只改排序、不禁用任何一项（判据是启发式，见 coverage 头注）。 */}
+                {coveringRule && (
+                  <div className="border-b border-border py-1">
+                    <DropdownMenuItem
+                      className="gap-2 px-3 py-2"
+                      onSelect={() => {
+                        setPickDomain(contextMenu.domain);
+                        setContextMenu(null);
+                      }}
+                    >
+                      <Merge className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{t('home.addToExistingRule')}</span>
+                      <span className="ms-auto max-w-[80px] truncate text-xs text-muted-foreground">
+                        {coveringName}
+                      </span>
+                    </DropdownMenuItem>
+                  </div>
+                )}
                 <div className="py-1">
                   {(['proxy', 'direct', 'block'] as const).map((action) => (
                     <DropdownMenuItem
@@ -402,9 +480,37 @@ export function ConnectionTopology() {
                     </DropdownMenuItem>
                   ))}
                 </div>
+                {!coveringRule && (
+                  <div className="border-t border-border py-1">
+                    <DropdownMenuItem
+                      className="gap-2 px-3 py-2"
+                      onSelect={() => {
+                        setPickDomain(contextMenu.domain);
+                        setContextMenu(null);
+                      }}
+                    >
+                      <Merge className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{t('home.addToExistingRule')}</span>
+                    </DropdownMenuItem>
+                  </div>
+                )}
               </DropdownMenuContent>
             )}
           </DropdownMenu>
+
+          {/* 「加入已有规则…」选择器（issue #336）。Dialog 自带 Portal 挂 body，故挂在本容器内不受
+              overflow-hidden [contain:size] 影响；与右键菜单互斥（选完/取消即回 null）。 */}
+          {pickDomain !== null && (
+            <RulePickDialog
+              open
+              onOpenChange={(next) => {
+                if (!next) setPickDomain(null);
+              }}
+              domain={pickDomain}
+              rules={customRules}
+              onPick={(target) => void appendToRule(pickDomain, target)}
+            />
+          )}
 
           <svg
             width="100%"

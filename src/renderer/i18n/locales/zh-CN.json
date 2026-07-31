@@ -352,7 +352,8 @@
     "unlockStateTimeout": "超时",
     "unlockStateIdle": "未检测",
     "unlockRestrictedEgressHint": "当前出口位于受限网络地区，海外服务不可达属预期，非节点或检测故障",
-    "unlockTimeoutHint": "该服务经当前出口不可达（可能被服务方网络层拦截），非检测故障"
+    "unlockTimeoutHint": "该服务经当前出口不可达（可能被服务方网络层拦截），非检测故障",
+    "addToExistingRule": "加入已有规则…"
   },
   "settings": {
     "nav": {
@@ -1512,7 +1513,20 @@
     "disabledBadge": "已禁用",
     "orderDraftUnsaved": "未保存的排序草稿",
     "viewDensity": "视图密度",
-    "categoryFilter": "分类筛选"
+    "categoryFilter": "分类筛选",
+    "pickTitle": "加入已有规则",
+    "pickHint": "选一条规则，把 {{domain}} 加进它的域名条件；没有域名条件的会为它新增一条",
+    "pickSearchPh": "搜索规则名 / 条件值…",
+    "pickEmpty": "还没有任何自定义规则",
+    "pickNoMatch": "没有匹配的规则",
+    "pickNewCond": "将为它新增一个「{{type}}」条件",
+    "pickWhyAnd": "该规则要求「全部条件都命中」，为它新增域名条件会变成求交而不是扩宽 —— 请在规则弹窗里显式编辑",
+    "pickWhyUnfit": "{{domain}} 不是合法的域名形状（例如 IPv6 地址），进不了域名条件",
+    "pickDisabledTag": "已禁用",
+    "pickShadowTag": "前面可能先命中",
+    "pickShadowTip": "更靠前的规则看起来也能命中 {{domain}}（渲染端启发式判断，以内核实际匹配为准）",
+    "appendDone": "已把 {{domain}} 加入规则「{{rule}}」",
+    "appendFail": "加入已有规则失败"
   },
   "sub": {
     "requireName": "请输入订阅名称",

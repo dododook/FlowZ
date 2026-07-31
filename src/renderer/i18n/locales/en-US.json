@@ -352,7 +352,8 @@
     "unlockStateTimeout": "Timeout",
     "unlockStateIdle": "Not checked",
     "unlockRestrictedEgressHint": "Current exit is in a restricted network region — overseas services being unreachable is expected, not a node or detection fault",
-    "unlockTimeoutHint": "This service is unreachable via the current exit (possibly blocked by the provider at the network layer); not a detection failure"
+    "unlockTimeoutHint": "This service is unreachable via the current exit (possibly blocked by the provider at the network layer); not a detection failure",
+    "addToExistingRule": "Add to an existing rule…"
   },
   "settings": {
     "nav": {
@@ -1512,7 +1513,20 @@
     "disabledBadge": "Disabled",
     "orderDraftUnsaved": "Unsaved order draft",
     "viewDensity": "View density",
-    "categoryFilter": "Category filter"
+    "categoryFilter": "Category filter",
+    "pickTitle": "Add to an existing rule",
+    "pickHint": "Pick a rule to add {{domain}} to its domain condition; rules without one get a new condition.",
+    "pickSearchPh": "Search rule name / condition value…",
+    "pickEmpty": "No custom rules yet",
+    "pickNoMatch": "No matching rule",
+    "pickNewCond": "A new \"{{type}}\" condition will be added to it",
+    "pickWhyAnd": "This rule requires all conditions to match; adding a domain condition would narrow it instead of widening it — edit it in the rule dialog.",
+    "pickWhyUnfit": "{{domain}} is not a valid domain (an IPv6 address, for example), so it cannot go into a domain condition.",
+    "pickDisabledTag": "Disabled",
+    "pickShadowTag": "May match earlier",
+    "pickShadowTip": "An earlier rule also appears to match {{domain}} (client-side heuristic; the core decides the actual match).",
+    "appendDone": "Added {{domain}} to rule \"{{rule}}\"",
+    "appendFail": "Failed to add to the existing rule"
   },
   "sub": {
     "requireName": "Please enter a subscription name",

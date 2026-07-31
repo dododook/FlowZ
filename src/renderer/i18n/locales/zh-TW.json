@@ -352,7 +352,8 @@
     "unlockStateTimeout": "逾時",
     "unlockStateIdle": "未檢測",
     "unlockRestrictedEgressHint": "目前出口位於受限網路地區，海外服務不可達屬預期，非節點或偵測故障",
-    "unlockTimeoutHint": "該服務經目前出口不可達（可能被服務方網路層攔截），非偵測故障"
+    "unlockTimeoutHint": "該服務經目前出口不可達（可能被服務方網路層攔截），非偵測故障",
+    "addToExistingRule": "加入既有規則…"
   },
   "settings": {
     "nav": {
@@ -1512,7 +1513,20 @@
     "disabledBadge": "已停用",
     "orderDraftUnsaved": "未儲存的排序草稿",
     "viewDensity": "檢視密度",
-    "categoryFilter": "分類篩選"
+    "categoryFilter": "分類篩選",
+    "pickTitle": "加入既有規則",
+    "pickHint": "選一條規則，把 {{domain}} 加進它的網域條件；沒有網域條件的會為它新增一條",
+    "pickSearchPh": "搜尋規則名稱 / 條件值…",
+    "pickEmpty": "尚未有任何自訂規則",
+    "pickNoMatch": "沒有相符的規則",
+    "pickNewCond": "將為它新增一個「{{type}}」條件",
+    "pickWhyAnd": "該規則要求「全部條件都命中」，為它新增網域條件會變成求交而不是擴寬 —— 請在規則對話框裡明確編輯",
+    "pickWhyUnfit": "{{domain}} 不是合法的網域格式（例如 IPv6 位址），無法放進網域條件",
+    "pickDisabledTag": "已停用",
+    "pickShadowTag": "前面可能先命中",
+    "pickShadowTip": "更靠前的規則看起來也能命中 {{domain}}（前端啟發式判斷，以核心實際比對為準）",
+    "appendDone": "已把 {{domain}} 加入規則「{{rule}}」",
+    "appendFail": "加入既有規則失敗"
   },
   "sub": {
     "requireName": "請輸入訂閱名稱",
