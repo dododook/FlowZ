@@ -814,10 +814,13 @@ export class ConfigManager implements IConfigManager {
       this.log('warn', 'appRoutingEnabled must be a boolean; resetting to default (disabled)');
       delete config.appRoutingEnabled;
     }
-    // singboxDashboard：纯开关字段（默认关）。非 boolean 一律删除而非 throw（同 appRoutingEnabled 标准，不回填默认）——
-    // throw 在 loadConfig 路径会触发默认配置覆盖落盘致用户节点/订阅/规则全丢，不值当。
+    // singboxDashboard：纯开关字段。**两个「默认」不是同一个**，别按其一去读另一个：
+    //   - **新装种子 = true**（见下方 getDefaultConfig 的 singboxDashboard），故全量新装用户开着面板；
+    //   - **本 sanitize 的回落 = undefined**，而读取端（ProxyManager 注入 dashboard、设置页）按 truthiness 判 ⇒ 关。
+    // 非 boolean 一律删除而非 throw（同 appRoutingEnabled 标准，不回填默认）——throw 在 loadConfig 路径会触发
+    // 默认配置覆盖落盘致用户节点/订阅/规则全丢，不值当。
     if (config.singboxDashboard !== undefined && typeof config.singboxDashboard !== 'boolean') {
-      this.log('warn', 'singboxDashboard must be a boolean; resetting to default (disabled)');
+      this.log('warn', 'singboxDashboard must be a boolean; dropping it (falls back to disabled)');
       delete config.singboxDashboard;
     }
     // singboxDashboardUrl：可选 download_url 覆盖。非字符串或空白一律删除（回落内置默认 URL）；sanitize 而非 throw。

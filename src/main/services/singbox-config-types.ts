@@ -400,7 +400,33 @@ export interface SingBoxApiService {
   // path（dashboard #55）：指向**随包内置/运行时下载覆盖**目录 → 核「serving user-provided files，auto-update disabled」，
   //   零联网下载、打开即时、离线可用（实证 1.14-alpha.32：dashboard:{enabled,path} → /dashboard/ HTTP 200 本地 serve）。
   //   省略 path 时核回落联网下载（异常打包/无内置时的兜底）。external_ui 等字段属 experimental.clash_api，非本 service。
-  dashboard?: { enabled: boolean; path?: string };
+  //   http_client（1.14 新增，见 SingBoxHttpClient）：**必填**——缺省会落到已弃用的「隐式默认 HTTP client」。
+  dashboard?: { enabled: boolean; path?: string; http_client?: SingBoxHttpClient };
+}
+
+/**
+ * 显式 HTTP client 声明（sing-box 1.14 `http_client`）。
+ *
+ * **为什么必须显式**：1.14.0 起「隐式默认 HTTP client（走默认出站）」被标弃用，**计划 1.16.0 移除**
+ * （上游 `experimental/deprecated/constants.go` 的 `OptionImplicitDefaultHTTPClient`：
+ * DeprecatedVersion 1.14.0 / ScheduledVersion 1.16.0）。移除后 `httpClientManager.DefaultTransport()`
+ * 返回 nil，消费点拿不到 transport 即报错——对 dashboard 是 `create dashboard http client` → api service
+ * 起不来，**是启动失败而非静默降级**。
+ *
+ * 核里只有两个消费点索取那个默认 transport（1.14.0-alpha.45 全仓 `DefaultTransport()` 调用面：
+ * `service/api/dashboard.go` 与 `route/rule/rule_set_remote.go`）。本仓 rule_set 全 `type:'local'`
+ * （远程能力已 fail-closed 移除，见 singbox-custom-rules），故 dashboard 是唯一触发者。
+ *
+ * **绝不要把本字段挂到 local rule_set 上**：1.14.0-alpha.45 对 `type:'local'` 条目上的 `http_client` /
+ * `download_detour` 按未知字段拒绝，`sing-box check` 直接 FATAL（真机实测）。
+ *
+ * **只声明 `detour` 一个键**：上游 `HTTPClientOptions` 还有 engine/version/tls/headers/dial 全套，
+ * 但隐式回落等价的只有「走默认出站」这一条语义（核的回落工厂只设 `DefaultOutbound = true`，其余取核默认）。
+ * 多写一个键就是多一条与核默认漂移的风险面。
+ */
+export interface SingBoxHttpClient {
+  /** 上游出站 tag。取 `route.final`（= 核的默认出站）以逐字保持隐式回落时的拨号路径。**不可为空串**（核判 `IsEmpty()` 会重新落回隐式默认）。 */
+  detour: string;
 }
 
 export interface SingBoxConfig {

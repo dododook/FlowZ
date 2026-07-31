@@ -254,6 +254,24 @@ describe('sing-box check 门 — 生成的全量 config', () => {
     expect(dnsTags(c)).toContain('dns-node');
     expectCheckOk(c, 'race-off-dnspod');
   });
+
+  it('开 dashboard（显式 http_client）→ 内核识别该字段且 check 通过', () => {
+    const c = svcFor().gen(
+      cfg({ servers: [domainNode()], singboxDashboard: true } as Partial<UserConfig>)
+    );
+    // ① 验的是不是声称的对象：产物必须真的含 http_client，否则 check 绿只证明「没写这个字段也合法」。
+    //    path 是否存在取决于本机 resources/dashboard 是否已 fetch（本门跑在 fetch:dashboard 之前），
+    //    故只钉 enabled + http_client 两项，不把「有没有 path」写死进断言。
+    const dash = c.services?.[0]?.dashboard;
+    expect(dash?.enabled).toBe(true);
+    expect(dash?.http_client).toEqual({ detour: c.route?.final });
+    // ② 引用完整性先验：detour 必须是真实出站 tag（check 的 "outbound not found" 是最终裁判）。
+    expect([
+      ...(c.outbounds ?? []).map((o) => o.tag),
+      ...(c.endpoints ?? []).map((e) => e.tag),
+    ]).toContain(dash?.http_client?.detour);
+    expectCheckOk(c, 'dashboard-http-client');
+  });
 });
 
 // 变异自检：证明本 harness 真的抓得到内核 FATAL（恒绿的 harness = 没门）。
@@ -284,5 +302,30 @@ describe('sing-box check 门 — 门自身的牙（变异自检）', () => {
     ob.domain_resolver = { server, stratgy: 'prefer_ipv4' } as unknown as SingBoxDomainResolver;
     // 该断言若哪天变红 = 内核开始严格校验未知键 → 届时本注释与「不得省略单测」的结论需重估。
     expect(runCheck(c, 'mut-key-typo').code).toBe(0);
+  });
+
+  it('变异：dashboard 的 http_client 写成 http_clientt → check 必须 FATAL（证明该字段是真被识别的）', () => {
+    // 负向对照：`services[].dashboard` 这一层走 DisallowUnknownFields，故上面那条「键名无牙」的边界
+    // **不适用于这里**。没有这条对照，「加了 http_client 后 check 仍通过」就可能只是「这个键被静默丢弃」。
+    const c = svcFor().gen(
+      cfg({ servers: [domainNode()], singboxDashboard: true } as Partial<UserConfig>)
+    );
+    const dash = c.services![0].dashboard as unknown as Record<string, unknown>;
+    dash.http_clientt = dash.http_client;
+    delete dash.http_client;
+    expect(runCheck(c, 'mut-dashboard-key-typo').code).not.toBe(0);
+  });
+
+  it('能力边界（负面事实）：dashboard.http_client.detour 指向不存在的出站 → check 仍 exit=0', () => {
+    // **与 domain_resolver 不同**：那条引用在 check 期解析（"domain resolver not found" FATAL），
+    // 而 dashboard 的 detour 是**运行期**才解析的（核 `resolveTransport()` 在 service start 时才跑）。
+    // ⇒ 悬空 detour 逃得过 check、只在真机起核时炸。守它的只能是 JS 侧谓词
+    // （`explicit-http-client-gate.test.ts` 的「detour 必须在出站/endpoint tag 集合里」）。
+    // 该断言若哪天变红 = 内核把这条引用提前到 check 期 → 届时 JS 侧那条可降级为冗余。
+    const c = svcFor().gen(
+      cfg({ servers: [domainNode()], singboxDashboard: true } as Partial<UserConfig>)
+    );
+    c.services![0].dashboard!.http_client!.detour = 'no-such-outbound';
+    expect(runCheck(c, 'mut-dashboard-dangling-detour').code).toBe(0);
   });
 });

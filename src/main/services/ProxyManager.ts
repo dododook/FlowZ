@@ -3632,11 +3632,20 @@ done
       // 关闭时不注入 → 核默认不出网拉 dashboard 资源。同一 service，不重复注入。
       // dashboard #55：path 指向「运行时下载覆盖 > 随包内置」目录 → 核 serve 本地文件、零联网下载、打开即时离线可用；
       //   两者皆无（异常打包且未下载）→ path 省略，核回落联网下载兜底（保旧行为，不 brick）。
+      // http_client：**必须显式声明**（sing-box 1.14 弃用「隐式默认 HTTP client」，计划 1.16.0 移除；
+      //   移除后 dashboard 的 resolveTransport() 拿不到 transport → `create dashboard http client` 起服务失败，
+      //   影响面是全量开着 dashboard 的用户，不是静默降级）。语义见 SingBoxHttpClient。
+      // detour 取 route.final：被替换掉的隐式回落在核里就是「走默认出站」（DefaultOutbound=true →
+      //   outboundManager.Default()），而默认出站正是 route.final 指的 tag。写死 'direct' 会把 path 省略时的
+      //   联网下载腿从走代理改成走直连（墙内拉不动 GitHub），是用户可见的行为回退。
+      //   route 恒由 buildRouteConfig 产出且 final 恒有值；缺省兜底 'direct' 只为不留空串——空 detour 会被核判
+      //   IsEmpty() 而重新落回隐式默认，等于本注入失效。
       if (config.singboxDashboard) {
         const serveDir = resourceManager.resolveDashboardServeDir(getSingboxDashboardOverrideDir());
+        const http_client = { detour: singboxConfig.route?.final || 'direct' };
         singboxConfig.services[0].dashboard = serveDir
-          ? { enabled: true, path: serveDir }
-          : { enabled: true };
+          ? { enabled: true, path: serveDir, http_client }
+          : { enabled: true, http_client };
       }
     }
 
