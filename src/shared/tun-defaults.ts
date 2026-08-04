@@ -1,0 +1,140 @@
+/**
+ * TUN 默认值解析单一真值（stack + mtu）—— 主进程构建（singbox-inbounds-builder）与渲染层表单
+ * （network-settings）共用。
+ *
+ * sing-box TUN inbound 的 `stack` 决定 TUN 裸 IP 包到 L4 连接的 TCP/IP 实现：
+ *   · system  —— 用宿主系统（内核）网络栈做 L3→L4，性能最优、强平台相关；
+ *   · gvisor  —— 用 gVisor 全用户态虚拟栈，最稳、跨平台一致、开销略高；
+ *   · mixed   —— TCP 走 system 栈、UDP 走 gvisor 栈的【固定组合】（非自动择优）。
+ * 三者默认均为 endpoint-independent NAT（gvisor 才可配该项）。来源：sing-box TUN inbound 文档。
+ *
+ * FlowZ 对 stack 与 mtu **都**引入 `auto` 默认档（仅活在存储/UI 层）：经 resolveTunStack / resolveTunMtu
+ * 解析成【具体】值下发给核——FlowZ 始终显式 pin，绝不吃 sing-box 的编译期/平台默认（stack：编进 gvisor
+ * 则默认漂成 mixed，否则只有 system；mtu：桌面 65535 / Android 9000 / Apple NE 4064）。默认由编译期与
+ * 平台决定、会漂，产品语义不能随之漂。完整依据见 docs/design/tun-stack-option.md。
+ *
+ * **为什么 mtu 也要走 `auto`**：把具体数值写进存储会派生一串问题——需要哨兵去猜「这个数是用户设的还是
+ * 历史默认」（旧实现用 `mtu === 9000` 当哨兵）、UI 因此不敢暴露该项、平台默认散落多处、且改了默认也惠及
+ * 不到存量用户（他们存储里是死数字）。改用 `auto` 后这些一并消失：存储存**意图**，解析期落**平台值**。
+ */
+import type { TunStack, TunMtu } from './types';
+
+/** 下发给核的【具体】栈值（永不含 'auto'）。 */
+export type ConcreteTunStack = 'system' | 'gvisor' | 'mixed';
+
+/**
+ * `Auto` 档的平台映射（单一真值）：
+ *   · macOS（darwin）→ gvisor —— Apple 严格接管场景强制 gvisor / system·mixed 不可用（sing-box TunnelVision 文档）
+ *     + FlowZ 历史实证（3.3.18 稳定组合）+ DNS/NetworkExtension 约束；
+ *   · Windows（win32）/ Linux → system —— 内核栈性能 + Win 热切换 guard 实测零环路（仅 system 放行）。
+ */
+export const PLATFORM_DEFAULT_STACK: Record<string, ConcreteTunStack> = {
+  darwin: 'gvisor',
+  win32: 'system',
+  linux: 'system',
+};
+
+/**
+ * `Auto` 档 MTU 的 **(平台 × 具体栈)** 映射（单一真值）。
+ *
+ * **必须按栈分档、不能只看平台**：同一个 MTU 在不同栈下差异可达数量级——真机实测 Windows + gvisor 下
+ * 65535 为最优档，而同机 system 栈下 65535 直接塌陷（两者相差约 80 倍）。另有两处上游按 MTU 门控的平台
+ * 优化：Linux 的 GSO 要求 gvisor 且 `mtu < 49152`，macOS 的 multiPendingPackets 要求 gvisor `< 32768` /
+ * system·mixed `<= 9000`——取值越界会静默关掉这些优化。
+ *
+ * **当前值 = 各平台历史强制默认（mac 1400 / Win·Linux 1350），本次仅完成模型统一、行为零变化。**
+ * 实测支持的新取值另行落地：届时只改本表，无需再动存储/迁移/UI——这正是把 mtu 接入 `auto` 模型的目的。
+ */
+export const PLATFORM_DEFAULT_MTU: Record<string, Record<ConcreteTunStack, number>> = {
+  darwin: { system: 1400, gvisor: 1400, mixed: 1400 },
+  win32: { system: 1350, gvisor: 1350, mixed: 1350 },
+  linux: { system: 1350, gvisor: 1350, mixed: 1350 },
+};
+
+/** stack 字段全部合法值（含 Auto），供 ConfigManager 校验 + UI 选项单一真值。 */
+export const TUN_STACK_VALUES: readonly TunStack[] = ['auto', 'system', 'gvisor', 'mixed'];
+
+/** 三档具体栈（不含 Auto），供 UI 渲染兜底选项。 */
+export const CONCRETE_TUN_STACKS: readonly ConcreteTunStack[] = ['system', 'gvisor', 'mixed'];
+
+/** MTU 显式数值的合法区间（'auto' 另行放行）。下界=IPv6 最小 MTU；上界=sing-box 可接受上限。 */
+export const TUN_MTU_MIN = 1280;
+export const TUN_MTU_MAX = 65535;
+
+/**
+ * 解析用户选择的 TUN stack → 下发给核的【具体】栈（恒 system|gvisor|mixed，永不返回 'auto'/省略）。
+ * - `auto` / 缺省（undefined/null）→ 平台默认（PLATFORM_DEFAULT_STACK；mac→gvisor / Win·Linux→system；未知平台兜底 system）；
+ * - 显式 `system`/`gvisor`/`mixed` → **原样下发（全平台 honor，含 mac，零强制回退）**。
+ *   mac 选 system/mixed 是用户知情的实验选择（UI 默认 gvisor + 未验证提示），由真机判定其可用性，不在此静默改写。
+ */
+export function resolveTunStack(
+  userStack: TunStack | undefined | null,
+  platform: NodeJS.Platform | string
+): ConcreteTunStack {
+  if (!userStack || userStack === 'auto') {
+    return PLATFORM_DEFAULT_STACK[platform] ?? 'system';
+  }
+  return userStack;
+}
+
+/**
+ * 解析用户选择的 TUN MTU → 下发给核的【具体】数值（恒 number，永不返回 'auto'/省略）。
+ *
+ * @param stack **必须传已解析的具体栈**（resolveTunStack 的返回值）；传用户原始值会让 'auto' 落不进表。
+ * - 显式正整数 → **原样下发**（honor 用户选择，含已知劣化组合——坏组合由 UI 非阻断提示，不静默改写，
+ *   与 mac 选 system/mixed 的既有原则一致）；
+ * - `auto` / 缺省 / 非正数 → (平台 × 栈) 映射，未知平台兜底 linux 档。
+ *   非正数并入 auto 是防御：旧配置可能存 0，旧实现亦按 falsy 回落平台值，此处保持一致。
+ */
+export function resolveTunMtu(
+  userMtu: TunMtu | undefined | null,
+  platform: NodeJS.Platform | string,
+  stack: ConcreteTunStack
+): number {
+  if (typeof userMtu === 'number' && userMtu > 0) {
+    return userMtu;
+  }
+  const perPlatform = PLATFORM_DEFAULT_MTU[platform] ?? PLATFORM_DEFAULT_MTU.linux;
+  return perPlatform[stack];
+}
+
+/**
+ * 存量配置里属于「旧强制默认」的 MTU：这些不是用户选择，而是旧版本写死后持久化的结果
+ * （9000 = 更早期 createDefaultConfig 的值，1350/1400 = 后来的平台调优值）。迁移时一律归 'auto'。
+ * 用户经 UI 显式设成同值者由 tunMtuMigrated 守卫保护（迁移只跑一次），不会被回灌。
+ */
+const LEGACY_FORCED_MTU: readonly number[] = [9000, 1350, 1400];
+
+/**
+ * TUN 默认值一次性迁移【纯逻辑】（无 fs/副作用，供 ConfigManager 薄壳 + 单测复用）。就地修改 config，
+ * 返回是否变更（true→调用方落盘）。stack 与 mtu **各自独立幂等守卫**：
+ *
+ * - stack（tunStackMigrated）：存量多为旧强制默认（mac=gvisor / Win·Linux=system，旧 UI 不暴露 stack →
+ *   非用户真实选择）→ 一律归 'auto'（解析回各平台原默认，行为零变化）。
+ * - mtu（tunMtuMigrated）：存量落在 LEGACY_FORCED_MTU 的归 'auto'；其余（用户手改过 config.json）保留。
+ *
+ * **两个标记不可合并**：tunStackMigrated 对存量用户早已置 true，复用它会让这批人的 mtu 永不迁移。
+ */
+export function migrateTunDefaults(config: {
+  tunStackMigrated?: boolean;
+  tunMtuMigrated?: boolean;
+  // mtu 标可选：迁移要容忍残缺存量配置（缺键的旧 config.json / 部分恢复的备份），缺失即按「无 legacy 值可迁」
+  // 处理、只置标记。内部另有 typeof 守卫，故此处放宽不削弱正确性。
+  tunConfig?: { stack: TunStack; mtu?: TunMtu } | null;
+}): boolean {
+  let changed = false;
+  if (config.tunStackMigrated !== true) {
+    if (config.tunConfig) config.tunConfig.stack = 'auto';
+    config.tunStackMigrated = true;
+    changed = true;
+  }
+  if (config.tunMtuMigrated !== true) {
+    const mtu = config.tunConfig?.mtu;
+    if (config.tunConfig && typeof mtu === 'number' && LEGACY_FORCED_MTU.includes(mtu)) {
+      config.tunConfig.mtu = 'auto';
+    }
+    config.tunMtuMigrated = true;
+    changed = true;
+  }
+  return changed;
+}

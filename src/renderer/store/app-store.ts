@@ -477,8 +477,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         // 确保有默认的TUN配置
         if (!config.tunConfig) {
           config.tunConfig = {
-            mtu: window.electron?.platform === 'darwin' ? 1400 : 1350,
-            // 'auto' = 跟随平台映射（主进程 resolveTunStack 解析），渲染端缺省兜底用新模型默认档。
+            // 'auto' = 跟随 (平台 × 具体栈) 映射（主进程 resolveTunMtu / resolveTunStack 解析），
+            // 渲染端缺省兜底用新模型默认档，不在此复制平台数值（那正是旧模型散落多处的来源）。
+            mtu: 'auto',
             stack: 'auto',
             autoRoute: true,
             strictRoute: true,

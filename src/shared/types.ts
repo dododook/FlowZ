@@ -128,9 +128,12 @@ export type Protocol =
 export type Network = 'tcp' | 'ws' | 'grpc' | 'http' | 'httpupgrade';
 export type Security = 'none' | 'tls' | 'reality';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
-// 'auto' = 默认档：跟随平台映射（macOS→gvisor / Windows·Linux→system），经 shared/tun-stack#resolveTunStack
+// 'auto' = 默认档：跟随平台映射（macOS→gvisor / Windows·Linux→system），经 shared/tun-defaults#resolveTunStack
 // 解析成下发给核的具体栈。system/gvisor/mixed = 显式高级兜底。详见 docs/design/tun-stack-option.md。
 export type TunStack = 'auto' | 'system' | 'gvisor' | 'mixed';
+// 'auto' = 默认档：跟随 (平台 × 具体栈) 映射，经 shared/tun-defaults#resolveTunMtu 解析成下发给核的具体数值；
+// 数值 = 用户显式指定（原样下发）。与 TunStack 同形——存储存意图、解析期落平台值，故无需哨兵猜「是否用户所设」。
+export type TunMtu = 'auto' | number;
 
 // ============================================================================
 // 订阅配置
@@ -265,7 +268,7 @@ export interface ImportParseResult {
 }
 
 export interface TunModeConfig {
-  mtu: number;
+  mtu: TunMtu;
   stack: TunStack;
   autoRoute: boolean;
   strictRoute: boolean;
@@ -375,8 +378,11 @@ export interface UserConfig {
   // TUN 模式配置
   tunConfig: TunModeConfig;
   // TUN stack 一次性迁移标记（幂等）：存量旧强制默认 stack（mac=gvisor / Win·Linux=system，非真实选择）→ 'auto'。
-  // undefined=未迁移（旧配置）；新装由 createDefaultConfig 置 true。详见 ConfigManager.migrateTunStack。
+  // undefined=未迁移（旧配置）；新装由 createDefaultConfig 置 true。详见 ConfigManager.migrateTunDefaults。
   tunStackMigrated?: boolean;
+  // TUN mtu 一次性迁移标记（幂等）：存量旧强制默认 mtu（9000 / 1350 / 1400，非真实选择）→ 'auto'。
+  // **必须与 tunStackMigrated 分开**：后者对存量用户早已置 true，复用会让这批人的 mtu 永不迁移。
+  tunMtuMigrated?: boolean;
 
   customRules: Rule[];
 

@@ -36,7 +36,7 @@ import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
 import { flushOsDnsCache } from './os-dns-flush';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
-import { resolveTunStack } from '../../shared/tun-stack';
+import { resolveTunStack } from '../../shared/tun-defaults';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 import { parseDefaultGateway, parseScutilRouter } from '../../shared/default-route';
 import {

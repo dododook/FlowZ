@@ -23,7 +23,7 @@ import {
 import type { CustomDnsUpstream, DnsConfig, TunStack } from '@shared/types';
 import { DEFAULT_BYPASS_LAN } from '@shared/system-proxy-bypass';
 import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
-import { resolveTunStack, CONCRETE_TUN_STACKS } from '@shared/tun-stack';
+import { resolveTunStack, CONCRETE_TUN_STACKS } from '@shared/tun-defaults';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { InfoTooltip } from './shared/info-tooltip';
