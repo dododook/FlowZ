@@ -60,10 +60,16 @@ The app accesses these files through the `ResourceManager` class:
    ```bash
    gh api repos/SagerNet/sing-box/releases/tags/v<version> --jq '.assets[]|select(.name|test("(linux-amd64.tar.gz|windows-amd64.zip|darwin-amd64.tar.gz|darwin-arm64.tar.gz)$"))|{name,digest}'
    ```
-   The digest looks like `sha256:<hex>` and can be pasted **as-is** into `coreArchiveSha256` (`fetch:core` strips the `sha256:` prefix before comparing). `libcronet` is managed separately by `cronetVersion` and need not change with the core (unless the official core's ABI changes). When swapping, confirm the binary's `Tags` include `with_naive_outbound` (prerequisite for naive support).
+   The digest looks like `sha256:<hex>` and can be pasted **as-is** into `coreArchiveSha256` (`fetch:core` strips the `sha256:` prefix before comparing). When swapping, confirm the binary's `Tags` include `with_naive_outbound` (prerequisite for naive support).
+
+   **`libcronet` must be swapped together with the core** (since 2026-08-05): it is no longer managed independently — `cronetVersion` is the Go module pseudo-version copied from the bundled sing-box's own `go.mod`, and the source moved from the (now stale) cronet-go Releases to the Go module proxy:
+   ```bash
+   curl -fsSL "https://proxy.golang.org/github.com/sagernet/sing-box/@v/v<version>.mod" | grep 'cronet-go/lib/linux_amd64'
+   ```
+   Put that pseudo-version into `cronetVersion`, obtain both pins as documented at the top of `scripts/fetch-cronet.mjs` (`cronetArchiveSha256` = module zip, `cronetLibSha256` = the installed library itself), then run `npm run fetch:cronet -- --force`. Forgetting to sync is not silent: before any actual download the script fetches sing-box's `.mod` and fails if the versions disagree.
 
 ## sing-box version
 
-Current: **1.14.0-alpha.34** (SagerNet official release; `Tags` include `with_naive_outbound`).
+The current version is whatever `bundledCoreVersion` in `src/shared/core-manifest.json` says (**single source of truth** — do not restate it here; this line used to drift). Requirement: an official SagerNet release whose `Tags` include `with_naive_outbound`.
 
 Downloads: https://github.com/SagerNet/sing-box/releases

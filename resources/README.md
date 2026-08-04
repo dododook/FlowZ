@@ -61,11 +61,20 @@ resources/
    值 = 官方 release REST API 的 asset digest，一行取：
    `gh api repos/SagerNet/sing-box/releases/tags/v<新版本> --jq '.assets[]|select(.name|test("(linux-amd64.tar.gz|windows-amd64.zip|darwin-amd64.tar.gz|darwin-arm64.tar.gz)$"))|{name,digest}'`，
    digest 形如 `sha256:<hex>`，**可原样填入** coreArchiveSha256，`fetch:core` 会自动 strip `sha256:` 前缀后比对），
-   再 `npm run fetch:core -- --force` 拉新核（无需手动下载/替换二进制；不入库）。`libcronet` 独立按 `cronetVersion`
-   管理，换核不必同步（除非官方核 ABI 变更）。换核须确认二进制 `Tags` 含 `with_naive_outbound`（naive 支持前提）。
+   再 `npm run fetch:core -- --force` 拉新核（无需手动下载/替换二进制；不入库）。换核须确认二进制 `Tags`
+   含 `with_naive_outbound`（naive 支持前提）。
+
+   **`libcronet` 必须同步换**（2026-08-05 起）：它不再独立管理——`cronetVersion` 就是从「随包 sing-box 的
+   go.mod」抄来的 Go module 伪版本，取源亦从已停更的 cronet-go Releases 改为 Go module proxy。步骤：
+   ```bash
+   curl -fsSL "https://proxy.golang.org/github.com/sagernet/sing-box/@v/v<新版本>.mod" | grep 'cronet-go/lib/linux_amd64'
+   ```
+   把伪版本回填 `cronetVersion`，按 `scripts/fetch-cronet.mjs` 头注取两类 sha（`cronetArchiveSha256`=module
+   zip、`cronetLibSha256`=落地库本体），再 `npm run fetch:cronet -- --force`。忘同步不会静默——脚本每次实际
+   下载前会拿 sing-box 的 `.mod` 校验同源，不一致直接 fail。
 
 ## sing-box 版本
 
-当前使用的 sing-box 版本：**1.14.0-alpha.34**（SagerNet 官方 release，`Tags` 含 `with_naive_outbound`）
+当前版本以 `src/shared/core-manifest.json` 的 `bundledCoreVersion` 为准（**单一真值**，勿在此复述——历史上这里长期滞后于真实版本）。要求：SagerNet 官方 release 且 `Tags` 含 `with_naive_outbound`。
 
 下载地址：https://github.com/SagerNet/sing-box/releases

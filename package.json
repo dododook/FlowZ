@@ -26,7 +26,7 @@
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:core-gate": "jest --testPathIgnorePatterns=/node_modules/ --runTestsByPath src/main/services/__tests__/singbox-check-gate.test.ts",
+    "test:core-gate": "jest --testPathIgnorePatterns=/node_modules/ --runTestsByPath src/main/services/__tests__/singbox-check-gate.test.ts src/shared/__tests__/core-manifest-invariants.test.ts",
     "lint": "eslint src --ext .ts,.tsx",
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,json,css}\"",
