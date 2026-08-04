@@ -62,6 +62,13 @@ export const TUN_MTU_MIN = 1280;
 export const TUN_MTU_MAX = 65535;
 
 /**
+ * system/mixed 栈下仍属「安全」的 MTU 上界。超过即进入实测劣化区：Windows `system + 65535` 吞吐塌到
+ * ~11 Mbps（同机 gvisor + 65535 为 845–919 Mbps）；且上游 macOS 的 multiPendingPackets 对非 gvisor 栈
+ * 就是 `mtu <= 9000` 门槛（`protocol/tun/inbound.go:191`），越界静默关掉该优化。
+ */
+export const TUN_MTU_SAFE_MAX_NON_GVISOR = 9000;
+
+/**
  * 解析用户选择的 TUN stack → 下发给核的【具体】栈（恒 system|gvisor|mixed，永不返回 'auto'/省略）。
  * - `auto` / 缺省（undefined/null）→ 平台默认（PLATFORM_DEFAULT_STACK；mac→gvisor / Win·Linux→system；未知平台兜底 system）；
  * - 显式 `system`/`gvisor`/`mixed` → **原样下发（全平台 honor，含 mac，零强制回退）**。
@@ -96,6 +103,44 @@ export function resolveTunMtu(
   }
   const perPlatform = PLATFORM_DEFAULT_MTU[platform] ?? PLATFORM_DEFAULT_MTU.linux;
   return perPlatform[stack];
+}
+
+/**
+ * 解析 UI 的 MTU 文本输入 → 存储值；非法返回 `null`（与本仓 parseDnsServerSpec / parseSpeedTestUrl /
+ * parseCustomUpstream 等既有解析器同款 `T | null` 约定，不另造 `{ok,value}` 判别式联合）。
+ * - 空串/纯空白 → `'auto'`（复位。存的是**意图**，不把当前平台值固化成数字——固化会让后续平台默认演进对该用户失效）；
+ * - 合法整数（TUN_MTU_MIN..TUN_MTU_MAX）→ 该数值；
+ * - 其余 → `null`，由调用方回滚显示并提示。**不静默钳制**：钳制会让用户以为设成了自己填的值。
+ *   （`'auto'` 是合法返回值且非 null，故 null 能无歧义地表示「非法」。）
+ */
+export function parseTunMtuInput(raw: string): TunMtu | null {
+  const s = raw.trim();
+  if (!s) return 'auto';
+  // 先要求纯十进制数字：`Number()` 还认 '1e4'/'0x500'/'+1400'，当前 UI 已把输入过滤成纯数字所以到不了，
+  // 但本函数是 shared 导出，未来若有调用方直接喂原始文本，那些形式会被静默接受成一个用户没打算填的值。
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isInteger(n) || n < TUN_MTU_MIN || n > TUN_MTU_MAX) return null;
+  return n;
+}
+
+/**
+ * 已知劣化组合判定（供 UI 出**非阻断** warning；不禁止——与 mac 允许显式选 system/mixed 的 honor 原则一致）。
+ *
+ * **按平台分**，因为「非 gvisor + 大 MTU」的代价三平台并不相同：
+ *   · win32  —— 实测灾难：`system + 65535` 吞吐塌到 ~11 Mbps（同机 gvisor + 65535 为 845–919 Mbps）；
+ *   · darwin —— 静默关掉 multiPendingPackets（上游对非 gvisor 的门槛就是 `mtu <= 9000`）；
+ *   · linux  —— **不报**：`system + 65535` 两轮实测均正常（935 / 465 Mbps，无塌陷），对它弹警告是虚警。
+ *
+ * @param stack **必须是已解析的具体栈**：Auto 在 Windows 落 gvisor 时该组合并不成立，传用户原始值会误报。
+ */
+export function isDegradedMtuCombo(
+  stack: ConcreteTunStack,
+  mtu: TunMtu | undefined | null,
+  platform: NodeJS.Platform | string
+): boolean {
+  if (stack === 'gvisor' || (platform !== 'win32' && platform !== 'darwin')) return false;
+  return typeof mtu === 'number' && mtu > TUN_MTU_SAFE_MAX_NON_GVISOR;
 }
 
 /**

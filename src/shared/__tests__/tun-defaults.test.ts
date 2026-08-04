@@ -5,6 +5,8 @@
 import {
   resolveTunStack,
   resolveTunMtu,
+  parseTunMtuInput,
+  isDegradedMtuCombo,
   migrateTunDefaults,
   PLATFORM_DEFAULT_STACK,
   PLATFORM_DEFAULT_MTU,
@@ -12,6 +14,7 @@ import {
   CONCRETE_TUN_STACKS,
   TUN_MTU_MIN,
   TUN_MTU_MAX,
+  TUN_MTU_SAFE_MAX_NON_GVISOR,
 } from '../tun-defaults';
 
 describe('resolveTunStack — Auto 平台映射', () => {
@@ -210,6 +213,80 @@ describe('迁移后解析闭环：行为零变化（本次上线的硬要求）'
       };
       expect(after).toEqual(before);
     }
+  });
+});
+
+describe('parseTunMtuInput — UI 文本输入 → 存储值（PR-2 逃生门）', () => {
+  it('空/纯空白 → 复位 auto（存意图，不固化当前平台数值）', () => {
+    expect(parseTunMtuInput('')).toBe('auto');
+    expect(parseTunMtuInput('   ')).toBe('auto');
+  });
+
+  it('区间内整数 → 原值（含两端点）', () => {
+    expect(parseTunMtuInput('4064')).toBe(4064);
+    expect(parseTunMtuInput(String(TUN_MTU_MIN))).toBe(TUN_MTU_MIN);
+    expect(parseTunMtuInput(String(TUN_MTU_MAX))).toBe(TUN_MTU_MAX);
+    expect(parseTunMtuInput(' 9000 ')).toBe(9000);
+  });
+
+  /** 拒绝而非钳制：钳制会让用户以为设成了自己填的值，实际下发另一个数字。 */
+  it('越界/非整数/非数字 → null（不钳制、不静默改写）', () => {
+    for (const bad of [
+      String(TUN_MTU_MIN - 1),
+      String(TUN_MTU_MAX + 1),
+      '0',
+      '-1400',
+      '1500.5',
+      'abc',
+    ]) {
+      expect(parseTunMtuInput(bad)).toBeNull();
+    }
+  });
+
+  /** 本函数是 shared 导出：`Number()` 认的这些形式不能静默通过，否则调用方拿到用户没打算填的值。 */
+  it("非十进制写法（'1e4' / '0x500' / '+1400'）→ null，不按 Number() 的宽松语义放行", () => {
+    for (const bad of ['1e4', '0x500', '+1400', ' 1_400 ', '1400.0']) {
+      expect(parseTunMtuInput(bad)).toBeNull();
+    }
+  });
+
+  /** null 之所以够用：合法返回值里没有 falsy 成员（'auto' 与正整数都 truthy）→ 与非法无歧义。 */
+  it('合法返回值恒 truthy，故 null 判别无歧义（无需 {ok,value} 联合）', () => {
+    for (const ok of ['', '1280', '65535']) expect(parseTunMtuInput(ok)).toBeTruthy();
+  });
+});
+
+describe('isDegradedMtuCombo — 已知劣化组合非阻断提示', () => {
+  it('win/mac + system·mixed + 超 9000 → 命中（Win system+65535 实测塌到 ~11 Mbps）', () => {
+    for (const p of ['win32', 'darwin'] as const) {
+      expect(isDegradedMtuCombo('system', 65535, p)).toBe(true);
+      expect(isDegradedMtuCombo('mixed', 65535, p)).toBe(true);
+      expect(isDegradedMtuCombo('system', TUN_MTU_SAFE_MAX_NON_GVISOR + 1, p)).toBe(true);
+    }
+  });
+
+  /** Linux 的 system + 65535 两轮实测均正常（935 / 465 Mbps，无塌陷）→ 弹警告是虚警。 */
+  it('linux（及未知平台）任意组合 → 不命中（该平台无实测劣化）', () => {
+    expect(isDegradedMtuCombo('system', 65535, 'linux')).toBe(false);
+    expect(isDegradedMtuCombo('mixed', 65535, 'linux')).toBe(false);
+    expect(isDegradedMtuCombo('system', 65535, 'freebsd')).toBe(false);
+  });
+
+  it('gvisor 任意 MTU → 不命中（65535 正是 Windows gvisor 的最优档）', () => {
+    expect(isDegradedMtuCombo('gvisor', 65535, 'win32')).toBe(false);
+    expect(isDegradedMtuCombo('gvisor', 9000, 'darwin')).toBe(false);
+  });
+
+  it('9000 及以下 → 不命中（上游非 gvisor 的 multiPendingPackets 门槛正是 <=9000）', () => {
+    expect(isDegradedMtuCombo('system', TUN_MTU_SAFE_MAX_NON_GVISOR, 'win32')).toBe(false);
+    expect(isDegradedMtuCombo('mixed', 4064, 'darwin')).toBe(false);
+  });
+
+  /** Auto 档不该误报：判定入参必须是【已解析】的具体栈，'auto' 本身无 MTU 语义。 */
+  it("mtu 为 'auto'/缺省 → 不命中（Auto 落值由查表保证在安全区）", () => {
+    expect(isDegradedMtuCombo('system', 'auto', 'win32')).toBe(false);
+    expect(isDegradedMtuCombo('mixed', undefined, 'win32')).toBe(false);
+    expect(isDegradedMtuCombo('system', null, 'darwin')).toBe(false);
   });
 });
 
