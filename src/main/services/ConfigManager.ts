@@ -195,7 +195,8 @@ export class ConfigManager implements IConfigManager {
       // 旧 true（订阅经代理，常因订阅地址被墙而开）若不迁移会随字段改名静默退化为直连（被墙订阅拉取失败、无感）。
       await this.migrateSubscriptionProxyPolicy(config);
 
-      // TUN 默认值（stack + mtu）一次性迁移（幂等、绝不抛）：存量旧强制默认 → 'auto'（行为零变化，见 migrateTunDefaults）。
+      // TUN 默认值（stack + mtu）一次性迁移（幂等、绝不抛）：存量旧强制默认 → 'auto'，随当前平台表落值
+      // （**不是行为零变化**：本批已换新默认，存量因此被抬到新档，见 migrateTunDefaults）。
       await this.migrateTunDefaults(config);
 
       // 应用分流默认预设一次性注入（幂等、flag 守卫）：为未配置的内置预设注入默认「代理·跟全局」规则，
@@ -1097,9 +1098,13 @@ export class ConfigManager implements IConfigManager {
 
   /**
    * TUN 默认值（stack + mtu）一次性迁移（幂等、绝不抛）：存量值多为旧版本写死后持久化的结果，
-   * 而非用户真实选择（旧 UI 既不暴露 stack 也不暴露 mtu）→ 归 'auto'，由解析期落回各平台原默认，
-   * 故迁移【行为零变化】，仅语义干净 + 后续平台默认演进自动惠及 + UI 可显示「Auto (具体值)」。
-   * 迁移后用户在 UI 显式改的值不再被回灌（两个 *Migrated 守卫各自把守）。
+   * 而非用户真实选择（旧 UI 既不暴露 stack 也不暴露 mtu）→ 归 'auto'，由解析期按 PLATFORM_DEFAULT_STACK /
+   * PLATFORM_DEFAULT_MTU **当前表**落值。
+   *
+   * **别把它读成「行为零变化」**：模型统一那批（表仍是旧值）确实零变化，但默认值一换，存量用户就随之被抬到
+   * 新档（Windows 存量 system/1350 → gvisor/65535，栈实现、吞吐、热切换路径全变）——这正是接入 'auto' 的目的：
+   * 改一张表即全量生效，无需第二次迁移。真正守住的不变量只有一条：**用户显式选择不被回灌**（两个 *Migrated
+   * 守卫各自把守，迁移只跑一次）。
    * 详见 docs/design/tun-stack-option.md §7 与 shared/tun-defaults#migrateTunDefaults。
    */
   private async migrateTunDefaults(config: UserConfig): Promise<void> {

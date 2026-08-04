@@ -57,9 +57,9 @@ function cfg(over: Partial<UserConfig>): UserConfig {
     selectedServerId: 's1',
     proxyMode: 'smart',
     proxyModeType: 'systemProxy',
-    // stack: 'auto' = 新模型默认档；经 resolveTunStack 解析回各平台默认（mac→gvisor / Win·Linux→system），
-    // 与旧 stack:'system'+强制回退逐平台结果一致 → 快照字节不变（坐实迁移零行为变化）。
-    tunConfig: { mtu: 1350, stack: 'auto', autoRoute: true, strictRoute: true },
+    // stack/mtu 均取 'auto' = 新装默认档，故快照直接锁住 (平台 × 栈) 查表的**实际下发值**：
+    // Win→gvisor/65535、mac→gvisor/9000、Linux→system/4064。写死具体数字会让默认值改动在此处失去覆盖。
+    tunConfig: { mtu: 'auto', stack: 'auto', autoRoute: true, strictRoute: true },
     customRules: [],
     appRules: [],
     customAppPresets: [],

@@ -18,15 +18,15 @@ import {
 } from '../tun-defaults';
 
 describe('resolveTunStack — Auto 平台映射', () => {
-  it('auto → 平台默认（mac gvisor / win·linux system）', () => {
+  it('auto → 平台默认（mac·win gvisor / linux system）', () => {
     expect(resolveTunStack('auto', 'darwin')).toBe('gvisor');
-    expect(resolveTunStack('auto', 'win32')).toBe('system');
+    expect(resolveTunStack('auto', 'win32')).toBe('gvisor');
     expect(resolveTunStack('auto', 'linux')).toBe('system');
   });
 
   it('缺省（undefined/null）等同 auto → 平台默认', () => {
     expect(resolveTunStack(undefined, 'darwin')).toBe('gvisor');
-    expect(resolveTunStack(undefined, 'win32')).toBe('system');
+    expect(resolveTunStack(undefined, 'win32')).toBe('gvisor');
     expect(resolveTunStack(null, 'linux')).toBe('system');
   });
 
@@ -107,21 +107,39 @@ describe('migrateTunDefaults — stack 侧一次性迁移（幂等）', () => {
 });
 
 describe('resolveTunMtu — Auto 按 (平台 × 具体栈) 解析', () => {
-  it('auto → 各平台历史默认（mac 1400 / win·linux 1350），三栈当前同值', () => {
-    for (const st of CONCRETE_TUN_STACKS) {
-      expect(resolveTunMtu('auto', 'darwin', st)).toBe(1400);
-      expect(resolveTunMtu('auto', 'win32', st)).toBe(1350);
-      expect(resolveTunMtu('auto', 'linux', st)).toBe(1350);
+  /**
+   * 同一平台不同栈差到 16 倍（Win gvisor 65535 vs system 4064）→ 查表必须是二维，不能退化成只按平台。
+   * 注：Windows 与 Linux 两格是吞吐实测最优档；macOS 两格无吞吐定论（两轮均被 Wi-Fi 噪声/CPU 争抢污染），
+   * 依据是 UDP 正确性 + 上游 MTU 门槛推理——别把整张表都当"实测最优"读。
+   */
+  it('auto → gvisor 分平台（win 65535 / mac·linux 9000），system·mixed 一律 4064', () => {
+    expect(resolveTunMtu('auto', 'win32', 'gvisor')).toBe(65535);
+    expect(resolveTunMtu('auto', 'darwin', 'gvisor')).toBe(9000);
+    expect(resolveTunMtu('auto', 'linux', 'gvisor')).toBe(9000);
+    for (const p of ['darwin', 'win32', 'linux'] as const) {
+      expect(resolveTunMtu('auto', p, 'system')).toBe(4064);
+      expect(resolveTunMtu('auto', p, 'mixed')).toBe(4064);
     }
   });
 
+  /** 各平台 Auto 档的实际落值 = (Auto 栈, 该栈 MTU)，UI 占位符与下发值都依赖这条闭环。 */
+  it('Auto 档端到端落值：win gvisor+65535 / mac gvisor+9000 / linux system+4064', () => {
+    const autoOf = (p: string) => {
+      const st = resolveTunStack('auto', p);
+      return [st, resolveTunMtu('auto', p, st)];
+    };
+    expect(autoOf('win32')).toEqual(['gvisor', 65535]);
+    expect(autoOf('darwin')).toEqual(['gvisor', 9000]);
+    expect(autoOf('linux')).toEqual(['system', 4064]);
+  });
+
   it('缺省（undefined/null）等同 auto', () => {
-    expect(resolveTunMtu(undefined, 'darwin', 'gvisor')).toBe(1400);
-    expect(resolveTunMtu(null, 'win32', 'system')).toBe(1350);
+    expect(resolveTunMtu(undefined, 'darwin', 'gvisor')).toBe(9000);
+    expect(resolveTunMtu(null, 'win32', 'system')).toBe(4064);
   });
 
   it('未知平台 → 兜底 linux 档', () => {
-    expect(resolveTunMtu('auto', 'freebsd', 'system')).toBe(1350);
+    expect(resolveTunMtu('auto', 'freebsd', 'system')).toBe(4064);
   });
 
   /** 旧实现用 `mtu === 9000` 当"未自定义"哨兵；模型统一后 9000 是普通显式值，须原样下发。 */
@@ -134,8 +152,8 @@ describe('resolveTunMtu — Auto 按 (平台 × 具体栈) 解析', () => {
 
   /** 旧配置可能存 0；旧实现按 falsy 回落平台值，此处保持一致（防御，非新语义）。 */
   it('非正数并入 auto（回落平台值）', () => {
-    expect(resolveTunMtu(0, 'win32', 'system')).toBe(1350);
-    expect(resolveTunMtu(-1, 'darwin', 'gvisor')).toBe(1400);
+    expect(resolveTunMtu(0, 'win32', 'system')).toBe(4064);
+    expect(resolveTunMtu(-1, 'darwin', 'gvisor')).toBe(9000);
   });
 
   it('恒返回具体正整数，任何输入×平台×栈都不返回 auto', () => {
@@ -195,24 +213,35 @@ describe('migrateTunDefaults — mtu 侧一次性迁移（与 stack 各自独立
   });
 });
 
-describe('迁移后解析闭环：行为零变化（本次上线的硬要求）', () => {
-  it('存量 (平台默认 stack + 平台默认 mtu) 迁移成 auto 后，解析回完全相同的下发值', () => {
+/**
+ * 迁移 + 解析的端到端闭环。**注意语义已从「行为零变化」翻转**：模型统一那批要求存量迁移后下发值不变，
+ * 本批（默认值变更）恰恰要求存量用户**被抬到新档**——这正是当初把 mtu 接入 `auto` 的目的：改一张表即
+ * 全量生效，不必再写第二次迁移。真正必须守住的是「用户显式选择不被回灌」。
+ */
+describe('迁移后解析闭环：存量被抬到新档，用户显式值不动', () => {
+  it('存量 (旧强制默认 stack + 旧强制默认 mtu) 迁移成 auto 后，解析到新平台档', () => {
     const cases = [
-      { platform: 'darwin' as const, stack: 'gvisor' as const, mtu: 1400 },
-      { platform: 'win32' as const, stack: 'system' as const, mtu: 1350 },
-      { platform: 'linux' as const, stack: 'system' as const, mtu: 1350 },
+      { platform: 'darwin' as const, stack: 'gvisor' as const, mtu: 1400, want: ['gvisor', 9000] },
+      { platform: 'win32' as const, stack: 'system' as const, mtu: 1350, want: ['gvisor', 65535] },
+      { platform: 'linux' as const, stack: 'system' as const, mtu: 1350, want: ['system', 4064] },
     ];
-    for (const { platform, stack, mtu } of cases) {
-      const before = { stack: resolveTunStack(stack, platform), mtu };
+    for (const { platform, stack, mtu, want } of cases) {
       const c: MigCfg = { tunConfig: { stack, mtu } };
       migrateTunDefaults(c);
       const afterStack = resolveTunStack(c.tunConfig?.stack, platform);
-      const after = {
-        stack: afterStack,
-        mtu: resolveTunMtu(c.tunConfig?.mtu, platform, afterStack),
-      };
-      expect(after).toEqual(before);
+      expect([afterStack, resolveTunMtu(c.tunConfig?.mtu, platform, afterStack)]).toEqual(want);
     }
+  });
+
+  it('已迁移用户的显式 stack/mtu 不被本批默认值变更改写', () => {
+    const c: MigCfg = {
+      tunStackMigrated: true,
+      tunMtuMigrated: true,
+      tunConfig: { stack: 'system', mtu: 1350 },
+    };
+    expect(migrateTunDefaults(c)).toBe(false);
+    const st = resolveTunStack(c.tunConfig?.stack, 'win32');
+    expect([st, resolveTunMtu(c.tunConfig?.mtu, 'win32', st)]).toEqual(['system', 1350]);
   });
 });
 
@@ -291,12 +320,32 @@ describe('isDegradedMtuCombo — 已知劣化组合非阻断提示', () => {
 });
 
 describe('常量单一真值', () => {
-  it('PLATFORM_DEFAULT_MTU 覆盖三平台 × 三栈，且当前值 = 各平台历史默认', () => {
+  it('PLATFORM_DEFAULT_MTU 覆盖三平台 × 三栈，无空洞且全在合法区间', () => {
     for (const p of ['darwin', 'win32', 'linux'] as const) {
       for (const st of CONCRETE_TUN_STACKS) {
-        expect(PLATFORM_DEFAULT_MTU[p][st]).toBe(p === 'darwin' ? 1400 : 1350);
+        const v = PLATFORM_DEFAULT_MTU[p][st];
+        expect(Number.isInteger(v)).toBe(true);
+        expect(v).toBeGreaterThanOrEqual(TUN_MTU_MIN);
+        expect(v).toBeLessThanOrEqual(TUN_MTU_MAX);
       }
     }
+  });
+
+  /** 默认档自身绝不能落在已知劣化区，否则 UI 会对自己的默认值报 warning。 */
+  it('每个默认档都不命中 isDegradedMtuCombo（自洽性）', () => {
+    for (const p of ['darwin', 'win32', 'linux'] as const) {
+      for (const st of CONCRETE_TUN_STACKS) {
+        expect(isDegradedMtuCombo(st, PLATFORM_DEFAULT_MTU[p][st], p)).toBe(false);
+      }
+    }
+  });
+
+  /** 上游按 MTU 门控的平台优化：越界即静默关掉，默认档不得踩线。 */
+  it('默认档满足上游门槛：Linux GSO(gvisor <49152) / macOS multiPendingPackets(gvisor <32768)', () => {
+    expect(PLATFORM_DEFAULT_MTU.linux.gvisor).toBeLessThan(49152);
+    expect(PLATFORM_DEFAULT_MTU.darwin.gvisor).toBeLessThan(32768);
+    expect(PLATFORM_DEFAULT_MTU.darwin.system).toBeLessThanOrEqual(TUN_MTU_SAFE_MAX_NON_GVISOR);
+    expect(PLATFORM_DEFAULT_MTU.darwin.mixed).toBeLessThanOrEqual(TUN_MTU_SAFE_MAX_NON_GVISOR);
   });
 
   it('MTU 区间常量与 sing-box 可接受范围一致', () => {
@@ -306,7 +355,7 @@ describe('常量单一真值', () => {
 
   it('PLATFORM_DEFAULT_STACK 映射正确', () => {
     expect(PLATFORM_DEFAULT_STACK.darwin).toBe('gvisor');
-    expect(PLATFORM_DEFAULT_STACK.win32).toBe('system');
+    expect(PLATFORM_DEFAULT_STACK.win32).toBe('gvisor'); // 本批改：实测 +133% 吞吐、CPU 减半
     expect(PLATFORM_DEFAULT_STACK.linux).toBe('system');
   });
 

@@ -1,15 +1,18 @@
 /**
- * ProxyManager 平台差异热切换单测：winTunBlocksHotSwitch + planHotSwitch 的 Windows TUN 拦截分支。
+ * ProxyManager 平台差异热切换单测：planHotSwitch 在**任意平台 × 任意 TUN 栈**下都不因平台/栈退回重启。
  *
- * winTunBlocksHotSwitch（ProxyManager:1208 private）逻辑：
- *   - 非 win32 或 非 tun 模式 → false（放行热切换）
- *   - win32 + tun + stack!=='system'（如 gvisor）→ true（拦截，退回重启）
- *   - win32 + tun + stack='system'（默认）→ false（放行）
+ * 曾有 `winTunBlocksHotSwitch` guard：Windows TUN 下非 system 栈一律 kind='none'（退回重启），依据是
+ * 「gvisor/mixed 未实测，保守起见」。207 补测（wintun + clash_api selector + interrupt_exist_connections
+ * + 切换期持续打流）三栈各 3 次切换均 **21/21 零失败、无环路** → guard 依据被推翻，与 Windows 默认栈
+ * 改 gvisor 同批删除。留着 guard 等于让全体 Windows 用户换节点从零断流降级成重启核。
+ * 注：该补测是**裸 sing-box 最小配置**（无 FakeIP / DNS 劫持 / 规则集 / helper 提权路径），FlowZ 本体的
+ * gvisor 换节点回归已于 2026-08-05 在 207 跑完（换节点 ×10 核 PID 不变、175/175 请求成功），
+ * 本 suite 只锁「代码层不再按平台/栈拦截」。
  *
- * planHotSwitch 在 winTunBlocksHotSwitch 返回 true 时直接 kind='none'（退回重启）。
+ * 本 suite 因此转为**反向回归**：锁住「Win + gvisor/mixed 换节点必须走热切换」，防 guard 以任何形式回潮。
  *
- * 关键工程点：process.platform 是 Node 全局只读属性，跨测试须 mock 后还原（afterEach），
- * 否则污染同进程其他 suite（configGenerationNorm 等不依赖平台但共享 process 对象）。
+ * process.platform 的 mock 用共享夹具 `./platform-test-utils#withPlatform`（try/finally 还原，不落 afterEach
+ * 状态机），不再本文件自造——该夹具的存在意义正是「避免各 *.test.ts 重复定义」。
  *
  * 私有方法经 `(svc as any).method()` 直调，不启动 sing-box（构造仅注入 configPath/singboxPath）。
  */
@@ -34,6 +37,7 @@ jest.mock('child_process', () => ({
 }));
 
 import { ProxyManager } from '../ProxyManager';
+import { withPlatform } from './platform-test-utils';
 import type { UserConfig, ServerConfig } from '../../../shared/types';
 
 afterAll(() => {
@@ -41,28 +45,6 @@ afterAll(() => {
     fsSync.rmSync(TMP, { recursive: true, force: true });
   } catch {
     /* ignore */
-  }
-});
-
-// --- process.platform mock 工具（mock 后须还原，防污染）----------------------------
-
-const REAL_PLATFORM = process.platform;
-let mockPlatformActive = false;
-
-/** 临时覆盖 process.platform；afterEach 自动还原。 */
-function setPlatform(p: string) {
-  Object.defineProperty(process, 'platform', { value: p, configurable: true, writable: true });
-  mockPlatformActive = true;
-}
-
-afterEach(() => {
-  if (mockPlatformActive) {
-    Object.defineProperty(process, 'platform', {
-      value: REAL_PLATFORM,
-      configurable: true,
-      writable: true,
-    });
-    mockPlatformActive = false;
   }
 });
 
@@ -127,89 +109,25 @@ function makeConfig(opts?: {
 }
 
 // ============================================================================
-// 一、winTunBlocksHotSwitch（私有，三平台 × 模式 × stack 矩阵）
+// 一、guard 已删除：ProxyManager 上不得再存在任何平台/栈维度的热切换拦截私有方法
 // ============================================================================
 
-describe('ProxyManager.winTunBlocksHotSwitch', () => {
-  it('win32 + tun + stack=gvisor → true（拦截热切换，退回重启）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'gvisor' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(true);
-  });
-
-  it('win32 + tun + stack=system（默认）→ false（放行）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'system' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('win32 + tun + tunConfig 缺省 stack（undefined）→ false（默认 system 放行）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun' });
-    // 删 stack 模拟旧 config 无此字段 → winTunStack 默认 'system'
-    (cfg.tunConfig as any).stack = undefined;
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('win32 + systemProxy（非 tun）→ false（非 tun 不拦）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'systemProxy' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('win32 + tun + stack=mixed → true（非 system 一律拦）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'mixed' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(true);
-  });
-
-  it('win32 + tun + stack=auto → false（Auto 解析为 system，迁移后默认须放行；防回归）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'auto' });
-    // 治本：guard 必须 resolveTunStack 后再判，不能按裸 'auto'!=='system' 误退重启
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('darwin + tun + stack=gvisor → false（非 Win 不拦）', () => {
-    setPlatform('darwin');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'gvisor' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('darwin + tun + stack=system → false', () => {
-    setPlatform('darwin');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'system' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('linux + tun + stack=gvisor → false（非 Win 不拦）', () => {
-    setPlatform('linux');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'tun', tunStack: 'gvisor' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
-  });
-
-  it('linux + systemProxy → false', () => {
-    setPlatform('linux');
-    const svc = makeSvc();
-    const cfg = makeConfig({ proxyModeType: 'systemProxy' });
-    expect(svc.winTunBlocksHotSwitch(cfg)).toBe(false);
+describe('winTunBlocksHotSwitch 已删除', () => {
+  /**
+   * 名字级断言看着笨，但它是**唯一**能防「guard 被原样恢复」的静态锁：删除是本批的核心改动，
+   * 行为断言（下方 suite）只能证明当前实现放行，无法阻止有人重新引入同名方法再在别处调用。
+   */
+  it('私有方法不复存在（防 guard 原样回潮）', () => {
+    const svc = withPlatform('win32', () => makeSvc());
+    expect(svc.winTunBlocksHotSwitch).toBeUndefined();
   });
 });
 
 // ============================================================================
-// 二、planHotSwitch 的 winTun 拦截端到端（kind='none'）
+// 二、planHotSwitch 端到端：平台 × 栈全矩阵放行（反向回归）
 // ============================================================================
 
-describe('ProxyManager.planHotSwitch winTun 拦截', () => {
+describe('ProxyManager.planHotSwitch 平台/栈矩阵', () => {
   /**
    * planHotSwitch 需 currentConfig（old）+ currentIdToTagMap 已就位才会进到 winTun 判定。
    * norm 等价前提：old 与 next 结构完全一致（proxyModeType/tunStack/customRules 等都不变），
@@ -219,68 +137,51 @@ describe('ProxyManager.planHotSwitch winTun 拦截', () => {
    * @param mode  old/next 共用的 proxyModeType（tun 或 systemProxy）
    * @param stack old/next 共用的 tunConfig.stack
    */
-  function setupForGlobalSwitch(svc: any, mode: 'tun' | 'systemProxy', stack: string) {
-    svc.currentConfig = makeConfig({
-      proxyModeType: mode,
-      tunStack: stack,
-      selectedServerId: NODE_A,
+  /** 在 platform 下建服务 + 就位 old 态，换全局节点 A→B，返回 plan。 */
+  function planGlobalSwitch(
+    platform: NodeJS.Platform,
+    mode: 'tun' | 'systemProxy',
+    stack: string
+  ): { kind: string; puts: unknown[] } {
+    return withPlatform(platform, () => {
+      const svc: any = makeSvc();
+      svc.currentConfig = makeConfig({
+        proxyModeType: mode,
+        tunStack: stack,
+        selectedServerId: NODE_A,
+      });
+      svc.currentIdToTagMap = new Map([
+        [NODE_A, 'tagA'],
+        [NODE_B, 'tagB'],
+      ]);
+      return svc.planHotSwitch(
+        makeConfig({ proxyModeType: mode, tunStack: stack, selectedServerId: NODE_B })
+      );
     });
-    svc.currentIdToTagMap = new Map([
-      [NODE_A, 'tagA'],
-      [NODE_B, 'tagB'],
-    ]);
   }
 
-  it('win32 + tun + gvisor：换全局节点 → kind="none"（退回重启，不热切换）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    setupForGlobalSwitch(svc, 'tun', 'gvisor');
-    const next = makeConfig({ proxyModeType: 'tun', tunStack: 'gvisor', selectedServerId: NODE_B });
-    const plan = svc.planHotSwitch(next);
-    expect(plan.kind).toBe('none');
-    expect(plan.puts).toEqual([]);
+  const PUT_A_TO_B = [{ selectorTag: 'proxy-selector', memberTag: 'tagB', oldMemberTag: 'tagA' }];
+
+  /**
+   * 核心回归：Windows Auto 档现解析为 gvisor（PLATFORM_DEFAULT_STACK.win32）。旧 guard 在此正好命中
+   * 「非 system → 退回重启」→ 全体 Windows 用户换节点都要重启核。必须是 global。
+   */
+  it.each(['gvisor', 'mixed', 'auto', 'system'])(
+    'win32 + tun + stack=%s：换全局节点 → kind="global"（guard 已删，不再退回重启）',
+    (stack) => {
+      const plan = planGlobalSwitch('win32', 'tun', stack);
+      expect(plan.kind).toBe('global');
+      expect(plan.puts).toEqual(PUT_A_TO_B);
+    }
+  );
+
+  it('win32 + systemProxy：换全局节点 → kind="global"（非 tun 本就不受约束）', () => {
+    expect(planGlobalSwitch('win32', 'systemProxy', 'system').kind).toBe('global');
   });
 
-  it('win32 + tun + system：换全局节点 → kind="global"（放行热切换）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    setupForGlobalSwitch(svc, 'tun', 'system');
-    const next = makeConfig({ proxyModeType: 'tun', tunStack: 'system', selectedServerId: NODE_B });
-    const plan = svc.planHotSwitch(next);
+  it.each(['darwin', 'linux'] as const)('%s + tun + gvisor：换全局节点 → kind="global"', (p) => {
+    const plan = planGlobalSwitch(p, 'tun', 'gvisor');
     expect(plan.kind).toBe('global');
-    expect(plan.puts).toEqual([
-      { selectorTag: 'proxy-selector', memberTag: 'tagB', oldMemberTag: 'tagA' },
-    ]);
-  });
-
-  it('win32 + systemProxy：换全局节点 → kind="global"（非 tun 不受 winTun 约束）', () => {
-    setPlatform('win32');
-    const svc = makeSvc();
-    setupForGlobalSwitch(svc, 'systemProxy', 'system');
-    const next = makeConfig({
-      proxyModeType: 'systemProxy',
-      tunStack: 'system',
-      selectedServerId: NODE_B,
-    });
-    const plan = svc.planHotSwitch(next);
-    expect(plan.kind).toBe('global');
-  });
-
-  it('darwin + tun + gvisor：换全局节点 → kind="global"（非 Win 放行）', () => {
-    setPlatform('darwin');
-    const svc = makeSvc();
-    setupForGlobalSwitch(svc, 'tun', 'gvisor');
-    const next = makeConfig({ proxyModeType: 'tun', tunStack: 'gvisor', selectedServerId: NODE_B });
-    const plan = svc.planHotSwitch(next);
-    expect(plan.kind).toBe('global');
-  });
-
-  it('linux + tun + gvisor：换全局节点 → kind="global"（非 Win 放行）', () => {
-    setPlatform('linux');
-    const svc = makeSvc();
-    setupForGlobalSwitch(svc, 'tun', 'gvisor');
-    const next = makeConfig({ proxyModeType: 'tun', tunStack: 'gvisor', selectedServerId: NODE_B });
-    const plan = svc.planHotSwitch(next);
-    expect(plan.kind).toBe('global');
+    expect(plan.puts).toEqual(PUT_A_TO_B);
   });
 });

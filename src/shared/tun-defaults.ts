@@ -26,11 +26,16 @@ export type ConcreteTunStack = 'system' | 'gvisor' | 'mixed';
  * `Auto` 档的平台映射（单一真值）：
  *   · macOS（darwin）→ gvisor —— Apple 严格接管场景强制 gvisor / system·mixed 不可用（sing-box TunnelVision 文档）
  *     + FlowZ 历史实证（3.3.18 稳定组合）+ DNS/NetworkExtension 约束；
- *   · Windows（win32）/ Linux → system —— 内核栈性能 + Win 热切换 guard 实测零环路（仅 system 放行）。
+ *   · Windows（win32）→ gvisor —— 207 实测（wintun）：新默认组合（gvisor/65535）相对旧默认（system/1350）
+ *     **+133% 吞吐、CPU 减半**；热切换环路三栈补测均 21/21 零失败（**裸 sing-box 最小配置**，FlowZ 本体
+ *     回归见 benchmark 0.5），据此同批删除原「仅 system 放行」的 guard（见 ProxyManager.planHotSwitch）。
+ *     注：1400B UDP 丢包的根因是 **MTU 1350**（1400+28 > 1350 需分片、system 栈不处理），不是栈本身——
+ *     选 system 亦落 MTU 4064，实测 5/5 不丢；勿把它当成 gvisor 相对 system 的优势记；
+ *   · Linux → system —— 内核栈性能，实测无需改。
  */
 export const PLATFORM_DEFAULT_STACK: Record<string, ConcreteTunStack> = {
   darwin: 'gvisor',
-  win32: 'system',
+  win32: 'gvisor',
   linux: 'system',
 };
 
@@ -42,13 +47,21 @@ export const PLATFORM_DEFAULT_STACK: Record<string, ConcreteTunStack> = {
  * 优化：Linux 的 GSO 要求 gvisor 且 `mtu < 49152`，macOS 的 multiPendingPackets 要求 gvisor `< 32768` /
  * system·mixed `<= 9000`——取值越界会静默关掉这些优化。
  *
- * **当前值 = 各平台历史强制默认（mac 1400 / Win·Linux 1350），本次仅完成模型统一、行为零变化。**
- * 实测支持的新取值另行落地：届时只改本表，无需再动存储/迁移/UI——这正是把 mtu 接入 `auto` 模型的目的。
+ * 每格取值的独立依据（均非拍脑袋，实测机器见 docs/design/networking/flowz-win-tun-mtu-benchmark.md）：
+ *   · **Windows gvisor 65535** —— 三平台中唯一没有 MTU 门槛型上游优化的平台（GSO 仅 Linux、
+ *     multiPendingPackets 仅 Darwin），207 实测 65535 + gvisor = 845–919 Mbps 为最优档；
+ *   · **macOS gvisor 9000** —— multiPendingPackets 要求 gvisor `< 32768`，9000 同时满足非 gvisor 的
+ *     `<= 9000` → 唯一「三栈通吃」取值，用户切栈不掉坑；
+ *   · **Linux gvisor 9000** —— GSO 要求 gvisor 且 `mtu < 49152`（65535 会静默关掉 GSO）；
+ *   · **三平台 system/mixed 一律 4064** —— 修 1400B UDP 数据报丢包的最小档（三平台复现），同时规避
+ *     Windows `system + 65535` 塌到 ~11 Mbps 的组合。
+ *
+ * 旧值（mac 1400 / Win·Linux 1350，且不分栈）是历史强制默认，与实测最优档差 70%~数倍。
  */
 export const PLATFORM_DEFAULT_MTU: Record<string, Record<ConcreteTunStack, number>> = {
-  darwin: { system: 1400, gvisor: 1400, mixed: 1400 },
-  win32: { system: 1350, gvisor: 1350, mixed: 1350 },
-  linux: { system: 1350, gvisor: 1350, mixed: 1350 },
+  darwin: { system: 4064, gvisor: 9000, mixed: 4064 },
+  win32: { system: 4064, gvisor: 65535, mixed: 4064 },
+  linux: { system: 4064, gvisor: 9000, mixed: 4064 },
 };
 
 /** stack 字段全部合法值（含 Auto），供 ConfigManager 校验 + UI 选项单一真值。 */
@@ -70,7 +83,7 @@ export const TUN_MTU_SAFE_MAX_NON_GVISOR = 9000;
 
 /**
  * 解析用户选择的 TUN stack → 下发给核的【具体】栈（恒 system|gvisor|mixed，永不返回 'auto'/省略）。
- * - `auto` / 缺省（undefined/null）→ 平台默认（PLATFORM_DEFAULT_STACK；mac→gvisor / Win·Linux→system；未知平台兜底 system）；
+ * - `auto` / 缺省（undefined/null）→ 平台默认（PLATFORM_DEFAULT_STACK；mac·Win→gvisor / Linux→system；未知平台兜底 system）；
  * - 显式 `system`/`gvisor`/`mixed` → **原样下发（全平台 honor，含 mac，零强制回退）**。
  *   mac 选 system/mixed 是用户知情的实验选择（UI 默认 gvisor + 未验证提示），由真机判定其可用性，不在此静默改写。
  */

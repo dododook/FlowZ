@@ -171,6 +171,35 @@ describe('buildInbounds — TUN', () => {
     expect(byTag(ibs, 'tun-in').stack).toBe('system');
   });
 
+  /**
+   * MTU 的 builder 接线（**不是** resolveTunMtu 的纯逻辑，那由 shared/__tests__/tun-defaults.test.ts 覆盖）：
+   * 锁的是 buildInbounds 真的把 `config.tunConfig.mtu` 喂进去了。config-snapshot 的 fixture 现在全是
+   * `mtu:'auto'`，若 builder 回归成无条件下发 auto 档，纯函数单测与快照都仍然全绿、用户手填的 MTU 静默失效。
+   * 9000 是刻意选的：它曾是「未设置」哨兵，此处一并锁死哨兵已删。
+   */
+  it('显式 mtu 原样下发（含旧哨兵值 9000），auto/缺省则落 (平台 × 栈) 档', () => {
+    const build = (tun: Record<string, unknown>, platform: 'win32' | 'linux' = 'win32') =>
+      byTag(
+        withPlatform(platform, () =>
+          buildInbounds(
+            cfg({
+              proxyModeType: 'tun',
+              tunConfig: { stack: 'auto', autoRoute: true, strictRoute: true, ...tun } as any,
+            }),
+            undefined,
+            deps()
+          )
+        ),
+        'tun-in'
+      );
+    expect(build({ mtu: 9000 }).mtu).toBe(9000); // 哨兵已删：9000 是普通显式值
+    expect(build({ mtu: 1280 }).mtu).toBe(1280);
+    expect(build({ mtu: 'auto' }).mtu).toBe(65535); // win32 + Auto 栈(gvisor)
+    expect(build({}).mtu).toBe(65535); // 缺 mtu 键等同 auto
+    // 显式栈参与查表：同平台改栈，Auto MTU 随之换档（证明传的是【已解析】栈而非用户原始值）
+    expect(build({ stack: 'system', mtu: 'auto' }).mtu).toBe(4064);
+  });
+
   it('显式 stack=mixed 全平台原样下发（honor 用户选择）', () => {
     const ibs = withPlatform('win32', () =>
       buildInbounds(
@@ -190,7 +219,7 @@ describe('buildInbounds — TUN', () => {
       buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())
     );
     const tun = byTag(ibs, 'tun-in');
-    expect(tun.stack).toBe('system'); // Windows system 栈
+    expect(tun.stack).toBe('gvisor'); // Windows Auto 档现为 gvisor（实测最优；栈本身由 tun-defaults 单测覆盖）
     expect(tun.route_exclude_address).toContain('10.0.0.0/8'); // bypassLAN 默认 true
     expect(tun.route_exclude_address).toContain('223.5.5.5/32'); // 核心 DNS 防回流
   });

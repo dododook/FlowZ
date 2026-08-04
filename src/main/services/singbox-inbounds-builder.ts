@@ -387,8 +387,8 @@ export function buildInbounds(
     }
 
     // TUN 网络栈：经 resolveTunStack 把用户选择（含 'auto' 默认档）解析成下发给核的【具体】栈。FlowZ 始终显式
-    // pin，绝不吃 sing-box build-tag 默认（编进 gvisor→默认漂成 mixed）。'auto'/缺省→平台默认（mac gvisor /
-    // Win·Linux system）；显式 system/gvisor/mixed 原样下发（honor 用户选择，零强制回退——旧 darwin&&system→gvisor
+    // pin，绝不吃 sing-box build-tag 默认（编进 gvisor→默认漂成 mixed）。'auto'/缺省→平台默认（mac·Win gvisor /
+    // Linux system）；显式 system/gvisor/mixed 原样下发（honor 用户选择，零强制回退——旧 darwin&&system→gvisor
     // 强制回退已移除，它把"用户选 system"与"未设置"混为一谈）。依据/置信度见 docs/design/tun-stack-option.md。
     const effectiveStack = resolveTunStack(config.tunConfig?.stack, process.platform);
 

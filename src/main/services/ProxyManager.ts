@@ -36,7 +36,6 @@ import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
 import { flushOsDnsCache } from './os-dns-flush';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
-import { resolveTunStack } from '../../shared/tun-defaults';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
 import { parseDefaultGateway, parseScutilRouter } from '../../shared/default-route';
 import {
@@ -1932,24 +1931,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   }
 
   /**
-   * Windows TUN 热切换 guard：system 栈放行（实测零环路），非 system（gvisor/mixed）未实测保守退回重启。
-   * 全局节点热切换与规则目标热切换共用（rule-sel selector 切换同理可能触发 Wintun 回捕）。
-   * 注：必须用 resolveTunStack 把 'auto' 解析成【具体】栈再判——Win 上 'auto'→system，应走零断流快路径；
-   * 若按裸 'auto'!=='system' 误判会让迁移后（默认 'auto'）的 Win 用户全部退回重启（回归）。
-   */
-  private winTunBlocksHotSwitch(config: UserConfig): boolean {
-    if (process.platform !== 'win32' || config.proxyModeType !== 'tun') return false;
-    const winTunStack = resolveTunStack(config.tunConfig?.stack, process.platform); // 'auto'→system(Win)
-    return winTunStack !== 'system';
-  }
-
-  /**
    * 热切换规划：判 newConfig 相对 currentConfig 能否走 clash_api 热切换，并产出需 PUT 的 selector 列表。
    * - norm(old)===norm(new) 是前提（targetServerId 已移出 norm → 改规则目标不翻转 norm）。
    * - kind=global：仅 selectedServerId 变 → PUT proxy-selector。
    * - kind=rules：仅规则 targetServerId 变 → PUT 各 rule-sel-<id>。
    * - kind=both：全局 + 规则同时变 → PUT proxy-selector + 各 rule-sel。
-   * - kind=none：无热切换可行（结构变更/目标节点不在 selector/WIN gvisor guard）→ 退回去抖重启。
+   * - kind=none：无热切换可行（结构变更/目标节点不在 selector）→ 退回去抖重启。
+   *
+   * 注：曾有 Windows TUN 非 system 栈一律退回重启的 guard（`winTunBlocksHotSwitch`），依据是「未实测」。
+   * 207 补测：wintun 下 gvisor/mixed/system 三栈各 3 次切换 × 持续打流均 21/21 零失败、无环路 → 与 Windows
+   * 默认栈改 gvisor 同批删除（留着等于全体 Windows 用户换节点从零断流降级成重启核）。
+   * **该补测用的是裸 sing-box 最小配置**，没有 FlowZ 的 FakeIP、DNS 劫持、规则集、auto_detect_interface
+   * 交互、helper 提权路径 —— 本体回归见 docs/design/networking/flowz-win-tun-mtu-benchmark.md 的 0.5。
    */
   private planHotSwitch(newConfig: UserConfig): {
     kind: 'none' | 'global' | 'rules' | 'both';
@@ -1964,7 +1957,6 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (this.configGenerationNorm(old) !== this.configGenerationNorm(newConfig)) {
       return { kind: 'none', puts: [] };
     }
-    if (this.winTunBlocksHotSwitch(newConfig)) return { kind: 'none', puts: [] };
 
     const puts: { selectorTag: string; memberTag: string; oldMemberTag?: string }[] = [];
     let globalChanged = false;
