@@ -42,6 +42,7 @@ import {
   NODE_B,
 } from './dns-resolver-fixtures';
 import { BUILTIN_GEO_RULESETS, getRuleSetRuntimeDir } from '../builtin-geo-rulesets';
+import { setPlatform, restorePlatform } from './platform-test-utils';
 
 // 测试环境补种 smart 模式 3 件套 geo 的本地 .srs（写 SRS 魔数即过 isValidSrsFile）——与生产一致：
 // startInternal 先 copyRuleSetsToUserData(seed) 再 generateSingBoxConfig，故 smart 模式 geo 路由规则的 rule_set
@@ -371,12 +372,9 @@ byteDiffDescribe(
 );
 
 describe('Q1 Windows takeover：消除 type:local 死循环（dns-local 改路由，生成物验证）', () => {
-  const realPlatform = process.platform;
-  const setPlatform = (p: string) =>
-    Object.defineProperty(process, 'platform', { value: p, configurable: true });
   // 每个用例后即还原（不只 afterAll）：杜绝 platform mutation 泄漏到后续 describe（review LOW，隔离健壮性）。
-  afterEach(() => setPlatform(realPlatform));
-  afterAll(() => setPlatform(realPlatform));
+  afterEach(restorePlatform);
+  afterAll(restorePlatform);
 
   const tunFx = buildFixtures().find((f) => f.name === 'tun-smart__auto')!; // tun + 默认 takeover 开
   const ruleBy = (cfg: AnyCfg, pred: (r: AnyCfg) => boolean) => dnsRules(cfg).find(pred);

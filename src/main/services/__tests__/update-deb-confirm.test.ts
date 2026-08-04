@@ -26,13 +26,11 @@ jest.mock('electron', () => ({
 }));
 
 import { UpdateService } from '../UpdateService';
+import { setPlatform, REAL_PLATFORM } from './platform-test-utils';
 const { dialog } = require('electron');
 
 const log = { addLog: () => {} } as any;
-const ORIG_PLATFORM = process.platform;
 const ORIG_APPIMAGE = process.env.APPIMAGE;
-const setPlatform = (p: NodeJS.Platform) =>
-  Object.defineProperty(process, 'platform', { value: p, configurable: true });
 
 const isDebForm = (svc: UpdateService, p: string): boolean =>
   (svc as unknown as { isDebUpdateForm: (p: string) => boolean }).isDebUpdateForm(p);
@@ -46,7 +44,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  setPlatform(ORIG_PLATFORM);
+  setPlatform(REAL_PLATFORM);
   if (ORIG_APPIMAGE === undefined) delete process.env.APPIMAGE;
   else process.env.APPIMAGE = ORIG_APPIMAGE;
   try {

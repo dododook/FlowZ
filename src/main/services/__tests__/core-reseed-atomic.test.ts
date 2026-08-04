@@ -31,11 +31,7 @@ jest.mock('electron', () => ({
 }));
 
 import { ResourceManager } from '../ResourceManager';
-
-const ORIG_PLATFORM = process.platform;
-function setPlatform(p: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: p, configurable: true });
-}
+import { setPlatform, REAL_PLATFORM } from './platform-test-utils';
 
 const LINUX_BUNDLE = path.join(RESOURCES, 'linux');
 const CORE_UPDATE = path.join(ROOT, 'core_update');
@@ -55,7 +51,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  setPlatform(ORIG_PLATFORM);
+  setPlatform(REAL_PLATFORM);
   try {
     fsSync.rmSync(ROOT, { recursive: true, force: true });
   } catch {
@@ -87,7 +83,7 @@ describe('ensureWritableCore(force=true) — 原子替换换核（issue #150）'
     // inode 改变 = 走 rename（原子换 inode）而非原地 O_TRUNC 覆盖 → 根除 ETXTBSY
     expect(fsSync.statSync(TARGET).ino).not.toBe(inodeBefore);
     // 可执行位保留（POSIX 语义；Windows 宿主无 0o111 执行位、chmod 只动只读属性，跳过——该断言仅类 Unix 宿主有意义）
-    if (ORIG_PLATFORM !== 'win32') expect(fsSync.statSync(TARGET).mode & 0o111).not.toBe(0);
+    if (REAL_PLATFORM !== 'win32') expect(fsSync.statSync(TARGET).mode & 0o111).not.toBe(0);
     // 不留半残 .tmp
     expect(fsSync.existsSync(`${TARGET}.tmp`)).toBe(false);
   });
@@ -102,7 +98,7 @@ describe('ensureWritableCore(force=true) — 原子替换换核（issue #150）'
     expect(ret).toBe(TARGET);
     expect(fsSync.readFileSync(TARGET, 'utf-8')).toBe('NEW-CORE-1.14.0-alpha.33');
     // 可执行位保留（POSIX-only，Windows 宿主跳过——见上）
-    if (ORIG_PLATFORM !== 'win32') expect(fsSync.statSync(TARGET).mode & 0o111).not.toBe(0);
+    if (REAL_PLATFORM !== 'win32') expect(fsSync.statSync(TARGET).mode & 0o111).not.toBe(0);
     expect(fsSync.existsSync(`${TARGET}.tmp`)).toBe(false);
   });
 

@@ -31,11 +31,8 @@ jest.mock('electron', () => ({
 }));
 
 import { ResourceManager } from '../ResourceManager';
+import { setPlatform, REAL_PLATFORM } from './platform-test-utils';
 
-const ORIG_PLATFORM = process.platform;
-function setPlatform(p: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: p, configurable: true });
-}
 function setArch(a: string): void {
   Object.defineProperty(process, 'arch', { value: a, configurable: true });
 }
@@ -69,7 +66,7 @@ function mkRm(): ResourceManager {
 }
 
 afterAll(() => {
-  setPlatform(ORIG_PLATFORM);
+  setPlatform(REAL_PLATFORM);
   try {
     fsSync.rmSync(ROOT, { recursive: true, force: true });
   } catch {

@@ -1,16 +1,13 @@
 import { execFile } from 'child_process';
 import { MeshExitRouteManager } from '../mesh-exit-route-manager';
 import type { UserConfig } from '../../../shared/types';
+import { setPlatform, restorePlatform } from './platform-test-utils';
 
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
 const mockExecFile = execFile as unknown as jest.Mock;
 
-const realPlatform = process.platform;
-function setPlatform(p: string): void {
-  Object.defineProperty(process, 'platform', { value: p, configurable: true });
-}
 afterEach(() => {
-  setPlatform(realPlatform);
+  restorePlatform();
   jest.clearAllMocks();
 });
 

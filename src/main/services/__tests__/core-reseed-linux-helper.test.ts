@@ -29,10 +29,7 @@ jest.mock('electron', () => ({
 }));
 
 import { ResourceManager } from '../ResourceManager';
-
-const ORIG_PLATFORM = process.platform;
-const setPlatform = (p: NodeJS.Platform) =>
-  Object.defineProperty(process, 'platform', { value: p, configurable: true });
+import { setPlatform, REAL_PLATFORM } from './platform-test-utils';
 
 const LINUX_BUNDLE = path.join(RESOURCES, 'linux');
 const WIN_BUNDLE = path.join(RESOURCES, 'win');
@@ -60,7 +57,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  setPlatform(ORIG_PLATFORM);
+  setPlatform(REAL_PLATFORM);
   try {
     fsSync.rmSync(ROOT, { recursive: true, force: true });
   } catch {

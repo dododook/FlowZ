@@ -22,6 +22,7 @@ jest.mock('electron', () => ({
 }));
 
 import { DiagnosticService } from '../DiagnosticService';
+import { withPlatformAsync } from './platform-test-utils';
 import {
   getLogsPath,
   getSingBoxLogPath,
@@ -56,20 +57,11 @@ function makeSvc(opts: { startedViaHelper?: boolean } = {}): any {
  * 本文件的断言与 `process.platform` 强相关（Windows 会多收一段看护脚本日志），故每条用例都**显式 pin
  * 平台**，绝不吃宿主平台的默认值——否则本地 Linux 全绿、Windows CI runner 上必挂（已实际踩过）。
  */
-async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>): Promise<T> {
-  const real = process.platform;
-  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
-  try {
-    return await fn();
-  } finally {
-    Object.defineProperty(process, 'platform', { value: real, configurable: true });
-  }
-}
 
 describe('DiagnosticService — 日志取数路径收口', () => {
   it('三段日志各读各的文件，startup log 走 getSingBoxStartupLogPath()（不与 singbox.log 同源）', async () => {
     // pin 非 Windows：Windows 会多收一段看护脚本日志，seen 就不是三条了
-    const { seen, md } = await withPlatform('linux', async () => {
+    const { seen, md } = await withPlatformAsync('linux', async () => {
       const svc = makeSvc();
       const seen: string[] = [];
       jest.spyOn(svc, 'readTail').mockImplementation(async (...args: unknown[]) => {
@@ -91,7 +83,7 @@ describe('DiagnosticService — 日志取数路径收口', () => {
   });
 
   it('Windows UAC 路径：startup 段标注核 stderr，并额外收看护脚本自述日志', async () => {
-    const { seen, md } = await withPlatform('win32', async () => {
+    const { seen, md } = await withPlatformAsync('win32', async () => {
       const svc = makeSvc({ startedViaHelper: false });
       const seen: string[] = [];
       jest.spyOn(svc, 'readTail').mockImplementation(async (...args: unknown[]) => {
@@ -110,7 +102,7 @@ describe('DiagnosticService — 日志取数路径收口', () => {
   });
 
   it('非 Windows 不出看护脚本日志段（避免恒定的「(无日志文件)」噪声）', async () => {
-    const { seen, md } = await withPlatform('linux', async () => {
+    const { seen, md } = await withPlatformAsync('linux', async () => {
       const svc = makeSvc({ startedViaHelper: true });
       const seen: string[] = [];
       jest.spyOn(svc, 'readTail').mockImplementation(async (...args: unknown[]) => {
@@ -124,7 +116,7 @@ describe('DiagnosticService — 日志取数路径收口', () => {
   });
 
   it('helper 路径标注为含核 stdout+stderr 且只追加不截断', async () => {
-    const md = await withPlatform('linux', async () => {
+    const md = await withPlatformAsync('linux', async () => {
       const svc = makeSvc({ startedViaHelper: true });
       jest.spyOn(svc, 'readTail').mockResolvedValue('FATAL[0000] boom');
       return (await svc.buildReport()) as string;

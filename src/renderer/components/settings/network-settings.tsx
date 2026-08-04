@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store/app-store';
-import { parseDnsServerSpec } from '@shared/dns';
+import { parseDnsServerSpec, DNS_TIMEOUT_MIN_MS, DNS_TIMEOUT_MAX_MS } from '@shared/dns';
 import {
   BUILTIN_UPSTREAMS,
   isValidCustomUpstreamSpec,
@@ -49,6 +49,14 @@ const isLinux = window.electron?.platform === 'linux';
 const platform = window.electron?.platform ?? 'linux';
 // Auto 档在本平台解析到的具体栈（UI 显示 "Auto (gvisor)" 用），与主进程 resolveTunStack 同源单一真值。
 const autoResolvedStack = resolveTunStack('auto', platform);
+
+/**
+ * 表单可选的本地端口区间。**下界 1024 是 UI 侧的额外约束，不是 config 的合法区间**——
+ * `ConfigManager.validateConfig` 放行 1..65535（要容忍存量低端口配置）。故这里刻意**不**抽成 shared 常量：
+ * 抽了会把「表单不让选特权端口」与「配置层可接受」这两件不同的事伪装成同一个真值。
+ */
+const LOCAL_PORT_MIN = 1024;
+const LOCAL_PORT_MAX = 65535;
 
 const DNS_DEFAULTS = {
   domesticDns: 'https://doh.pub/dns-query',
@@ -208,7 +216,7 @@ export function NetworkSettings() {
     saveConfig({ ...config, speedTestUrl: next }).catch(() => toast.error(t('common.saveFailed')));
   };
 
-  // P2c DNS 查询超时：onBlur 提交。空 = 清除（不下发，用核默认）；非空须为 1..60000 的整数毫秒，越界提示并回滚。
+  // P2c DNS 查询超时：onBlur 提交。空 = 清除（不下发，用核默认）；非空须在 shared/dns 的区间内，越界提示并回滚。
   const commitDnsTimeout = () => {
     const v = dnsTimeout.trim();
     const stored = config.dnsConfig?.dnsTimeoutMs;
@@ -219,8 +227,13 @@ export function NetworkSettings() {
       return;
     }
     const ms = parseInt(v, 10);
-    if (isNaN(ms) || ms < 1 || ms > 60000) {
-      toast.error(t('settings.advanced.dnsTimeoutRange', 'DNS 超时须为 1-60000 毫秒'));
+    if (isNaN(ms) || ms < DNS_TIMEOUT_MIN_MS || ms > DNS_TIMEOUT_MAX_MS) {
+      toast.error(
+        t('settings.advanced.dnsTimeoutRange', {
+          min: DNS_TIMEOUT_MIN_MS,
+          max: DNS_TIMEOUT_MAX_MS,
+        })
+      );
       setDnsTimeout(stored != null ? String(stored) : ''); // 回滚到已存值
       return;
     }
@@ -234,8 +247,10 @@ export function NetworkSettings() {
     const portNum = parseInt(localPort, 10);
     const cur = config.mixedPort || config.httpPort || 7890;
     const revert = () => setLocalPort(cur.toString());
-    if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-      toast.error(t('settings.advanced.localPortRange', '端口须为 1024-65535'));
+    if (isNaN(portNum) || portNum < LOCAL_PORT_MIN || portNum > LOCAL_PORT_MAX) {
+      toast.error(
+        t('settings.advanced.localPortRange', { min: LOCAL_PORT_MIN, max: LOCAL_PORT_MAX })
+      );
       revert();
       return;
     }
@@ -467,7 +482,12 @@ export function NetworkSettings() {
             label={
               <>
                 {t('settings.advanced.dnsTimeout', 'DNS 查询超时')}
-                <InfoTooltip content={t('settings.advanced.dnsTimeoutDescFull')} />
+                <InfoTooltip
+                  content={t('settings.advanced.dnsTimeoutDescFull', {
+                    min: DNS_TIMEOUT_MIN_MS,
+                    max: DNS_TIMEOUT_MAX_MS,
+                  })}
+                />
               </>
             }
             desc={t('settings.advanced.dnsTimeoutDesc')}

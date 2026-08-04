@@ -36,6 +36,7 @@ import {
 } from '../PlatformPrivilegeService';
 import type { LogLevel } from '../../../shared/types';
 import { powershellPath } from '../../utils/win-system32';
+import { setPlatform, restorePlatform } from './platform-test-utils';
 
 afterAll(() => {
   try {
@@ -45,26 +46,8 @@ afterAll(() => {
   }
 });
 
-// --- process.platform mock 工具（mock 后须还原，防污染）----------------------------
-
-const REAL_PLATFORM = process.platform;
-let mockPlatformActive = false;
-
-function setPlatform(p: string) {
-  Object.defineProperty(process, 'platform', { value: p, configurable: true, writable: true });
-  mockPlatformActive = true;
-}
-
-afterEach(() => {
-  if (mockPlatformActive) {
-    Object.defineProperty(process, 'platform', {
-      value: REAL_PLATFORM,
-      configurable: true,
-      writable: true,
-    });
-    mockPlatformActive = false;
-  }
-});
+// process.platform mock 走共享夹具（mock 后须还原，防污染同进程其他 suite）。
+afterEach(restorePlatform);
 
 // --- PrivilegeContext mock ---------------------------------------------------------
 // isTunMode 可控（其余回调提权决策路径用不到，给 noop 占位避免 undefined 调用报错）。

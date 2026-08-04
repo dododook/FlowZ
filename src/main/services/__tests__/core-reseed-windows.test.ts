@@ -25,11 +25,7 @@ jest.mock('electron', () => ({
 }));
 
 import { ResourceManager } from '../ResourceManager';
-
-const ORIG_PLATFORM = process.platform;
-function setPlatform(p: NodeJS.Platform): void {
-  Object.defineProperty(process, 'platform', { value: p, configurable: true });
-}
+import { setPlatform, REAL_PLATFORM } from './platform-test-utils';
 
 const WIN_BUNDLE = path.join(RESOURCES, 'win'); // 生产 baseDir=process.resourcesPath → resources/win
 const CORE_UPDATE = path.join(ROOT, 'core_update'); // userData/core_update
@@ -49,7 +45,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
-  setPlatform(ORIG_PLATFORM);
+  setPlatform(REAL_PLATFORM);
   try {
     fsSync.rmSync(ROOT, { recursive: true, force: true });
   } catch {

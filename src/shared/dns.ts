@@ -36,6 +36,14 @@ export const BOOTSTRAP_DIRECT_DNS_IPS: readonly string[] = [
  */
 export const CONTROLLED_TUN_DNS_IP = '8.8.8.8';
 
+/**
+ * DNS 查询超时（`dnsConfig.dnsTimeoutMs`）的合法区间，单一真值。上界 60s——再长无意义，解析早该失败。
+ * 三处消费，缺一即漂：ConfigManager 的 sanitize（越界即删字段回落核默认）、设置页表单校验、以及越界
+ * 提示文案的 `{{min}}/{{max}}` 插值（数字因此不再抄进 5 份 locale）。
+ */
+export const DNS_TIMEOUT_MIN_MS = 1;
+export const DNS_TIMEOUT_MAX_MS = 60000;
+
 /** 某 IP 是否在 bootstrap-direct 直连放行列表（受控 DNS IP 选择守卫 / 单测护栏用）。 */
 export function isBootstrapDirectDnsIp(ip: string): boolean {
   return BOOTSTRAP_DIRECT_DNS_IPS.includes(ip.trim());

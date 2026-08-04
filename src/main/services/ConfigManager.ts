@@ -27,6 +27,7 @@ import {
 } from '../../shared/rules';
 import { defaultAppRules, seedDefaultAppRules } from '../../shared/app-rules-preset';
 import { DEFAULT_SPEED_TEST_URL } from '../../shared/speed-test';
+import { DNS_TIMEOUT_MIN_MS, DNS_TIMEOUT_MAX_MS } from '../../shared/dns';
 // 协议白名单 + 协议必填校验单一真值：与渲染侧首页连接闸门 isServerComplete 共用同一份
 // shared/server-completeness，杜绝「新增协议时主/渲染各自枚举漂移」（WireGuard 漏列致连接按钮
 // 恒置灰、anytls 曾在此漏校验，均属此类）。
@@ -691,13 +692,22 @@ export class ConfigManager implements IConfigManager {
     }
 
     // P2c DNS 查询超时 sanitize（一律不 throw，与上方 CIDR/规则同标准防整配置回落）：
-    // dnsTimeoutMs 必为有限正整数且 ∈ [1, 60000]ms（>60s 无意义、解析早已该失败），否则删除该字段 → 回落核默认。
+    // dnsTimeoutMs 必为有限正整数且 ∈ DNS_TIMEOUT_MIN_MS..MAX_MS，否则删除该字段 → 回落核默认。
+    // 区间取 shared/dns 的常量（与设置页表单校验、越界提示文案同源，杜绝三处各写一份数字）。
     // dns-builder 仅在 >0 时 emit "<n>ms"，此处提前清洗使持久化配置不留脏值（saveConfig 亦经本校验）。
     if (config.dnsConfig && config.dnsConfig.dnsTimeoutMs !== undefined) {
       const ms = config.dnsConfig.dnsTimeoutMs;
-      if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 1 || ms > 60000) {
+      if (
+        typeof ms !== 'number' ||
+        !Number.isFinite(ms) ||
+        ms < DNS_TIMEOUT_MIN_MS ||
+        ms > DNS_TIMEOUT_MAX_MS
+      ) {
         delete config.dnsConfig.dnsTimeoutMs;
-        this.log('warn', `[ConfigManager] 丢弃非法 dns.timeout（须 1..60000ms）: ${ms}`);
+        this.log(
+          'warn',
+          `[ConfigManager] 丢弃非法 dns.timeout（须 ${DNS_TIMEOUT_MIN_MS}..${DNS_TIMEOUT_MAX_MS}ms）: ${ms}`
+        );
       } else if (!Number.isInteger(ms)) {
         config.dnsConfig.dnsTimeoutMs = Math.round(ms);
       }
