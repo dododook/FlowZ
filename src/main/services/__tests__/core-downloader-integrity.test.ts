@@ -1,0 +1,132 @@
+/**
+ * CoreDownloader.downloadFile 的**内容完整性**校验（node env，零网络）：mock electron `net.request`，
+ * 用 EventEmitter 驱动 response/data/end 流（照 unlock-http.test.ts 的 electron mock 范式）。
+ *
+ * 为什么这道门必须有测试：运行期换核在下载失败时会**回落 gh-proxy 第三方镜像**，而原先的完整性检查只有
+ * Content-Length —— 它能挡截断，挡不住「长度一样但内容被换」。摘要取自 api.github.com 直连响应、不经镜像，
+ * 是镜像投毒的唯一实际拦截点。校验一旦被改坏，症状是**静默安装了一个不是官方发布的可执行文件**，
+ * 没有任何用户可见的报错，正是最需要用例钉住的那类失败。
+ */
+import { EventEmitter } from 'events';
+import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+const mockRequest = jest.fn();
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'flowz-core-dl-'));
+
+jest.mock('electron', () => ({
+  app: { getPath: () => TMP },
+  net: { request: (...a: unknown[]) => mockRequest(...a) },
+  session: { fromPartition: () => ({ setProxy: async () => undefined }) },
+}));
+
+import { CoreDownloader } from '../core-downloader';
+
+class FakeReq extends EventEmitter {
+  setHeader(): void {}
+  end(): void {}
+  abort(): void {}
+}
+
+class FakeRes extends EventEmitter {
+  statusCode = 200;
+  headers: Record<string, string> = {};
+}
+
+const BODY = Buffer.from('fake sing-box archive bytes');
+const BODY_SHA = createHash('sha256').update(BODY).digest('hex');
+
+/** 每次 net.request 都回同一份 BODY（含正确 Content-Length，故截断检查恒过——只留摘要这一道门）。 */
+function serveBody(): void {
+  mockRequest.mockImplementation(() => {
+    const req = new FakeReq();
+    setImmediate(() => {
+      const res = new FakeRes();
+      res.headers['content-length'] = String(BODY.length);
+      req.emit('response', res);
+      setImmediate(() => {
+        res.emit('data', BODY);
+        res.emit('end');
+      });
+    });
+    return req;
+  });
+}
+
+const logManager = { addLog: () => {} } as never;
+const newDownloader = () => new CoreDownloader(logManager, async () => null);
+
+afterAll(() => {
+  try {
+    fs.rmSync(TMP, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+});
+
+beforeEach(() => {
+  mockRequest.mockReset();
+  serveBody();
+});
+
+describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
+  it('摘要相符 → 落临时文件并返回其路径（内容逐字节一致）', async () => {
+    const p = await newDownloader().downloadFile(
+      'https://example.com/core.tar.gz',
+      false,
+      BODY_SHA
+    );
+    expect(fs.readFileSync(p)).toEqual(BODY);
+  });
+
+  /**
+   * 核心断言：长度对得上、但内容不是期望的那份 → **必须 reject**。这正是镜像投毒的形态
+   * （Content-Length 检查在此恒通过），reject 掉才能保证不进入解压/预检/落位链路。
+   */
+  it('摘要不符 → reject 且不留下临时文件（拒装被掉包的内核）', async () => {
+    const wrong = 'b'.repeat(64);
+    const before = fs.readdirSync(TMP).length;
+    await expect(
+      newDownloader().downloadFile('https://example.com/core.tar.gz', false, wrong)
+    ).rejects.toThrow(/完整性校验失败/);
+    expect(fs.readdirSync(TMP).length).toBe(before); // 半成品已清，不会被后续流程捡去用
+  });
+
+  /**
+   * 镜像重试腿也必须带着摘要：否则「直连失败 → 换镜像」这一步会退化成不校验，
+   * 而镜像恰恰是最不可信的那一环。这里让 GitHub 域名的首发失败，观察重试那次仍被摘要拦下。
+   */
+  it('GitHub 直连失败 → 换镜像重试，重试结果同样过摘要校验（不因重试而降级）', async () => {
+    let call = 0;
+    mockRequest.mockImplementation(() => {
+      call++;
+      const req = new FakeReq();
+      if (call === 1) {
+        setImmediate(() => req.emit('error', new Error('boom')));
+        return req;
+      }
+      setImmediate(() => {
+        const res = new FakeRes();
+        res.headers['content-length'] = String(BODY.length);
+        req.emit('response', res);
+        setImmediate(() => {
+          res.emit('data', BODY);
+          res.emit('end');
+        });
+      });
+      return req;
+    });
+    await expect(
+      newDownloader().downloadFile('https://github.com/x/core.tar.gz', false, 'c'.repeat(64))
+    ).rejects.toThrow(/完整性校验失败/);
+    expect(call).toBe(2); // 确实重试了；且重试那次没有绕过校验
+  });
+
+  /** 未传摘要时保持原行为（仅长度校验）——服务层已 fail-closed，此处只锁「不误伤既有调用形态」。 */
+  it('未传摘要 → 不做内容校验（向后兼容，服务层负责拒绝无摘要的更新）', async () => {
+    const p = await newDownloader().downloadFile('https://example.com/core.tar.gz');
+    expect(fs.readFileSync(p)).toEqual(BODY);
+  });
+});

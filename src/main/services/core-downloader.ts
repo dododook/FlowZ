@@ -8,6 +8,7 @@
  */
 
 import { app, net, session, Session } from 'electron';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -137,7 +138,15 @@ export class CoreDownloader {
     return findSuitableSingboxAsset(assets, process.platform, process.arch);
   }
 
-  async downloadFile(url: string, isRetry = false): Promise<string> {
+  /**
+   * 下载内核压缩包到临时文件。
+   *
+   * @param expectedSha256 期望的 sha256（小写裸 hex，来自 GitHub API 的 asset.digest）。**调用方必须传**：
+   *   下载失败会回落 gh-proxy 第三方镜像，而 Content-Length 只能挡截断、挡不住「长度一样但内容被换」。
+   *   摘要取自 api.github.com 直连响应、不经镜像，故拿它校验镜像给的字节是有意义的。
+   *   传 undefined 时不校验——仅为兼容尚未接线的调用方保留，新调用方不要这么用（服务层已 fail-closed）。
+   */
+  async downloadFile(url: string, isRetry = false, expectedSha256?: string): Promise<string> {
     let ext = process.platform === 'win32' ? '.zip' : '.tar.gz';
     try {
       const urlObj = new URL(url);
@@ -202,7 +211,7 @@ export class CoreDownloader {
             `下载出错，尝试使用加速镜像: ${err.message}`,
             'CoreDownloader'
           );
-          this.downloadFile(mirrorUrl, true).then(resolve).catch(reject);
+          this.downloadFile(mirrorUrl, true, expectedSha256).then(resolve).catch(reject);
           return;
         }
 
@@ -244,6 +253,27 @@ export class CoreDownloader {
                 )
               );
               return;
+            }
+            // 内容校验：Content-Length 只证明「长度对」，证明不了「内容对」——镜像可以给出长度相同的另一份
+            // 字节。摘要来自 api.github.com 直连响应，不经镜像，故此处是镜像投毒的唯一实际拦截点。
+            // 走 handleError 而非直接 reject：GitHub 直连那次若因传输损坏对不上，仍可换镜像重试一次，
+            // 而重试拿到的字节同样要过这道校验（摘要已随重试传下去），不会因为「重试」而降级。
+            if (expectedSha256) {
+              let actual: string;
+              try {
+                actual = createHash('sha256').update(fs.readFileSync(tempPath)).digest('hex');
+              } catch (e) {
+                handleError(new Error(`校验下载内容失败：无法读取临时文件（${e}）`));
+                return;
+              }
+              if (actual !== expectedSha256) {
+                handleError(
+                  new Error(
+                    `内核完整性校验失败：sha256 期望 ${expectedSha256}，实得 ${actual}（下载被篡改或镜像返回了不同的文件）`
+                  )
+                );
+                return;
+              }
             }
             if (settled) return;
             settled = true;

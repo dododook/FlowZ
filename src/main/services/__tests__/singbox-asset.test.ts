@@ -1,4 +1,4 @@
-import { findSuitableSingboxAsset } from '../singbox-asset';
+import { findSuitableSingboxAsset, normalizeAssetDigest } from '../singbox-asset';
 
 const asset = (name: string) => ({ name, browser_download_url: `https://x/${name}` });
 
@@ -78,5 +78,35 @@ describe('findSuitableSingboxAsset', () => {
 
   it('空 assets → undefined', () => {
     expect(findSuitableSingboxAsset([], 'linux', 'x64')).toBeUndefined();
+  });
+});
+
+describe('normalizeAssetDigest — 运行期换核的完整性锚', () => {
+  const HEX = 'a'.repeat(64);
+
+  it('sha256:<64hex> → 小写裸 hex', () => {
+    expect(normalizeAssetDigest({ digest: `sha256:${HEX}` })).toBe(HEX);
+    expect(normalizeAssetDigest({ digest: `sha256:${'A'.repeat(64)}` })).toBe(HEX);
+    expect(normalizeAssetDigest({ digest: `  sha256:${HEX}  ` })).toBe(HEX);
+  });
+
+  /**
+   * 形状不符一律 null、**绝不兜底放行**：调用方据 null 拒装。若在此放宽（比如「没有前缀就当 hex 用」），
+   * 「拿不到摘要」会静默退化成「不校验」，而运行期换核会回落 gh-proxy 第三方镜像——那正是要防的场景。
+   */
+  it('缺失 / 非 sha256 / 长度或字符不对 / 非字符串 → null', () => {
+    const bad: unknown[] = [
+      undefined,
+      null,
+      {},
+      { digest: null },
+      { digest: 123 },
+      { digest: HEX }, // 裸 hex 无算法前缀：不认
+      { digest: `md5:${'a'.repeat(32)}` },
+      { digest: `sha256:${'a'.repeat(63)}` },
+      { digest: `sha256:${'g'.repeat(64)}` },
+      { digest: `sha512:${'a'.repeat(128)}` },
+    ];
+    for (const a of bad) expect(normalizeAssetDigest(a)).toBeNull();
   });
 });

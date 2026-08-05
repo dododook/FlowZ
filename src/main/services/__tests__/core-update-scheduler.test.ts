@@ -249,11 +249,35 @@ describe('CoreUpdateService.runAutoUpdateCycle', () => {
         currentVersion: '1.13.13',
         latestVersion: '1.13.14',
         downloadUrl: 'https://x/sing-box-1.13.14.tar.gz',
+        // 真实 checkUpdate 恒带上资产摘要；缺它自动腿会拒装（见下一条用例）。
+        downloadSha256: 'a'.repeat(64),
       },
     });
     await svc.runAutoUpdateCycle();
     expect(downloadSpy).toHaveBeenCalledTimes(1);
     expect(stageSpy).toHaveBeenCalledWith(expect.any(String), '1.13.14');
+  });
+
+  /**
+   * 自动更新是**无人值守**的：没人会看日志、没人会核对下载来源。故「取不到官方 sha256」时必须直接中止，
+   * 而不是退化成不校验就装——运行期换核会回落 gh-proxy 第三方镜像，无摘要即无从判断拿到的是什么。
+   */
+  it('取不到资产摘要 → 自动腿中止，绝不下载安装未校验的内核', async () => {
+    const { svc, downloadSpy, stageSpy } = makeService({
+      config: { autoUpdateCore: true },
+      checkResult: {
+        hasUpdate: true,
+        currentVersion: '1.13.13',
+        latestVersion: '1.13.14',
+        downloadUrl: 'https://x/sing-box-1.13.14.tar.gz',
+        // 无 downloadSha256
+      },
+    });
+    // 现取也拿不到（releases 里没有匹配 URL 的 asset）
+    jest.spyOn(svc as any, 'resolveAssetSha256').mockResolvedValue(null);
+    await svc.runAutoUpdateCycle();
+    expect(downloadSpy).not.toHaveBeenCalled();
+    expect(stageSpy).not.toHaveBeenCalled();
   });
 
   it('跨 minor 新版 → 发跨带事件、绝不下载', async () => {
@@ -569,9 +593,12 @@ describe('B0：兼容版本带去硬编码 + verifiedCeiling', () => {
       .mockResolvedValue([
         { tag_name: `v${opts.latest}`, prerelease: false, assets: [{ name: 'x' }] },
       ]);
-    jest
-      .spyOn((svc as any).coreDownloader, 'findSuitableAsset')
-      .mockReturnValue({ browser_download_url: `http://x/sing-box-${opts.latest}.tar.gz` });
+    jest.spyOn((svc as any).coreDownloader, 'findSuitableAsset').mockReturnValue({
+      browser_download_url: `http://x/sing-box-${opts.latest}.tar.gz`,
+      // 真实 GitHub API 对每个 asset 恒返回 digest；缺它会被完整性门拒装（这正是该门的意图），
+      // 故 mock 也要带上，否则测的是「拒装」而非本 suite 关心的调度/stage 逻辑。
+      digest: `sha256:${'a'.repeat(64)}`,
+    });
     return svc;
   }
 

@@ -216,6 +216,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     const { proxy, calls } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
     jest.spyOn((svc as any).coreDownloader, 'downloadFile').mockResolvedValue('/tmp/fake.tar.gz');
+    // 换核完整性门：updateCore 取不到官方 sha256 就拒装。本 suite 只关心 coreSwapInProgress 闩，
+    // 故让摘要解析成功；「取不到摘要必须拒装」由 core-downloader-integrity / 下方专测覆盖。
+    jest.spyOn(svc as any, 'resolveAssetSha256').mockResolvedValue('a'.repeat(64));
     jest
       .spyOn((svc as any).coreDownloader, 'extractCore')
       .mockResolvedValue({ corePath: '/tmp/x/sing-box', extractDir: '/tmp/x' });
@@ -236,6 +239,9 @@ describe('T2：CoreUpdateService 4 写核路径 setCoreSwapInProgress try/finall
     const { proxy, calls } = makeProxyWithSpy();
     const svc = makeSvc(proxy);
     jest.spyOn((svc as any).coreDownloader, 'downloadFile').mockResolvedValue('/tmp/fake.tar.gz');
+    // 换核完整性门：updateCore 取不到官方 sha256 就拒装。本 suite 只关心 coreSwapInProgress 闩，
+    // 故让摘要解析成功；「取不到摘要必须拒装」由 core-downloader-integrity / 下方专测覆盖。
+    jest.spyOn(svc as any, 'resolveAssetSha256').mockResolvedValue('a'.repeat(64));
     jest
       .spyOn((svc as any).coreDownloader, 'extractCore')
       .mockResolvedValue({ corePath: '/tmp/x/sing-box', extractDir: '/tmp/x' });

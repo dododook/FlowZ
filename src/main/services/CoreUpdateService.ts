@@ -29,6 +29,7 @@ import { CoreDownloader } from './core-downloader';
 import type { UpdateNetwork } from './UpdateNetwork';
 import coreManifest from '../../shared/core-manifest.json';
 import { IPC_CHANNELS } from '../../shared/ipc-channels';
+import { normalizeAssetDigest } from './singbox-asset';
 import { system32 } from '../utils/win-system32';
 
 export interface CoreUpdateCheckResult {
@@ -36,6 +37,8 @@ export interface CoreUpdateCheckResult {
   currentVersion: string;
   latestVersion?: string;
   downloadUrl?: string;
+  /** 该资产的 sha256（小写裸 hex，取自 GitHub API 的 asset.digest）。运行期换核的完整性锚。 */
+  downloadSha256?: string;
   releaseNotes?: string;
   crossBand?: boolean; // latestVersion 是否跨当前 minor 带（restrict 关闭时让 UI 标「跨大版本、风险更高」）
   error?: string;
@@ -89,6 +92,11 @@ export class CoreUpdateService {
   private helperManager: Pick<HelperManager, 'getStatus' | 'installCore'> | null = null;
   private privilegeService: PlatformPrivilegeService | null = null; // T16：copyFileElevatedWindows delegate
   private isUpdating: boolean = false;
+  /**
+   * 最近一次 checkUpdate 解析出的「下载 URL → sha256」映射。updateCore 只认这里（或现取），
+   * **不接受调用方传入摘要**——否则渲染层/IPC 侧一个疏忽就能把校验降级成不校验，而这正是要防的。
+   */
+  private assetDigestByUrl = new Map<string, string>();
   // 更新后等待「首次成功运行」验证的新版本号；首启成功→清除并删备份，首启失败→自动回滚
   private pendingUpdateVersion: string | null = null;
   private pendingUpdateAt: number = 0; // 更新落盘时间戳，用于"待验证"过期保护（防陈旧 pending 误回滚）
@@ -233,11 +241,14 @@ export class CoreUpdateService {
         // 找到适合当前平台的资源
         const asset = this.coreDownloader.findSuitableAsset(latestRelease.assets);
         if (asset) {
+          const digest = normalizeAssetDigest(asset);
+          if (digest) this.assetDigestByUrl.set(asset.browser_download_url, digest);
           const result = {
             hasUpdate: true,
             currentVersion,
             latestVersion,
             downloadUrl: asset.browser_download_url,
+            downloadSha256: digest ?? undefined,
             releaseNotes: latestRelease.body,
             // 跨当前 minor 带（如 1.13→1.14）→ UI 标风险。能走到这说明带内或 restrict 关闭，跨带必是 restrict 关闭所致。
             crossBand: !sameMajorMinor(latestVersion, currentVersion),
@@ -263,6 +274,38 @@ export class CoreUpdateService {
     }
   }
 
+  /**
+   * 解析某下载 URL 对应的 sha256（小写裸 hex）；解析不出返回 null。
+   *
+   * 顺序：本次会话 checkUpdate 写下的缓存 → 现拉一次 releases 重新解析（缓存冷：App 重启后用户直接点更新，
+   * 或自动更新腿跨会话触发）。**刻意不接受调用方传入的摘要**——摘要是安全断言，来源必须由服务自己掌握，
+   * 否则任何一个漏传/传错的调用点都会把校验静默降级成不校验。
+   *
+   * 实测依据：GitHub REST 对全部 asset 回填 `digest`（v1.12.0 / v1.13.0 / v1.14.0-beta.7 逐个验过），
+   * 故「解析不出」属异常而非常态，调用方据此 fail-closed 是可行的、不会卡住正常更新。
+   */
+  private async resolveAssetSha256(downloadUrl: string): Promise<string | null> {
+    const cached = this.assetDigestByUrl.get(downloadUrl);
+    if (cached) return cached;
+    try {
+      const releases = await this.coreDownloader.fetchReleases();
+      for (const rel of releases || []) {
+        for (const a of rel?.assets || []) {
+          const d = normalizeAssetDigest(a);
+          if (d && a?.browser_download_url) this.assetDigestByUrl.set(a.browser_download_url, d);
+        }
+      }
+    } catch (e) {
+      this.logManager.addLog(
+        'warn',
+        `重新解析内核资产摘要失败（将拒绝安装未校验的内核）: ${e}`,
+        'CoreUpdateService'
+      );
+      return null;
+    }
+    return this.assetDigestByUrl.get(downloadUrl) ?? null;
+  }
+
   async updateCore(downloadUrl: string): Promise<boolean> {
     if (this.isUpdating) {
       throw new Error('更新正在进行中');
@@ -279,9 +322,15 @@ export class CoreUpdateService {
     let backupMade = false;
 
     try {
-      // 1. 下载文件
+      // 1. 下载文件（先取摘要：拿不到就不装——运行期换核会回落第三方镜像，无摘要即无从判断拿到的是什么）
+      const sha256 = await this.resolveAssetSha256(downloadUrl);
+      if (!sha256) {
+        throw new Error(
+          '无法获取该内核资产的官方 sha256 摘要，已中止更新（拒绝安装未经校验的内核）。请稍后重试或检查网络。'
+        );
+      }
       this.logManager.addLog('info', '开始下载核心文件...', 'CoreUpdateService');
-      const tempPath = await this.coreDownloader.downloadFile(downloadUrl);
+      const tempPath = await this.coreDownloader.downloadFile(downloadUrl, false, sha256);
 
       // 2. 解压文件 (如果需要)
       // Sing-box release 通常是 .tar.gz 或 .zip
@@ -794,7 +843,17 @@ export class CoreUpdateService {
       let tempPath: string | null = null;
       let extractDir: string | null = null;
       try {
-        tempPath = await this.coreDownloader.downloadFile(check.downloadUrl);
+        // 与手动路径同一道门：无摘要不装。这条腿是**自动**的（无人值守），降级校验的后果更严重。
+        const sha256 = check.downloadSha256 ?? (await this.resolveAssetSha256(check.downloadUrl));
+        if (!sha256) {
+          this.logManager.addLog(
+            'warn',
+            '自动更新中止：无法获取内核资产的官方 sha256 摘要（拒绝安装未经校验的内核）',
+            'CoreUpdateService'
+          );
+          return;
+        }
+        tempPath = await this.coreDownloader.downloadFile(check.downloadUrl, false, sha256);
         const extracted = await this.coreDownloader.extractCore(tempPath);
         extractDir = extracted.extractDir;
         const preflight = await this.preflightValidate(extracted.corePath);

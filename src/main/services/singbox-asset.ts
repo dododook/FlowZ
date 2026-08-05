@@ -60,3 +60,21 @@ export function findSuitableSingboxAsset(
 
   return filteredAssets[0];
 }
+
+/**
+ * 取 release asset 的 sha256 摘要 —— GitHub REST 对每个 asset 返回 `digest: "sha256:<64 hex>"`
+ * （实测 v1.12.0 / v1.13.0 / v1.14.0-beta.7 均有，官方对全部 asset 回填，故可据它 fail-closed）。
+ *
+ * 用途是**运行期换核的完整性锚**：下载走 net.request 且失败会回落 gh-proxy 第三方镜像，只比对
+ * Content-Length 挡不住「长度对得上但内容被换」的镜像投毒。摘要本身取自 api.github.com 直连响应，
+ * 不经镜像，故可用来校验镜像给的字节。
+ *
+ * 归一为小写裸 hex；形状不符（缺失 / 非 sha256 / 非 64hex）一律返回 null，由调用方决定拒装——
+ * **不要在此处兜底放行**，否则「拿不到摘要」会静默退化成「不校验」。
+ */
+export function normalizeAssetDigest(asset: unknown): string | null {
+  const raw = (asset as { digest?: unknown } | null | undefined)?.digest;
+  if (typeof raw !== 'string') return null;
+  const m = /^sha256:([0-9a-fA-F]{64})$/.exec(raw.trim());
+  return m ? m[1].toLowerCase() : null;
+}
