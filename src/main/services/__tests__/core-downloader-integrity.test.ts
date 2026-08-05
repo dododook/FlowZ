@@ -124,6 +124,22 @@ describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
     expect(call).toBe(2); // 确实重试了；且重试那次没有绕过校验
   });
 
+  /**
+   * 回归：临时文件名曾只用 `Date.now()`，而镜像重试紧跟首发失败、常落在同一毫秒 → 两次用同一路径，
+   * 首发 handleError 里的异步 unlink 会删掉重试刚写好的文件（macOS CI 实测命中，Windows 侥幸躲过）。
+   * 这里把两次下载压在同一毫秒内发起，断言各自拿到不同路径且内容都在。
+   */
+  it('同一毫秒内的并发下载 → 临时文件不撞名（含随机段）', async () => {
+    const d = newDownloader();
+    const [p1, p2] = await Promise.all([
+      d.downloadFile('https://example.com/a.tar.gz', false, BODY_SHA),
+      d.downloadFile('https://example.com/b.tar.gz', false, BODY_SHA),
+    ]);
+    expect(p1).not.toBe(p2);
+    expect(fs.readFileSync(p1)).toEqual(BODY);
+    expect(fs.readFileSync(p2)).toEqual(BODY);
+  });
+
   /** 未传摘要时保持原行为（仅长度校验）——服务层已 fail-closed，此处只锁「不误伤既有调用形态」。 */
   it('未传摘要 → 不做内容校验（向后兼容，服务层负责拒绝无摘要的更新）', async () => {
     const p = await newDownloader().downloadFile('https://example.com/core.tar.gz');

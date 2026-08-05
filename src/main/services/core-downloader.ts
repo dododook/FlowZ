@@ -8,7 +8,7 @@
  */
 
 import { app, net, session, Session } from 'electron';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -169,7 +169,13 @@ export class CoreDownloader {
       ext = '.zip';
     }
 
-    const tempPath = path.join(app.getPath('temp'), `sing-box-core-update-${Date.now()}${ext}`);
+    // 文件名必须含随机段：**只用 Date.now() 会撞名**——镜像重试紧跟首发失败，两次调用常落在同一毫秒，
+    // 于是重试用的路径与首发相同，而首发 handleError 里的异步 fs.unlink 会把重试刚写好的文件删掉。
+    // 后果视时序而定：轻则解压 ENOENT，重则校验读不到文件。macOS CI 实测命中，Windows 因时序不同侥幸躲过。
+    const tempPath = path.join(
+      app.getPath('temp'),
+      `sing-box-core-update-${Date.now()}-${randomBytes(4).toString('hex')}${ext}`
+    );
     const file = fs.createWriteStream(tempPath);
     const sess = await this.updateSession();
     // 下载失败兜底镜像前缀：优先用户配置的 ghProxyPrefix，否则用内置 preset[0]（gh-proxy.org）。
