@@ -549,6 +549,10 @@ describe('T3：replaceManualCore skipBackup 分支（reset 到出厂）', () => 
     const replaceSpy = jest.spyOn(svc as any, 'replaceManualCore').mockResolvedValue({ ok: true });
     // pruneBackup 是清理旧 .bak 的私有方法；mock 避免触达真实 fs（getBackupPath/unlink）
     const pruneSpy = jest.spyOn(svc as any, 'pruneBackup').mockImplementation(() => {});
+    // 出厂核完整性门：真实出厂核路径在测试环境下当然对不上 pin（无该文件/内容不符）→ 会先行拒绝。
+    // 本 suite 关心的是换核闩与 pruneBackup 调用，故让门放行；「门本身拒不拒」由
+    // core-reset-factory-verify.test.ts 覆盖（含 macOS 必须跳过那一格）。
+    jest.spyOn(svc as any, 'verifyFactoryCore').mockReturnValue(null);
 
     const r = await svc.resetCoreToFactory();
 

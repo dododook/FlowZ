@@ -4,6 +4,7 @@
  */
 
 import { app, dialog } from 'electron';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -1534,9 +1535,48 @@ export class CoreUpdateService {
   /** 重置内核到出厂版本：把随 App 出厂的 bundled 核 force 落位回受保护目录（macOS-v5）/bundle。
    *  skipBackup=true：出厂核是用户要的终态，现役核是用户要丢弃的——不备份/不验证闩/不回退（去冗余）。
    *  force 跳过同版本短路（出厂核常与现役同版本，重置仍要覆盖回去）。 */
+
+  /**
+   * 校验随包出厂核是否仍是 manifest 里 pin 的那一份（`coreBinarySha256`）。
+   *
+   * 存在的理由：`resetCoreToFactory` 的语义是「回到已知良好的出厂状态」。若 app 安装目录里的出厂核已被
+   * 替换（portable 安装目录用户可写，普通权限的恶意程序即可改），reset 就会把恶意核**当作干净核装回去**，
+   * 而且这是用户主动求助时最信任的一步。
+   *
+   * **仅 win/linux 校验，macOS 跳过**——不是偷懒，是 pin 在 mac 上本就对不上：release 流程对 .app 做
+   * `codesign --force --deep --sign -`，深签会重写嵌套二进制（真机实测：同一文件签名前后 sha 不同），
+   * 而 pin 取自上游 release 原件。硬校验会对每个 mac 用户误报。mac 侧的等价保护由 .app 自身的代码签名
+   * （Gatekeeper 校验嵌套内容）承担。
+   *
+   * @returns null=通过或不适用；字符串=拒绝理由
+   */
+  private verifyFactoryCore(bundlePath: string): string | null {
+    if (process.platform === 'darwin') return null; // 见上：深签重写字节，pin 不适用
+    const key =
+      process.platform === 'win32' ? 'win' : process.platform === 'linux' ? 'linux' : null;
+    if (!key) return null;
+    const pin = (coreManifest as { coreBinarySha256?: Record<string, string> }).coreBinarySha256?.[
+      key
+    ];
+    if (!pin) return null; // 无 pin 不阻断（与 fetch-core 同口径：pin 是自证锚，缺它退回原行为）
+    try {
+      const actual = createHash('sha256').update(fs.readFileSync(bundlePath)).digest('hex');
+      if (actual === pin) return null;
+      return `随包出厂内核与官方指纹不符（期望 ${pin.slice(0, 12)}…，实得 ${actual.slice(0, 12)}…）。安装目录内的内核可能已被替换，已拒绝重置；请重新安装 FlowZ。`;
+    } catch (e) {
+      return `无法读取随包出厂内核以校验完整性：${e}`;
+    }
+  }
+
   async resetCoreToFactory(): Promise<{ ok: boolean; error?: string }> {
     this.logManager.addLog('info', '重置内核到出厂版本...', 'CoreUpdateService');
     const bundlePath = resourceManager.getBundledSingBoxPath();
+    // 出厂核完整性：reset 是「回到已知良好」的动作，装回一个已被替换的二进制比不 reset 更糟。
+    const bad = this.verifyFactoryCore(bundlePath);
+    if (bad) {
+      this.logManager.addLog('error', `重置内核被拒绝：${bad}`, 'CoreUpdateService');
+      return { ok: false, error: bad };
+    }
     const r = await this.replaceManualCore({ filePath: bundlePath, force: true, skipBackup: true });
     if (r.ok) {
       this.pruneBackup(); // 清理旧备份（reset 到出厂 = 干净状态，残留 .bak 无意义）
