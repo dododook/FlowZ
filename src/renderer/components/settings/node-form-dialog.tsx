@@ -7,7 +7,9 @@
  * tsc 查不出、渲染不报错、类型不缺，三个宿主漏了两个（组网 WireGuard 无添加按钮 = #350；Tailscale 设置
  * 无保存按钮 = 同款未被报告的姊妹腿）。逐处补按钮只是把已漏的补上，义务原样留着，下一个宿主照样能漏。
  *
- * 故把义务从宿主手里收走：**页脚由本外壳渲染，宿主无从省略**。同时顺带收编两件本来也在各处重复决定的事：
+ * 故把义务从宿主手里收走：**页脚由本外壳渲染，宿主默认无从省略**（唯一例外是 `hideFooter`，见其 JSDoc；
+ * 它没有被按构造关掉，只是从「不写就坏」变成「得主动写一个明令禁止的 prop 才坏」）。同时顺带收编两件
+ * 本来也在各处重复决定的事：
  *  · 滚动结构——正文是唯一滚动区，页脚**不随表单主体滚动**（长表单如 WireGuard 才不会让提交按钮沉到折叠线下）；
  *  · `form="node-cfg-form"` 这个跨节点绑定的字面量——全仓提交按钮只此一处。
  *
@@ -18,7 +20,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
 /** 协议表单的 `<form>` id：页脚按钮经 HTML `form=` 跨节点绑定到它。 */
@@ -40,8 +41,6 @@ interface NodeFormDialogProps {
    * （WARP 一键注册 / custom 的 JSON 直填）。挂了协议表单还传它 = 复现 #350。
    */
   hideFooter?: boolean;
-  /** DialogContent 的补充 class（圆角/描边/底色等各站点 chrome 差异）。 */
-  contentClassName?: string;
   children: ReactNode;
 }
 
@@ -53,7 +52,6 @@ export function NodeFormDialog({
   submitLabel,
   busy = false,
   hideFooter = false,
-  contentClassName,
   children,
 }: NodeFormDialogProps) {
   const { t } = useTranslation();
@@ -61,12 +59,7 @@ export function NodeFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* overflow-hidden + flex-col：正文自己滚，头与脚贴住不动。radix 自带关闭按钮隐掉，改用 .nd-dlg-x。 */}
-      <DialogContent
-        className={cn(
-          '[&>button]:hidden flex max-h-[90vh] w-[min(452px,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-[12px] border-line bg-surface p-0',
-          contentClassName
-        )}
-      >
+      <DialogContent className="[&>button]:hidden flex max-h-[90vh] w-[min(452px,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-[12px] border-line bg-surface p-0">
         {/* a11y：radix 需 Title/Description；视觉标题在下方 .nd-dlg-h，此处仅供辅助技术。 */}
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{description}</DialogDescription>
