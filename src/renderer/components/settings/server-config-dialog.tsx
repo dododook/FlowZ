@@ -1,7 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
-import { X, Loader2 } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -26,6 +24,7 @@ import { WireGuardForm } from './wireguard-form';
 import { TailscaleForm } from './tailscale-form';
 import { CustomForm } from './custom-form';
 import { WarpPanel } from './warp-panel';
+import { NodeFormDialog } from './node-form-dialog';
 import { FormSection } from './shared/form-layout';
 import { getSortedProtocolOptions } from './shared/protocol-options';
 import { isEndpointProtocol } from '../../../shared/endpoint-routes';
@@ -207,332 +206,296 @@ export function ServerConfigDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="[&>button]:hidden flex max-h-[90vh] w-[min(452px,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-[12px] border-line bg-surface p-0">
-        {/* a11y：radix 需 Title/Description；视觉标题另在 `.nd-dlg-h`，此处仅供辅助技术。 */}
-        <DialogTitle className="sr-only">
-          {isEditing
-            ? t('servers.editServer', 'Edit Server Config')
-            : t('servers.addServerConfig', 'Add Server Config')}
-        </DialogTitle>
-        <DialogDescription className="sr-only">
-          {isEditing
-            ? t(
-                'servers.editServerDesc',
-                'Modify server configuration. Proxy will not restart automatically after saving.'
-              )
-            : t(
-                'servers.addServerDesc',
-                'Add a new proxy server. Supports VLESS, Trojan, Hysteria2, Shadowsocks, AnyTLS.'
-              )}
-        </DialogDescription>
-
-        <div className="nd-dlg-h">
-          <span className="nd-dlg-title">
-            {isEditing
-              ? t('servers.editServer', 'Edit Server Config')
-              : t('servers.addServerConfig', 'Add Server Config')}
+    <NodeFormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={
+        isEditing
+          ? t('servers.editServer', 'Edit Server Config')
+          : t('servers.addServerConfig', 'Add Server Config')
+      }
+      description={
+        isEditing
+          ? t(
+              'servers.editServerDesc',
+              'Modify server configuration. Proxy will not restart automatically after saving.'
+            )
+          : t(
+              'servers.addServerDesc',
+              'Add a new proxy server. Supports VLESS, Trojan, Hysteria2, Shadowsocks, AnyTLS.'
+            )
+      }
+      submitLabel={t('common.save')}
+      busy={saving}
+      // warp（一键生成）/ custom（JSON 直填）自带按钮，不挂协议表单 ⇒ 不套页脚。
+      hideFooter={selectedProtocol === 'warp' || selectedProtocol === 'custom'}
+    >
+      {isEditing && server?.subscriptionId && (
+        <div className="nd-amber">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v4M12 16h.01" />
+          </svg>
+          <span>
+            {t(
+              'servers.subNodeEditHint',
+              'This node belongs to a subscription; edits are overwritten on the next update. For lasting changes, use "Clone to Manual Nodes".'
+            )}
           </span>
-          <button
-            type="button"
-            className="nd-dlg-x"
-            aria-label={t('common.cancel', 'Cancel')}
-            onClick={() => onOpenChange(false)}
-          >
-            <X />
-          </button>
         </div>
+      )}
 
-        <div className="nd-dlg-body">
-          {isEditing && server?.subscriptionId && (
-            <div className="nd-amber">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.9"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 8v4M12 16h.01" />
-              </svg>
-              <span>
-                {t(
-                  'servers.subNodeEditHint',
-                  'This node belongs to a subscription; edits are overwritten on the next update. For lasting changes, use "Clone to Manual Nodes".'
-                )}
-              </span>
-            </div>
+      <div className="nd-fld">
+        <span className="nd-fld-lbl">
+          {t('servers.protocol')}
+          {!isMeshEdit && (
+            <small className="font-medium text-fg-faint">
+              {t('servers.selectProtocol', 'Select your proxy server protocol')}
+            </small>
           )}
-
-          <div className="nd-fld">
-            <span className="nd-fld-lbl">
-              {t('servers.protocol')}
-              {!isMeshEdit && (
-                <small className="font-medium text-fg-faint">
-                  {t('servers.selectProtocol', 'Select your proxy server protocol')}
-                </small>
-              )}
-            </span>
-            <Select
-              value={selectedProtocol}
-              onValueChange={handleProtocolChange}
-              disabled={isMeshEdit}
-            >
-              <SelectTrigger>
-                {isMeshEdit ? <span>{meshLockedLabel}</span> : <SelectValue />}
-              </SelectTrigger>
-              <SelectContent>
-                {/* 组网协议（WireGuard/WARP/Tailscale）始终不进下拉：新增走组网 tab 顶部入口，编辑锁定协议。 */}
-                {getSortedProtocolOptions(t, i18n.language, (v) => v !== 'wireguard').map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {isMeshEdit && (
-              <div className="nd-swrow-d">
-                {t(
-                  'servers.protocolLockedOnEdit',
-                  'Protocol cannot be changed when editing — delete and re-add to switch.'
-                )}
-              </div>
+        </span>
+        <Select value={selectedProtocol} onValueChange={handleProtocolChange} disabled={isMeshEdit}>
+          <SelectTrigger>
+            {isMeshEdit ? <span>{meshLockedLabel}</span> : <SelectValue />}
+          </SelectTrigger>
+          <SelectContent>
+            {/* 组网协议（WireGuard/WARP/Tailscale）始终不进下拉：新增走组网 tab 顶部入口，编辑锁定协议。 */}
+            {getSortedProtocolOptions(t, i18n.language, (v) => v !== 'wireguard').map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isMeshEdit && (
+          <div className="nd-swrow-d">
+            {t(
+              'servers.protocolLockedOnEdit',
+              'Protocol cannot be changed when editing — delete and re-add to switch.'
             )}
-          </div>
-
-          <div className="nd-fld">
-            <span className="nd-fld-lbl">
-              {t('servers.remarks')} <span className="nd-req">*</span>
-            </span>
-            <Input
-              id="serverName"
-              placeholder={t('servers.remarksPlaceholder')}
-              value={serverName}
-              onChange={(e) => {
-                setServerName(e.target.value);
-                if (nameError) setNameError('');
-              }}
-              className={
-                nameError ? 'border-destructive focus-visible:ring-destructive' : undefined
-              }
-            />
-            {nameError ? (
-              <div className="fld-err">{nameError}</div>
-            ) : isDuplicateName ? (
-              <div className="nd-swrow-d text-amber-600 dark:text-amber-500">
-                {t('servers.nameDuplicate', 'A node with this name already exists')}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="contents">
-            {selectedProtocol === 'warp' && (
-              <WarpPanel onSubmit={handleSave} nameMissing={!serverName.trim()} />
-            )}
-            {selectedProtocol === 'vless' && (
-              <VlessForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'vless'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'trojan' && (
-              <TrojanForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'trojan'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'hysteria2' && (
-              <Hysteria2Form
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'hysteria2'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'shadowsocks' && (
-              <SsForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'shadowsocks'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'anytls' && (
-              <AnyTlsForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'anytls'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'tuic' && (
-              <TuicForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'tuic'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'snell' && (
-              <SnellForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'snell'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'naive' && (
-              <NaiveForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'naive'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'vmess' && (
-              <VmessForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'vmess'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'socks' && (
-              <SocksForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'socks'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'http' && (
-              <HttpForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'http'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'ssh' && (
-              <SshForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'ssh'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'wireguard' && (
-              <WireGuardForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'wireguard'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'tailscale' && (
-              <TailscaleForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'tailscale'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-            {selectedProtocol === 'custom' && (
-              <CustomForm
-                key={currentServerConfig?.id || 'new'}
-                serverConfig={
-                  currentServerConfig?.protocol?.toLowerCase() === 'custom'
-                    ? currentServerConfig
-                    : undefined
-                }
-                onSubmit={handleSave}
-              />
-            )}
-          </div>
-
-          <FormSection
-            title={t('servers.detour', 'Proxy Chain (Detour)')}
-            collapsible
-            defaultOpen={!!server?.detour}
-          >
-            <DetourPicker
-              servers={servers}
-              excludeId={server?.id}
-              value={detour}
-              onSelect={(id) => setDetour(id === DETOUR_DIRECT ? undefined : id)}
-            />
-            <div className="nd-swrow-d">
-              {t(
-                'servers.detourDesc',
-                'Connect to this node through another proxy server (proxy chain)'
-              )}
-            </div>
-          </FormSection>
-        </div>
-
-        {/* 固定底部操作区：保存/重置贴 dialog 底、不随表单主体滚动。经 HTML form= 关联当前挂载的
-            协议表单（id="node-cfg-form"）——submit 触发其 RHF 校验+提交，reset 经表单 onReset 走 form.reset()。
-            warp（一键生成）/custom（JSON）自带按钮、不套用本 footer。 */}
-        {selectedProtocol !== 'warp' && selectedProtocol !== 'custom' && (
-          <div className="nd-dlg-foot">
-            <button type="reset" form="node-cfg-form" className="btn ghost sm" disabled={saving}>
-              {t('common.reset')}
-            </button>
-            <button type="submit" form="node-cfg-form" className="btn flow sm" disabled={saving}>
-              {saving && <Loader2 className="animate-spin" size={14} />}
-              {t('common.save')}
-            </button>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+
+      <div className="nd-fld">
+        <span className="nd-fld-lbl">
+          {t('servers.remarks')} <span className="nd-req">*</span>
+        </span>
+        <Input
+          id="serverName"
+          placeholder={t('servers.remarksPlaceholder')}
+          value={serverName}
+          onChange={(e) => {
+            setServerName(e.target.value);
+            if (nameError) setNameError('');
+          }}
+          className={nameError ? 'border-destructive focus-visible:ring-destructive' : undefined}
+        />
+        {nameError ? (
+          <div className="fld-err">{nameError}</div>
+        ) : isDuplicateName ? (
+          <div className="nd-swrow-d text-amber-600 dark:text-amber-500">
+            {t('servers.nameDuplicate', 'A node with this name already exists')}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="contents">
+        {selectedProtocol === 'warp' && (
+          <WarpPanel onSubmit={handleSave} nameMissing={!serverName.trim()} />
+        )}
+        {selectedProtocol === 'vless' && (
+          <VlessForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'vless'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'trojan' && (
+          <TrojanForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'trojan'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'hysteria2' && (
+          <Hysteria2Form
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'hysteria2'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'shadowsocks' && (
+          <SsForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'shadowsocks'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'anytls' && (
+          <AnyTlsForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'anytls'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'tuic' && (
+          <TuicForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'tuic'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'snell' && (
+          <SnellForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'snell'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'naive' && (
+          <NaiveForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'naive'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'vmess' && (
+          <VmessForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'vmess'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'socks' && (
+          <SocksForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'socks'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'http' && (
+          <HttpForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'http'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'ssh' && (
+          <SshForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'ssh'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'wireguard' && (
+          <WireGuardForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'wireguard'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'tailscale' && (
+          <TailscaleForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'tailscale'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+        {selectedProtocol === 'custom' && (
+          <CustomForm
+            key={currentServerConfig?.id || 'new'}
+            serverConfig={
+              currentServerConfig?.protocol?.toLowerCase() === 'custom'
+                ? currentServerConfig
+                : undefined
+            }
+            onSubmit={handleSave}
+          />
+        )}
+      </div>
+
+      <FormSection
+        title={t('servers.detour', 'Proxy Chain (Detour)')}
+        collapsible
+        defaultOpen={!!server?.detour}
+      >
+        <DetourPicker
+          servers={servers}
+          excludeId={server?.id}
+          value={detour}
+          onSelect={(id) => setDetour(id === DETOUR_DIRECT ? undefined : id)}
+        />
+        <div className="nd-swrow-d">
+          {t(
+            'servers.detourDesc',
+            'Connect to this node through another proxy server (proxy chain)'
+          )}
+        </div>
+      </FormSection>
+    </NodeFormDialog>
   );
 }

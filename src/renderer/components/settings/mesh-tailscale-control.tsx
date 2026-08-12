@@ -31,13 +31,6 @@ import { useAppStore } from '@/store/app-store';
 import { api } from '@/ipc/api-client';
 import { cn } from '@/lib/utils';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -57,6 +50,7 @@ import type { ServerConfig } from '@/bridge/types';
 import { deriveTsCardState } from '../../../shared/tailscale-conn-state';
 import { runTailscaleLogin, openTailscaleLogin } from '../../lib/tailscale-login';
 import { TailscaleForm } from './tailscale-form';
+import { NodeFormDialog } from './node-form-dialog';
 import { useServerActions } from '../../pages/use-server-actions';
 
 interface MeshTailscaleControlProps {
@@ -348,37 +342,37 @@ export function MeshTailscaleControl({
       </DropdownMenu>
 
       {/* 设置 / 用 Auth Key：复用 TailscaleForm（账号制无地址端口，连后配置）。onSubmit 统一 saveServer。 */}
-      <Dialog
+      {/* 宽度/滚动/页脚均由 NodeFormDialog 统一（#350）：出口设备/子网/高级均单列窄字段，沿用 452px 窄窗。 */}
+      <NodeFormDialog
         open={settingsOpen}
         onOpenChange={(open) => {
           setSettingsOpen(open);
           if (!open) setShowKeyForm(false);
         }}
+        title={
+          showKeyForm
+            ? t('servers.tsConnCardUseAuthKey', '用 Auth Key')
+            : t('servers.tsConnCardSettingsTitle', 'Tailscale 设置')
+        }
+        description={t(
+          'servers.tsConnCardSettingsDesc',
+          '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
+        )}
+        submitLabel={t('common.save')}
       >
-        {/* 宽度对齐「节点编辑」窗（server-config-dialog 的 w-[min(452px,94vw)]）：出口设备/子网/高级均单列窄字段，
-            原 max-w-3xl(768) 一倍宽显空旷（用户反馈过大）。max-h/overflow/标准 padding 保留。 */}
-        <DialogContent className="w-[min(452px,94vw)] max-w-none max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {showKeyForm
-                ? t('servers.tsConnCardUseAuthKey', '用 Auth Key')
-                : t('servers.tsConnCardSettingsTitle', 'Tailscale 设置')}
-            </DialogTitle>
-            <DialogDescription>
-              {t(
-                'servers.tsConnCardSettingsDesc',
-                '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <TailscaleForm
-            key={tsNode?.id || 'new-key'}
-            serverConfig={tsNode}
-            onSubmit={handleSaveSettings}
-            hideLoginSection
-          />
-        </DialogContent>
-      </Dialog>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'servers.tsConnCardSettingsDesc',
+            '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
+          )}
+        </p>
+        <TailscaleForm
+          key={tsNode?.id || 'new-key'}
+          serverConfig={tsNode}
+          onSubmit={handleSaveSettings}
+          hideLoginSection
+        />
+      </NodeFormDialog>
 
       {/* key-ready 删除确认：先登出再删节点，高危故二次确认（受控，从下拉菜单项触发）。 */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

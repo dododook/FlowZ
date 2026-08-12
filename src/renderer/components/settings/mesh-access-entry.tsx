@@ -17,13 +17,6 @@ import { useTranslation } from 'react-i18next';
 import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -42,6 +35,7 @@ import {
 import type { ServerConfig } from '@/bridge/types';
 import { WireGuardForm } from './wireguard-form';
 import { WarpPanel } from './warp-panel';
+import { NodeFormDialog } from './node-form-dialog';
 import { MeshTailscaleControl } from './mesh-tailscale-control';
 import { useServerActions } from '../../pages/use-server-actions';
 
@@ -261,8 +255,8 @@ export function MeshAccessEntry({
         </button>
       </div>
 
-      {/* WireGuard 接入：名称（dialog 级）+ WireGuardForm（.conf 导入已内置）。 */}
-      <Dialog
+      {/* WireGuard 接入：名称（dialog 级）+ WireGuardForm（.conf 导入已内置）。页脚由外壳渲染（#350）。 */}
+      <NodeFormDialog
         open={wgOpen}
         onOpenChange={(open) => {
           setWgOpen(open);
@@ -271,71 +265,68 @@ export function MeshAccessEntry({
             setWgNameError(false);
           }
         }}
+        title={t('servers.meshAccessAddWg', '添加 WireGuard 节点')}
+        description={t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
+        submitLabel={t('servers.add')}
       >
-        <DialogContent className="w-[min(452px,94vw)] max-w-none max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('servers.meshAccessAddWg', '添加 WireGuard 节点')}</DialogTitle>
-            <DialogDescription>
-              {t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="field">
-              <label className="field-lbl" htmlFor="meshWgName">
-                {t('servers.remarks')}
-              </label>
-              <input
-                ref={wgNameInputRef}
-                id="meshWgName"
-                className={cn('input', wgNameError && 'err')}
-                placeholder={t('servers.remarksPlaceholder')}
-                value={wgName}
-                onChange={(e) => {
-                  setWgName(e.target.value);
-                  if (wgNameError) setWgNameError(false);
-                }}
-                aria-invalid={wgNameError}
-              />
-              {wgNameError && (
-                <p className="text-[11px] text-[hsl(var(--err))]">
-                  {t('servers.meshAccessNameFirst', '请先填写节点名称')}
-                </p>
-              )}
-            </div>
-            <WireGuardForm onSubmit={handleWgSubmit} />
-          </div>
-        </DialogContent>
-      </Dialog>
+        {/* 说明文案作为正文首段（外壳的 description 是 sr-only 的 a11y 描述，不上屏）。 */}
+        <p className="text-xs text-muted-foreground">
+          {t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
+        </p>
+        <div className="field">
+          <label className="field-lbl" htmlFor="meshWgName">
+            {t('servers.remarks')}
+          </label>
+          <input
+            ref={wgNameInputRef}
+            id="meshWgName"
+            className={cn('input', wgNameError && 'err')}
+            placeholder={t('servers.remarksPlaceholder')}
+            value={wgName}
+            onChange={(e) => {
+              setWgName(e.target.value);
+              if (wgNameError) setWgNameError(false);
+            }}
+            aria-invalid={wgNameError}
+          />
+          {wgNameError && (
+            <p className="text-[11px] text-[hsl(var(--err))]">
+              {t('servers.meshAccessNameFirst', '请先填写节点名称')}
+            </p>
+          )}
+        </div>
+        <WireGuardForm onSubmit={handleWgSubmit} />
+      </NodeFormDialog>
 
-      {/* WARP 接入：名称（预填）+ WarpPanel（一键注册→WG 节点）。 */}
-      <Dialog open={warpOpen} onOpenChange={setWarpOpen}>
-        <DialogContent className="w-[min(452px,94vw)] max-w-none max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('servers.meshAccessAddWarp', '添加 Cloudflare WARP')}</DialogTitle>
-            <DialogDescription>
-              {t(
-                'servers.meshAccessAddWarpDesc',
-                '一键注册匿名 WARP 设备并加入为 WireGuard 节点。'
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="field">
-              <label className="field-lbl" htmlFor="meshWarpName">
-                {t('servers.remarks')}
-              </label>
-              <input
-                id="meshWarpName"
-                className="input"
-                placeholder={t('servers.remarksPlaceholder')}
-                value={warpName}
-                onChange={(e) => setWarpName(e.target.value)}
-              />
-            </div>
-            <WarpPanel onSubmit={handleWarpSubmit} nameMissing={!warpName.trim()} />
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* WARP 接入：名称（预填）+ WarpPanel（一键注册→WG 节点）。WarpPanel 自带按钮，故不套页脚。 */}
+      <NodeFormDialog
+        open={warpOpen}
+        onOpenChange={setWarpOpen}
+        title={t('servers.meshAccessAddWarp', '添加 Cloudflare WARP')}
+        description={t(
+          'servers.meshAccessAddWarpDesc',
+          '一键注册匿名 WARP 设备并加入为 WireGuard 节点。'
+        )}
+        submitLabel={t('servers.add')}
+        hideFooter
+      >
+        <p className="text-xs text-muted-foreground">
+          {t('servers.meshAccessAddWarpDesc', '一键注册匿名 WARP 设备并加入为 WireGuard 节点。')}
+        </p>
+        <div className="field">
+          <label className="field-lbl" htmlFor="meshWarpName">
+            {t('servers.remarks')}
+          </label>
+          <input
+            id="meshWarpName"
+            className="input"
+            placeholder={t('servers.remarksPlaceholder')}
+            value={warpName}
+            onChange={(e) => setWarpName(e.target.value)}
+          />
+        </div>
+        <WarpPanel onSubmit={handleWarpSubmit} nameMissing={!warpName.trim()} />
+      </NodeFormDialog>
 
       {/* WARP 重新注册确认：先注销当前设备再注册新的替换。 */}
       <AlertDialog open={warpReRegisterOpen} onOpenChange={setWarpReRegisterOpen}>
