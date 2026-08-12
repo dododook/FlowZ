@@ -35,7 +35,7 @@ import {
 import type { ServerConfig } from '@/bridge/types';
 import { WireGuardForm } from './wireguard-form';
 import { WarpPanel } from './warp-panel';
-import { NodeFormDialog } from './node-form-dialog';
+import { NodeFormDialog, NodePanelDialog } from './node-form-dialog';
 import { MeshTailscaleControl } from './mesh-tailscale-control';
 import { useServerActions } from '../../pages/use-server-actions';
 
@@ -272,10 +272,6 @@ export function MeshAccessEntry({
       >
         {(submit) => (
           <>
-            {/* 说明文案作为正文首段（外壳的 description 是 sr-only 的 a11y 描述，不上屏）。 */}
-            <p className="text-xs text-muted-foreground">
-              {t('servers.meshAccessAddWgDesc', '手动填写或粘贴 wg-quick .conf 导入。')}
-            </p>
             <div className="field">
               <label className="field-lbl" htmlFor="meshWgName">
                 {t('servers.remarks')}
@@ -303,8 +299,8 @@ export function MeshAccessEntry({
         )}
       </NodeFormDialog>
 
-      {/* WARP 接入：名称（预填）+ WarpPanel（一键注册→WG 节点）。WarpPanel 自带按钮，故不套页脚。 */}
-      <NodeFormDialog
+      {/* WARP 接入：名称（预填）+ WarpPanel（一键注册→WG 节点）。面板自带按钮 ⇒ 走无页脚的 NodePanelDialog。 */}
+      <NodePanelDialog
         open={warpOpen}
         onOpenChange={setWarpOpen}
         title={t('servers.meshAccessAddWarp', '添加 Cloudflare WARP')}
@@ -312,34 +308,22 @@ export function MeshAccessEntry({
           'servers.meshAccessAddWarpDesc',
           '一键注册匿名 WARP 设备并加入为 WireGuard 节点。'
         )}
-        onSubmit={handleWarpSubmit}
-        submitLabel={t('servers.add')}
-        hideFooter
       >
-        {(submit) => (
-          <>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'servers.meshAccessAddWarpDesc',
-                '一键注册匿名 WARP 设备并加入为 WireGuard 节点。'
-              )}
-            </p>
-            <div className="field">
-              <label className="field-lbl" htmlFor="meshWarpName">
-                {t('servers.remarks')}
-              </label>
-              <input
-                id="meshWarpName"
-                className="input"
-                placeholder={t('servers.remarksPlaceholder')}
-                value={warpName}
-                onChange={(e) => setWarpName(e.target.value)}
-              />
-            </div>
-            <WarpPanel onSubmit={submit} nameMissing={!warpName.trim()} />
-          </>
-        )}
-      </NodeFormDialog>
+        <div className="field">
+          <label className="field-lbl" htmlFor="meshWarpName">
+            {t('servers.remarks')}
+          </label>
+          <input
+            id="meshWarpName"
+            className="input"
+            placeholder={t('servers.remarksPlaceholder')}
+            value={warpName}
+            onChange={(e) => setWarpName(e.target.value)}
+          />
+        </div>
+        {/* 提交态由 WarpPanel 自持（loading 驱动自己的按钮），故直接接宿主处理器。 */}
+        <WarpPanel onSubmit={handleWarpSubmit} nameMissing={!warpName.trim()} />
+      </NodePanelDialog>
 
       {/* WARP 重新注册确认：先注销当前设备再注册新的替换。 */}
       <AlertDialog open={warpReRegisterOpen} onOpenChange={setWarpReRegisterOpen}>

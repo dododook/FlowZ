@@ -363,12 +363,6 @@ export function MeshTailscaleControl({
       >
         {(submit) => (
           <>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'servers.tsConnCardSettingsDesc',
-                '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
-              )}
-            </p>
             <TailscaleForm
               key={tsNode?.id || 'new-key'}
               serverConfig={tsNode}
