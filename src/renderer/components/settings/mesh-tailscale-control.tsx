@@ -358,20 +358,25 @@ export function MeshTailscaleControl({
           'servers.tsConnCardSettingsDesc',
           '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
         )}
+        onSubmit={handleSaveSettings}
         submitLabel={t('common.save')}
       >
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'servers.tsConnCardSettingsDesc',
-            '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
-          )}
-        </p>
-        <TailscaleForm
-          key={tsNode?.id || 'new-key'}
-          serverConfig={tsNode}
-          onSubmit={handleSaveSettings}
-          hideLoginSection
-        />
+        {(submit) => (
+          <>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'servers.tsConnCardSettingsDesc',
+                '出口节点、子网路由与高级选项。代理运行中保存会自动重连以生效。'
+              )}
+            </p>
+            <TailscaleForm
+              key={tsNode?.id || 'new-key'}
+              serverConfig={tsNode}
+              onSubmit={submit}
+              hideLoginSection
+            />
+          </>
+        )}
       </NodeFormDialog>
 
       {/* key-ready 删除确认：先登出再删节点，高危故二次确认（受控，从下拉菜单项触发）。 */}

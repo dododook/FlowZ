@@ -17,7 +17,7 @@
  * 今天四处调用点互斥、该状态不可达，属 YAGNI。真要治是本外壳用 `useId()` 生成唯一 id 经 context 下发，
  * 代价是 15 个表单文件都要改 `id=`——等真出现并存场景再做。
  */
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -34,14 +34,23 @@ interface NodeFormDialogProps {
   description: string;
   /** 提交按钮文案：新增用「添加」、编辑用「保存」。 */
   submitLabel: string;
-  /** 提交中：两个按钮置灰，提交按钮转圈。 */
-  busy?: boolean;
+  /**
+   * 提交处理。**由外壳调用并自管「提交中」态**——宿主不必、也无法再自持提交态。
+   *
+   * 刻意**不给** `busy` prop：那会造出第二条可选的宿主义务（「记得把提交态透传进来」），
+   * 与本外壳收编页脚的理由自相矛盾——三处调用点里已经有两处忘过一次同类义务了。
+   * 现在忘无可忘：宿主想手搓提交态，多传的 prop 直接 tsc 报错，是结构性强制而非又一道门。
+   *
+   * 语义：调用即置灰两个按钮 + 提交按钮转圈，`finally` 复位（抛错也复位，错误处理仍归宿主）。
+   */
+  onSubmit: (config: any) => Promise<void>;
   /**
    * 不渲染页脚。**唯一合法用途**：正文里挂的不是协议表单，而是自带按钮的面板
    * （WARP 一键注册 / custom 的 JSON 直填）。挂了协议表单还传它 = 复现 #350。
    */
   hideFooter?: boolean;
-  children: ReactNode;
+  /** render-prop：外壳把**包好提交态**的 submit 递下去，宿主原样交给协议表单的 `onSubmit`。 */
+  children: (submit: (config: any) => Promise<void>) => ReactNode;
 }
 
 export function NodeFormDialog({
@@ -50,11 +59,25 @@ export function NodeFormDialog({
   title,
   description,
   submitLabel,
-  busy = false,
+  onSubmit,
   hideFooter = false,
   children,
 }: NodeFormDialogProps) {
   const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+
+  // 成功提交后宿主通常会关弹窗，但关的是 radix 的 open——本组件仍挂载，故 finally 里的复位安全。
+  const submit = useCallback(
+    async (config: any) => {
+      setBusy(true);
+      try {
+        await onSubmit(config);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onSubmit]
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -76,7 +99,7 @@ export function NodeFormDialog({
           </button>
         </div>
 
-        <div className="nd-dlg-body">{children}</div>
+        <div className="nd-dlg-body">{children(submit)}</div>
 
         {!hideFooter && (
           <div className="nd-dlg-foot">
