@@ -732,40 +732,28 @@ export function buildRouteConfig(
     outbound: 'direct',
   });
 
-  // 【通用修复：Chrome/Edge 心跳 beacon 域名强制直连 —— global 和 smart 模式均生效】
-  // gvt2.com / gvt1.com 是 Google CDN 心跳；clientservices / oauthaccountmanager /
-  // optimizationguide-pa 是 Chrome 账号同步、FCM Push 和优化引导的后台服务。
-  // 这些域名对代理节点出口通常限速或屏蔽（非浏览行为），一旦持续超时会耗尽连接池，
-  // 导致所有正常网页也超时 —— 即"过一会就断网"现象。
-  // 在 global 和 smart 两种模式下均强制直连，彻底消除对连接池的占用。
-  if (proxyMode !== 'direct') {
-    rules.push({
-      domain_suffix: [
-        // Google CDN 心跳
-        'gvt2.com',
-        'gvt1.com',
-        // Chrome 账号同步 / FCM Push 后台
-        'oauthaccountmanager.googleapis.com',
-        'clientservices.googleapis.com',
-        // Chrome 优化引导服务
-        'optimizationguide-pa.googleapis.com',
-        // Google FCM 推送 (port 5228)
-        'mtalk.google.com',
-        // Android 客户端服务
-        'android.clients.google.com',
-        // Chrome / GMS clients
-        'clients1.google.com',
-        'clients2.google.com',
-        'clients3.google.com',
-        'clients4.google.com',
-        'clients5.google.com',
-        'clients6.google.com',
-        // 自动更新检查
-        'update.googleapis.com',
-      ],
-      action: 'reject',
-    });
-  }
+  // 【已删除：Chrome/Edge 后台 beacon 域名黑名单（issue #352）】
+  // 曾在此处无条件（`proxyMode !== 'direct'` 即发射）reject 14 个 Google 域名。整块删除，不留缩表版本。
+  //
+  // 删除依据（逐条独立成立）：
+  //  ① **声称的机制不成立**。原注释称这些域名在代理出口超时会"耗尽连接池、导致所有正常网页也超时"。
+  //     sing-box 侧不存在跨目的地共享的连接池（每条连接独立 goroutine + socket）；Chrome 侧的 socket
+  //     上限是**每 host 6 条**，卡死在 gvt2 的 socket 结构上无法挤占 www.google.com 的配额。
+  //     引入 commit（2026-05-12，夹在一个 DNS 修复里）无关联 issue、无复现、无测试，claim 从未被验证。
+  //  ② **代码与自身意图从第一天就不一致**：注释写"强制直连"，代码写 `action: 'reject'`。说明该块未被复核。
+  //  ③ **代价已实测，收益始终未证**。`clients2.google.com` 是扩展商店 CRX 的更新与下载端点，被 reject 后
+  //     点"添加至 Chrome"必失败（`Download interrupted`），系统代理与 TUN 同症（route 规则模式无关）——
+  //     这正是其他 sing-box 客户端不复现的原因。真内核 A/B：本表在场 `connection closed: rejected`；
+  //     移除后同一 URL 302 → CRX 200 / 47794 B。表内另有三处静默功能损失：`update.googleapis.com`
+  //     （Chrome 永不自升级）、`oauthaccountmanager.googleapis.com`（Google 账号登录/令牌刷新）、
+  //     `mtalk.google.com`（FCM = 网页推送通知的承载通道）。
+  //  ④ 严格按"掉了无用户可见损失"筛完只剩 `clientservices.googleapis.com` 与 `optimizationguide-pa`
+  //     两条纯遥测，收益不可感知而政策仍是硬编码不可关——不值得保留。
+  //  ⑤ 屏蔽浏览器遥测不是代理客户端的职责（用户侧 uBlock/hosts 才是），代客户决定属越界。
+  //
+  // 删除后这些域名与其它 Google 域名同等对待：smart 落 `geosite-geolocation-!cn` → 代理，global 走 final。
+  // 若"过一会就断网"的原始症状再次出现，那是节点侧（UDP 中继 / mux / DNS）问题，届时可正常诊断——
+  // 本表此前恰恰掩盖了它。**禁止以任何形式重建此类无条件域名黑名单**，由下方单测（#352 门）钉住。
 
   // 智能分流的「地区分流」geo 基线层（仅 smart + region.enabled）：enabled=false → 跳整块，
   // 只剩自定义规则 + final（≈近全局，规则仍生效）。region 决定用哪套 geo，reverse 决定方向。

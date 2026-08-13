@@ -304,25 +304,6 @@
         "outbound": "direct"
       },
       {
-        "domain_suffix": [
-          "gvt2.com",
-          "gvt1.com",
-          "oauthaccountmanager.googleapis.com",
-          "clientservices.googleapis.com",
-          "optimizationguide-pa.googleapis.com",
-          "mtalk.google.com",
-          "android.clients.google.com",
-          "clients1.google.com",
-          "clients2.google.com",
-          "clients3.google.com",
-          "clients4.google.com",
-          "clients5.google.com",
-          "clients6.google.com",
-          "update.googleapis.com"
-        ],
-        "action": "reject"
-      },
-      {
         "domain_keyword": [
           "google",
           "gmail",
@@ -682,25 +663,6 @@
         ],
         "action": "route",
         "outbound": "direct"
-      },
-      {
-        "domain_suffix": [
-          "gvt2.com",
-          "gvt1.com",
-          "oauthaccountmanager.googleapis.com",
-          "clientservices.googleapis.com",
-          "optimizationguide-pa.googleapis.com",
-          "mtalk.google.com",
-          "android.clients.google.com",
-          "clients1.google.com",
-          "clients2.google.com",
-          "clients3.google.com",
-          "clients4.google.com",
-          "clients5.google.com",
-          "clients6.google.com",
-          "update.googleapis.com"
-        ],
-        "action": "reject"
       }
     ],
     "routeDefaultDomainResolver": "dns-bootstrap",
@@ -1030,25 +992,6 @@
         ],
         "action": "route",
         "outbound": "direct"
-      },
-      {
-        "domain_suffix": [
-          "gvt2.com",
-          "gvt1.com",
-          "oauthaccountmanager.googleapis.com",
-          "clientservices.googleapis.com",
-          "optimizationguide-pa.googleapis.com",
-          "mtalk.google.com",
-          "android.clients.google.com",
-          "clients1.google.com",
-          "clients2.google.com",
-          "clients3.google.com",
-          "clients4.google.com",
-          "clients5.google.com",
-          "clients6.google.com",
-          "update.googleapis.com"
-        ],
-        "action": "reject"
       },
       {
         "domain_keyword": [
