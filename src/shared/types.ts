@@ -488,6 +488,13 @@ export interface UserConfig {
   // 原 systemProxyBypass 已并入此字段（单一清单，杜绝两处重复）。
   bypassLANList?: string[];
   blockQuic?: boolean; // 阻止 QUIC（对代理向 UDP 443 执行 reject，逼浏览器回退 TCP）；默认关；节点无关，对所有协议一视同仁
+  // 拦截浏览器自带 DoH（对 DoH 域名的 TCP 443/853 与 UDP 443 执行 reject），逼其回退系统 UDP 53 重进
+  // hijack-dns/FakeIP 体系。**默认开**（undefined ≠ false，保持历史行为——此前是恒开且无开关）。
+  // 关掉 = 允许浏览器 DoH，代价是域名级分流退化成 IP 级。语义与清单见 shared/browser-doh。
+  blockBrowserDoh?: boolean;
+  // 被拦的 DoH 域名关键词（子串匹配）。未设置 → 用 DEFAULT_BROWSER_DOH_KEYWORDS；设置后完全以本清单为准。
+  // 可编辑是必需的而非便利：按域名拦本质是黑名单，浏览器可换任意提供商，内置固定表必然漏。
+  browserDohList?: string[];
   tlsFragment?: boolean; // 全局 TLS 分片：对所有 TLS 节点切分 ClientHello 抗 SNI-DPI；默认关
   // WebRTC 防泄露（仅 TUN 模式生效）：off=关；proxy=对 STUN 经协议嗅探强制走代理（srflx=代理 IP，WebRTC 正常）；
   // block=reject STUN（断 P2P、零公网 IP 泄露）。默认 undefined=off（零行为变化）。系统代理模式拦不住（浏览器 WebRTC

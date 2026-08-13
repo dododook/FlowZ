@@ -22,6 +22,7 @@ import {
 } from '../../shared/endpoint-routes';
 import { cidrOverlapsAny, partitionCidrsByOverlap } from '../../shared/ip';
 import { dedupe } from '../../shared/collections';
+import { effectiveBrowserDohKeywords } from '../../shared/browser-doh';
 import { FAKEIP_INET4_RANGE, FAKEIP_INET6_RANGE } from '../../shared/fakeip-filter';
 import {
   effectiveRegionRouting,
@@ -55,17 +56,8 @@ import { buildCustomRules } from './singbox-custom-rules';
 // 绕过局域网：TUN route 私网直连取 bypassLAN 完整清单的 CIDR 部分（域名在系统代理模式由 OS 忽略列表处理）。
 import { bypassLanCidrs, effectiveBypassLan } from '../../shared/system-proxy-bypass';
 
-/**
- * 浏览器隐私 DoH 泄漏域名（DoH-over-HTTPS / DoH-over-QUIC）。route reject 与 DNS 拦截须用同一份清单，
- * 避免某处漏掉某域名导致 DoH 绕过 hijack-dns / FakeIP 体系。改这一处即两处同步。
- */
-const DOH_LEAK_DOMAIN_KEYWORDS = [
-  'dns.google',
-  'cloudflare-dns.com',
-  'doh.opendns.com',
-  'dns.quad9.net',
-  'one.one.one.one',
-];
+// 浏览器 DoH 泄漏拦截：清单与开关语义的单一真值在 shared/browser-doh（默认值 + effectiveBrowserDohKeywords）。
+// 本文件只消费：同一份数组同时喂给 TCP(443/853) 与 UDP(443) 两条 reject，杜绝两处漂移。
 
 /**
  * QUIC(UDP/443) reject 规则工厂：可选叠加域名/进程等匹配器。route 与各处 blockQuic 共用，
@@ -151,6 +143,9 @@ export function buildRouteConfig(
       '选中的组网节点已关闭外网访问：外网流量已回退直连（具体网段仍经组网节点），如需经此节点全隧道请开启该节点「允许访问外网」'
     );
   }
+
+  // 浏览器 DoH 拦截清单（默认开、可编辑）：空数组 = 用户关了开关或把清单删空 → 两条 reject 都不发射。
+  const browserDohKeywords = effectiveBrowserDohKeywords(config);
 
   // blockQuic（节点无关）：开启时对"将走代理"的 QUIC(UDP443) 执行 reject，逼浏览器回退 TCP。
   // 「禁 QUIC」即禁 QUIC，与选中节点的协议/中继能力无关，对所有节点一视同仁。两点实测保证安全：
@@ -329,11 +324,13 @@ export function buildRouteConfig(
   // 这里 reject 这些 DoH 域名（发 RST，让浏览器立即回退，而非 block 静默丢包等 21s 重传超时），
   // 迫使浏览器退回系统标准 UDP 53，重新被 hijack-dns 捕获进入 DNS 分流/FakeIP 体系。
   // 与下方同组 DoH 域名的 QUIC/UDP-443 reject 规则保持行为一致。
-  rules.push({
-    domain_keyword: DOH_LEAK_DOMAIN_KEYWORDS,
-    port: [443, 853],
-    action: 'reject',
-  });
+  if (browserDohKeywords.length > 0) {
+    rules.push({
+      domain_keyword: browserDohKeywords,
+      port: [443, 853],
+      action: 'reject',
+    });
+  }
 
   // 排除全部代理节点的域名/IP，确保到任一节点的连接走直连（防回流死循环 + 兼容无缝切换/代理链）。
   // CDN 安全：域名节点用纯域名规则(domain + domain_suffix，靠 sniff 出的 SNI 精确匹配节点域名)，
@@ -708,7 +705,9 @@ export function buildRouteConfig(
   // 这样游戏设为直连时，进程名匹配在前，游戏的 UDP 流量不会被误拒。
   // 仅阻断浏览器的 DoH over QUIC，迫使浏览器回退到系统 UDP 53 + hijack-dns 体系。
   // 重要：不能全量 reject 所有 UDP 443，否则 Hysteria2/TUIC 等 QUIC 协议节点会被误伤。
-  rules.push(udp443RejectRule({ domain_keyword: DOH_LEAK_DOMAIN_KEYWORDS }));
+  if (browserDohKeywords.length > 0) {
+    rules.push(udp443RejectRule({ domain_keyword: browserDohKeywords }));
+  }
 
   // 【DNS 死循环防范】：sing-box 本地 DNS 解析器的请求必须强制直连，否则在全局代理模式下会产生死循环
   // 兼容 Windows 1.12.x 版本，不使用 DNS 配置里的 detour

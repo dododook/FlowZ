@@ -22,6 +22,7 @@ import {
 } from '@shared/node-resolver-upstreams';
 import type { CustomDnsUpstream, DnsConfig, TunStack } from '@shared/types';
 import { DEFAULT_BYPASS_LAN } from '@shared/system-proxy-bypass';
+import { DEFAULT_BROWSER_DOH_KEYWORDS } from '@shared/browser-doh';
 import { parseSpeedTestUrl, DEFAULT_SPEED_TEST_URL } from '@shared/speed-test';
 import {
   resolveTunStack,
@@ -875,6 +876,35 @@ export function NetworkSettings() {
           >
             <Swt checked={config.blockQuic === true} onChange={(c) => setBool('blockQuic', c)} />
           </Srow>
+          {/* 浏览器自带 DoH 会绕开系统 UDP 53 → 绕开 hijack-dns/FakeIP，分流退化成 IP 级。默认开；
+              清单可编辑是必需的：按域名拦本质是黑名单，换个提供商即绕过，内置固定表必然漏。 */}
+          <Srow
+            label={
+              <>
+                {t('settings.advanced.blockBrowserDoh')}
+                <InfoTooltip content={t('settings.advanced.blockBrowserDohDescFull')} />
+              </>
+            }
+            desc={t('settings.advanced.blockBrowserDohDesc')}
+          >
+            <Swt
+              checked={config.blockBrowserDoh !== false}
+              onChange={(c) => setBool('blockBrowserDoh', c)}
+            />
+          </Srow>
+          {config.blockBrowserDoh !== false && (
+            <ExceptionList
+              value={config.browserDohList}
+              defaults={DEFAULT_BROWSER_DOH_KEYWORDS}
+              onChange={(v) =>
+                saveConfig({ ...config, browserDohList: v }).catch(() =>
+                  toast.error(t('common.saveFailed'))
+                )
+              }
+              placeholder={t('settings.advanced.browserDohPlaceholder')}
+              hint={t('settings.advanced.browserDohEditHint')}
+            />
+          )}
           <Srow
             label={
               <>
