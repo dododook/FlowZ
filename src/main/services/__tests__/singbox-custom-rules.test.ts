@@ -58,7 +58,7 @@ describe('buildCustomRules — 出站映射（applyRuleAction）', () => {
     expect(rules[0].rule_set).toEqual(['geosite-youtube']);
   });
 
-  it('direct → outbound=direct；block → outbound=block', () => {
+  it('direct → outbound=direct；block → action=reject（无 outbound）', () => {
     const deps = mkDeps();
     const { rules } = buildCustomRules(
       [
@@ -74,7 +74,10 @@ describe('buildCustomRules — 出站映射（applyRuleAction）', () => {
       deps
     );
     expect(rules.find((r) => r.rule_set?.includes('geoip-cn'))?.outbound).toBe('direct');
-    expect(rules.find((r) => r.rule_set?.includes('geosite-youtube'))?.outbound).toBe('block');
+    // 阻断 = sing-box 1.14 的 `action: 'reject'`，且**不带 outbound**（reject 就地终止、不经出站）。
+    const blocked = rules.find((r) => r.rule_set?.includes('geosite-youtube'))!;
+    expect(blocked.action).toBe('reject');
+    expect(blocked.outbound).toBeUndefined();
   });
 });
 
@@ -219,7 +222,8 @@ describe('buildCustomRules — route TLS spoof（P3a 抗审查）', () => {
       false,
       deps
     );
-    expect(rules[0].outbound).toBe('block');
+    expect(rules[0].action).toBe('reject');
+    expect(rules[0].outbound).toBeUndefined();
     expect(rules[0].tls_spoof).toBeUndefined();
     expect(rules[0].tls_spoof_method).toBeUndefined();
   });
@@ -323,7 +327,8 @@ describe('buildCustomRules — 源设备 MAC / 主机名（P6 LAN 网关）', ()
     );
     expect(rules).toHaveLength(1);
     expect(rules[0].source_mac_address).toEqual(['00:11:22:33:44:55']); // bad-mac 剔除
-    expect(rules[0].outbound).toBe('block');
+    expect(rules[0].action).toBe('reject');
+    expect(rules[0].outbound).toBeUndefined();
   });
 
   it('macOS：sourceHostname → source_hostname（DHCP 名）', () => {

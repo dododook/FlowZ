@@ -483,11 +483,9 @@ export function buildRouteConfig(
       'rules',
     ]);
     for (const cr of customRules) {
-      const isProxyOut =
-        cr.action === 'route' &&
-        !!cr.outbound &&
-        cr.outbound !== 'direct' &&
-        cr.outbound !== 'block';
+      // 阻断规则不必再排除：迁移到 `action: 'reject'` 后它们的 action 已不是 'route'，首个合取项即淘汰之。
+      // 保留 `!== 'block'` 会是一条**恒真的死条件**——读代码的人会误以为仍有 outbound 为 'block' 的规则存在。
+      const isProxyOut = cr.action === 'route' && !!cr.outbound && cr.outbound !== 'direct';
       if (isProxyOut && blockProxyQuic) {
         if (cr.type === 'logical') {
           // logical 规则顶层不接受 network/port（sing-box 解码会 FATAL）→ 把原 logical matcher 与 udp443
@@ -538,20 +536,25 @@ export function buildRouteConfig(
       const preset = getAppPreset(appRule.appId, config.customAppPresets);
       if (!preset) continue;
 
-      // 确定出站方式
+      // 确定动作：阻断走 sing-box 1.14 的 `reject` 路由动作（就地终止、不经出站），与自定义规则的阻断
+      // 及内置 QUIC/DoH/STUN reject 同形；其余走 `route` + 出站 tag。取代 legacy 的 `outbound: 'block'`。
+      const isBlock = appRule.action === 'block';
       let outbound = 'direct';
       if (appRule.action === 'proxy') {
         // rule-sel-app 恒存在（generateRuleSelectors 为所有 proxy appRule 生成）：outbound 恒指
         // rule-sel-app-<appId>，「默认/跟全局」= default=proxy-selector（嵌套），「指定节点」= default=节点 tag。
         // 使「节点↔默认」= rule-sel-app default 变（PUT 热切换），非 outbound 结构变（重启）。
         outbound = `rule-sel-app-${appRule.appId}`;
-      } else if (appRule.action === 'block') {
-        outbound = 'block';
       }
+      // 每条 app 规则的「动作部分」：两个发射点（process_name / rule_set）共用同一份，防一处漏改后
+      // 两种匹配形态的同一条规则动作不一致。
+      const appAction: Pick<SingBoxRouteRule, 'action' | 'outbound'> = isBlock
+        ? { action: 'reject' }
+        : { action: 'route', outbound };
 
       // 走代理的 app 分流也要配对 udp443 reject（这些是终止规则、在末尾兜底之前命中，否则 blockQuic
-      // 对该应用的 QUIC 失效）。direct/block 不配对。
-      const appOutIsProxy = outbound !== 'direct' && outbound !== 'block';
+      // 对该应用的 QUIC 失效）。direct/阻断 不配对。
+      const appOutIsProxy = !isBlock && outbound !== 'direct';
 
       // a. 基于进程名的规则（最精准，适用于 macOS/Windows TUN 模式）
       if (preset.processNames && preset.processNames.length > 0) {
@@ -561,8 +564,7 @@ export function buildRouteConfig(
         }
         rules.push({
           process_name: preset.processNames,
-          action: 'route',
-          outbound,
+          ...appAction,
         });
       }
 
@@ -581,8 +583,7 @@ export function buildRouteConfig(
         }
         rules.push({
           rule_set: ruleSets,
-          action: 'route',
-          outbound,
+          ...appAction,
         });
       }
     }

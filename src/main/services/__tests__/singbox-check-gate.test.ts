@@ -278,6 +278,52 @@ describe('sing-box check 门 — 生成的全量 config', () => {
     expectCheckOk(c, 'fakeip-off-resolve-on');
   });
 
+  it('阻断动作迁移：自定义规则 + 应用分流的 reject 规则被真核接受，且产物无 legacy block 出站', () => {
+    // 迁移把「阻断」从 legacy `outbound: 'block'` 换成 sing-box 1.14 的 `action: 'reject'`，并删除了
+    // block 出站。单测只能证「生成了什么」，证不了「内核收不收」——若 1.14 对 reject 规则的字段组合
+    // 另有约束（如不允许与某些匹配器共存），或 block 出站还有别处引用，check 会 FATAL。
+    const c = svcFor().gen(
+      cfg({
+        servers: [domainNode()],
+        customRules: [
+          {
+            id: 'r-blk',
+            type: 'domainSuffix',
+            values: ['ads.example'],
+            action: 'block',
+            enabled: true,
+          },
+        ],
+        appRoutingEnabled: true,
+        customAppPresets: [
+          {
+            id: 'blocked-app',
+            name: 'BlockedApp',
+            emoji: '🚫',
+            geositeTags: [],
+            geoipTags: [],
+            processNames: ['blocked.exe'],
+          },
+        ],
+        appRules: [{ appId: 'blocked-app', action: 'block', enabled: true }],
+      } as unknown as Partial<UserConfig>)
+    );
+    // ① 验的是不是声称的对象：两条阻断腿都在，且都是 reject（缺一则 check 绿也无意义）。
+    const legs = (c.route?.rules ?? []).filter((r) => {
+      const x = r as { domain_suffix?: string[]; process_name?: string[] };
+      return (x.domain_suffix ?? []).includes('ads.example') ||
+        (x.process_name ?? []).includes('blocked.exe');
+    }) as { action?: string; outbound?: string }[];
+    expect(legs).toHaveLength(2);
+    for (const leg of legs) {
+      expect(leg.action).toBe('reject');
+      expect(leg.outbound).toBeUndefined();
+    }
+    // ② legacy 出站确已从产物消失（留着就还有第二条能走通的路）。
+    expect((c.outbounds ?? []).map((o) => o.tag)).not.toContain('block');
+    expectCheckOk(c, 'reject-action-migration');
+  });
+
   it('race off + 单上游档 dnspod（tag=dns-node）→ 结构化包裹层与档位正交，check 通过', () => {
     const c = svcFor().gen(
       cfg({

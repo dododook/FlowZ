@@ -219,7 +219,43 @@ describe('generateSingBoxConfig — characterization 快照（抽取前锁基线
               geoipTags: [],
             },
           ],
+          appRoutingEnabled: true,
           appRules: [{ appId: 'custom-app1', action: 'proxy', enabled: true }],
+        } as unknown as Partial<UserConfig>)
+      )
+    ).toMatchSnapshot();
+  });
+
+  // 「阻断」动作的快照覆盖。此前**零覆盖**：上面 customRules 那条用的是 geosite=category-ads-all，
+  // 运行时目录没有该 .srs → 规则被 fail-closed 剪掉，快照里 `category-ads-all` 出现 0 次，
+  // 于是自定义规则与应用分流两个阻断发射点都没被任何快照锁住。这里改用不依赖 rule_set 文件的
+  // domainSuffix / process_name 形态，让阻断规则真的落进产物。
+  it('smart + 阻断动作（自定义规则 domainSuffix→block + 应用分流 block）→ 锁阻断规则形态', () => {
+    expect(
+      snap(
+        cfg({
+          servers: [server({})],
+          customRules: [
+            {
+              id: 'b1',
+              type: 'domainSuffix',
+              values: ['ads.example'],
+              action: 'block',
+              enabled: true,
+            },
+          ],
+          customAppPresets: [
+            {
+              id: 'custom-blocked',
+              name: 'BlockedApp',
+              emoji: '🚫',
+              geositeTags: [],
+              geoipTags: [],
+              processNames: ['blocked.exe'],
+            },
+          ],
+          appRoutingEnabled: true,
+          appRules: [{ appId: 'custom-blocked', action: 'block', enabled: true }],
         } as unknown as Partial<UserConfig>)
       )
     ).toMatchSnapshot();

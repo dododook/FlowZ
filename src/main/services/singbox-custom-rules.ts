@@ -317,7 +317,13 @@ function applyRuleAction(
   } else if (action === 'direct') {
     singboxRule.outbound = 'direct';
   } else if (action === 'block') {
-    singboxRule.outbound = 'block';
+    // sing-box 1.14 路由动作：`reject` 就地终止，不经任何出站；与内置的 QUIC / DoH / STUN reject 同形。
+    // 取代 legacy 的 `outbound: 'block'`（1.11 起 deprecated）。行为等价已实测（真内核 1.14.0-beta.14，
+    // 同一份最小配置只差这一处：两者客户端侧都是立即关闭、502，差别仅在日志——block 出站每拦一条打一行
+    // **ERROR** `operation not permitted`，reject 只在 DEBUG 打 `connection closed: rejected`）。
+    // 故迁移买到的是「阻断规则不再刷 ERROR 日志淹没真错误」+ 去掉 legacy 依赖，不是失败形态的改变。
+    singboxRule.action = 'reject';
+    delete singboxRule.outbound;
   } else {
     singboxRule.outbound = selectedServerTag;
   }

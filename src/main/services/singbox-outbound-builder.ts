@@ -1035,10 +1035,16 @@ export function buildOutbounds(
     domain_resolver: getDomesticResolverTag(config, 'dns-bootstrap'),
   });
 
-  outbounds.push({
-    type: 'block',
-    tag: 'block',
-  });
+  // 【已删除：legacy `block` 出站】阻断改由 sing-box 1.14 的 `action: 'reject'` 路由动作表达
+  // （自定义规则与应用分流两处发射点均已迁移），故本出站无任何引用者：
+  //  · 三种 selector 的成员表分别是 [...nodeTags,'direct'] / [...nodeTags,'proxy-selector'] /
+  //    [...nodeTags,'direct']，都不含 block（36 份 config 快照里 `default: "block"` 与裸数组元素
+  //    `"block"` 各 0 处，实测核对）；
+  //  · 用户侧无法产出对它的引用——规则动作经结构化 Rule 生成，用户能提供的 rule-set 文件只含匹配器、
+  //    自定义协议 JSON 提供的是 outbound 定义而非路由规则。
+  // 反向风险已评估：若将来某处又发出 `outbound: 'block'` 而本出站不在，`fixRouteDeadReferences` 会把它
+  // 改写成 `proxy-selector` —— 用户想阻断的流量反被代理，且静默。故本目录的接线门断言「全仓不得再出现
+  // outbound: 'block'」，把这条路彻底关掉，而不是靠保留一个死出站兜底。
 
   // §15 主核测速探测池 selector：K 个 probe-selector-k，成员 = proxy-selector 同款全量 nodeTags + direct。
   // default=direct（sing-box 要求 default ∈ outbounds 成员，direct 恒为成员）；测速时按波 gRPC selectOutbound 把该槽

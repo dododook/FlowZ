@@ -52,14 +52,16 @@ afterEach(() =>
 );
 
 describe('buildOutbounds — 基础装配 + 载体', () => {
-  it('单节点：节点出站 + proxy-selector(default=节点) + direct + block；载体空', () => {
+  it('单节点：节点出站 + proxy-selector(default=节点) + direct（无 legacy block 出站）；载体空', () => {
     const servers = [vless('s1', '香港')];
     const r = buildOutbounds(servers[0], cfg(servers), idMap(servers), deps());
     const tags = r.outbounds.map((o) => o.tag);
     expect(tags).toContain('香港');
     expect(tags).toContain('proxy-selector');
     expect(tags).toContain('direct');
-    expect(tags).toContain('block');
+    // legacy `block` 出站已删除：阻断改由 route 的 `action: 'reject'` 表达（见 singbox-outbound-builder 原址注释）。
+    // 断言「不存在」而非删掉这行——它是防回归的：谁再把 block 出站加回来，这条即红。
+    expect(tags).not.toContain('block');
     const sel = r.outbounds.find((o) => o.tag === 'proxy-selector')!;
     expect(sel.type).toBe('selector');
     expect(sel.outbounds).toEqual(['香港', 'direct']);

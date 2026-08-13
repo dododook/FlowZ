@@ -255,10 +255,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -905,10 +901,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -1533,10 +1525,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -2195,10 +2183,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -2808,10 +2792,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -3416,10 +3396,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -3974,10 +3950,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -4531,10 +4503,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -5096,10 +5064,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -5742,10 +5706,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -6375,10 +6335,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -7043,10 +6999,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -7674,10 +7626,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -8298,10 +8246,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -8974,10 +8918,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -9564,10 +9504,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -10172,10 +10108,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -10764,10 +10696,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -11387,10 +11315,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -12037,10 +11961,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -12662,13 +12582,19 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "selector",
       },
       {
+        "default": "proxy-selector",
+        "interrupt_exist_connections": false,
+        "outbounds": [
+          "HK",
+          "proxy-selector",
+        ],
+        "tag": "rule-sel-app-custom-app1",
+        "type": "selector",
+      },
+      {
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -12945,6 +12871,13 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         },
         {
           "action": "route",
+          "outbound": "rule-sel-app-custom-app1",
+          "rule_set": [
+            "geosite-youtube",
+          ],
+        },
+        {
+          "action": "route",
           "ip_cidr": [
             "10.0.0.0/8",
             "100.64.0.0/10",
@@ -13066,7 +12999,12 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
   "idToTagMap": {
     "s1": "HK",
   },
-  "ruleTargetMap": {},
+  "ruleTargetMap": {
+    "app:custom-app1": {
+      "memberTag": "proxy-selector",
+      "selectorTag": "rule-sel-app-custom-app1",
+    },
+  },
 }
 `;
 
@@ -13290,10 +13228,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -13714,6 +13648,629 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
 }
 `;
 
+exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线） smart + 阻断动作（自定义规则 domainSuffix→block + 应用分流 block）→ 锁阻断规则形态 1`] = `
+{
+  "config": {
+    "dns": {
+      "final": "dns-domestic",
+      "rules": [
+        {
+          "domain": [
+            "a.example.com",
+          ],
+          "domain_suffix": [
+            "a.example.com",
+            ".a.example.com",
+          ],
+          "server": "dns-domestic",
+        },
+        {
+          "domain": [
+            "doh.pub",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "server": "dns-bootstrap",
+        },
+        {
+          "domain_suffix": [
+            ".local",
+            ".arpa",
+            ".lan",
+            ".home.arpa",
+            ".microdone.cn",
+            ".icbc.com.cn",
+            ".boc.cn",
+            ".ccb.com",
+            ".abchina.com",
+            ".abchina.com.cn",
+            ".bankcomm.com",
+            ".cmbchina.com",
+            ".psbc.com",
+            ".spdb.com.cn",
+            ".cebbank.com",
+            ".citicbank.com",
+            ".pingan.com",
+            ".cib.com.cn",
+            ".hxb.com.cn",
+            ".cmbc.com.cn",
+            ".hzbank.com.cn",
+            ".10jqka.com.cn",
+            ".thsi.cn",
+            ".eastmoney.com",
+            ".1234567.com.cn",
+            ".gw.com.cn",
+            ".tdx.com.cn",
+          ],
+          "server": "dns-local",
+        },
+        {
+          "domain": [
+            "captive.apple.com",
+            "connectivitycheck.gstatic.com",
+            "connectivitycheck.android.com",
+            "msftconnecttest.com",
+            "www.msftconnecttest.com",
+            "msftncsi.com",
+            "www.msftncsi.com",
+            "dns.msftncsi.com",
+            "detectportal.firefox.com",
+            "network-test.debian.org",
+            "connect.rom.miui.com",
+          ],
+          "server": "dns-local",
+        },
+        {
+          "domain_keyword": [
+            "ntp",
+            "stun",
+          ],
+          "domain_suffix": [
+            "ntp.org",
+            ".ntp.org",
+            "time.windows.com",
+            ".time.windows.com",
+            "time.apple.com",
+            ".time.apple.com",
+            "time.cloudflare.com",
+            ".time.cloudflare.com",
+            "time.nist.gov",
+            ".time.nist.gov",
+            "time.android.com",
+            ".time.android.com",
+          ],
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rewrite_ttl": 60,
+          "server": "fakeip",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "rule_set": "geosite-cn",
+          "server": "dns-domestic",
+        },
+        {
+          "query_type": [
+            "A",
+            "AAAA",
+          ],
+          "server": "dns-remote",
+        },
+      ],
+      "servers": [
+        {
+          "path": "/dns-query",
+          "server": "223.5.5.5",
+          "server_port": 443,
+          "tag": "dns-bootstrap",
+          "type": "https",
+        },
+        {
+          "path": "/dns-query",
+          "server": "1.12.12.12",
+          "server_port": 443,
+          "tag": "dns-node",
+          "type": "https",
+        },
+        {
+          "tag": "dns-local",
+          "type": "local",
+        },
+        {
+          "domain_resolver": "dns-bootstrap",
+          "path": "/dns-query",
+          "server": "doh.pub",
+          "server_port": 443,
+          "tag": "dns-domestic",
+          "type": "https",
+        },
+        {
+          "detour": "proxy-selector",
+          "domain_resolver": "dns-bootstrap",
+          "path": "/dns-query",
+          "server": "dns.google",
+          "server_port": 443,
+          "tag": "dns-remote",
+          "type": "https",
+        },
+        {
+          "inet4_range": "198.18.0.0/15",
+          "tag": "fakeip",
+          "type": "fakeip",
+        },
+      ],
+      "strategy": "ipv4_only",
+    },
+    "experimental": {
+      "cache_file": {
+        "cache_id": "flowz-dns-v2",
+        "enabled": true,
+        "path": "/fake/userData/cache.db",
+        "store_dns": true,
+        "store_fakeip": true,
+      },
+    },
+    "inbounds": [
+      {
+        "listen": "127.0.0.1",
+        "listen_port": 7890,
+        "tag": "mixed-in",
+        "type": "mixed",
+      },
+    ],
+    "log": {
+      "level": "info",
+      "timestamp": true,
+    },
+    "outbounds": [
+      {
+        "domain_resolver": {
+          "server": "dns-bootstrap",
+          "strategy": "prefer_ipv4",
+        },
+        "packet_encoding": "xudp",
+        "server": "a.example.com",
+        "server_port": 443,
+        "tag": "HK",
+        "type": "vless",
+        "uuid": "uuid-1",
+      },
+      {
+        "default": "HK",
+        "interrupt_exist_connections": false,
+        "outbounds": [
+          "HK",
+          "direct",
+        ],
+        "tag": "proxy-selector",
+        "type": "selector",
+      },
+      {
+        "domain_resolver": "dns-bootstrap",
+        "tag": "direct",
+        "type": "direct",
+      },
+    ],
+    "route": {
+      "auto_detect_interface": true,
+      "default_domain_resolver": "dns-bootstrap",
+      "final": "proxy-selector",
+      "rule_set": [
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-cn.srs",
+          "tag": "geosite-cn",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-geolocation-!cn.srs",
+          "tag": "geosite-geolocation-!cn",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-cn.srs",
+          "tag": "geoip-cn",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-youtube.srs",
+          "tag": "geosite-youtube",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-netflix.srs",
+          "tag": "geosite-netflix",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-tiktok.srs",
+          "tag": "geosite-tiktok",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-telegram.srs",
+          "tag": "geosite-telegram",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-twitter.srs",
+          "tag": "geosite-twitter",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-instagram.srs",
+          "tag": "geosite-instagram",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-openai.srs",
+          "tag": "geosite-openai",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-anthropic.srs",
+          "tag": "geosite-anthropic",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-category-ai-!cn.srs",
+          "tag": "geosite-category-ai",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-google.srs",
+          "tag": "geosite-google",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-github.srs",
+          "tag": "geosite-github",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-spotify.srs",
+          "tag": "geosite-spotify",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-steam.srs",
+          "tag": "geosite-steam",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-epicgames.srs",
+          "tag": "geosite-epicgames",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-riot.srs",
+          "tag": "geosite-riot",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-disney.srs",
+          "tag": "geosite-disney",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geosite-private.srs",
+          "tag": "geosite-private",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-netflix.srs",
+          "tag": "geoip-netflix",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-telegram.srs",
+          "tag": "geoip-telegram",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-twitter.srs",
+          "tag": "geoip-twitter",
+          "type": "local",
+        },
+        {
+          "format": "binary",
+          "path": "/fake/userData/rules/geoip-private.srs",
+          "tag": "geoip-private",
+          "type": "local",
+        },
+      ],
+      "rules": [
+        {
+          "action": "sniff",
+        },
+        {
+          "action": "route",
+          "outbound": "direct",
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
+          "action": "route",
+          "ip_cidr": [
+            "223.5.5.5/32",
+            "223.6.6.6/32",
+            "1.12.12.12/32",
+            "119.29.29.29/32",
+            "119.28.28.28/32",
+            "114.114.114.114/32",
+          ],
+          "outbound": "direct",
+          "port": [
+            53,
+            443,
+          ],
+        },
+        {
+          "action": "hijack-dns",
+          "port": [
+            53,
+          ],
+        },
+        {
+          "action": "route",
+          "outbound": "direct",
+          "process_name": [
+            "Surge",
+            "Surge 4",
+            "Surge 5",
+            "Clash",
+            "Clash for Windows",
+            "ClashX",
+            "ClashX Pro",
+            "clash-meta",
+            "Quantumult X",
+            "sing-box",
+            "sing-box.exe",
+            "mDNSResponder",
+            "apsd",
+            "nsurlsessiond",
+            "airportd",
+            "syspolicyd",
+            "trustd",
+            "ocspd",
+            "securityd",
+            "taskgated",
+            "findmydeviced",
+            "cloudd",
+          ],
+        },
+        {
+          "action": "reject",
+          "domain_keyword": [
+            "dns.google",
+            "cloudflare-dns.com",
+            "doh.opendns.com",
+            "dns.quad9.net",
+            "one.one.one.one",
+          ],
+          "port": [
+            443,
+            853,
+          ],
+        },
+        {
+          "action": "route",
+          "domain": [
+            "a.example.com",
+          ],
+          "domain_suffix": [
+            ".a.example.com",
+          ],
+          "outbound": "direct",
+        },
+        {
+          "action": "route",
+          "domain_suffix": [
+            ".microdone.cn",
+          ],
+          "outbound": "direct",
+          "override_address": "127.0.0.1",
+        },
+        {
+          "action": "route",
+          "domain_suffix": [
+            ".icbc.com.cn",
+            ".boc.cn",
+            ".ccb.com",
+            ".abchina.com",
+            ".abchina.com.cn",
+            ".bankcomm.com",
+            ".cmbchina.com",
+            ".psbc.com",
+            ".spdb.com.cn",
+            ".cebbank.com",
+            ".citicbank.com",
+            ".pingan.com",
+            ".cib.com.cn",
+            ".hxb.com.cn",
+            ".cmbc.com.cn",
+            ".hzbank.com.cn",
+            ".10jqka.com.cn",
+            ".thsi.cn",
+            ".eastmoney.com",
+            ".1234567.com.cn",
+            ".gw.com.cn",
+            ".tdx.com.cn",
+          ],
+          "outbound": "direct",
+        },
+        {
+          "action": "reject",
+          "domain_suffix": [
+            "ads.example",
+          ],
+        },
+        {
+          "action": "reject",
+          "process_name": [
+            "blocked.exe",
+          ],
+        },
+        {
+          "action": "route",
+          "ip_cidr": [
+            "10.0.0.0/8",
+            "100.64.0.0/10",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "172.16.0.0/12",
+            "192.0.0.0/24",
+            "192.88.99.0/24",
+            "192.168.0.0/16",
+            "224.0.0.0/4",
+            "233.252.0.0/24",
+            "240.0.0.0/4",
+            "fc00::/7",
+            "fe80::/10",
+          ],
+          "outbound": "direct",
+        },
+        {
+          "action": "route",
+          "outbound": "direct",
+          "rule_set": "geosite-private",
+        },
+        {
+          "action": "route",
+          "network": [
+            "icmp",
+          ],
+          "outbound": "direct",
+        },
+        {
+          "action": "reject",
+          "domain_keyword": [
+            "dns.google",
+            "cloudflare-dns.com",
+            "doh.opendns.com",
+            "dns.quad9.net",
+            "one.one.one.one",
+          ],
+          "network": [
+            "udp",
+          ],
+          "port": [
+            443,
+          ],
+        },
+        {
+          "action": "route",
+          "outbound": "direct",
+          "protocol": "dns",
+        },
+        {
+          "action": "route",
+          "ip_cidr": [
+            "223.5.5.5/32",
+            "1.12.12.12/32",
+          ],
+          "outbound": "direct",
+          "port": [
+            53,
+            443,
+          ],
+        },
+        {
+          "action": "route",
+          "domain_suffix": [
+            "doh.pub",
+          ],
+          "outbound": "direct",
+        },
+        {
+          "action": "reject",
+          "domain_suffix": [
+            "gvt2.com",
+            "gvt1.com",
+            "oauthaccountmanager.googleapis.com",
+            "clientservices.googleapis.com",
+            "optimizationguide-pa.googleapis.com",
+            "mtalk.google.com",
+            "android.clients.google.com",
+            "clients1.google.com",
+            "clients2.google.com",
+            "clients3.google.com",
+            "clients4.google.com",
+            "clients5.google.com",
+            "clients6.google.com",
+            "update.googleapis.com",
+          ],
+        },
+        {
+          "action": "route",
+          "domain_keyword": [
+            "google",
+            "gmail",
+            "youtube",
+            "gstatic",
+            "googleapis",
+            "googlevideo",
+          ],
+          "outbound": "proxy-selector",
+        },
+        {
+          "action": "route",
+          "outbound": "proxy-selector",
+          "rule_set": "geosite-geolocation-!cn",
+        },
+        {
+          "action": "route",
+          "outbound": "direct",
+          "rule_set": "geosite-cn",
+        },
+        {
+          "action": "route",
+          "outbound": "direct",
+          "rule_set": "geoip-cn",
+        },
+      ],
+    },
+  },
+  "idToTagMap": {
+    "s1": "HK",
+  },
+  "ruleTargetMap": {},
+}
+`;
+
 exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线） ssh outbound（独立返回路径，无 TLS/传输层）→ 锁 ssh 字段块 1`] = `
 {
   "config": {
@@ -13933,10 +14490,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -14548,10 +15101,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -15192,10 +15741,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -15791,10 +16336,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -16221,10 +16762,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -16876,10 +17413,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "type": "direct",
       },
       {
-        "tag": "block",
-        "type": "block",
-      },
-      {
         "password": "stp",
         "server": "a.example.com",
         "server_port": 443,
@@ -17521,10 +18054,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -18162,10 +18691,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -18792,10 +19317,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -19406,10 +19927,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -20029,10 +20546,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -20642,10 +21155,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -21361,10 +21870,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "tag": "direct",
         "type": "direct",
       },
-      {
-        "tag": "block",
-        "type": "block",
-      },
     ],
     "route": {
       "auto_detect_interface": true,
@@ -21995,10 +22500,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
@@ -22638,10 +23139,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         "domain_resolver": "dns-bootstrap",
         "tag": "direct",
         "type": "direct",
-      },
-      {
-        "tag": "block",
-        "type": "block",
       },
     ],
     "route": {
