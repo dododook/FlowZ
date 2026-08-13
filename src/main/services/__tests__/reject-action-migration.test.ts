@@ -4,7 +4,12 @@
  * 迁移动机（实测，非推断）：真内核 1.14.0-beta.14，两份最小配置只差这一处 —— 客户端侧**行为等价**
  * （都是立即关闭、curl 502、亚毫秒），差别只在日志：legacy `block` 出站每拦一条打一行 **ERROR**
  * `operation not permitted`，`reject` 只在 DEBUG 打 `connection closed: rejected`。故收益是
- * 「阻断规则不再刷 ERROR 淹没真错误」+ 去掉 1.11 起 deprecated 的 legacy 出站，不是失败形态的改变。
+ * 「阻断规则不再刷 ERROR 淹没真错误」+ 把同一语义的两种写法收敛成一种，不是失败形态的改变。
+ *
+ * **一处曾写错的断言，如实留证**：本门初版与 PR #356 文案都写了「`block` 出站 1.11 起 deprecated、迟早移除」。
+ * 后续同核实测证伪 —— `reject`/`drop`/`blackhole` 均 `unknown outbound type`（无替代丢包出站）、
+ * `dns` 出站是硬 FATAL 且带明确 deprecation 文案，而 `block` **rc=0、加载期零告警**。内核有这套告警机制
+ * 却没对 `block` 用，故「迟早移除」是推断不是事实。迁移依据不依赖它（见上段），但别再据此推广到别处。
  *
  * **为什么必须连 `block` 出站一起删，而不是留着不用**：留着就还有第二条能走通的路。删掉之后，若哪天
  * 又有人发出 `outbound: 'block'`，它会成为死引用被 `ProxyManager.fixRouteDeadReferences` 改写成
