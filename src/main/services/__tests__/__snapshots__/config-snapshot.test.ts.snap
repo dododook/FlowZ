@@ -13798,25 +13798,6 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "outbound": "direct",
         },
         {
-          "action": "reject",
-          "domain_suffix": [
-            "gvt2.com",
-            "gvt1.com",
-            "oauthaccountmanager.googleapis.com",
-            "clientservices.googleapis.com",
-            "optimizationguide-pa.googleapis.com",
-            "mtalk.google.com",
-            "android.clients.google.com",
-            "clients1.google.com",
-            "clients2.google.com",
-            "clients3.google.com",
-            "clients4.google.com",
-            "clients5.google.com",
-            "clients6.google.com",
-            "update.googleapis.com",
-          ],
-        },
-        {
           "action": "route",
           "domain_keyword": [
             "google",
