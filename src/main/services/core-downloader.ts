@@ -206,22 +206,33 @@ export class CoreDownloader {
         if (settled) return;
         settled = true;
         idle.clear();
-        file.close();
-        fs.unlink(tempPath, () => {});
 
-        // 遇到网络错误，且是第一次尝试，并且是 github 链接，尝试使用加速镜像
-        if (!isRetry && url.includes('github.com')) {
-          const mirrorUrl = ghMirrorUrl(url, ghPrefix);
-          this.logManager.addLog(
-            'warn',
-            `下载出错，尝试使用加速镜像: ${err.message}`,
-            'CoreDownloader'
-          );
-          this.downloadFile(mirrorUrl, true, expectedSha256).then(resolve).catch(reject);
-          return;
-        }
-
-        reject(err);
+        // **先关句柄、再删、删完才走后续**。原先是 `file.close(); fs.unlink(tempPath, () => {}); … reject(err)`
+        // 三件事并发，有两个后果：
+        //  ① Windows 上对**仍持有打开句柄**的文件 unlink 会失败（EBUSY/EPERM）——close 是异步的，紧跟其后的
+        //     unlink 很可能赶在句柄真正释放之前。于是半成品被**永久**留下，正是本函数声称要防的东西。
+        //  ② reject 与 unlink 并发 → 调用方（含单测）在 promise 落定那一刻去看目录，可能仍看得见临时文件。
+        //     「摘要不符 → 不留下临时文件」这条不变量因此只是**大概率**成立，CI 上间歇性判红。
+        // 现在把清理串成 close → unlink → 继续，使「promise 落定时临时文件已不在」成为可断言的事实。
+        // unlink 自身的失败照旧忽略（文件本就可能没建起来；此处不该因清理失败改写原始错误）。
+        // 副带收益：镜像重试现在只在 unlink 完成**之后**才发起，于是「首发的异步 unlink 删掉重试刚写好的
+        // 文件」那一类事故（见 core-downloader-integrity.test.ts 里同一毫秒撞名那条的回归记录）在结构上
+        // 也不再可能——临时文件名的随机段仍保留，两道防线不互斥。
+        const afterCleanup = (): void => {
+          // 遇到网络错误，且是第一次尝试，并且是 github 链接，尝试使用加速镜像
+          if (!isRetry && url.includes('github.com')) {
+            const mirrorUrl = ghMirrorUrl(url, ghPrefix);
+            this.logManager.addLog(
+              'warn',
+              `下载出错，尝试使用加速镜像: ${err.message}`,
+              'CoreDownloader'
+            );
+            this.downloadFile(mirrorUrl, true, expectedSha256).then(resolve).catch(reject);
+            return;
+          }
+          reject(err);
+        };
+        file.close(() => fs.unlink(tempPath, () => afterCleanup()));
       };
 
       const request = net.request({ url, session: sess });

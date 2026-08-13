@@ -91,7 +91,15 @@ describe('CoreDownloader.downloadFile — sha256 完整性校验', () => {
     await expect(
       newDownloader().downloadFile('https://example.com/core.tar.gz', false, wrong)
     ).rejects.toThrow(/完整性校验失败/);
-    expect(fs.readdirSync(TMP).length).toBe(before); // 半成品已清，不会被后续流程捡去用
+    // 半成品已清，不会被后续流程捡去用。
+    // **这条曾是时序相关的**：清理与 reject 原先并发发起（`file.close(); fs.unlink(tempPath, () => {}); … reject(err)`），
+    // 于是「promise 落定时临时文件已不在」只是大概率成立 —— macOS CI 实测判红过（Expected: 1 / Received: 2），
+    // Linux 上几乎总能侥幸通过。修法是把清理串成 close → unlink → 落定（见 core-downloader.ts handleError）。
+    // 那个修复不只是为了让本条稳定：旧写法 `file.close()` 不等回调就 unlink，而 **Windows 对仍持有打开句柄的
+    // 文件 unlink 会失败（EBUSY/EPERM）**，半成品会被永久留下 —— 正是本条声称要防的东西。
+    // 如实记：想再加一条「unlink 回调必须先于 promise 落定」的顺序断言，但 `fs.unlink` 在现代 Node 上
+    // 不可 redefine（`jest.spyOn` 抛 Cannot redefine property），做不出来，故不留一个实现不了的门。
+    expect(fs.readdirSync(TMP).length).toBe(before);
   });
 
   /**

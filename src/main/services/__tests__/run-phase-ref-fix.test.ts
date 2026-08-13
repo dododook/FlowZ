@@ -124,6 +124,17 @@ async function settle<T>(
   }
 }
 
+/**
+ * 本用例走完整的 start() → run 阶段 FATAL → retry → onRetry 修正 → 二次 start 链路，涉及真实 fs 与进程装配。
+ * 本机（Linux）实测 **115 ms**，但 **Windows CI 上曾超出 jest 默认的 5000 ms 判红**（macOS 与本机同次代码全绿，
+ * 且该次 main 的改动完全不沾 run-phase/ProxyManager/retry —— 是 flake 不是回归）。
+ *
+ * 故给足超时。**成因未确证**（我没有 Windows 环境复现），两个候选：
+ *  ① Windows runner 的冷文件系统 + AV 扫描把 fs 密集路径拖慢一两个数量级（最可能，40× 的差距与之相符）；
+ *  ② 上面 beforeEach 把 `global.setTimeout` 全局改成「立即触发」——若 start 路径上存在**自我重排的定时器**
+ *     （看门狗一类），这个改写会把它变成热循环，那就不是慢而是挂死。
+ * 判据：若加大超时后仍红，即排除 ①、坐实 ②，届时该改成只 mock retry 的 sleep 而非全局 setTimeout。
+ */
 describe('A7 run-phase 备用腿：retry 的 shouldRetry / onRetry 对 dependency[X] not found 的处理', () => {
   it('dependency-not-found → onRetry 解析幽灵 tag + pruneTagsClosure(detour) 修正；refFixAttempted 单次闸只修一次、第二次不再重试', async () => {
     const { pm, pruneSpy } = makePm();
@@ -160,7 +171,7 @@ describe('A7 run-phase 备用腿：retry 的 shouldRetry / onRetry 对 dependenc
 
     // refFixAttempted 闸最终为 true（已用过一次修正腿）。
     expect(pm.refFixAttempted).toBe(true);
-  });
+  }, 30_000);
 
   it('非 dependency 类的 run 错误：不走 ref-fix 腿（pruneTagsClosure 不因 ref-fix 被调），按通用 retry 规则处理', async () => {
     const { pm, pruneSpy } = makePm();
