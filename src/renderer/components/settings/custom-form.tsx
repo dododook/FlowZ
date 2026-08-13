@@ -1,6 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { FormSection } from './shared/form-layout';
@@ -55,7 +54,6 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
   const [secretKeys, setSecretKeys] = useState('');
   const [jsonError, setJsonError] = useState('');
   const [probe, setProbe] = useState<ProbeState>({ state: 'idle' });
-  const [submitting, setSubmitting] = useState(false);
   const probeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const probeSeq = useRef(0); // 防竞态：仅最新一次 probe 的结果可写入显示，旧的慢响应丢弃
 
@@ -107,26 +105,51 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
       );
       return;
     }
-    setSubmitting(true);
-    try {
-      // address/port 仅供列表展示（自定义协议的真实 server/port 在 JSON 内）；从 JSON 提取常见键，缺则空。
-      await onSubmit({
-        protocol: 'custom' as const,
-        address: typeof o.server === 'string' ? o.server : '',
-        port: typeof o.server_port === 'number' ? o.server_port : 0,
-        customSettings: {
-          outbound: o,
-          isEndpoint,
-          secretKeys: splitTextList(secretKeys),
-        },
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    // address/port 仅供列表展示（自定义协议的真实 server/port 在 JSON 内）；从 JSON 提取常见键，缺则空。
+    // 提交态（转圈 + 置灰）由 NodeFormDialog 外壳自管，本组件不再自持 submitting。
+    await onSubmit({
+      protocol: 'custom' as const,
+      address: typeof o.server === 'string' ? o.server : '',
+      port: typeof o.server_port === 'number' ? o.server_port : 0,
+      customSettings: {
+        outbound: o,
+        isEndpoint,
+        secretKeys: splitTextList(secretKeys),
+      },
+    });
   };
 
+  /**
+   * 复位到「进入表单时的初始值」：新增档清空，编辑档回到 serverConfig 的内容。
+   * 其余 14 个协议表单靠 react-hook-form 的 `form.reset()`，本表单用裸 useState，故须显式实现 ——
+   * 否则页脚的 `type="reset"` 只做浏览器原生 DOM 复位而 React state 不动，出现「显示变了值没变」。
+   */
+  const resetFields = useCallback(() => {
+    const cs =
+      serverConfig?.protocol?.toLowerCase() === 'custom' ? serverConfig.customSettings : undefined;
+    setJsonText(cs?.outbound ? JSON.stringify(cs.outbound, null, 2) : '');
+    setIsEndpoint(!!cs?.isEndpoint);
+    setSecretKeys((cs?.secretKeys || []).join(', '));
+    setJsonError('');
+  }, [serverConfig]);
+
   return (
-    <div className="flex flex-col gap-[13px]">
+    // 与其余 14 个协议表单同一契约：渲染 `<form id="node-cfg-form">`、自身不带提交按钮，
+    // 按钮由 NodeFormDialog 页脚经 HTML `form=` 跨节点绑进来。这样 custom 档不再需要走无页脚的
+    // NodePanelDialog —— 宿主 `server-config-dialog` 也就不会在切到该协议时发生外壳组件类型翻转
+    // （类型翻转 = 弹窗整树卸载重挂：焦点掉出模态、折叠区与滚动复位、开场动画重放）。
+    <form
+      id="node-cfg-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void handleSubmit();
+      }}
+      onReset={(e) => {
+        e.preventDefault();
+        resetFields();
+      }}
+      className="flex flex-col gap-[13px]"
+    >
       <div className="nd-fld">
         <span className="nd-fld-lbl inline-flex items-center gap-1.5">
           {t('servers.customIntro', 'Paste a raw sing-box outbound JSON (e.g. snell).')}
@@ -211,13 +234,6 @@ export function CustomForm({ serverConfig, onSubmit }: CustomFormProps) {
           />
         </div>
       </FormSection>
-
-      <div className="flex gap-4">
-        <Button type="button" onClick={handleSubmit} disabled={submitting || !!jsonError}>
-          {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-          {t('common.save')}
-        </Button>
-      </div>
-    </div>
+    </form>
   );
 }

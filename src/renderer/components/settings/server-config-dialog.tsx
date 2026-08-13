@@ -41,6 +41,20 @@ type ServerConfigWithId = ServerConfig;
 const DETOUR_DIRECT = 'direct';
 
 /**
+ * 走**无页脚**外壳（`NodePanelDialog`）的协议：正文必须是自带按钮的面板，**不能**是渲染
+ * `<form id="node-cfg-form">` 的协议表单 —— 协议表单自身一个提交按钮都没有，落进无页脚外壳
+ * 就是「填完无从提交」= issue #350。
+ *
+ * 提成命名常量而不是内联 `selectedProtocol === 'warp' || …`，是为了让接线门读得到这个谓词：
+ * 门的「宿主只能经 NodeFormDialog 挂」是**文件级**子串判据，而本文件同时持有两个外壳，
+ * 于是判据读不到表单落在哪一侧 —— 往内联析取里多加一个协议即 #350 复发而门全绿（实测）。
+ * 常量化后门可对账「本集合 ∩ 挂了协议表单的协议 = ∅」，加一个即判红。
+ *
+ * 今天只有 warp（一键注册面板，`WarpPanel` 自持 loading 与自己的按钮）在此列。
+ */
+const PANEL_PROTOCOLS: ReadonlySet<string> = new Set(['warp']);
+
+/**
  * 前置代理(detour)节点选择：直连哨兵置顶+按订阅/自建分组+延迟徽标；排除自身与组网协议(WireGuard/Tailscale 不作前置代理目标)。
  * 独立子组件隔离 latencyMap 订阅，测速期只重渲本下拉、不牵动整弹窗。
  */
@@ -199,9 +213,7 @@ export function ServerConfigDialog({
     }
   };
 
-  // warp（一键生成）/ custom（JSON 直填）挂的是**自带按钮的面板**，不是协议表单 ⇒ 走无页脚的 NodePanelDialog。
-  // 页脚的有无由「选哪个组件」决定，不再由一个 hideFooter 开关决定（那条开关能把 #350 种回来）。
-  const isPanel = selectedProtocol === 'warp' || selectedProtocol === 'custom';
+  const isPanel = PANEL_PROTOCOLS.has(selectedProtocol);
   const chrome = {
     open,
     onOpenChange,

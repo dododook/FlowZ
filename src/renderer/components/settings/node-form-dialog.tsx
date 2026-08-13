@@ -11,14 +11,27 @@
  * | 组件 | 页脚 | 正文 | 用于 |
  * |---|---|---|---|
  * | `NodeFormDialog`  | **恒渲染**，无从关闭 | render-prop，拿到包好提交态的 `submit` | 挂协议表单 |
- * | `NodePanelDialog` | **恒不渲染** | 普通 children | 挂自带按钮的面板（WARP 一键注册 / custom JSON 直填） |
+ * | `NodePanelDialog` | **恒不渲染** | 普通 children | 挂自带按钮的面板（今天仅 WARP 一键注册） |
  *
  * 早期版本是单组件 + `hideFooter?: boolean`。那把「不写就坏」换成了「写一个 token 就坏」——给挂着协议表单的
- * 宿主加一个 `hideFooter`，#350 原样长回来，而接线门四条断言无一读它（实测全绿）。拆开之后这条逃生口不存在：
- * 页脚的有无由**选哪个组件**决定，而门的判据正是「挂协议表单的宿主只能经 `NodeFormDialog` 挂」——两者等价。
+ * 宿主加一个 `hideFooter`，#350 原样长回来，而接线门四条断言无一读它（实测全绿）。拆开之后页脚的有无由
+ * **选哪个组件**决定，`hideFooter` 这个 prop 不存在了。
+ *
+ * **但「选哪个组件」本身可以是运行时分支，故等价性不是白来的**：宿主同时持有两个外壳时（今天
+ * `server-config-dialog` 与 `mesh-access-entry` 都是），用哪个由一个谓词决定，而接线门的「宿主只能经
+ * `NodeFormDialog` 挂」是**文件级**子串判据，读不到这个谓词——往谓词里多放一个协议，表单就落进无页脚
+ * 外壳、#350 原样复发，而那条断言仍全绿（实测）。差别只是可达面从「任意宿主」收窄到了「双外壳文件」。
+ * 补法不在本组件而在宿主 + 门：宿主把谓词提成 `PANEL_PROTOCOLS` 常量集，门对账「该集合 ∩ 挂了协议表单的
+ * 协议 = ∅」（接线门第 ⑤ 条）。**新增双外壳宿主时必须照此声明谓词，否则那个宿主不受门约束。**
  *
  * 同理不给 `busy` prop：提交态由 `NodeFormDialog` 自持，宿主想手搓多传的 prop 直接 tsc 报错。
- * 面板不需要——`WarpPanel` / `CustomForm` 各自持有 `loading` / `submitting` 驱动自己的按钮。
+ * 面板不需要——`WarpPanel` 自持 `loading` 驱动自己的按钮。
+ *
+ * **`CustomForm` 已归一到协议表单契约**（渲染 `<form id="node-cfg-form">`、不自带按钮），于是 custom 档
+ * 不再走面板外壳。这消掉了宿主 `server-config-dialog` 里的**运行时组件类型翻转**：切到该协议时
+ * `isPanel` 由 false 翻 true，React 视作不同组件类型 → 弹窗整树卸载重挂（焦点掉出模态、`FormSection`
+ * 折叠区与正文滚动复位、开场动画重放）。代价：失去「JSON 非法则按钮置灰」这一处 affordance，
+ * 校验改由提交时的 `jsonError` 红字承担，与其余 14 个表单口径一致。
  *
  * a11y：`DialogTitle` / `DialogDescription` 都用 `asChild` 套在**可见元素**上。早期版本额外渲染一份
  * `sr-only` 的标题与说明，而 `sr-only` 是 clip 不是 `display:none`、仍在可访问性树内 → 辅助技术把标题和
@@ -60,9 +73,13 @@ function DialogChrome({
       {/* overflow-hidden + flex-col：正文自己滚，头与脚贴住不动。radix 自带关闭按钮隐掉，改用 .nd-dlg-x。 */}
       <DialogContent className="[&>button]:hidden flex max-h-[90vh] w-[min(452px,94vw)] max-w-none flex-col gap-0 overflow-hidden rounded-[12px] border-line bg-surface p-0">
         <div className="nd-dlg-h">
-          {/* asChild：可见标题本身就是 radix 的 Title，不再额外渲染 sr-only 副本（否则辅助技术读两遍）。 */}
+          {/* asChild：可见标题本身就是 radix 的 Title，不再额外渲染 sr-only 副本（否则辅助技术读两遍）。
+              child 必须是 h1–h6：radix 的 DialogTitle 本体是 Primitive.h2，asChild 后渲染的是 child 的标签，
+              套 span 会让弹窗子树内 heading 数归零（按 H 跳标题 / rotor 标题列表少一项）——那正是本组件
+              要消除重复朗读时顺手弄丢的东西，与改进方向相反。视觉零变化：preflight 已把 h1–h6 的
+              font-size/font-weight 置 inherit、margin 置 0，字号字重仍由 .nd-dlg-title 决定。 */}
           <DialogTitle asChild>
-            <span className="nd-dlg-title">{title}</span>
+            <h2 className="nd-dlg-title">{title}</h2>
           </DialogTitle>
           <button
             type="button"
@@ -146,8 +163,12 @@ export function NodeFormDialog({
 
 /**
  * 挂**自带按钮的面板**的弹窗：无页脚。
- * 只有这一种正当用途（WARP 一键注册 / custom JSON 直填）；挂协议表单请用 `NodeFormDialog`，
- * 否则用户填完无从提交（= issue #350）。接线门会抓：宿主一旦引用协议表单却不经 `NodeFormDialog`，判红。
+ * 只有这一种正当用途（今天仅 WARP 一键注册面板）；挂协议表单请用 `NodeFormDialog`，
+ * 否则用户填完无从提交（= issue #350）。
+ *
+ * 门的射程如实记：宿主**不**引用 `NodeFormDialog` 而直挂表单 → 判红；宿主**同时**引用两个外壳、
+ * 靠运行时谓词把表单送进本组件 → 文件级判据读不到，须由宿主声明 `PANEL_PROTOCOLS` 常量集配合
+ * 接线门第 ⑤ 条才判得出。
  */
 export function NodePanelDialog({ children, ...chrome }: ChromeProps & { children: ReactNode }) {
   return <DialogChrome {...chrome}>{children}</DialogChrome>;

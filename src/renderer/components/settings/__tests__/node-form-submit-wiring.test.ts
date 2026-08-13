@@ -18,11 +18,19 @@
  * 「谁挂了表单」×「谁绑了提交按钮」的对账，不依赖运行时。
  *
  * **`hideFooter` 那条逃生口已按构造关掉**：外壳拆成「恒有页脚的 `NodeFormDialog`」+「恒无页脚的
- * `NodePanelDialog`」，页脚的有无由**选哪个组件**决定。于是第 ④ 条「只能经 `NodeFormDialog` 挂」
- * 与「一定有提交按钮」真正等价——把表单宿主换成 `NodePanelDialog` 即判红（已变异实测）。
+ * `NodePanelDialog`」，页脚的有无由**选哪个组件**决定，`hideFooter` 这个 prop 不存在了。
+ * 把表单宿主整体换成 `NodePanelDialog` 即判红（已变异实测）。
  *
- * **已知射程边界（如实记）**：文本级判据能证明宿主**引用了** `NodeFormDialog`，不能证明表单**嵌在**
- * 它里面。要绕过得刻意在同一文件里既用它又把表单挂到它外面——比「忘了加按钮」难得多，接受该残余。
+ * **但第 ④ 条单独并不与「一定有提交按钮」等价**：它是文件级子串判据，而宿主可以同时持有两个外壳
+ * （今天 `server-config-dialog` 与 `mesh-access-entry` 都是），用哪个由一个运行时谓词决定——往谓词里
+ * 多放一个协议，表单落进无页脚外壳、#350 原样复发，而第 ④ 条仍全绿（实测）。与拆分前的 `hideFooter`
+ * 同为「一个 token 的 commission」，差别只是可达面收窄到了双外壳文件。第 ⑤ 条补的正是这条缝：
+ * 宿主把谓词提成 `PANEL_PROTOCOLS` 常量集，本门对账「该集合 ∩ 挂了协议表单的协议 = ∅」。
+ *
+ * **仍存的射程边界（如实记）**：
+ *  · 文本级判据能证明宿主**引用了** `NodeFormDialog`，不能证明表单**嵌在**它里面（第 ④ 条）；
+ *  · 第 ⑤ 条只覆盖「用 `PANEL_PROTOCOLS` + `selectedProtocol === 'x' && (<XxxForm` 这套形态」的宿主。
+ *    新增双外壳宿主若换一种写法声明分支，本门读不到它——那是新形态，需要扩判据，不是本门失效。
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -117,6 +125,12 @@ const BINDING_RE = /form=(?:"node-cfg-form"|\{NODE_FORM_ID\})/;
 const BUTTON_TAG_RE = /<button\b(?:[^>{]|\{[^}]*\})*>/g;
 /** 组件导出名：宿主是以 `<XxxForm` 的形式引用它的。 */
 const EXPORTED_RE = /export\s+function\s+(\w+)/g;
+/**
+ * 外壳的 JSX 标签。**必须带右边界**：裸子串 `'<NodeFormDialog'` 会被 `<NodeFormDialogPanel`
+ * 之类的同前缀名满足 —— 把 `NodePanelDialog` 按命名族改名成 `NodeFormDialogPanel`（外壳注释自己
+ * 在推"两个外壳是一族"，这是自然的重构冲动），再让某个宿主改用它并直挂表单，即 #350 复发而判据全绿（实测）。
+ */
+const SHELL_TAG_RE = /<NodeFormDialog(?![A-Za-z0-9_$])/;
 
 const formFiles = FILES.filter((f) => FORM_TAG_RE.test(f.src));
 /** 自身不带提交按钮的那批——只有它们的宿主受本门约束。自带按钮的面板（WARP/custom）不适用。 */
@@ -169,7 +183,45 @@ describe('#350 协议表单的提交按钮接线', () => {
   it('挂了协议表单的宿主只能经 NodeFormDialog 外壳挂', () => {
     // 反平凡：至少 server-config-dialog + 两个组网入口。宿主集为空会让断言恒绿。
     expect(hosts.length).toBeGreaterThanOrEqual(3);
-    const bypassing = hosts.filter((f) => !f.src.includes('<NodeFormDialog')).map((f) => f.rel);
+    const bypassing = hosts.filter((f) => !SHELL_TAG_RE.test(f.src)).map((f) => f.rel);
     expect(bypassing).toEqual([]);
+  });
+
+  /**
+   * 上一条只能证明宿主**引用了**外壳，证不了表单挂在它里面。宿主同时持有两个外壳时（今天
+   * server-config-dialog 与 mesh-access-entry 都是），用哪个由一个分支谓词决定，而文件级子串
+   * 判据读不到这个谓词 —— 把 `isPanel` 多放一个协议进去，表单就落进无页脚的 NodePanelDialog，
+   * #350 原样复发，而上一条仍全绿（实测）。这与拆分前的 `hideFooter` 同为「一个 token 的 commission」，
+   * 差别只是可达面收窄到了双外壳文件。
+   *
+   * 故把谓词本身变成可判据的：宿主用常量集 `PANEL_PROTOCOLS` 声明"走无页脚外壳"的协议，
+   * 本条断言该集合与"挂了协议表单的协议"不交。集合里加一个协议表单的协议即判红。
+   */
+  it('走无页脚外壳的协议不得是协议表单的协议（PANEL_PROTOCOLS 放宽一个即判红）', () => {
+    const PANEL_SET_RE = /PANEL_PROTOCOLS[^=]*=\s*new Set\(\[([^\]]*)\]/;
+    /** `selectedProtocol === 'xxx' && (<XxxForm` —— 宿主里"这个协议挂哪个组件"的声明形态。 */
+    const MOUNT_RE = /selectedProtocol === '([a-z0-9]+)'\s*&&\s*\(\s*<(\w+)/g;
+
+    const declaring = FILES.filter((f) => PANEL_SET_RE.test(f.src));
+    // 反平凡：没有文件声明该常量 → 本条恒绿。
+    expect(declaring.length).toBeGreaterThanOrEqual(1);
+
+    for (const f of declaring) {
+      const panel = new Set(
+        [...(f.src.match(PANEL_SET_RE) as RegExpMatchArray)[1].matchAll(/'([^']+)'/g)].map(
+          (m) => m[1]
+        )
+      );
+      const mounted = [...f.src.matchAll(MOUNT_RE)]
+        .filter((m) => formNames.has(m[2]))
+        .map((m) => m[1]);
+      // 反平凡：集合为空、或该文件根本没挂协议表单 → 交集必空、本条恒绿。
+      expect(panel.size).toBeGreaterThanOrEqual(1);
+      expect(mounted.length).toBeGreaterThanOrEqual(10);
+      expect({ file: f.rel, leaked: mounted.filter((p) => panel.has(p)) }).toEqual({
+        file: f.rel,
+        leaked: [],
+      });
+    }
   });
 });
