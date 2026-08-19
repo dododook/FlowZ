@@ -278,4 +278,4 @@ This software is for learning and research only. Comply with your local laws and
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=dododook/FlowZ&type=Date)](https://star-history.com/#dododook/FlowZ&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=dododook/FlowZ&type=Date)](https://star-history.dera.page/#dododook/FlowZ&Date)
