@@ -297,6 +297,22 @@ export class DiagnosticService {
         // issue #176：最近一次启动经几次就绪重试才成功。>0 = 起核慢（Windows 重启争用下 wintun 适配器未及时释放），
         // 区别于「核崩溃自动重启」——便于在报告里把「争用慢起但已自愈」与真崩溃分开。
         lastStartReadyRetries: this.proxyManager.getLastStartReadyRetries(),
+        // issue #367：最近一次 OS DNS 缓存刷新结果。缺省=本会话从未触发（渲染侧据此打印「从未触发」）。
+        lastDnsFlush: (() => {
+          const f = this.proxyManager.getLastDnsFlush();
+          if (!f) return undefined;
+          return {
+            ok: f.ok,
+            reason: f.reason,
+            detail: f.detail,
+            skipped: f.skipped,
+            // partial 必须透传：它是「dscacheutil 成功但 HUP mDNSResponder 失败」这一档的唯一判据，
+            // 漏抄不报类型错（optional），只会让渲染侧退到 else 分支把部分成功印成「成功」。
+            partial: f.partial,
+            context: f.context,
+            ageSec: Math.max(0, Math.round((Date.now() - f.at) / 1000)),
+          };
+        })(),
       },
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,

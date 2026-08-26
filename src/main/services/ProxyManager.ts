@@ -10,6 +10,8 @@ import { spawn, ChildProcess, execFile } from 'child_process';
 import { promisify } from 'util';
 import { system32, powershellPath } from '../utils/win-system32';
 import * as fs from 'fs/promises';
+import { existsSync, readFileSync } from 'fs';
+import { networkInterfaces } from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import * as https from 'https';
@@ -32,8 +34,25 @@ import { MeshExitRouteManager } from './mesh-exit-route-manager';
 import { PlatformPrivilegeService, windowsWatchdogScriptText } from './PlatformPrivilegeService';
 import { type ISystemProxyManager, SystemProxyBase } from './SystemProxyManager';
 import { type ISystemDnsManager } from './SystemDnsManager';
-import { DnsInterfaceWatcher, shouldReconcileDns } from './DnsInterfaceWatcher';
-import { flushOsDnsCache } from './os-dns-flush';
+import {
+  DnsInterfaceWatcher,
+  shouldReconcileDns,
+  createLinkChangeHandler,
+} from './DnsInterfaceWatcher';
+import { resolveLinkMonitorSpec } from './dns-route-events';
+import {
+  computeNetworkFingerprint,
+  nextFingerprintBaseline,
+  readLinuxResolverFingerprint,
+} from './network-fingerprint';
+import {
+  flushOsDnsCache,
+  linkChangeFlushRetryDelayMs,
+  monotonicNowMs,
+  shouldFlushOnLinkChange,
+  shouldSuppressLinkChangeFlush,
+  type OsDnsFlushResult,
+} from './os-dns-flush';
 import { localProxyPort, controlApiPort } from '../../shared/proxy-ports';
 import { effectiveBypassLan } from '../../shared/system-proxy-bypass';
 import { isDirectSelection, resolveGlobalExitTag } from '../../shared/direct-selection';
@@ -166,6 +185,9 @@ const PRIVATE_IP_PATTERNS = [
 // promisify(execFile) 提到模块级——isProcessAliveAsync 是每 10s 的周期热路径，
 // 不应每次调用都内联 require('util').promisify(require('child_process').execFile) 重建包装。
 const healthProbeExecFile = promisify(execFile);
+
+/** OS DNS 缓存刷新的触发来源。`link-change` 由链路变化 watcher 去抖后触发（issue #368），受最小间隔限频。 */
+type DnsFlushContext = 'start' | 'stop' | 'link-change';
 
 /**
  * 从 sing-box `check` 的 stderr 解析出错出站的数组下标。覆盖两种措辞：
@@ -372,9 +394,49 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private clearingSystemProxy = false;
   // ensureSystemDnsRestored 单飞：与系统代理同终态多路并发，防重复 restore。
   private clearingSystemDns = false;
-  // macOS DNS 接管「热插重灌」watcher：setDns 成功后起、stop/终态还原时停（仅 darwin，与 setDns 真接管同口径）。
-  // 长驻 route -n monitor 探链路变化 + powerMonitor resume → 去抖调 reconcileDns 补接管新出现/换网未受控的服务。
+  /**
+   * 链路变化 watcher（issue #368 后语义）：**核起即起、三平台、与 DNS 接管解耦**。
+   * macOS 侧仍负责接管重灌（门控 shouldReconcileDns 未变）；三平台共同负责链路变化后补刷 OS DNS 缓存。
+   */
   private dnsInterfaceWatcher: DnsInterfaceWatcher | null = null;
+  /** issue #367：最近一次 OS DNS 缓存刷新的结果（供诊断报告读取；null=本会话从未触发过）。 */
+  private lastDnsFlush: (OsDnsFlushResult & { at: number; context: DnsFlushContext }) | null = null;
+  /**
+   * issue #368：最近一次「链路变化」触发的刷新时刻，**单调钟毫秒**（仅该 context 参与限频；
+   * start/stop 是关键边界，不限）。用单调钟而非墙钟：一次时钟回拨会把抑制窗拉长到「回拨量 + 间隔」，
+   * 表现为换网后长时间刷不上缓存且无任何日志异常。
+   */
+  private lastLinkChangeFlushAt = 0;
+  /**
+   * issue #368：最近一次**成功刷新**时的网络指纹。事件流本身不是判据（周期性 RA / DHCP renew 是噪音，
+   * FlowZ 自己的路由操作是自触发），指纹对差才是。**成功才更新**——瞬态失败后指纹仍不同，下个事件会重试。
+   */
+  private lastNetworkFingerprint: string | null = null;
+  /**
+   * 被限频拦下的那一次 link-change 刷新的补刷定时器（issue #368 / High-1）。
+   * 一次 down→up 重连会跨过去抖窗口产生两次触发，第二次（拿到新地址、真正需要刷的那次）恰好落在限频窗口内；
+   * 丢弃它则要等「下一个链路事件」，在 IPv4-only 长租期网络上可达小时级且无上界。改为排一次补刷压回确定上界。
+   */
+  private linkChangeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 当前 watcher 的触发入口（补刷复用同一条路径：重新取指纹 → 对差 → 刷）。watcher 停止时置空。 */
+  private linkChangeHandler: (() => Promise<void>) | null = null;
+  /**
+   * 刷新连续失败次数（成功即清零）。**三个 context 都计数**——失败证据与 context 无关，start 那次失败
+   * 同样证明这条路走不通，只加速收敛；而被抑制的只有 link-change 腿，start/stop 永不受抑制。
+   * 判据见 shouldSuppressLinkChangeFlush。
+   */
+  private linkChangeFlushFailStreak = 0;
+  /**
+   * link-change 腿已抑制：结构性缺失一次即抑制，其余 reason 连续失败 N 次后抑制。
+   * 不抑制的话，失败不推进指纹基线 → 每个噪音事件都 spawn 一次必然失败的命令 + 一条 warn，会话级永续。
+   * 只抑制 link-change；start/stop 仍照刷，且**任意一次刷新成功即解除**（那两次的失败记录也正是诊断要的）。
+   */
+  private linkChangeFlushSuppressed = false;
+  /**
+   * 刷新发起序号。异步 settle 可能乱序（start 走 darwin helper 可达数秒，link-change 走用户级命令很快），
+   * 后发起的先 settle 时，先发起的那次不得再回写——否则基线退回过期指纹、诊断快照按 settle 序而非发起序。
+   */
+  private dnsFlushSeq = 0;
   // 「主动停止/重启中」：stop() 期间置位，令 ensureSystemProxyCleared 跳过——避免重启 stop 腿清掉系统代理后
   // 又被 start() reconcile 设回的并发竞态（C1）。真·外部死亡时为 false → 信号死分支照常清理。
   private stopping = false;
@@ -1101,12 +1163,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     try {
       if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
         await this.systemDnsManager?.setDns();
-        // 接管成功 → 起热插重灌 watcher（探链路变化/唤醒 → 去抖 reconcile 补接管换网/新服务）。仅 darwin 真起，
-        // best-effort：起失败不阻断 TUN 启动（watcher 失效 ≠ 接管失效，已接管服务仍受控）。
-        this.startDnsInterfaceWatcher();
       } else {
-        // 非 TUN / 用户关掉接管开关 → 停 watcher（若在）+ 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
-        this.stopDnsInterfaceWatcher();
+        // 非 TUN / 用户关掉接管开关 → 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
         await this.ensureSystemDnsRestored();
       }
     } catch (e) {
@@ -1121,7 +1179,18 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // （典型：直连态缓存的真实/错族 IP 在 TUN+FakeIP 态继续被命中 → 绕过 hijack-dns 反查）。**有意全模式触发**：
     // 非 TUN/非接管（systemProxy/manual）亦刷——上一会话可能是 TUN+FakeIP（假 IP 仍在 OS 缓存），且直连态自身的
     // 陈旧记录同样受益。
-    this.flushOsDnsCacheBestEffort('start');
+    // 带上指纹：此刻核已起、TUN 已 up，取到的就是「刷新后的世界」。不带的话基线为 null，紧随其后的
+    // TUN-up 事件必然再刷一次，还白白占掉启动后的第一个限频窗口。
+    this.flushOsDnsCacheBestEffort('start', this.readNetworkFingerprint());
+
+    // issue #368：链路变化 watcher。**与 DNS 接管解耦、核在跑即起（全模式）**，不再只在 TUN+takeover 分支起。
+    //   · macOS 侧行为一字不变——是否真 reconcile 仍由 onTrigger 内的 shouldReconcileDns() 门控（TUN+未关开关+marker 在）；
+    //   · 新增的是「链路变化后补刷 OS DNS 缓存」这条腿，它与接管无关，故门控口径必须跟 start/stop 的 flush 对齐
+    //     （那两处**有意全模式触发**，见上方注释）。systemProxy 模式同样用 FakeIP（usesFakeIp 纯看开关、不分模式），
+    //     换网后陈旧假 IP 一样会被系统缓存命中——只在 TUN 起 watcher 会把这半个缺口留着。
+    //   代价：非 TUN 模式下多一个常驻链路监听子进程（macOS `route -n monitor` / Linux `ip monitor`，均为轻量事件流）。
+    // best-effort：起失败仅 warn、不阻断启动。
+    this.startDnsInterfaceWatcher();
 
     // sing-box 1.14 管理 API：核起后连 api service 订阅 Tailscale 状态（断线重连，随主核生命周期）。
     if (this.hasManagementApi()) {
@@ -6583,9 +6652,10 @@ rm -f "$STOPFLAG"
    */
   async ensureSystemDnsRestored(): Promise<void> {
     if (this.clearingSystemDns) return; // 单飞：多路终态并发只还原一次
-    // 还原 = DNS 接管即将/已终态 → 顺带停 watcher（覆盖崩溃/外部死亡/giveUp 这些不经 stop() 的终态点，经
-    // ensureSystemProxyCleared → 本方法收口）。幂等：watcher 不在则 no-op。放 marker 判定之前——即便已无 marker
-    // 也确保 watcher 停掉（避免接管已失效但 watcher 仍空转探链路）。
+    // 本方法覆盖全部「核已死」终态点（崩溃/外部死亡/giveUp 这些不经 stop()，经 ensureSystemProxyCleared 收口），
+    // 故顺带停 watcher。issue #368 后 watcher 不再只服务 DNS 接管，停它的理由也随之变了：不是「接管失效仍空转」，
+    // 而是**核已死**——刷缓存与重灌都失去对象。幂等：watcher 不在则 no-op。放 marker 判定之前：无 marker
+    // （从未接管，如 Linux）同样要停。
     this.stopDnsInterfaceWatcher();
     const mgr = this.systemDnsManager;
     if (!mgr) return;
@@ -6611,7 +6681,24 @@ rm -f "$STOPFLAG"
    * darwin 优先 root helper（v9 flush-dns，两层缓存全清；flushDns 是具体方法非 IPrivilegedHelper 接口成员，
    * 与 installCore 同惯例 cast），helper 未装/旧 proto 由 os-dns-flush 降级用户级 dscacheutil。
    */
-  private flushOsDnsCacheBestEffort(context: 'start' | 'stop'): void {
+  private flushOsDnsCacheBestEffort(context: DnsFlushContext, fingerprint?: string): void {
+    // issue #368 限频：仅作用于 link-change。一次换网/插拔会推送十余条内核事件，watcher 的 1.5s 去抖只合并单个
+    // burst；网络抖动期间 burst 会连续到来，不限频就是我们自己对系统解析器发起高频调用。start/stop 是关键边界
+    // （跨越接管/还原），**永不限频**。
+    if (context === 'link-change') {
+      // 已抑制（结构性缺失 / 连续失败达上限）→ 不再尝试。见字段注释。
+      if (this.linkChangeFlushSuppressed) return;
+      const now = monotonicNowMs();
+      if (!shouldFlushOnLinkChange(this.lastLinkChangeFlushAt, now)) {
+        // 拦下 ≠ 丢弃：① 清空指纹基线，使下一次判定无条件放行（否则 A→B→A 回退时指纹与基线相等，
+        //   会被判成「什么都没发生」而永不补刷）；② 排一次补刷到窗口到期，不指望「下一个链路事件」——
+        //   那在 IPv4-only 长租期网络上没有上界。
+        this.lastNetworkFingerprint = null;
+        this.scheduleLinkChangeRetry(linkChangeFlushRetryDelayMs(this.lastLinkChangeFlushAt, now));
+        return;
+      }
+      this.lastLinkChangeFlushAt = now;
+    }
     const helperFlushDns =
       process.platform === 'darwin'
         ? // 返回类型从 flushDns() 推断（含 partial 字段），签名演进自动跟随、不留漂移面。
@@ -6622,53 +6709,165 @@ rm -f "$STOPFLAG"
             return (this.helperManager as HelperManager).flushDns();
           }
         : null;
+    const seq = ++this.dnsFlushSeq;
     void flushOsDnsCache({
       helperFlushDns,
       log: (level, message) => this.logToManager(level, `[dns-flush:${context}] ${message}`),
-    }).catch(() => {
-      /* flushOsDnsCache 契约永不 reject；兜实现漂移 */
-    });
+    })
+      .then((result) => {
+        // 乱序 settle：已有更晚发起的刷新，本次结果一律作废（回写会让基线退回过期指纹）。
+        if (seq !== this.dnsFlushSeq) return;
+        // issue #367：结果落库供诊断读取——「刷新到底有没有发生过」此前在产品里无处可查，而它守着
+        // 「系统解析器缓存了错误记录」这类故障的唯一出口（issue #363）。
+        this.lastDnsFlush = { ...result, at: Date.now(), context };
+        // issue #368：指纹基线只在真正刷成功后推进，其余一律清空 → 下个事件必重试（判据见 nextFingerprintBaseline）。
+        // 例外：本次 flush 在飞期间又有事件被限频拦下（补刷定时器在排），说明**世界已被判脏**——此时把基线
+        // 推进到本次（更早的）指纹会盖掉 drop 路径刚置的 null，A→B→A 回退漏刷就在并发交织下复活。
+        this.lastNetworkFingerprint = nextFingerprintBaseline(
+          result.ok ? (result.skipped ? 'skipped' : 'flushed') : 'failed',
+          fingerprint,
+          this.linkChangeRetryTimer !== null // 在飞期间又被判脏 → 补刷在排
+        );
+        if (result.ok && !result.skipped) {
+          // 刷成功即证明这条路能走通：清零连败、解除抑制（会话中途装上 systemd-resolved / 修好授权都能恢复）。
+          this.linkChangeFlushFailStreak = 0;
+          this.linkChangeFlushSuppressed = false;
+        } else if (!result.ok) {
+          this.linkChangeFlushFailStreak += 1;
+          if (
+            !this.linkChangeFlushSuppressed &&
+            shouldSuppressLinkChangeFlush(result.reason, this.linkChangeFlushFailStreak)
+          ) {
+            this.linkChangeFlushSuppressed = true;
+            this.logToManager(
+              'info',
+              `系统 DNS 缓存刷新连续失败（${result.reason ?? 'unknown'}），链路变化后不再尝试；` +
+                '下次成功刷新即自动恢复'
+            );
+          }
+        }
+      })
+      .catch(() => {
+        /* flushOsDnsCache 契约永不 reject；兜实现漂移 */
+      });
   }
 
   /**
-   * 起 macOS DNS 接管「热插重灌」watcher（薄接线）：仅 darwin 起（与 setDns 真接管同口径；Win/Linux no-op）。
-   * 长驻 route -n monitor + powerMonitor resume → 命中去抖 → 经门控（shouldReconcileDns）判定后调 reconcileDns()。
-   * 幂等（DnsInterfaceWatcher.start 内部 started 守卫）。best-effort：构造/起失败仅 warn，绝不抛、不阻断 TUN 启动。
+   * 当前网络指纹：接口地址集合 + Linux 上游 resolver 列表。
+   * 后者补的是前者的天花板——「换网但同接口同地址」（同网段换 AP / DHCP 复用旧租约）地址一字未变而
+   * 上游 resolver 已换，正是最需要刷缓存的形态之一。非 Linux 取空串，退化为纯地址指纹。
+   */
+  private readNetworkFingerprint(): string {
+    const base = computeNetworkFingerprint(networkInterfaces());
+    if (process.platform !== 'linux') return base;
+    const resolver = readLinuxResolverFingerprint((f) => readFileSync(f, 'utf-8'));
+    return resolver ? `${base}\n#resolver\n${resolver}` : base;
+  }
+
+  /**
+   * 排一次 link-change 补刷（issue #368 / High-1）。已有在飞补刷则不重排——多个被拦下的事件共用一次补刷即可，
+   * 它走的是同一条「重新取指纹 → 对差 → 刷」路径，届时看到的是最新世界，重排只会推迟它。
+   */
+  private scheduleLinkChangeRetry(delayMs: number): void {
+    if (this.linkChangeRetryTimer !== null) return;
+    // watcher 已停（核死/还原）→ 不再武装：在飞的 handler 走到限频分支时仍会调到这里，排一个必然空转的
+    // 定时器只是让它多活一个窗口。
+    if (!this.linkChangeHandler) return;
+    this.linkChangeRetryTimer = setTimeout(
+      () => {
+        this.linkChangeRetryTimer = null;
+        const handler = this.linkChangeHandler;
+        if (!handler) return; // watcher 已停（核死/还原）→ 补刷无对象
+        void handler().catch(() => {
+          /* handler 内部已按腿收敛异常；此处兜实现漂移 */
+        });
+      },
+      // 下限 1ms：delayMs 可能为 0（窗口恰好到期），setTimeout(0) 也可用，取 1 只为语义上明确「排到下一轮」。
+      Math.max(1, delayMs)
+    );
+  }
+
+  /**
+   * issue #367：最近一次 OS DNS 缓存刷新的结果快照（诊断报告消费）。null = 本会话从未触发过刷新
+   * ——这本身就是信息（例如核从未成功起过）。
+   */
+  getLastDnsFlush(): (OsDnsFlushResult & { at: number; context: DnsFlushContext }) | null {
+    return this.lastDnsFlush;
+  }
+
+  /**
+   * 起链路变化 watcher（薄接线，三平台；issue #368 从「仅 darwin」放宽）。
+   * 唤醒源（平台对应的链路监听命令 / 指纹轮询 / powerMonitor resume）→ 去抖 → onTrigger：
+   *   · macOS：经门控 shouldReconcileDns（TUN + 未关接管 + marker 在）重灌系统 DNS 接管——**门控与行为一字未变**；
+   *   · 三平台恒：**指纹对差后**补刷 OS DNS 缓存（issue #363 的持续失败即「两次启停之间的缓存污染无人清理」）。
+   * Windows 无等价的链路监听命令 → 走指纹轮询（resume 只覆盖睡眠唤醒，覆盖不到换网/插拔）。
+   * 幂等（DnsInterfaceWatcher.start 内部 started 守卫）。best-effort：构造/起失败仅 warn，绝不抛、不阻断启动。
    */
   private startDnsInterfaceWatcher(): void {
-    if (process.platform !== 'darwin') return; // 仅 macOS 接管系统 DNS → 仅此平台需热插重灌 watcher。
     if (this.dnsInterfaceWatcher) return; // 幂等：已在跑则 no-op（重复 setDns 不重起）。
-    const mgr = this.systemDnsManager;
-    if (!mgr) return;
+    const platform = process.platform;
+    // 平台 → 事件源规格（命令 / 行判定 / 轮询间隔）。抽到 dns-route-events 以便三平台分流可被单测覆盖。
+    const monitorSpec = resolveLinkMonitorSpec(platform, existsSync);
+    if (!monitorSpec) return;
     try {
-      this.dnsInterfaceWatcher = new DnsInterfaceWatcher({
-        // route -n monitor：长驻打印内核路由表变更事件（接口 up/down、地址增删、默认路由切换）。
-        spawnRouteMonitor: () =>
-          spawn('route', ['-n', 'monitor'], { stdio: ['ignore', 'pipe', 'ignore'] }),
-        powerMonitor,
-        // 去抖后的统一 reconcile 入口：门控镜像 setDns（仅 TUN + 未关接管 + marker 在才动手），否则跳过。
-        onTrigger: async () => {
+      const cmd = monitorSpec.command;
+      // 组合语义（reconcile 异常隔离 / 先重灌后取指纹 / 指纹相同不刷）抽到 createLinkChangeHandler 单测。
+      // 留一份引用给补刷定时器——补刷走的必须是同一条路径（重新取指纹 → 对差 → 刷），而不是无条件再刷一次。
+      const handler = createLinkChangeHandler({
+        // 门控与 systemDnsManager **都必须在每次触发时**求值：currentConfig / marker 会随模式切换与接管
+        // 状态变化；manager 若在某次核 start 之后才注入，构造时捕获会让这一代 watcher 的 reconcile 腿永久为 null。
+        reconcile: async () => {
+          const mgr = this.systemDnsManager;
+          if (!mgr) return;
           if (!shouldReconcileDns(this.currentConfig, mgr.hasMarker())) return;
           await mgr.reconcileDns();
         },
-        debounceMs: 1500, // 1.5s：合并插坞站/换网的 RTM_ burst（设计建议 1–2s）。
+        readFingerprint: () => this.readNetworkFingerprint(),
+        getLastFingerprint: () => this.lastNetworkFingerprint,
+        flush: (fingerprint) => this.flushOsDnsCacheBestEffort('link-change', fingerprint),
+        onWarn: (message) => this.logToManager('warn', message),
+      });
+      this.linkChangeHandler = handler;
+      this.dnsInterfaceWatcher = new DnsInterfaceWatcher({
+        spawnRouteMonitor: cmd
+          ? () => spawn(cmd.file, cmd.args, { stdio: ['ignore', 'pipe', 'ignore'] })
+          : null,
+        isTriggerLine: monitorSpec.isTriggerLine,
+        pollIntervalMs: monitorSpec.pollIntervalMs,
+        fallbackPollIntervalMs: monitorSpec.fallbackPollIntervalMs,
+        powerMonitor,
+        // 唤醒豁免一次限频：睡眠期间单调钟是否推进属各平台语义（未实测），豁免后正确性不依赖该前提。
+        onResume: () => {
+          this.lastLinkChangeFlushAt = 0;
+        },
+        onTrigger: handler,
+        debounceMs: 1500, // 1.5s：合并插坞站/换网的事件 burst（设计建议 1–2s）。
         schedule: (fn, ms) => setTimeout(fn, ms),
         clearSchedule: (h) => clearTimeout(h),
         onWarn: (level, message) => this.logToManager(level, message),
       });
       this.dnsInterfaceWatcher.start();
-      this.logToManager('info', 'DNS 接口 watcher 已启动（热插/换网/唤醒 → 重灌系统 DNS 接管）');
+      this.logToManager(
+        'info',
+        '链路变化 watcher 已启动（热插/换网/唤醒 → 重灌 DNS 接管 + 刷缓存）'
+      );
     } catch (e) {
       this.dnsInterfaceWatcher = null;
       this.logToManager(
         'warn',
-        `启动 DNS 接口 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
+        `启动链路变化 watcher 失败: ${e instanceof Error ? e.message : String(e)}`
       );
     }
   }
 
   /** 停 DNS 接口 watcher（杀 route monitor 子进程 + 反注册 resume + 取消在飞去抖）。幂等、best-effort 不抛。 */
   private stopDnsInterfaceWatcher(): void {
+    // 补刷定时器与 handler 先收：即便 watcher 不在（未起过），残留的在飞补刷也不该留到下一代。
+    if (this.linkChangeRetryTimer !== null) {
+      clearTimeout(this.linkChangeRetryTimer);
+      this.linkChangeRetryTimer = null;
+    }
+    this.linkChangeHandler = null;
     if (!this.dnsInterfaceWatcher) return;
     try {
       this.dnsInterfaceWatcher.stop();

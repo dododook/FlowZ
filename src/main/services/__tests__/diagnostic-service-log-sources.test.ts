@@ -38,7 +38,7 @@ afterAll(() => {
   }
 });
 
-function makeSvc(opts: { startedViaHelper?: boolean } = {}): any {
+function makeSvc(opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown } = {}): any {
   const configManager: any = { loadConfig: jest.fn().mockResolvedValue({ logLevel: 'info' }) };
   const logManager: any = { flush: jest.fn().mockResolvedValue(undefined) };
   const proxyManager: any = {
@@ -48,6 +48,8 @@ function makeSvc(opts: { startedViaHelper?: boolean } = {}): any {
     generateSingBoxConfig: jest.fn().mockReturnValue({ log: { level: 'info' } }),
     getCronetHealStats: jest.fn().mockReturnValue({ triggered: 0, failed: 0 }),
     getLastStartReadyRetries: jest.fn().mockReturnValue(0),
+    // issue #367：诊断报告读取最近一次 DNS 缓存刷新结果；null=本会话从未触发（多数用例不覆盖该段内容）。
+    getLastDnsFlush: jest.fn().mockReturnValue(opts.lastDnsFlush ?? null),
   };
   const systemProxyManager: any = { getProxyStatus: jest.fn().mockResolvedValue(null) };
   return new DiagnosticService(configManager, logManager, proxyManager, systemProxyManager) as any;
@@ -123,5 +125,62 @@ describe('DiagnosticService — 日志取数路径收口', () => {
     });
     expect(md).toContain('核 stdout+stderr');
     expect(md).toContain('只追加不截断');
+  });
+});
+
+/**
+ * lastDnsFlush 的**接线**层（ProxyManager 结果 → 报告字段）单测。
+ * 渲染分支本身在 diagnostic-redact.test.ts 有测，但那里是直接手灌字段——接线漏抄某个 optional 字段时
+ * tsc 不报、渲染测试全绿，而生产链路里那条分支永远走不到（本轮实测：partial 漏抄 → macOS 部分成功印成「成功」）。
+ */
+describe('DiagnosticService — lastDnsFlush 字段接线', () => {
+  const base = {
+    ok: true,
+    detail: 'helper root（dscacheutil 已成功，HUP mDNSResponder 失败）',
+    context: 'start' as const,
+    at: Date.now(),
+  };
+
+  it('partial 透传：部分成功不得在报告里印成「成功」', async () => {
+    const md = await withPlatformAsync('linux', async () => {
+      const svc = makeSvc({ lastDnsFlush: { ...base, partial: 'killall-hup exit status 1' } });
+      jest.spyOn(svc, 'readTail').mockResolvedValue('');
+      return (await svc.buildReport()) as string;
+    });
+    expect(md).toContain('部分成功');
+    expect(md).toContain('killall-hup exit status 1');
+  });
+
+  it('reason / skipped 同样透传（同一处映射漏抄的其余字段）', async () => {
+    const md = await withPlatformAsync('linux', async () => {
+      const svc = makeSvc({
+        lastDnsFlush: {
+          ok: false,
+          reason: 'permission-denied',
+          detail: 'polkit 拒绝',
+          context: 'link-change',
+          at: Date.now(),
+        },
+      });
+      jest.spyOn(svc, 'readTail').mockResolvedValue('');
+      return (await svc.buildReport()) as string;
+    });
+    expect(md).toContain('permission-denied');
+    expect(md).toContain('link-change');
+
+    const skippedMd = await withPlatformAsync('linux', async () => {
+      const svc = makeSvc({
+        lastDnsFlush: {
+          ok: true,
+          skipped: true,
+          detail: '平台 freebsd 无 DNS 缓存刷新机制，已跳过',
+          context: 'start',
+          at: Date.now(),
+        },
+      });
+      jest.spyOn(svc, 'readTail').mockResolvedValue('');
+      return (await svc.buildReport()) as string;
+    });
+    expect(skippedMd).toContain('已跳过');
   });
 });

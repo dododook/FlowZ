@@ -298,6 +298,17 @@ export interface DiagnosticReportInput {
     cronetHealTriggered?: number; // 本会话 libcronet 自愈触发次数
     cronetHealFailed?: number; // 本会话 libcronet 自愈失败次数（连续失败疑库被反复删/杀软）
     lastStartReadyRetries?: number; // issue #176：最近一次启动经几次就绪重试（>0=起核慢，多因 Win 重启争用，非核崩）
+    // issue #367：最近一次 OS DNS 缓存刷新的结果。缺省=本会话从未触发过刷新（本身即信息，如核从未成功起过）。
+    // 只带相对时长（ageSec）不带绝对时间戳——绝对时刻对判读无增益，却把使用时间带进报告。
+    lastDnsFlush?: {
+      ok: boolean;
+      reason?: string; // command-missing | permission-denied | timeout | unknown
+      detail: string;
+      skipped?: boolean; // 平台无刷新机制的 no-op（**不是**刷新成功）
+      partial?: string; // darwin：dscacheutil 成功但 HUP mDNSResponder 失败（负缓存很可能没清掉）
+      context: string; // start | stop | link-change
+      ageSec: number;
+    };
   };
   redactedUserConfig: unknown;
   redactedSingboxConfig: unknown;
@@ -450,6 +461,28 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
     lines.push(
       `- 最近一次起核经 ${runtime.lastStartReadyRetries} 次就绪重试才成功（起核慢，多因 Windows 重启争用下 wintun 适配器未及时释放；非核崩溃）`
     );
+  }
+  // issue #367：刷新是否真的发生过必须在报告里可读——它守着「系统解析器缓存了错误记录」这类故障的唯一出口
+  // （issue #363：内核侧全程正常，症状全部来自系统缓存的否定记录）。失败时连同可操作提示一并带出。
+  if (runtime.lastDnsFlush) {
+    const f = runtime.lastDnsFlush;
+    if (!f.ok) {
+      lines.push(
+        `- 系统 DNS 缓存刷新：**失败**（${f.reason ?? 'unknown'}，${f.context}，${f.ageSec}s 前）：${f.detail}`
+      );
+    } else if (f.skipped) {
+      lines.push(`- 系统 DNS 缓存刷新：本平台无对应机制，已跳过（${f.detail}）`);
+    } else if (f.partial) {
+      // macOS unicast DNS 缓存主体在 mDNSResponder：HUP 没打成意味着 issue #363 那类负缓存很可能**没被清掉**。
+      // 与真成功共用「成功」headline 会让开发者扫报告时无法区分，正是本批要消灭的那类误读。
+      lines.push(
+        `- 系统 DNS 缓存刷新：**部分成功**（${f.context}，${f.ageSec}s 前，${f.detail}）：${f.partial}`
+      );
+    } else {
+      lines.push(`- 系统 DNS 缓存刷新：成功（${f.context}，${f.ageSec}s 前，${f.detail}）`);
+    }
+  } else {
+    lines.push('- 系统 DNS 缓存刷新：本会话从未触发');
   }
   lines.push('');
 

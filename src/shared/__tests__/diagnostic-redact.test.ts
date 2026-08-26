@@ -213,6 +213,66 @@ describe('buildDiagnosticReport', () => {
     expect(md).toContain('(空)');
   });
 
+  // issue #367：这四条渲染分支是「刷新到底有没有发生过」的用户可见半段。判断顺序若写反
+  //（先 ok 后 skipped），skipped 会被渲染成「成功」——正是本批要消灭的那类误读，且不会有任何红。
+  describe('系统 DNS 缓存刷新段（issue #367）', () => {
+    const withFlush = (f: NonNullable<DiagnosticReportInput['runtime']['lastDnsFlush']>) =>
+      buildDiagnosticReport({ ...base, runtime: { ...base.runtime, lastDnsFlush: f } });
+
+    it('缺省 → 「本会话从未触发」（缺省本身即信息，如核从未成功起过）', () => {
+      expect(buildDiagnosticReport(base)).toContain('本会话从未触发');
+    });
+
+    it('成功 → 含 context / 年龄 / detail', () => {
+      const md = withFlush({
+        ok: true,
+        detail: 'resolvectl flush-caches',
+        context: 'start',
+        ageSec: 12,
+      });
+      expect(md).toContain('系统 DNS 缓存刷新：成功（start，12s 前，resolvectl flush-caches）');
+    });
+
+    it('失败 → 标「失败」+ 分类 + detail（**不得**出现「成功」字样）', () => {
+      const md = withFlush({
+        ok: false,
+        reason: 'permission-denied',
+        detail: 'Interactive authentication required.（授权规则可能未安装）',
+        context: 'link-change',
+        ageSec: 3,
+      });
+      expect(md).toContain('**失败**');
+      expect(md).toContain('permission-denied');
+      expect(md).toContain('Interactive authentication required.');
+      expect(md).not.toContain('系统 DNS 缓存刷新：成功');
+    });
+
+    it('skipped → 标「已跳过」，**不得**渲染成成功（skipped ≠ 刷新成功）', () => {
+      const md = withFlush({
+        ok: true,
+        skipped: true,
+        detail: '平台 freebsd 无 DNS 缓存刷新机制，已跳过',
+        context: 'start',
+        ageSec: 1,
+      });
+      expect(md).toContain('已跳过');
+      expect(md).not.toContain('系统 DNS 缓存刷新：成功');
+    });
+
+    it('partial（macOS HUP 失败）→ 标「部分成功」，**不得**与真成功同 headline', () => {
+      const md = withFlush({
+        ok: true,
+        detail: 'helper root（dscacheutil 已成功，HUP mDNSResponder 失败）',
+        partial: 'killall-hup exit status 1',
+        context: 'stop',
+        ageSec: 5,
+      });
+      expect(md).toContain('**部分成功**');
+      expect(md).toContain('killall-hup exit status 1');
+      expect(md).not.toContain('系统 DNS 缓存刷新：成功');
+    });
+  });
+
   it('有 startupLogTail 时渲染核启动日志区块（issue #324 诊断盲区）', () => {
     const md = buildDiagnosticReport({
       ...base,
