@@ -11,6 +11,7 @@
  *  - 纯逻辑 waitForAdapterReleased 注入 probe/sleep，便于无真实计时器/无真实网卡的单测。
  */
 import { execFile } from 'child_process';
+import * as os from 'os';
 import { powershellPath } from '../utils/win-system32';
 import type { AddressUsage } from '../../shared/tun-address';
 
@@ -104,6 +105,8 @@ export function probeWinTunAdapterPresent(name: string): Promise<boolean> {
 export interface AdapterWaitDeps {
   probe: (name: string) => Promise<boolean>;
   sleep: (ms: number) => Promise<void>;
+  /** 单调毫秒时钟，缺省 `Date.now`（把 timeoutMs 落成真的时间预算，见 waitForAdapterReleased 头注）。 */
+  now?: () => number;
 }
 
 /** 等待结果：released=true 已确认网卡消失；false=超时仍在（调用方放行交 retry）。polls=实际探测次数。 */
@@ -114,7 +117,11 @@ export interface AdapterWaitResult {
 
 /**
  * 有界轮询等名为 `name` 的网卡消失。早退：一旦探测到消失立即返回。
- * maxPolls = ceil(timeoutMs/pollMs)，每轮 probe→（仍在则）sleep；循环末再 probe 一次覆盖最后窗口。
+ * 每轮 probe→（仍在则）sleep；循环末再 probe 一次覆盖最后窗口。
+ *
+ * **预算是时间不是轮数**：`maxPolls = ceil(timeoutMs/pollMs)` 隐含「每轮成本 ≈ pollMs」，而这里的 probe 是
+ * PowerShell（真机实测单次 ~950ms）→ 8000/500 名义 8s，真实墙钟 17×0.95+16×0.5 ≈ **24s**（复审实测）。
+ * 故以单调时钟 deadline 为主判据，maxPolls 退居兜底（时钟不前进的注入式单测走这条，行为与改动前逐字相同）。
  */
 export async function waitForAdapterReleased(
   name: string,
@@ -123,7 +130,9 @@ export async function waitForAdapterReleased(
 ): Promise<AdapterWaitResult> {
   const pollMs = Math.max(1, opts.pollMs);
   const maxPolls = Math.max(1, Math.ceil(opts.timeoutMs / pollMs));
-  for (let i = 0; i < maxPolls; i++) {
+  const now = deps.now ?? Date.now;
+  const deadline = now() + opts.timeoutMs;
+  for (let i = 0; i < maxPolls && now() < deadline; i++) {
     if (!(await deps.probe(name))) return { released: true, polls: i + 1 };
     await deps.sleep(pollMs);
   }
@@ -147,10 +156,44 @@ export async function waitForAdapterReleased(
 export type AdapterPresence = 'present' | 'absent' | 'unknown';
 
 /**
+ * B3 零 spawn 快检：Node 的接口枚举里是否有本名接口。
+ *
+ * **只允许产出肯定结论**——这是本函数唯一的设计约束，也是它敢在没有 Windows 真机的情况下上线的全部理由：
+ *  - 看见 → `true`，可直接判 present（Node 枚举的是 `GetAdaptersAddresses` 的 FriendlyName，与 `Get-NetAdapter -Name`
+ *    同一个名字空间；能看见就是真的存在）。
+ *  - 看不见 → `false`，含义是**「本法说不了」而不是「不存在」**，调用方一律回落 PowerShell 由它给权威结论。
+ *
+ * 为什么不能反过来用它判 absent（issue #324 §5.6 的教训）：libuv 只返回**带地址**的接口，
+ * 而 #159 要等的那种硬杀后滞留的 wintun 网卡、以及 #324 的冲突源 TAP 残留网卡，恰恰常处于 Disconnected/无地址态
+ * ——Node 看不见它们。据此判 absent 会让 #159 释放门恒放行、#324 正向门把健康机器判成「TUN 从未创建」的终态失败。
+ *
+ * 最坏情况（Node 在某些 Windows 版本上压根看不见 wintun 适配器）：本函数恒 false → 行为与改动前逐字相同，
+ * 只是省不到那次 spawn。**没有产生假 absent 的路径**，故不需要 Windows 真机才能上线。
+ *
+ * @param list 注入点（单测用）；缺省读 `os.networkInterfaces()`。
+ */
+export function nodeSeesInterface(
+  name: string,
+  list?: ReturnType<typeof os.networkInterfaces>
+): boolean {
+  if (!name) return false;
+  try {
+    const map = list ?? os.networkInterfaces();
+    const entry = map[name];
+    // 键存在但值为 undefined/空数组 → 当作没看见（无地址的接口不构成肯定结论）。
+    return Array.isArray(entry) && entry.length > 0;
+  } catch {
+    return false; // 枚举本身失败 → 说不了，交回 PowerShell
+  }
+}
+
+/**
  * 三态探测名为 `name` 的网卡是否存在（issue #324）。与 probeWinTunAdapterPresent 同一 Get-NetAdapter 机制，
  * 仅返回值语义更细：err（spawn/执行失败）→ 'unknown'；命中本名 → 'present'；查询成功但空 → 'absent'。
  */
 export function probeWinTunAdapterPresence(name: string): Promise<AdapterPresence> {
+  // B3 快路径：Node 看得见本名接口 → 直接 'present'，省掉一次 PowerShell（真机实测单次 ~950ms）。
+  if (nodeSeesInterface(name)) return Promise.resolve('present');
   const psName = name.replace(/'/g, "''");
   // 哨兵在、命中本名 → present；哨兵在、无命中 → absent（查询确实跑过，可据此判「从未创建」）；
   // 哨兵不在 → unknown（fail-open）。见 runPsProbe 头注：退出码不再参与「空结果」判定。
@@ -166,6 +209,8 @@ export function probeWinTunAdapterPresence(name: string): Promise<AdapterPresenc
 export interface AdapterPresenceWaitDeps {
   probe: (name: string) => Promise<AdapterPresence>;
   sleep: (ms: number) => Promise<void>;
+  /** 单调毫秒时钟，缺省 `Date.now`（把 timeoutMs 落成真的时间预算，见 waitForAdapterPresent 头注）。 */
+  now?: () => number;
   /**
    * issue #176/#324 High#1：本腿是否已被更新的 start/stop 接管（可选；缺省视作未接管）。每轮先判——接管后本腿继续
    * 验适配器/停核/发 started 都会抢放接管方的核，故立即让位（outcome='superseded'），调用方绝不 stopCore/emit started。
@@ -199,6 +244,12 @@ export async function waitForAdapterPresent(
 ): Promise<AdapterPresentResult> {
   const pollMs = Math.max(1, opts.pollMs);
   const maxPolls = Math.max(1, Math.ceil(opts.timeoutMs / pollMs));
+  // 与 waitForAdapterReleased 同一条纪律（**姊妹腿，同根因一起改**）：8000/1000 名义 8s，probe 为 PowerShell 时
+  //   真实墙钟 8×(0.95+1.0)+0.95 ≈ **16.6s**。这条腿的形态更糟——它是 #324 的硬闸，判 absent-timeout 要先耗完
+  //   整个预算，三腿耗尽的路径上光这个门就吃掉 ~50s。B3 快检只在**真 present** 时救得了它；真出故障那条路上
+  //   Node 恒看不见，每轮都得付 PowerShell，正是最需要预算准确的场景。
+  const now = deps.now ?? Date.now;
+  const deadline = now() + opts.timeoutMs;
   // 一次 clean absent 即证明 Get-NetAdapter 探测链路可用；据此把「确实没建起」（→ 硬闸/终态）与「探测本身失败」
   // （全 unknown → fail-open）区分开。零星 unknown 被一次 clean absent 压过。
   let sawAbsent = false;
@@ -209,7 +260,7 @@ export async function waitForAdapterPresent(
       return 'unknown'; // probe 抛错 → fail-open（按 unknown 处理，绝不据此判失败）
     }
   };
-  for (let i = 0; i < maxPolls; i++) {
+  for (let i = 0; i < maxPolls && now() < deadline; i++) {
     if (deps.isSuperseded?.()) return { outcome: 'superseded', polls: i }; // #176：接管先于一切，立即让位
     const p = await step();
     if (p === 'present') return { outcome: 'present', polls: i + 1 };

@@ -313,6 +313,8 @@ export class DiagnosticService {
             ageSec: Math.max(0, Math.round((Date.now() - f.at) / 1000)),
           };
         })(),
+        // B0：最近一次起核的分阶段耗时。「启动慢」类报告的第一手依据——没有它只能对着总时长猜。
+        lastStartTimeline: this.proxyManager.getLastStartTimeline() ?? undefined,
       },
       redactedUserConfig,
       redactedSingboxConfig: redactedSingbox,

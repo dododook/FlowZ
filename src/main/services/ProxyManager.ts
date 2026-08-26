@@ -135,6 +135,7 @@ import {
   sampleProcessRssMb,
   type MemoryTimelineFrame,
 } from './process-sampler';
+import { StartTimeline } from './start-timeline';
 import {
   probeWinTunAdapterPresent,
   waitForAdapterReleased,
@@ -607,18 +608,31 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
   // issue #159：Windows TUN 重启前等自家 wintun 适配器释放的门控参数。8s 上限覆盖硬杀后驱动回收滞后，
   // 250ms 轮询；探测到消失即早退（常见 1-3s），超时 fail-open 放行交启动 retry（绝不卡死代理）。
-  private static readonly TUN_ADAPTER_RELEASE_TIMEOUT_MS = 8000;
+  // 复审实测：改造前这个门的**真实**墙钟不是 8s 而是 ~24s（预算按轮数算，而每轮的 PowerShell probe 要 ~950ms）。
+  //   `waitForAdapterReleased` 已改成单调 deadline，8000 会把门**收紧 3 倍**——而「#159 至今没复发」这个事实
+  //   恰恰建立在那 24s 之上。故常量同步提到 24000 保持行为等价：先让实现与声明对齐（纯 bug 修复），
+  //   8s 到底够不够交真机数据决定，不拿一次没有数据支撑的收紧去赌一个已知 P1。
+  private static readonly TUN_ADAPTER_RELEASE_TIMEOUT_MS = 24000;
   // 500ms 轮询：每轮 probe 一次 Get-NetAdapter（spawn powershell，冷启 ~百 ms），间隔放宽控最坏 spawn 次数（≤~16）。
   // 常见 1-3 轮即检出释放、早退。若真机证明 PS spawn 仍过重，可改单次长轮询 PS 脚本（内部 while+Start-Sleep）只付一次冷启。
   private static readonly TUN_ADAPTER_RELEASE_POLL_MS = 500;
   // wintun 适配器存在性探测（默认 Get-NetAdapter，零提权，按本名匹配）；注入式便于单测替换桩。
   private adapterProbe: (name: string) => Promise<boolean> = probeWinTunAdapterPresent;
+  // B1：**第一条**起核腿的释放门预热 promise（win32+TUN）。门本身语义不变（每腿都必须过），只是把首腿那次探测
+  //   提前到 killOrphans 之后立刻发起，与配置生成/写盘/`sing-box check` 并行跑——那些步骤本就是异步等待，白等不如并行。
+  //   一次性消费：首腿取走并置 null，重试腿一律现场重探（残留是**当下**的事实，不能吃陈旧结论）。
+  //   每次 startInternal 入口先清，杜绝上一次失败的 start 遗留的过期 promise 被下一次首腿吃掉。
+  private pendingAdapterReleaseGate: Promise<void> | null = null;
 
   // issue #159 纵深网：helper 起核后等核真就绪（管理 API 绑定）的门控。成功路径早退（API 通常 <1s 绑定）不加延迟；
   // 12s 上限仅在「进程活但 API 始终不绑」的卡死态触顶，进程死则即时捕获。
   private static readonly CORE_READY_TIMEOUT_MS = 12000;
-  // 500ms 轮询：成功路径 isReady(异步TCP) 早退、不触发 isAlive(execSync 探活阻塞)；仅失败路径每轮探活，放宽间隔控阻塞次数。
-  private static readonly CORE_READY_POLL_MS = 500;
+  // B4：就绪轮询 500→50ms。判据是本地 loopback TCP connect（近乎免费），500ms 粒度带来的是**纯空等**——
+  //   Polaris 同常量同值，其真机实测「API 口 97–221ms 就已 listen，门到 504ms 才宣布就绪」，每次固定浪费 ~300–400ms。
+  private static readonly CORE_READY_POLL_MS = 50;
+  // 探活节拍单独给，仍为 500ms：探活是子进程（Windows `tasklist`），跟着 50ms 走会把 spawn 次数放大 10 倍。
+  //   两个节拍解耦后：就绪检出快 10 倍，探活开销与改动前持平。
+  private static readonly CORE_READY_ALIVE_POLL_MS = 500;
   // 管理 API 可连探测（默认 TCP 直连）；注入式便于单测替换桩。
   private coreReadyProbe: (host: string, port: number) => Promise<boolean> = probeTcpReachable;
 
@@ -629,7 +643,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 就绪窗/grace 内的适配器观测轮询间隔（1s）。就绪窗 ≤12s → ≤~12 次 PS spawn；见到即停观测省 spawn。真机项 #2 校准。
   private static readonly TUN_READY_OBSERVE_POLL_MS = 1000;
   // 就绪（API 绑定）后再给适配器出现的 grace 上限（8s）：适配器晚于 API bind 出现属正常时序，避免误杀 #159/#176 瞬态。真机项 #2 校准。
-  private static readonly TUN_READY_GRACE_TIMEOUT_MS = 8000;
+  //   同上（姊妹腿）：8000/1000 的真实墙钟是 ~16.6s，deadline 化后 8000 会把 #324 硬闸的判定窗口砍掉一半 →
+  //   更早判 absent-timeout → 更多「永久拒连」误报。故提到 17000 保持等价。
+  private static readonly TUN_READY_GRACE_TIMEOUT_MS = 17000;
   // issue #324 分类 tracker（start-scoped，win32+TUN 时于 startInternal 置对象、否则 null）。跨所有重试腿 sticky 累计观测：
   //   adapterEverSeen=任一腿曾见适配器（→ 瞬态释放竞态族）；probeEverConclusive=探测链路曾给出 clean present/absent
   //   （排除杀软拦 PS 的全 unknown 误判）。预算耗尽 && !adapterEverSeen && probeEverConclusive → 持续性 TUN 失败终态。
@@ -649,6 +665,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 重启争用下 wintun 适配器未及时释放），与「核崩溃自动重启」（restartCount/AUTO_RESTARTING）是不同轴，纳入诊断
   // 区分「核崩」vs「争用慢起」。每次 startInternal 复位。
   private lastStartReadyRetries = 0;
+  // B0 起核阶段耗时埋点：本次 start 在飞的收集器（由 public start() 建、finally 收），非启动期恒 null。
+  //   起核路径各步在其后打标记；null 时全链路 no-op（防未经 start() 的直调路径 NPE）。
+  private startTimeline: StartTimeline | null = null;
+  // 最近一次 start 的阶段耗时汇总行（成功/失败/让位都留）。供诊断报告直接带走，不必让用户去 app.log 里翻。
+  private lastStartTimeline: string | null = null;
 
   // 自动重启相关
   private autoRestartEnabled: boolean = true;
@@ -666,6 +687,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private static readonly RESTART_COOLDOWN = 60000; // 重启冷却时间（1分钟内最多重启3次）
   private isRestarting: boolean = false;
   private coreVersion: string = 'unknown';
+  // B5：`coreVersion` / `coreVersionLine` 所对应二进制的指纹（path|size|mtimeMs）。启动路径的 `getCoreVersion(true)`
+  //   据此判「核没换过就别重 spawn」——那是每次 start 对 45MB 内核的一次 execve，Windows 上还要过 AV 扫描。
+  //   null（stat 失败）恒不命中 → 回落每次重探，与改动前逐字相同。
+  private coreVersionFingerprint: string | null = null;
   // `sing-box version` 原始第一行（含 fork 后缀，不截 X.Y.Z）；供内核来源判定（classifyCoreBuild）。
   // 由 getCoreVersion 的同一次 spawn 顺带写入，避免「关于/内核」页二次 spawn（Windows 45MB 核加载慢）。
   private coreVersionLine: string | null = null;
@@ -712,13 +737,20 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
    */
   async start(config: UserConfig, options: { interactive?: boolean } = {}): Promise<void> {
     this.beginLifecycleOp();
+    // B0：阶段耗时收集器在此建（而非 startInternal 内）——public 包装是 start 的唯一入口，且它的 finally 是
+    //   成功/失败/让位三条出口的共同收口，收集器的生死与这次 start 严格同域。
+    const timeline = new StartTimeline();
+    this.startTimeline = timeline;
+    let outcome = 'failed';
     try {
       await this.startInternal(config, options);
+      outcome = 'ok';
     } catch (e) {
       // issue #176：本腿在就绪等待期被更新的 start/stop 接管 → 静默让位，**绝不 cleanup**（接管方已拥有/正在
       //   建立进程与系统代理状态，cleanup 会清掉它的 refs）。镜像 attemptAutoRestart「自动重启已让位」语义。
       if (e instanceof CoreStartSupersededError) {
         this.lastStartSuperseded = true; // 供 attemptAutoRestart 判别，跳过让位时的多余 started 事件
+        outcome = 'superseded';
         this.logToManager('info', '启动已让位（检测到更新的启动/停止操作接管）');
         return;
       }
@@ -729,8 +761,51 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       await this.ensureSystemProxyCleared();
       throw e;
     } finally {
+      // B0：三条出口（成功/失败/让位）共用的收口——出一行汇总并留给诊断报告。
+      //   仅当 this.startTimeline 仍是本次的对象时才清：被更新的 start 接管后该字段已属接管方，清它会让接管方
+      //   后续标记全部落空（与 lifecycleGeneration 让位守卫同一条纪律）。
+      const summary = timeline.summarize(outcome);
+      this.logToManager('info', summary);
+      // 守卫要同时管住 lastStartTimeline（诊断报告读的是它）。原先它是无条件写：让位腿若卡在**没有世代检查**的
+      //   前置腿上（释放门 24s / 地址预检 4s / waitForPidFile 60s），会在接管方之后才 settle，把接管方那条成功
+      //   汇总覆盖成自己的让位残行——而要回传给用户的恰恰是接管方那条。日志行不受此限（按时间顺序追加，两条都留）。
+      if (this.startTimeline === timeline) {
+        this.lastStartTimeline = summary;
+        this.startTimeline = null;
+      }
       this.endLifecycleOp('start');
     }
+  }
+
+  /**
+   * B0 埋点：记一个起核阶段（label 表示「从上一个标记到此刻」的耗时）。非 start() 语境下 startTimeline 为 null
+   * → no-op。**绝不影响控制流**：只做数组 push。
+   *
+   * 起核腿内的打点一律走 `markStartLeg`（带世代守卫），不要用本方法——理由见其头注。
+   */
+  private markStart(label: string): void {
+    this.startTimeline?.mark(label);
+  }
+
+  /**
+   * 腿内打点：仅当本腿仍是当前世代（未被更新的 start/stop 接管）时才记。
+   *
+   * 原先这里是一条自我豁免：「交错时旧腿的标记落进接管方 timeline，表现为同名 label 重复出现，是**可见**信号
+   * 而非静默错值」。复审推翻了它——`shouldRetryStartError` 只对 `CoreStartSupersededError` 拒绝重试，而 supersede
+   * 的检测点只有 `waitForCoreReady` / `waitForAdapterPresent` 两处；若旧腿在就绪门**之前**以可重试错误失败
+   * （如 `helper.startCore` 返回 !ok），它退避后照常进下一腿，此时接管方可能已就位 → 接管方的第一腿被标成 `L2.`，
+   * **没有任何重复 label**，那条「可见信号」在这条路上根本不存在；而且旧腿插入的格还会重置 `last` 基准，
+   * 把接管方相邻那格的数字静默改小。埋点不作判据，但给出**静默错值**与给出可见噪声是两回事。
+   */
+  private markStartLeg(startGen: number, label: string): void {
+    if (this.lifecycleGeneration !== startGen) return;
+    this.startTimeline?.mark(label);
+  }
+
+  /** 腿边界：同 markStartLeg 的世代守卫（被接管的旧腿绝不给接管方的时间轴插入新腿）。 */
+  private beginStartLeg(startGen: number): void {
+    if (this.lifecycleGeneration !== startGen) return;
+    this.startTimeline?.beginLeg();
   }
 
   private async startInternal(
@@ -741,6 +816,9 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 被拒时不污染世代。updateCore/applyStagedNow 自身的 start 在 installCoreFromDir 返回后调用（coreSwapInProgress
     // 已清），不受此闸影响。
     this.rejectIfCoreSwapInProgress('启动代理');
+    // B1：清掉上一次 start 可能遗留的释放门预热（那次 start 若在首腿之前就抛错，promise 会没人消费）。
+    //   必须在本方法**入口**清、且在下方重新 arm 之前——否则首腿会吃到一个早于本次 stop/killOrphans 的陈旧结论。
+    this.pendingAdapterReleaseGate = null;
     // issue #176：本次 start 让位标记从干净态开始（被接管时 start() 包装置 true）。
     this.lastStartSuperseded = false;
     // 生命周期世代 +1：标记一次新的 start 接管（供退避中的 attemptAutoRestart 比对让位，M-2′）。
@@ -769,6 +847,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (this.singboxProcess || this.singboxPid) {
       await this.stop();
     }
+    this.markStart('stopOld'); // 未在跑时 ≈0，正在跑时 = 拆旧核耗时（重启路径的前半段）
 
     // 复位自动重启取消标记：必须在上面的内部 stop() 之后（stop 会置 true）——真正开始一次启动即清掉，
     // 否则 start 的内部 stop poison 该标记会让此后所有崩溃自动重启被误拦（M3 回归防护）。
@@ -815,15 +894,20 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     // macOS 提权 helper 引导门控（收敛单点，先于一切重活；abort 直接抛出、不留半启动态）。
     await this.maybePromptHelperGate(config, isTunMode, options);
+    this.markStart('helperGate'); // 含 win 的 sc query / mac 的 SMAppService 探测；弹窗等待也计在这里
 
     await this.killOrphanedSingBoxProcesses(isTunMode);
+    this.markStart('killOrphans'); // win: helper 管道 cleanup + tasklist/taskkill（execSync，阻塞 event loop）
 
     // 孤儿清理后仍占 9090 → 按端口清掉占用者（helper freePort / osascript），否则明确终态（L2，含外部/旧路径
     // sing-box）。把「裸 spawn 撞 9090 占用 → retry 风暴」收敛为一次明确、可定位的失败。
     await this.resolveClashApiPortConflict();
+    this.markStart('portConflict');
 
     // 0. 获取核心版本（用于后续生成兼容的配置文件）。force=true：内核可能已更新，启动时强制重检测刷新缓存。
     this.coreVersion = await this.getCoreVersion(true);
+    // 每次 start 恒 force=true 重 spawn 45MB 内核（Windows 上还要过一遍 AV 扫描）——这一格就是量它值不值。
+    this.markStart('coreVersion');
     this.logToManager('info', `检测到 sing-box 核心版本: ${this.coreVersion}`);
 
     // §5 核覆盖 reconcile + 最低版本守卫：内置核是种子（强制落位），决策只针对本机在用的【非内置】核。
@@ -832,6 +916,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // 配置已硬切 1.14，<1.14 核会 unknown-field FATAL，故覆盖决策后仍 <1.14 → 明确报错（含 fork 专属引导）。
     // §5 核覆盖 reconcile 抽为公共方法（供启动期 reseedBundledCoreOnStartup 复用，单一真值）：连接期发渲染端基线警告事件。
     await this.reconcileCoreWithBundledBaseline({ emitRendererEvents: true });
+    this.markStart('coreReconcile'); // 常态 ≈0；命中重播种时含拷核 + 二次 version spawn
     // 覆盖决策后仍 <1.14（仅 fork/unknown 旧核会到此；官方旧核已重播种到 ≥内置≥1.14）→ 配置 FATAL 前明确报错。
     // 此版本闸 throw 只在连接路径（startInternal）——启动期 reconcile 绝不 throw（不阻断启动），故留在此处、不进抽取方法。
     if (!coreVersionAtLeast(this.coreVersion, 1, 14)) {
@@ -845,9 +930,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     // 1.14 管理 API 端口：解析一个空闲本地端口（排除 clash/用户端口），避免硬编 clash+1 撞占致 services bind FATAL（A1）。
     this.tailscaleApiPort = await this.resolveTailscaleApiPort(config);
+    this.markStart('apiPort');
 
     // 修复可能被 root 创建的文件权限（从 TUN 模式切换到系统代理模式时）
     await this.fixFilePermissions();
+    this.markStart('filePerm');
 
     // 3.2 issue #324：TUN 地址冲突预检**在此发起**，与下面的节点域名预解析 / race server 启动并行跑，
     //   到生成配置前才 await。探测是 PowerShell spawn（4s 超时封顶，候选连撞时串行多次），串在起核关键
@@ -870,10 +957,25 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       throw new Error('Selected server not found');
     }
 
+    // B1（Polaris R3 点名的那条）：wintun 释放门首腿探测在此并行发起，与上面的地址预检同址同理由。
+    //   **必须在 killOrphanedSingBoxProcesses 之后**——孤儿被硬杀才是适配器开始释放的起点，早于它发起等于探一个
+    //   还没开始释放的状态。门的语义（每腿必过、fail-open、按本名匹配）一字未改，改的只是首腿的付款时机。
+    //   **也必须在 selectedServerId / selectedServer 两处早退校验之后**：arm 之后到消费点之间的任何 throw 都会
+    //   留下一条无人 await 的后台轮询（Windows 上最长 17 次 PowerShell spawn），下一次 start 只在入口丢引用、
+    //   不取消它——用户看到报错立刻重连时，这条孤儿会与新 start 自己的探测和 `sing-box check` 抢资源，
+    //   正好砸在本批要优化的那段关键路径上。放在这里可以砍掉最常见的两条早退分支。
+    if (process.platform === 'win32' && isTunMode) {
+      this.pendingAdapterReleaseGate = this.waitForOwnTunAdapterReleased(config);
+    }
+
     // 3. 准备规则文件（必须在生成配置前完成）
     await this.copyRuleSetsToUserData();
+    // 真机实测这两步合计 7.5s、占一次起核的 62%（2026-08-26 首条时间轴），而 28 个 .srs 总共只有 0.4MB
+    // 且第二次起核不重写——耗时不在文件量上。合成一格看不出是谁，故拆开。
+    this.markStart('seedRules');
     // 3.1 落盘外化自定义规则文件 + 孤儿对账清扫（必须在 generateSingBoxConfig 前——缺文件 sing-box 启动 FATAL）
     await this.writeCustomRuleFiles(config);
+    this.markStart('customRules');
 
     // 3.5. 预解析所有节点的域名为 IP（仅针对 TUN 模式），防止 Windows 下回流死循环
     // 【待真机验证 / CDN 风险】：对"域名节点"预解析得到的 IP 会进 route_exclude_address，若节点在
@@ -910,9 +1012,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       });
       await Promise.all(resolvePromises);
     }
+    // 仅 win32+TUN 非零：全节点域名并行 dns.lookup。系统 DNS 此刻可能仍是上一会话 TUN 拆完的残态，慢在意料内 → 必须量。
+    this.markStart('winDnsPreresolve');
 
     // 3.6. 为出口 IP 探针分配端口（失败不阻断启动，仅探针不可用）
     await this.allocateProbePorts(config);
+    this.markStart('probePorts');
 
     // 3.7. 复位启动前配置校验 gate 状态（必须在 generateSingBoxConfig→generateOutbounds 消费 gateInvalidNodes
     //      之前）：每次 start 重新判定坏节点，换核 / 修好配置后自动复活，不跨会话残留。
@@ -940,25 +1045,32 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         );
       }
     }
+    this.markStart('lanResolver'); // 含 3.7.1 的 tailscale state 属主归一（同步 fs）+ scutil/netsh 读解析器
 
     // 3.9 issue #147：节点 outbound.server 恒用域名（buildProxyOutbound）→ 内核 resolveDialer 运行时解析多 A →
     //     DialSerial 逐 IP 重试（取代旧 resolve-ahead 烧单 IP，那会关闭内核多 IP 容错，见设计 §1.1）。多上游 race
     //     的本地 server 起停 + effective config 降级见下（startNodeDnsRaceServer）。
     await this.startNodeDnsRaceServer(config);
+    this.markStart('dnsRace');
 
     // 3.9.5 issue #324：收 3.2 发起的地址冲突预检结果（此刻必须落定：地址要随本次配置下发给核）。
+    // 这一格量的是**并行是否真的把它藏住了**：预检 3.2 就发起，若这里仍为正数，说明前面的准备步骤不够长
+    // （或候选连撞导致多次 PowerShell 串行），并行化的收益名存实亡。
     await this.applyTunAddressPreflight(tunAddressPick);
+    this.markStart('tunAddrPreflightWait');
 
     // 4. 生成 sing-box 配置文件
     const singboxConfig = this.generateSingBoxConfig(config, resolvedServerIps);
 
     // 写入配置文件
     await this.writeSingBoxConfig(singboxConfig);
+    this.markStart('configGen'); // 生成 + 写盘
     this.logToManager('info', 'sing-box 配置文件已生成');
 
     // 4.5 启动前配置校验 gate：剔除会致整体启动 FATAL 的坏节点后重写盘（插在写盘后、retry 前 →
     //     gate 抛错由 start() catch 收口，不进 retry；选中节点被剔/全部剔光/降级 → throw 不启动）。
     await this.checkAndPruneConfig(singboxConfig, config);
+    this.markStart('configCheck'); // `sing-box check`：本次 start 对 45MB 内核的第 2 次 spawn
 
     // TUN 模式下，删除旧的 PID 文件，确保不会读到旧的 PID
     if (this.needsOsascript() || this.needsWindowsUAC()) {
@@ -969,6 +1081,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     （缺失/0 字节/截断/版本错位 → 从内置重拷）。覆盖 Windows 常规启动不补的盲区（Linux 既有 ensureWritableCore
     //     内的 beside 保留，此处对其幂等）；mac 静态编入 cronet，ensureCronetReadyForLaunch 内部跳过。热路径仅 stat。
     await this.ensureCronetReadyForLaunch();
+    this.markStart('cronetCheck'); // 含上面的 deletePidFile；热路径应仅 stat
 
     // issue #176 L1.2：快照本次起核世代——就绪/重试腿据此判 supersede 让位。捕获点在本方法上方内部 stop()
     //   （它会 lifecycleGeneration++）之后，故此值即本次 start 的稳定基线；之后任一外部 start/stop 接管即令其变化。
@@ -1066,6 +1179,7 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // macOS 停核断网安全网：与上面同属「起核前快照」——记录系统全局默认路由网关，供停核后检测被 sing-tun
     // setRoutes EEXIST 善后误删的 default 并补回（system WG 全隧道场景）。必须在 sing-box 起核前跑。非 macOS no-op。
     await this.captureDefaultRoute();
+    this.markStart('routeSnapshot'); // 非 macOS 恒 ≈0（两个 no-op）
 
     // T2 libcronet 启动失败冷路径闭环：起核失败且命中 cronet 缺库 FATAL（linux/win）→ strong（hash 强校验）
     // 重拷 → 若 restored 则整体重启内核一次（一次性 cronetHealAttempted 闸，防抖动循环）→ 仍失败/未恢复 →
@@ -1108,6 +1222,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
 
     // issue #176 诊断：起核成功（含经数次就绪重试）。落 lastStartReadyRetries，>0 时记一行——便于把「争用下起得慢
     //   但已自愈」与「核崩溃自动重启」（restartCount/AUTO_RESTARTING 另一轴）在诊断里区分开。
+    // 起核收口：从最后一条腿的末个标记到此刻——含 startViaHelper 尾部（写 PID 文件 / 起 log watcher / 起健康
+    // 检查 / 发 started 事件），以及 cronet 自愈冷路径若触发的整轮重起。
+    this.markStart('startTail');
+
     this.lastStartReadyRetries = readyRetries;
     if (readyRetries > 0) {
       this.logToManager('info', `sing-box 经 ${readyRetries} 次就绪重试后启动成功`);
@@ -1155,6 +1273,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       }
     }
 
+    this.markStart('systemProxySync'); // systemProxy 模式=置代理（mac 上的 networksetup 风暴在这一格）；TUN=反向清
+
     // 系统 DNS 接管收口（治本 DNS，与系统代理 reconcile 正交）：仅 TUN 模式接管——on-link 的 LAN/ISP DNS 不进
     // TUN → hijack-dns 看不到 → 需代理的域名被系统解析器解析成真实/错族 IP。故 TUN 启动把系统 DNS 改为受控、
     // 可路由、不在 bootstrap-direct 的 8.8.8.8，使其经 TUN 被 hijack（真进 sing-box → FakeIP/远程解析）。
@@ -1173,6 +1293,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
         `系统 DNS 接管状态同步失败: ${e instanceof Error ? e.message : String(e)}`
       );
     }
+
+    this.markStart('dnsTakeover'); // Windows 不接管系统 DNS（见 SystemDnsManager）→ 该平台应恒 ≈0
 
     // 核已成功起动、DNS 接管状态已收口 → best-effort 刷 OS DNS 缓存（fire-and-forget，不阻塞启动；让位
     // CoreStartSupersededError 与失败路径在更早处已抛、到不了这里）。清掉接管边界前系统解析器缓存的陈旧记录
@@ -3010,6 +3132,21 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     if (!force && this.coreVersion && this.coreVersion !== 'unknown') {
       return this.coreVersion;
     }
+    // B5：force 的本意是「内核可能已换，别信旧缓存」——那就直接问二进制换没换，而不是无条件重 spawn。
+    //   指纹（path|size|mtimeMs）一致 ⟹ 同一个文件 ⟹ 版本不可能变；换核（CoreUpdateService 写盘 / 重播种 /
+    //   路径改指）三者都必然改变指纹 → 未命中 → 照常重探。指纹取不到（stat 失败）→ 不命中，行为同改动前。
+    //   注意：`getCoreVersionLine(true)` **有意不吃这条缓存**——它是换核后「诚实重读活二进制」的验证腿（issue #150），
+    //   缓存会把「重读失败」伪装成「换核成功」。两者语义不同，勿合并。
+    const fingerprint = this.coreBinaryFingerprint();
+    if (
+      force &&
+      fingerprint !== null &&
+      fingerprint === this.coreVersionFingerprint &&
+      this.coreVersion &&
+      this.coreVersion !== 'unknown'
+    ) {
+      return this.coreVersion;
+    }
     try {
       // 版本号恒在第一行（`sing-box version X.Y.Z ...`）；用第一行解析既复用 coreVersionLine 的同一次 spawn，
       // 又避免在全量 stdout 上误匹配后续行（如 Environment 的 `go1.25.10` 含 `1.25.10`）。
@@ -3025,6 +3162,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
           ? secondMatch[1]
           : coreManifest.bundledCoreVersion;
       this.coreVersion = detected; // 写缓存：供后续查询命中 + config 生成 coreVersionAtLeast 复用
+      // B5：指纹只在**探测成功后**写——失败路径不写，下次仍会重探（与既有「不写 unknown 缓存」同一取向）。
+      this.coreVersionFingerprint = fingerprint;
       return detected;
     } catch (error) {
       this.logToManager('error', `获取核心版本失败: ${(error as any).message}`);
@@ -3044,6 +3183,21 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
       .then(() => this.doSpawnCoreVersionFirstLine());
     this.versionProbeChain = run.catch(() => undefined);
     return run;
+  }
+
+  /**
+   * B5：现役核二进制指纹 `path|size|mtimeMs`。用于判「核换没换」——比再 spawn 一次 45MB 二进制便宜四个数量级。
+   * 不用内容 hash：45MB 全量读盘本身就比一次 version spawn 贵，而 size+mtime 已能覆盖全部真实换核路径
+   * （CoreUpdateService 写盘 / 随包重播种 / 路径改指），代价是理论上「同长度且强制保留 mtime 的原地改写」测不出——
+   * FlowZ 没有这样的写侧。stat 失败返 null（调用方按未命中处理）。
+   */
+  private coreBinaryFingerprint(): string | null {
+    try {
+      const st = require('fs').statSync(this.singboxPath);
+      return `${this.singboxPath}|${st.size}|${st.mtimeMs}`;
+    } catch {
+      return null;
+    }
   }
 
   /** 实际 spawn `sing-box version`（不含串行排队）；仅供 spawnCoreVersionFirstLine 经 versionProbeChain 调用。 */
@@ -4482,6 +4636,7 @@ rm -f "$STOPFLAG"
     );
 
     const res = await helper.startCore(this.configPath, startupLogFile, forward);
+    this.markStartLeg(startGen, 'spawn'); // 管道 RPC 往返 + helper 侧 CreateProcess 返回，**不含**核自身初始化
     if (!res.ok || !res.pid) {
       throw new Error(res.error || 'helper 启动 sing-box 失败');
     }
@@ -4552,16 +4707,29 @@ rm -f "$STOPFLAG"
       : Promise.resolve();
 
     const outcome = await waitForCoreReady(
-      { timeoutMs: ProxyManager.CORE_READY_TIMEOUT_MS, pollMs: ProxyManager.CORE_READY_POLL_MS },
       {
-        isAlive: () => this.isProcessAlive(pid),
+        timeoutMs: ProxyManager.CORE_READY_TIMEOUT_MS,
+        pollMs: ProxyManager.CORE_READY_POLL_MS,
+        alivePollMs: ProxyManager.CORE_READY_ALIVE_POLL_MS,
+      },
+      {
+        // B4：换异步探活——同步版是 execSync，起核窗内每轮阻塞主进程 50–100ms（拖拽/动画可感）。
+        //   判定逻辑与 isProcessAlive 严格一致（见其头注），仅是不再堵 event loop。
+        isAlive: () => this.isProcessAliveAsync(pid),
         isReady: () => this.coreReadyProbe('127.0.0.1', port),
         sleep,
         isSuperseded: () => this.lifecycleGeneration !== startGen,
       }
     ).catch(() => 'timeout' as const);
+    // B0 复审 High：这一格必须在 drain **之前**打。observerDone 要等在途的适配器 probe 回来（PowerShell，
+    //   execFile 4s 封顶）或在途 sleep(1s) 走完——放在 drain 之后，格值恒被摊上 ~1s，与 B4 要省的 300–400ms
+    //   同量级，等于这颗埋点度量不出它被加进来要回答的那个问题（复审推演：两条路径都落在 ~1s）。
+    //   让位腿不打点的不变量靠 `measured` 保住（原先靠「放在 superseded 出口之后」，现在出口在下面）。
+    const measured = outcome !== 'superseded';
+    if (measured) this.markStartLeg(startGen, `coreReady:${outcome}`);
     observing = false; // 停就绪窗观测，等其 drain（在途 sleep 至多 1s；若卡在在途 probe，Get-NetAdapter 的 execFile timeout 4s 封顶）
     await observerDone.catch(() => {});
+    if (measured) this.markStartLeg(startGen, 'observerDrain'); // drain 本身单独一格：它是真实成本，只是不该混进就绪耗时
 
     // issue #176：被接管 → 静默让位，绝不 stopCore（接管方拥有拆核权，避免抢放适配器）。由 start() 包装吞掉。优先于一切。
     if (outcome === 'superseded') {
@@ -4591,6 +4759,8 @@ rm -f "$STOPFLAG"
       if (res.outcome === 'superseded') {
         throw new CoreStartSupersededError();
       }
+      // 同上，放在 superseded 出口之后。三态都记：present 是「多付一次 PS 探测」的成本，absent-timeout 是硬闸耗时。
+      this.markStartLeg(startGen, `tunAdapter:${res.outcome}`);
       if (res.outcome === 'present') {
         recordPresence('present');
         return;
@@ -4920,6 +5090,9 @@ rm -f "$STOPFLAG"
   }
 
   private async startSingBoxProcess(startGen: number): Promise<void> {
+    // B0：进入一条起核腿。产出的 `L<n>.begin` 格 = 上一个标记到本腿开始之间的耗时（第 1 腿≈0，第 2 腿起 = retry 退避）。
+    //   放在方法最顶端 → helper / UAC / osascript 三条支路与每次重试腿都被同一条时间轴覆盖。
+    this.beginStartLeg(startGen);
     // 复位 helper 启动标志：本次启动尚未确定走 helper 还是直起，由实际启动路径置位（startViaHelper 成功置 true，
     //   直起 UAC/osascript 路径保持 false）。修复 issue #159 就绪门控失败、重试腿回退直起时 startedViaHelper 残留 true
     //   → 后续 stop() 误走 helper 停核分支（停不动→回退提权 taskkill/osascript，降级但自愈）。每次启动腿都从干净态判定。
@@ -4943,7 +5116,13 @@ rm -f "$STOPFLAG"
     //   runStartWithRetry 重启腿、以及下方 helper / UAC 两条启动支路都经此门控（不止首次），杜绝重试立刻再撞僵尸适配器。
     const launchCfg = this.currentConfig;
     if (launchCfg && process.platform === 'win32' && launchCfg.proxyModeType === 'tun') {
-      await this.waitForOwnTunAdapterReleased(launchCfg);
+      // B1：首腿吃 startInternal 并行预热的那次探测（多半已跑完 → 这一格 ≈0）；重试腿 pending 为 null → 现场重探
+      //   （残留是当下的事实，重试腿绝不能吃首腿的陈旧结论）。取走即置 null，保证「一次性」。
+      const pending = this.pendingAdapterReleaseGate;
+      this.pendingAdapterReleaseGate = null;
+      await (pending ?? this.waitForOwnTunAdapterReleased(launchCfg));
+      // 首腿 ≈0 说明并行真藏住了；重试腿这一格才是一次 Get-NetAdapter 的净开销（有残留则最坏 8s）。
+      this.markStartLeg(startGen, 'adapterRelease');
     }
 
     // macOS TUN 模式 + helper 就绪 → 走零提权路径（避免每次启停弹 osascript 授权框）。
@@ -6089,11 +6268,15 @@ rm -f "$STOPFLAG"
   private async isProcessAliveAsync(pid: number): Promise<boolean> {
     try {
       if (process.platform === 'win32') {
-        const { stdout } = await healthProbeExecFile(system32('tasklist.exe'), [
-          '/FI',
-          `PID eq ${pid}`,
-          '/NH',
-        ]);
+        // `windowsHide` 与 `timeout` 缺一不可（复审实测：Node 的 execFile 是 `windowsHide: !!options.windowsHide`
+        //   → 缺省 **false**；仓内另 9 处 Windows exec 全部显式传 true）。同步孪生 isProcessAlive 一直带着它，
+        //   本方法漏了——B4 把 Windows 起核路径接到这条腿上之后，射程从「10s 一次健康检查」扩大到「起核期每 500ms」，
+        //   一个原本低频的缺陷变成了正对着本批优化目标的高频闪窗 + 无上限阻塞。
+        const { stdout } = await healthProbeExecFile(
+          system32('tasklist.exe'),
+          ['/FI', `PID eq ${pid}`, '/NH'],
+          { windowsHide: true, timeout: 3000 }
+        );
         const result = String(stdout);
         return !result.includes('No tasks') && result.includes(String(pid));
       } else {
@@ -8023,6 +8206,14 @@ rm -f "$STOPFLAG"
    */
   getLastStartReadyRetries(): number {
     return this.lastStartReadyRetries;
+  }
+
+  /**
+   * B0：最近一次 start 的阶段耗时汇总行（成功/失败/让位都留；从未启动过 → null）。进诊断报告，使「启动慢」
+   * 类报告自带分阶段分布，不必让用户回 app.log 里翻那一行。
+   */
+  getLastStartTimeline(): string | null {
+    return this.lastStartTimeline;
   }
 
   /**

@@ -171,3 +171,170 @@ describe('probeTcpReachable', () => {
     expect(await probeTcpReachable('127.0.0.1', port, 500)).toBe(false);
   });
 });
+
+/**
+ * B4：就绪节拍与探活节拍解耦。把 pollMs 调细（500→50）是为了少空等，但探活是子进程
+ * （Windows `tasklist` ~50-100ms），若跟着细节拍走就是拿一个开销换一个更大的开销。
+ */
+describe('waitForCoreReady — alivePollMs 双节拍（B4）', () => {
+  /** 第 n 次调用才 ready 的桩（n 从 1 计）。 */
+  function readyAt(n: number): { isReady: () => Promise<boolean>; calls: () => number } {
+    let c = 0;
+    return {
+      isReady: async () => ++c >= n,
+      calls: () => c,
+    };
+  }
+
+  it('缺省 alivePollMs = pollMs → 每轮探活（改动前行为逐字保持）', async () => {
+    let aliveCalls = 0;
+    const ready = readyAt(4);
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 500 },
+      {
+        isAlive: () => {
+          aliveCalls++;
+          return true;
+        },
+        isReady: ready.isReady,
+        sleep: noSleep,
+      }
+    );
+    expect(r).toBe('ready');
+    // 前 3 轮 isReady 假 → 各探活一次；第 4 轮 ready 早退（不探活）
+    expect(aliveCalls).toBe(3);
+  });
+
+  it('alivePollMs=500 / pollMs=50 → 每 10 轮探一次活，且首轮必探（瞬死检出不变差）', async () => {
+    let aliveCalls = 0;
+    const ready = readyAt(21); // 前 20 轮不 ready
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 50, alivePollMs: 500 },
+      {
+        isAlive: () => {
+          aliveCalls++;
+          return true;
+        },
+        isReady: ready.isReady,
+        sleep: noSleep,
+      }
+    );
+    expect(r).toBe('ready');
+    // i=0 与 i=10 两轮探活（i=20 那轮 isReady 已真、早退）——而非 20 次
+    expect(aliveCalls).toBe(2);
+  });
+
+  it('细节拍让就绪检出更快：ready 出现在第 3 轮 → 只 sleep 2 次', async () => {
+    let sleeps = 0;
+    const ready = readyAt(3);
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 50, alivePollMs: 500 },
+      {
+        isAlive: () => true,
+        isReady: ready.isReady,
+        sleep: async () => {
+          sleeps++;
+        },
+      }
+    );
+    expect(r).toBe('ready');
+    expect(sleeps).toBe(2);
+  });
+
+  it('异步 isAlive 被 await：循环内首轮即判 dead，不是耗尽预算后靠末轮兜底', async () => {
+    // 只断言 outcome='dead' 挡不住「忘了 await」——Promise 恒真值 → 循环里永不 dead，但**末轮**那次判定
+    // 仍是 await 的，最终照样返回 dead。故判据必须是「多快判出来」：真 await 时首轮即退，一次 sleep 都没有。
+    let sleeps = 0;
+    const r = await waitForCoreReady(
+      { timeoutMs: 1000, pollMs: 50, alivePollMs: 500 },
+      {
+        isAlive: async () => false,
+        isReady: async () => false,
+        sleep: async () => {
+          sleeps++;
+        },
+      }
+    );
+    expect(r).toBe('dead');
+    expect(sleeps).toBe(0);
+  });
+
+  it('alivePollMs 小于 pollMs 时被夹到 pollMs（不产生「每轮探多次」的荒谬节拍）', async () => {
+    let aliveCalls = 0;
+    const ready = readyAt(3);
+    await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 500, alivePollMs: 10 },
+      {
+        isAlive: () => {
+          aliveCalls++;
+          return true;
+        },
+        isReady: ready.isReady,
+        sleep: noSleep,
+      }
+    );
+    expect(aliveCalls).toBe(2);
+  });
+});
+
+/**
+ * B4 复审 Med：`maxPolls` 只是轮数封顶，`timeoutMs` 必须是**时间**预算。原有 5 条用例全部注入 no-op sleep、
+ * 断言的是轮数与调用次数，破坏墙钟这一维（如把 maxPolls 乘 10）是 0 红。此处用计账式时钟把预算本身立成判据。
+ */
+describe('waitForCoreReady — timeoutMs 是时间预算而非轮数（B4）', () => {
+  /** 计账式时钟：sleep 与探测各自把耗时累加进虚拟时间，`now` 读它。 */
+  function accountant(opts: { probeMs: number }) {
+    let t = 0;
+    return {
+      now: (): number => t,
+      sleep: async (ms: number): Promise<void> => {
+        t += ms;
+      },
+      isReady: async (): Promise<boolean> => {
+        t += opts.probeMs; // 模拟 probeTcpReachable 的真实成本（自带 1000ms 上限）
+        return false;
+      },
+      elapsed: (): number => t,
+    };
+  }
+
+  it('每轮探测远超 pollMs 时，仍在 timeoutMs 附近收口（不按轮数超支）', async () => {
+    // 复审实测的病态场景：connect 打满 1000ms、pollMs=50 → 按轮数会跑到 ~255s
+    const acc = accountant({ probeMs: 1000 });
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 50, alivePollMs: 500 },
+      { isAlive: () => true, isReady: acc.isReady, sleep: acc.sleep, now: acc.now }
+    );
+    expect(r).toBe('timeout');
+    // 变异守卫：去掉 `now() < deadline` 判据 → elapsed 会跑到 ~250s → 红
+    expect(acc.elapsed()).toBeLessThanOrEqual(12000 * 1.2);
+  });
+
+  it('探测很便宜时预算同样成立（不因 deadline 改造而提前收口）', async () => {
+    const acc = accountant({ probeMs: 1 });
+    const r = await waitForCoreReady(
+      { timeoutMs: 12000, pollMs: 50, alivePollMs: 500 },
+      { isAlive: () => true, isReady: acc.isReady, sleep: acc.sleep, now: acc.now }
+    );
+    expect(r).toBe('timeout');
+    expect(acc.elapsed()).toBeGreaterThan(12000 * 0.8);
+    expect(acc.elapsed()).toBeLessThanOrEqual(12000 * 1.2);
+  });
+
+  it('不注入 now 时退化为轮数封顶（既有注入式用例行为不变）', async () => {
+    let polls = 0;
+    const r = await waitForCoreReady(
+      { timeoutMs: 1000, pollMs: 250 },
+      {
+        isAlive: () => true,
+        isReady: async () => {
+          polls++;
+          return false;
+        },
+        sleep: noSleep,
+      }
+    );
+    expect(r).toBe('timeout');
+    expect(polls).toBe(5); // 4 轮 + 末轮补探
+  });
+});

@@ -107,13 +107,21 @@ export type CoreReadyOutcome = 'ready' | 'dead' | 'timeout' | 'superseded';
 
 /** waitForCoreReady 注入依赖（单测可替换为桩）。 */
 export interface CoreReadyDeps {
-  /** 核进程是否存活。 */
-  isAlive: () => boolean;
+  /**
+   * 核进程是否存活。允许返回 Promise（B4）：Windows 上这条腿是 `tasklist` 子进程，同步版会阻塞 event loop，
+   * 起核窗内每轮一次足以让主进程可感卡顿。同步桩（返回 boolean）照常可用——`await` 对非 Promise 是恒等。
+   */
+  isAlive: () => boolean | Promise<boolean>;
   /** 管理 API 是否可连（就绪信号）。 */
   isReady: () => Promise<boolean>;
   sleep: (ms: number) => Promise<void>;
   /** 本次起核是否已被更新的 start/stop 接管（issue #176，可选；缺省视作未接管）。 */
   isSuperseded?: () => boolean;
+  /**
+   * 单调毫秒时钟，缺省 `Date.now`。用于把 timeoutMs 落成**真的时间预算**（见 waitForCoreReady 头注）。
+   * 单测想验预算本身时注入一个跟着 sleep 走的假时钟；不注入则退化为「轮数封顶」的旧行为，既有用例零改动。
+   */
+  now?: () => number;
 }
 
 /**
@@ -122,22 +130,37 @@ export interface CoreReadyDeps {
  * 早退使成功路径仅等到 API 绑定（通常 <1s），不加额外延迟。
  */
 export async function waitForCoreReady(
-  opts: { timeoutMs: number; pollMs: number },
+  opts: { timeoutMs: number; pollMs: number; alivePollMs?: number },
   deps: CoreReadyDeps
 ): Promise<CoreReadyOutcome> {
   const pollMs = Math.max(1, opts.pollMs);
+  // B4：探活与就绪**解耦成两个节拍**。把 pollMs 调细是为了少空等（就绪判据是本地 TCP connect，近乎免费），
+  //   但探活是子进程（Windows `tasklist` ~50-100ms），跟着细节拍走会把 spawn 次数放大同样的倍数——那是拿一个
+  //   开销换另一个更大的开销。故 alivePollMs 单独给：缺省 = pollMs（逐字保持旧行为），调用方按需放宽。
+  //   注：这里**不**对 alivePollMs 做「不得小于 pollMs」的下夹——下一行的 `Math.max(1, …)` 已把 aliveEvery 兜到
+  //   至少 1 轮，任何更小的 alivePollMs 都产生同一结果，夹了也观测不到（复审实测：删掉下夹全量 0 红 = 死代码）。
+  const alivePollMs = opts.alivePollMs ?? pollMs;
+  const aliveEvery = Math.max(1, Math.round(alivePollMs / pollMs)); // 每 N 轮探一次活（下限 1 轮）
   const maxPolls = Math.max(1, Math.ceil(opts.timeoutMs / pollMs));
+  // timeoutMs 必须是**时间**预算，不能只是轮数封顶。`maxPolls` 假设每轮成本 ≈ pollMs，而 isReady 是 TCP connect
+  //   （`probeTcpReachable` 自带 1000ms 上限）、isAlive 是子进程——单轮真实成本可以远超 pollMs。pollMs 越细，
+  //   这个假设错得越离谱：500ms→50ms 使单轮固定开销被摊 24 次变成摊 241 次，connect 打满时实测墙钟从 38.9s
+  //   膨胀到 254.9s（复审实测）。故以单调时钟的 deadline 为主判据，maxPolls 退居为「时钟不前进时」的兜底
+  //   （注入式假 sleep 的单测正是这种情形，故既有用例行为不变）。
+  const now = deps.now ?? Date.now;
+  const deadline = now() + opts.timeoutMs;
   // supersede 先于一切判定：被更新的 start/stop 接管后，本腿继续等就绪/重试毫无意义且有害（抢适配器/撞端口），立即让位。
-  // isReady（异步 TCP）先于 isAlive（execSync 探活，阻塞 event loop）：成功路径（API 早绑）即返回，绝不触发阻塞探活。
+  // isReady（异步 TCP）先于 isAlive（子进程探活）：成功路径（API 早绑）即返回，绝不触发探活。
   // 顺序安全：API 监听随核进程而生灭，端口可连 ⟹ 核存活（端口不会在核死后仍被本核监听）。
-  for (let i = 0; i < maxPolls; i++) {
+  for (let i = 0; i < maxPolls && now() < deadline; i++) {
     if (deps.isSuperseded?.()) return 'superseded';
     if (await deps.isReady()) return 'ready';
-    if (!deps.isAlive()) return 'dead';
+    // i=0 必探（`0 % N === 0`）：核瞬死的检出延迟不因细化就绪节拍而变差。
+    if (i % aliveEvery === 0 && !(await deps.isAlive())) return 'dead';
     await deps.sleep(pollMs);
   }
   if (deps.isSuperseded?.()) return 'superseded';
   if (await deps.isReady()) return 'ready';
-  if (!deps.isAlive()) return 'dead';
+  if (!(await deps.isAlive())) return 'dead';
   return 'timeout';
 }

@@ -198,6 +198,26 @@ describe('buildDiagnosticReport', () => {
     singboxLogTail: '',
   };
 
+  /**
+   * B0：起核阶段耗时汇总行必须真的出现在报告里。整条链路（`DiagnosticService` 喂字段 → 本函数渲染）此前
+   * 零判据——复审实测把渲染块和接线各自删掉都全绿，而「真机跑一次就能从诊断报告读到分阶段分布」正是本批的
+   * 完成标准，全押在这条无门链路上。
+   */
+  it('runtime.lastStartTimeline 必须渲染进报告（B0 完成标准所系）', () => {
+    const line = '起核阶段耗时 total=8421ms outcome=ok | killOrphans=181 L1.coreReady:ready=2311';
+    const md = buildDiagnosticReport({
+      ...base,
+      runtime: { ...base.runtime, lastStartTimeline: line },
+    });
+    // 变异守卫：删掉 diagnostic-redact 里那三行渲染 → 红
+    expect(md).toContain(line);
+  });
+
+  it('未启动过（字段缺席）时不产出空行/占位符', () => {
+    const md = buildDiagnosticReport(base);
+    expect(md).not.toContain('起核阶段耗时');
+  });
+
   it('含核心区块与脱敏 JSON', () => {
     const md = buildDiagnosticReport(base);
     expect(md).toContain('# FlowZ 诊断报告');

@@ -47,6 +47,9 @@ function makeSvc(): any {
   svc.tailscaleApiPort = 9099; // 有管理 API 端口 → 不走 fail-open 早退
   svc.currentConfig = { proxyModeType: 'tun', servers: [], tunConfig: {} };
   svc.helperManager = { stopCore: jest.fn().mockResolvedValue(undefined) };
+  // B4：就绪门的探活腿已从 isProcessAlive（execSync，阻塞 event loop）换成异步版。默认委托到同一个同步桩，
+  //   使各用例既有的 `svc.isProcessAlive = …` 意图逐字保留；个别用例直接改 isProcessAliveAsync 的照旧覆盖本默认。
+  svc.isProcessAliveAsync = async () => svc.isProcessAlive();
   return svc;
 }
 
@@ -930,5 +933,51 @@ describe('issue #324 M-1 — prev 的捕获与复位归属预检方法本身（�
 
     const pick = await svc.startTunAddressPreflight(tunCfg, true);
     expect(pick?.address).toBe('172.31.0.1');
+  });
+});
+
+/**
+ * B4 的全部收益就是三个接线值：就绪节拍 50ms、探活节拍 500ms、探活走异步腿。
+ * 复审实测：这三处在全仓 3786 条测试里**零覆盖**，逐个回退全绿（M1/M2/M3）——门建在了被调函数
+ * （`core-readiness` 纯函数层自己传参）上，没建在生产调用点上，典型「两扇门之间的缝」。
+ */
+describe('B4 接线 — 就绪门必须按这三个值调用（复审 High）', () => {
+  it('waitForCoreReadyOrThrow 传给 waitForCoreReady 的 opts 恒为 {12000, 50, 500}', async () => {
+    const svc = makeSvc();
+    svc.coreReadyProbe = async () => true; // 首轮即就绪，尽快收束
+    const mod = require('../core-readiness');
+    const spy = jest.spyOn(mod, 'waitForCoreReady');
+
+    try {
+      await svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
+      expect(spy).toHaveBeenCalledTimes(1);
+      // 变异守卫：CORE_READY_POLL_MS 回 500 / CORE_READY_ALIVE_POLL_MS 回 50 / 删 alivePollMs → 任一即红
+      expect(spy.mock.calls[0][0]).toEqual({
+        timeoutMs: 12000,
+        pollMs: 50,
+        alivePollMs: 500,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('探活腿必须走异步版 isProcessAliveAsync（同步版会用 execSync 堵住 event loop）', async () => {
+    const svc = makeSvc();
+    const asyncProbe = jest.fn(async () => true);
+    svc.isProcessAliveAsync = asyncProbe;
+    svc.isProcessAlive = jest.fn(() => {
+      throw new Error('就绪门不得触碰同步探活腿');
+    });
+    svc.coreReadyProbe = jest
+      .fn()
+      .mockResolvedValueOnce(false) // 首轮未就绪 → 触发一次探活
+      .mockResolvedValue(true);
+
+    await svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
+
+    // 变异守卫：接线换回 `this.isProcessAlive(pid)` → 同步桩抛错 → 红
+    expect(asyncProbe).toHaveBeenCalled();
+    expect(svc.isProcessAlive).not.toHaveBeenCalled();
   });
 });

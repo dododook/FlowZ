@@ -38,6 +38,9 @@ afterAll(() => {
   }
 });
 
+/** B0 汇总行样本：既做桩返回值，也做报告文本断言的靶。 */
+const TIMELINE_LINE = '起核阶段耗时 total=1234ms outcome=ok | killOrphans=181 startTail=44';
+
 function makeSvc(opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown } = {}): any {
   const configManager: any = { loadConfig: jest.fn().mockResolvedValue({ logLevel: 'info' }) };
   const logManager: any = { flush: jest.fn().mockResolvedValue(undefined) };
@@ -50,6 +53,9 @@ function makeSvc(opts: { startedViaHelper?: boolean; lastDnsFlush?: unknown } = 
     getLastStartReadyRetries: jest.fn().mockReturnValue(0),
     // issue #367：诊断报告读取最近一次 DNS 缓存刷新结果；null=本会话从未触发（多数用例不覆盖该段内容）。
     getLastDnsFlush: jest.fn().mockReturnValue(opts.lastDnsFlush ?? null),
+    // 返回真串而非 null：桩返 null 时渲染分支恒不进入 ⇒ 这个桩**结构上不可能有检出力**，
+    // 删掉 DiagnosticService 里那行接线也照样绿（复审 M10b 实测）。下方 describe 用它钉住接线。
+    getLastStartTimeline: jest.fn().mockReturnValue(TIMELINE_LINE),
   };
   const systemProxyManager: any = { getProxyStatus: jest.fn().mockResolvedValue(null) };
   return new DiagnosticService(configManager, logManager, proxyManager, systemProxyManager) as any;
@@ -182,5 +188,31 @@ describe('DiagnosticService — lastDnsFlush 字段接线', () => {
       return (await svc.buildReport()) as string;
     });
     expect(skippedMd).toContain('已跳过');
+  });
+});
+
+/**
+ * B0 接线：`getLastStartTimeline()` 的返回值必须真的进报告。这条链路的另一半（渲染）由
+ * `src/shared/__tests__/diagnostic-redact.test.ts` 守；此处守 service → 报告这一跳。
+ */
+describe('DiagnosticService — 起核阶段耗时汇总行接线（B0）', () => {
+  it('汇总行出现在报告里', async () => {
+    const md = await withPlatformAsync('linux', async () => {
+      const svc = makeSvc();
+      jest.spyOn(svc, 'readTail').mockResolvedValue('x');
+      return (await svc.buildReport()) as string;
+    });
+    // 变异守卫：删掉 DiagnosticService 里 `lastStartTimeline: …` 那行 → 红
+    expect(md).toContain(TIMELINE_LINE);
+  });
+
+  it('从未启动过（返回 null）→ 报告不出现该段，也不出现占位符', async () => {
+    const md = await withPlatformAsync('linux', async () => {
+      const svc = makeSvc();
+      svc.proxyManager.getLastStartTimeline = jest.fn().mockReturnValue(null);
+      jest.spyOn(svc, 'readTail').mockResolvedValue('x');
+      return (await svc.buildReport()) as string;
+    });
+    expect(md).not.toContain('起核阶段耗时');
   });
 });

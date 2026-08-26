@@ -309,6 +309,7 @@ export interface DiagnosticReportInput {
       context: string; // start | stop | link-change
       ageSec: number;
     };
+    lastStartTimeline?: string; // B0：最近一次起核的分阶段耗时汇总行（`起核阶段耗时 total=… | 阶段=ms …`）
   };
   redactedUserConfig: unknown;
   redactedSingboxConfig: unknown;
@@ -483,6 +484,9 @@ export function buildDiagnosticReport(input: DiagnosticReportInput): string {
     }
   } else {
     lines.push('- 系统 DNS 缓存刷新：本会话从未触发');
+  }
+  if (runtime.lastStartTimeline) {
+    lines.push(`- ${runtime.lastStartTimeline}`);
   }
   lines.push('');
 
