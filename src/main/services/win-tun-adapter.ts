@@ -49,8 +49,16 @@ interface PsProbeResult {
  *   地址空闲 / 网卡不存在 → `ObjectNotFound`（`CmdletizationQuery_NotFound_*`）；CIM 会话不可用 → `ResourceUnavailable`。
  * 故哨兵的发放条件是「零错误，或被吞的错误**全部**是 ObjectNotFound」。
  *
- * 脚本经 `-EncodedCommand`（UTF-16LE base64）传入，消掉命令行层的转义面；PowerShell 语法层仍靠调用方的
- * 单引号转义 + 输入校验（IP 正则 / 网卡名字符集）把关。
+ * 脚本作为**单个 argv 元素**经 `-Command` 传入：`execFile` 不过 shell，argv 边界即转义边界，故命令行层没有
+ * 可注入面；PowerShell 语法层仍靠调用方的单引号转义 + 输入校验（IP 正则 / 网卡名字符集）把关。
+ *
+ * **为什么不是 `-EncodedCommand`**（原实现，2026-08-26 真机实测推翻）：base64 编码的 PowerShell 是恶意脚本的
+ * 典型形态，杀软要在进程创建回调里深扫，于是 `execFile` 的 `CreateProcessW` **同步阻塞主线程**。Windows 11
+ * 26200 实测，同一段脚本只换传参方式（每次插 nonce 保证内容都是冷的，排除按哈希缓存）：
+ *   `-EncodedCommand` 同步段 2298 / 2328 / 2336 / 4729 ms；`-Command` 同步段 8.2 / 8.3 / 8.5 / 9.9 ms。
+ * 这不是延迟而是**主进程冻结**——起核路径上两次探测的同步段合计 ~7.2s，占一次 TUN 冷启（12.1s）的六成，
+ * 期间 UI 完全无响应，且任何「并行预热」都吃不掉它（B1 只兑现 130ms 的真因）。编码传参消掉的那层命令行
+ * 转义面，由「脚本是单个 argv 元素」这条性质等价提供，故换回明文**不放宽任何输入约束**。
  *
  * **stdout 只可用来比对 ASCII**：中文 Windows 的 PowerShell 按 OEM codepage（936）写 stdout，Node execFile
  * 默认按 utf8 解码 → 非 ASCII 输出必成乱码（真机实测：网卡名「以太网」回传即乱码）。本模块的比对对象全是
@@ -70,11 +78,10 @@ function runPsProbe(pipeline: string): Promise<PsProbeResult> {
     `} catch { }`,
     `exit 0`,
   ].join('\n');
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
   return new Promise((resolve) => {
     execFile(
       powershellPath(),
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      ['-NoProfile', '-NonInteractive', '-Command', script],
       { timeout: 4000, windowsHide: true },
       (err, stdout) => {
         if (err) return resolve({ ok: false, lines: [] });

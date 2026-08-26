@@ -315,12 +315,10 @@ function stubExecFile(
   return {
     lastBin: () => lastBin,
     lastOpts: () => lastOpts,
-    // 脚本经 -EncodedCommand（UTF-16LE base64）传入，还原回文本供断言。
+    // 脚本作为单个 argv 元素经 -Command 传入，直接取回供断言。
     lastCommand: () => {
-      const i = lastArgs.indexOf('-EncodedCommand');
-      return i < 0 || i + 1 >= lastArgs.length
-        ? ''
-        : Buffer.from(lastArgs[i + 1], 'base64').toString('utf16le');
+      const i = lastArgs.indexOf('-Command');
+      return i < 0 || i + 1 >= lastArgs.length ? '' : lastArgs[i + 1];
     },
     lastArgs: () => lastArgs,
   };
@@ -409,12 +407,44 @@ describe('PowerShell 探测脚本形态（#324 真机契约）', () => {
     expect(h.lastCommand()).toBe(SCRIPT_ADAPTER);
   });
 
-  it('走 -EncodedCommand 而非 -Command（命令行转义面 + 脚本可含多行/exit）', async () => {
-    // 这条不在脚本文本里，故仍需单独断言 argv 形态。
+  /**
+   * argv 形态门（脚本文本里没有，故单独断言）。
+   *
+   * **判据改写记录（2026-08-26）**：原门断言的是「必须走 `-EncodedCommand`」，理由写的是「命令行转义面 +
+   * 脚本可含多行/exit」。真机实测推翻了它的性价比——`-EncodedCommand` 让 `CreateProcessW` **同步阻塞主线程**
+   * 2.3–4.7s/次（同脚本改 `-Command` 后 8–10ms，见 runPsProbe 头注）。改判据前先核对新旧判据的强弱：
+   *
+   * | 输入 | 旧判据（-EncodedCommand） | 新判据（单 argv 元素 + 校验器） | 差 |
+   * |---|---|---|---|
+   * | `flowz-tun0`（合法） | 正常探测 | 正常探测 | 无 |
+   * | 别名含 `'` | 调用方 `''` 转义后落单引号串 | 同左（转义逻辑未动） | 无 |
+   * | 别名含 `"` / 空格 / 换行 | base64 后不经命令行解析 | `execFile` 不过 shell，仍是**一个** argv 元素，不经命令行解析 | 无 |
+   * | 别名含 PowerShell 语法（`$(...)`） | **不拦**（编码只消命令行层，语法层照旧） | **不拦**（同左） | 无 |
+   * | 非法 IP 字面量 | 校验器早退 unknown，不 spawn | 同左 | 无 |
+   *
+   * 结论：编码传参消掉的只有**命令行层**，而 `execFile`（无 shell）本来就没有那一层——两者对输入的约束
+   * 逐格相同，故换传参方式**不放宽任何东西**。下面三条把「逐格相同」落成门。
+   */
+  it('脚本以单个 argv 元素经 -Command 传入（argv 边界即转义边界）', async () => {
     const h = stubExecFile(null, okStdout());
     await probeWinIpv4AddressUsage('172.19.0.1');
-    expect(h.lastArgs()).toContain('-EncodedCommand');
-    expect(h.lastArgs()).not.toContain('-Command');
+    // 变异守卫：若脚本被按行/按空格拆成多个参数，argv 长度会变，且 PowerShell 会按命令行规则重新解析它们。
+    expect(h.lastArgs()).toEqual(['-NoProfile', '-NonInteractive', '-Command', SCRIPT_IP_PLAIN]);
+  });
+
+  it('不得回退 -EncodedCommand（真机实测：每次 2.3–4.7s 主进程同步冻结）', async () => {
+    // 这条守的是**性能**性质，单测测不出耗时，故按传参形态钉。数据与理由见 runPsProbe 头注。
+    const h = stubExecFile(null, okStdout());
+    await probeWinIpv4AddressUsage('172.19.0.1');
+    expect(h.lastArgs()).not.toContain('-EncodedCommand');
+  });
+
+  it('恶意别名：引号被转义、其余字符原样落在单引号串内，且 argv 仍是一个元素', async () => {
+    const h = stubExecFile(null, okStdout());
+    // 同时含单引号、双引号、空格、换行——覆盖上表「别名含 `"` / 空格 / 换行」与「含 `'`」两行。
+    await probeWinTunAdapterPresence('a\'b"c d\ne');
+    expect(h.lastArgs()).toHaveLength(4);
+    expect(h.lastCommand()).toContain(`Get-NetAdapter -Name 'a''b"c d\ne'`);
   });
 
   it('spawn 的是 powershellPath() 的绝对路径，且带 timeout / windowsHide', async () => {
