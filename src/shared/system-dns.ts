@@ -15,6 +15,12 @@ export interface SystemDnsMarker {
   controlledIp: string;
   original: Record<string, string[]>;
   at: number;
+  /**
+   * Linux 专用：接管时 TUN 链路的 IPv4 地址。**跨会话还原必须靠它**——marker 只记接口名的话，
+   * 崩溃后新实例拿不到地址，还原就会退化成「按名字 revert tun0」，而那个名字此刻可能属于 OpenVPN。
+   * 旧 marker 无此字段 → 读为 undefined → Linux 侧按「无法核验身份」处理（只清 marker，不动系统）。
+   */
+  tunInet4Address?: string;
 }
 
 /** 受控 DNS IP（封装常量，便于单测护栏断言其不在 bootstrap-direct 列表）。 */
@@ -172,4 +178,93 @@ export function computeOriginalToSave(
     out[svc] = isOurs ? (existingMarkerOriginal[svc] ?? []) : ips;
   }
   return out;
+}
+
+// ─── Linux / systemd-resolved（P2：Linux 侧真正接管链路 DNS）────────────────────────────────
+
+/** `resolvectl dns` / `resolvectl domain` 的单行形态：`Link 5 (tun0): 8.8.8.8 1.1.1.1`（冒号后可为空）。 */
+const RESOLVECTL_LINK_LINE = /^Link\s+(\d+)\s+\(([^)]+)\):\s*(.*)$/;
+
+/** 一条链路的 resolvectl 记录。 */
+export interface ResolvectlLink {
+  ifindex: number;
+  name: string;
+  /** 冒号后的值按空白切分（DNS 场景是 IP 列表，domain 场景是域名列表）；无值 → []。 */
+  values: string[];
+}
+
+/**
+ * 解析 `resolvectl dns` / `resolvectl domain` 的输出（全量或单链路皆可）。
+ * `Global:` 行不产出条目——全局配置不是任何一条链路的属性，混进来会让「按接口取原始值」错位。
+ */
+export function parseResolvectlLinks(stdout: string): ResolvectlLink[] {
+  const out: ResolvectlLink[] = [];
+  for (const raw of stdout.split('\n')) {
+    const m = RESOLVECTL_LINK_LINE.exec(raw.trim());
+    if (!m) continue;
+    out.push({
+      ifindex: Number(m[1]),
+      name: m[2],
+      values: m[3].split(/\s+/).filter(Boolean),
+    });
+  }
+  return out;
+}
+
+/** 取某条链路的值（找不到 → []，与「该链路无显式配置」同解——两者对接管决策等价）。 */
+export function resolvectlLinkValues(stdout: string, iface: string): string[] {
+  return parseResolvectlLinks(stdout).find((l) => l.name === iface)?.values ?? [];
+}
+
+/**
+ * 从 `os.networkInterfaces()` 里按**地址**认出 FlowZ 自己的 TUN 接口。
+ *
+ * 不按名字认（`tun0` / `utun*`）：Linux 上 `tun0` 可能属于 OpenVPN、WireGuard 或另一个代理客户端，
+ * 认错就是把别人的链路 DNS 改掉——这是不可接受的越权，而按地址认是唯一的确定判据（该地址由 FlowZ
+ * 自己下发给内核）。地址缺省/找不到 → null，调用方 fail-closed 不接管。
+ *
+ * @param ifaces `os.networkInterfaces()` 的返回值
+ * @param inet4Address TUN 的 IPv4 地址，允许带 CIDR 后缀（`172.19.0.1/16` 与 `172.19.0.1` 同解）
+ */
+export function pickTunInterfaceByAddress(
+  ifaces: Record<string, { address: string; family: string; internal: boolean }[] | undefined>,
+  inet4Address: string | null | undefined
+): string | null {
+  if (!inet4Address) return null;
+  const want = inet4Address.split('/')[0].trim();
+  if (!want) return null;
+  const hits: string[] = [];
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    if (!addrs) continue;
+    for (const a of addrs) {
+      if (a.internal) continue;
+      if (a.family === 'IPv4' && a.address === want) {
+        hits.push(name);
+        break;
+      }
+    }
+  }
+  // 多个接口同址 → 无法确定哪个是自己的（Linux 内核允许同址；另一个 sing-box 系客户端用同一默认网段就会撞）。
+  // 此时 fail-closed：宁可不接管，也不能把 DNS 打到别人的链路上。
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/** `resolvectl dns <iface> <ip...>`。ips 为空 → 调用方应改用 revert，不要下发空 dns。 */
+export function resolvectlDnsArgs(iface: string, ips: string[]): string[] {
+  return ['dns', iface, ...ips];
+}
+
+/**
+ * `resolvectl domain <iface> ~.`：把该链路设为**全域路由域**。
+ *
+ * 没有它，接管只完成一半：resolved 按域名把查询分派到各链路的 scope，未匹配任何搜索域的查询仍会走
+ * 原来的链路及其上游。设 `~.` 后所有查询优先走本链路 → 目的地是受控 IP → 经 TUN 被 hijack。
+ */
+export function resolvectlDomainArgs(iface: string): string[] {
+  return ['domain', iface, '~.'];
+}
+
+/** `resolvectl revert <iface>`：清掉本链路上的一切人工配置，回到系统（DHCP/NetworkManager）下发值。 */
+export function resolvectlRevertArgs(iface: string): string[] {
+  return ['revert', iface];
 }

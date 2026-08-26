@@ -45,6 +45,8 @@ import { Srow, Swt, Collapse } from './conduit-controls';
 
 const isMac = window.electron?.platform === 'darwin';
 const isWin = window.electron?.platform === 'win32';
+// Linux 现在也真接管系统 DNS（经 systemd-resolved 把 TUN 链路设为全域 DNS 出口），故接管开关的说明文案
+// 必须分出 Linux 分支——这个开关的授权语义就来自它旁边那段说明，写「不改动系统 DNS」却改了是对用户的违约。
 const isLinux = window.electron?.platform === 'linux';
 
 const platform = window.electron?.platform ?? 'linux';
@@ -465,7 +467,9 @@ export function NetworkSettings() {
                   content={t(
                     isMac
                       ? 'settings.advanced.takeoverSystemDnsDescFull'
-                      : 'settings.advanced.takeoverSystemDnsDescFullOther'
+                      : isLinux
+                        ? 'settings.advanced.takeoverSystemDnsDescFullLinux'
+                        : 'settings.advanced.takeoverSystemDnsDescFullOther'
                   )}
                 />
               </>
@@ -473,7 +477,9 @@ export function NetworkSettings() {
             desc={t(
               isMac
                 ? 'settings.advanced.takeoverSystemDnsDesc'
-                : 'settings.advanced.takeoverSystemDnsDescOther'
+                : isLinux
+                  ? 'settings.advanced.takeoverSystemDnsDescLinux'
+                  : 'settings.advanced.takeoverSystemDnsDescOther'
             )}
           >
             <Swt

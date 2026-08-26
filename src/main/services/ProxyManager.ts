@@ -1162,7 +1162,11 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     // best-effort：setDns 内部失败仅告警 + 回滚，绝不抛、不阻断 TUN 启动。
     try {
       if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
-        await this.systemDnsManager?.setDns();
+        // 地址取真值三元组的前两项（与下发给核的 builder 同源）：用户显式配置最高优先，其次冲突预检选出的
+        // 地址。只传 effective 的话，用户显式配置时 preflight 早退 → effective 恒 null → Linux 永不接管。
+        await this.systemDnsManager?.setDns({
+          tunInet4Address: config.tunConfig?.inet4Address ?? this.effectiveTunInet4Address,
+        });
       } else {
         // 非 TUN / 用户关掉接管开关 → 还原可能残留的受控 DNS（覆盖 TUN→其它模式切换、开→关切换）。
         await this.ensureSystemDnsRestored();
