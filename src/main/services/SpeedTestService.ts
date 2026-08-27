@@ -907,7 +907,9 @@ export class SpeedTestService {
       outbounds,
       route: {
         rules: routeRules,
-        auto_detect_interface: true,
+        // 独立测速核没有 TUN inbound，不存在 outbound 回灌自身的问题。关闭接口自动绑定，让 OS
+        // 正确遵循 OpenVPN/EasyConnect 等通过更具体路由（macOS 常见 0/1 + 128/1）选出的出口。
+        auto_detect_interface: false,
         default_domain_resolver: 'dns-direct',
       },
     };

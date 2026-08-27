@@ -74,6 +74,37 @@ const meshRule = (rc: any, tag: string): any =>
     (r: any) => r.outbound === tag && r.action === 'route' && Array.isArray(r.ip_cidr)
   );
 
+describe('buildRouteConfig — 出口接口自动检测', () => {
+  it.each([
+    ['tun', true],
+    ['systemProxy', false],
+    ['manual', false],
+  ] as const)('%s 模式 → auto_detect_interface=%s', (proxyModeType, expected) => {
+    const rc = buildRouteConfig(cfg([], { proxyModeType }), new Map(), deps([]));
+    expect(rc.auto_detect_interface).toBe(expected);
+  });
+
+  it('macOS TUN 已解析实际上游时改用 default_interface，且两种绑定方式不同时开启', () => {
+    const rc = buildRouteConfig(
+      cfg([], { proxyModeType: 'tun' }),
+      new Map(),
+      deps([], { defaultInterface: 'utun4' })
+    );
+    expect(rc.auto_detect_interface).toBe(false);
+    expect(rc.default_interface).toBe('utun4');
+  });
+
+  it('非 TUN 不接受 default_interface，继续服从系统逐目标路由', () => {
+    const rc = buildRouteConfig(
+      cfg([], { proxyModeType: 'systemProxy' }),
+      new Map(),
+      deps([], { defaultInterface: 'utun4' })
+    );
+    expect(rc.auto_detect_interface).toBe(false);
+    expect(rc.default_interface).toBeUndefined();
+  });
+});
+
 describe('buildRouteConfig — D-direct 组网 force-route', () => {
   const node = wgNode('w1', 'WG', ['10.8.0.0/24']);
 
