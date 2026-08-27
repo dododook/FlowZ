@@ -23,13 +23,21 @@ interface ProcessPickerDialogProps {
   onOpenChange: (open: boolean) => void;
   /** 'name' → 取进程名；'path' → 取进程完整路径（无路径项禁选） */
   mode: 'name' | 'path';
+  /** 当前条件中已保存的值；重新打开选择器时应保持勾选，包含当前未运行/未展示的进程。 */
+  initialSelected: string[];
   onAdd: (values: string[]) => void;
 }
 
 // 系统进程路径启发式（隐藏系统进程开关用）
 const SYSTEM_PATH_RE = /^(\/usr\/|\/System\/|\/sbin\/|\/bin\/|[A-Za-z]:\\Windows\\)/i;
 
-export function ProcessPickerDialog({ open, onOpenChange, mode, onAdd }: ProcessPickerDialogProps) {
+export function ProcessPickerDialog({
+  open,
+  onOpenChange,
+  mode,
+  initialSelected,
+  onAdd,
+}: ProcessPickerDialogProps) {
   const { t } = useTranslation();
   const [processes, setProcesses] = useState<SystemProcessInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,11 +61,14 @@ export function ProcessPickerDialog({ open, onOpenChange, mode, onAdd }: Process
 
   useEffect(() => {
     if (open) {
-      setSelected(new Set());
+      // 选择器是当前条件值的可视化编辑器，不是一次性的「追加器」。以已保存值初始化，才能在编辑规则时
+      // 正确回显；未运行/被隐藏的进程虽然不在列表中，仍留在 Set，确认时不会被意外丢弃。
+      setSelected(new Set(initialSelected));
       setSearch('');
       void load();
     }
-  }, [open]);
+    // 只在弹窗开启或选择模式变化时建立一次编辑快照；父表单的普通重渲染不能覆盖用户正在勾选的状态。
+  }, [open, mode]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

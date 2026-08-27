@@ -132,15 +132,9 @@ export function AddCustomAppDialog({
     }
   };
 
-  // 「选择进程」复用规则页 ProcessPickerDialog（一键拉运行进程 + 搜索 + 多选 + 系统进程过滤），勾选回填。
-  // 合并进现有逗号串（去重、去空），保留手输作兜底（进程未运行时仍可手加）。
+  // ProcessPickerDialog 返回包含初始值在内的完整勾选集合；按集合回写，既保留未运行的手输项，也支持取消旧选择。
   const handlePickProcesses = (names: string[]) => {
-    const existing = newAppProcessNames
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const merged = Array.from(new Set([...existing, ...names]));
-    setNewAppProcessNames(merged.join(', '));
+    setNewAppProcessNames(Array.from(new Set(names)).join(', '));
   };
 
   const handleAddCustomApp = async () => {
@@ -439,6 +433,10 @@ export function AddCustomAppDialog({
           open={processPickerOpen}
           onOpenChange={setProcessPickerOpen}
           mode="name"
+          initialSelected={newAppProcessNames
+            .split(',')
+            .map((name) => name.trim())
+            .filter(Boolean)}
           onAdd={handlePickProcesses}
         />
       </DialogContent>
