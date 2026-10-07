@@ -76,6 +76,8 @@ export interface ISystemDnsManager {
    * 必须在 setDns 改写系统 DNS 之前读（此刻生效解析器仍是 LAN）。只读、无副作用。
    */
   getLanResolverForDns(): Promise<string | null>;
+  /** 读当前系统所有活动网卡上配置的全部生效 DNS 解析器（含公网与私网 IPv4）。 */
+  getEffectiveResolvers(): Promise<string[]>;
   /** 注入日志 sink。 */
   setLogManager(lm: LogManager): void;
 }
@@ -193,6 +195,15 @@ export abstract class SystemDnsBase implements ISystemDnsManager {
       return pickLanResolverIp(candidates, this.controlledIp);
     } catch {
       return null;
+    }
+  }
+
+  async getEffectiveResolvers(): Promise<string[]> {
+    try {
+      const marker = SystemDnsBase.readMarker();
+      return marker ? Object.values(marker.original).flat() : await this.readEffectiveResolvers();
+    } catch {
+      return [];
     }
   }
 
@@ -510,14 +521,15 @@ export class WindowsSystemDns extends SystemDnsBase {
     //   的解析器——那是行为变化，不是性能优化，故 Promise.all 后按 ifaces 原序合并。
     const ifaces = await this.listTargets();
     const perIface = await Promise.all(
-      ifaces.map((iface) =>
-        execFileAsync(
-          this.netshExe,
-          ['interface', 'ipv4', 'show', 'dnsservers', `name=${iface}`],
-          { timeout: DNS_CMD_TIMEOUT_MS }
-        )
-          .then(({ stdout }) => extractIpv4s(String(stdout)))
-          .catch((): string[] => []) // 单接口读失败跳过
+      ifaces.map(
+        (iface) =>
+          execFileAsync(
+            this.netshExe,
+            ['interface', 'ipv4', 'show', 'dnsservers', `name=${iface}`],
+            { timeout: DNS_CMD_TIMEOUT_MS }
+          )
+            .then(({ stdout }) => extractIpv4s(String(stdout)))
+            .catch((): string[] => []) // 单接口读失败跳过
       )
     );
     const all: string[] = [];
@@ -918,6 +930,10 @@ export class LinuxSystemDns extends SystemDnsBase {
    */
   async getLanResolverForDns(): Promise<string | null> {
     return pickLanResolverIp(await this.readEffectiveResolvers(), this.controlledIp);
+  }
+
+  async getEffectiveResolvers(): Promise<string[]> {
+    return this.readEffectiveResolvers();
   }
 }
 

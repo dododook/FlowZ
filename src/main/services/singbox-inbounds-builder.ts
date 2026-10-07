@@ -40,6 +40,8 @@ export interface InboundsDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
   updateInPort: number | null;
+  /** 动态探测到的系统/活动网卡实际分配的生效 DNS 解析器列表（由 SystemDnsManager.getEffectiveResolvers 提供）。 */
+  effectiveResolvers?: string[];
   /** §15 主核测速探测池：K 个 probe-in-k http 入站的端口（allocateProbePorts 3+K 产出）。空/缺省=不注入池。 */
   probePoolPorts?: number[];
   /** 可选日志回调（记「连入来源排除」的 mesh/fakeip/物理 LAN 剔除告警）。缺省（单测）不记。 */
@@ -261,6 +263,13 @@ export function buildInbounds(
         ...dedupe([...BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP]).map((ip) => `${ip}/32`),
         '120.226.74.152/31'
       );
+      // 动态排除系统各网卡实际分配生效的上游 DNS（防未知上游公网/私网 DNS 回流死锁）
+      if (deps.effectiveResolvers && deps.effectiveResolvers.length > 0) {
+        for (const rIp of deps.effectiveResolvers) {
+          const cidr = hostToExcludeCidr(rIp);
+          if (cidr) excludeAddr.push(cidr);
+        }
+      }
       // 用户自定义的国内 DNS（IP 型）一并排除，防 WFP 进程匹配失效时回流死循环
       const customDns = getCustomDomesticDnsEndpoint(config);
       if (customDns) {

@@ -347,6 +347,8 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   // 供 generateDnsConfig 把内网/captive 域名重定向到它（takeover 后 dns-local=公网解不了内网）+ rule C 直连放行防环。
   // null=无可用 LAN 解析器（非 TUN/关/DHCP 读不到/仅公网）→ 退回 dns-local。每次 start 入口重置重读。
   private lanResolverForDns: string | null = null;
+  /** 动态读到的当前各活动物理网卡系统 DNS 列表（供 Windows TUN 排除）。 */
+  private effectiveResolversForTun: string[] = [];
   // issue #147：本地节点域名 race DNS server（多上游并发 race）+ 其监听端口。start 路径（race on）起；
   // raceServerPort>0 = race 就绪 → getNodeResolverTag on→dns-node-race + buildDnsConfig 生成该 server；
   // =0（off / 起失败 / snapshot/preflight/未启动路径）→ 降级单上游（生成物逐字节回现状，快照零变化）。
@@ -1058,14 +1060,21 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     //     重定向到它(takeover 把系统 DNS 改公网 8.8.8.8 后 dns-local 解不了内网/可能环)。必须在 generateSingBoxConfig
     //     之前读(此刻系统 DNS 尚未被 setDns 改写,scutil/netsh 反映的仍是 LAN 解析器)。无可用→null→退回 dns-local。
     this.lanResolverForDns = null;
-    if (config.proxyModeType === 'tun' && config.dnsConfig?.takeoverSystemDns !== false) {
-      this.lanResolverForDns =
-        (await this.systemDnsManager?.getLanResolverForDns().catch(() => null)) ?? null;
-      if (this.lanResolverForDns) {
-        this.logToManager(
-          'info',
-          `DNS 接管：内网/captive 域名将经原 LAN 解析器 ${this.lanResolverForDns} 解析`
-        );
+    this.effectiveResolversForTun = [];
+    if (config.proxyModeType === 'tun') {
+      if (this.systemDnsManager) {
+        this.effectiveResolversForTun =
+          (await this.systemDnsManager.getEffectiveResolvers().catch(() => [])) ?? [];
+      }
+      if (config.dnsConfig?.takeoverSystemDns !== false) {
+        this.lanResolverForDns =
+          (await this.systemDnsManager?.getLanResolverForDns().catch(() => null)) ?? null;
+        if (this.lanResolverForDns) {
+          this.logToManager(
+            'info',
+            `DNS 接管：内网/captive 域名将经原 LAN 解析器 ${this.lanResolverForDns} 解析`
+          );
+        }
       }
     }
     this.markStart('lanResolver'); // 含 3.7.1 的 tailscale state 属主归一（同步 fs）+ scutil/netsh 读解析器
@@ -3816,6 +3825,7 @@ done
         probeDirectPort: this.probeDirectPort,
         probeProxyPort: this.probeProxyPort,
         updateInPort: this.updateInPort,
+        effectiveResolvers: this.effectiveResolversForTun,
         // §15 主核测速探测池：注入 K 个 probe-in-k http 入站。空=不注入。
         probePoolPorts: this.probePoolPorts,
         log: (level, message) => this.logToManager(level, message),

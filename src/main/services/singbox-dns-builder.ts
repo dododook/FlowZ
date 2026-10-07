@@ -357,8 +357,16 @@ export function buildDnsConfig(
     } as SingBoxDnsRule);
   }
 
-  // 处理基础 DNS 服务的地址解析，确保它们走引导解析器（含用户自定义的 DoH 域名）
-  const bootstrapDomains = ['doh.pub', 'dns.google', 'cloudflare-dns.com', 'one.one.one.one'];
+  // 处理基础 DNS 服务的地址解析，确保它们走引导解析器（含用户自定义的 DoH 域名与公共 DoH 服务泛域名）
+  const bootstrapDomains = [
+    'doh.pub',
+    'dnspod.cn',
+    'alidns.com',
+    'alidns.net',
+    'dns.google',
+    'cloudflare-dns.com',
+    'one.one.one.one',
+  ];
   if (domestic.isDomain) bootstrapDomains.push(domestic.server);
   if (foreign.isDomain) bootstrapDomains.push(foreign.server);
   const dedupedBootstrap = dedupe(bootstrapDomains);

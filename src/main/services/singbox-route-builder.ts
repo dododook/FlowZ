@@ -221,6 +221,14 @@ export function buildRouteConfig(
     });
   }
 
+  // 0. 回环硬熔断：来自 tun-in 且进程识别为 sing-box 自身的流量属于异常回流，
+  // 坚决直接丢弃/拒绝，避免由于 Windows 未排除特定 IP 导致重新 route(direct) 无限自旋风暴。
+  rules.push({
+    inbound: ['tun-in'],
+    process_name: ['sing-box', 'sing-box.exe'],
+    action: 'reject',
+  });
+
   // 1. 强制放行 sing-box 核心进程：防止流量回流死循环
   // 必须放在最高优先级，确保核心组件的请求能直连物理网卡
   // 注意：不要把 FlowZ (主进程) 放在直连里，否则会干扰 FlowZ 自身的 GitHub 核心下载和测速。
@@ -728,7 +736,7 @@ export function buildRouteConfig(
   });
 
   rules.push({
-    domain_suffix: ['doh.pub', 'myip.ipip.net'],
+    domain_suffix: ['doh.pub', 'dnspod.cn', 'alidns.com', 'alidns.net', 'ipip.net'],
     action: 'route',
     outbound: 'direct',
   });
