@@ -19,6 +19,8 @@ import {
 } from '../os-dns-flush';
 import type { OsDnsFlushFailureReason } from '../os-dns-flush';
 
+import { system32, powershellPath } from '../../utils/win-system32';
+
 describe('flushOsDnsCache', () => {
   it('darwin：helper flush-dns 成功 → 不降级（exec 不被调用）', async () => {
     const exec = jest.fn();
@@ -71,8 +73,31 @@ describe('flushOsDnsCache', () => {
     const exec = jest.fn().mockResolvedValue(undefined);
     const helper = jest.fn();
     await flushOsDnsCache({ platform: 'win32', exec, helperFlushDns: helper });
-    expect(exec).toHaveBeenCalledWith('ipconfig', ['/flushdns'], expect.any(Number));
+    expect(exec).toHaveBeenCalledWith(system32('ipconfig.exe'), ['/flushdns'], expect.any(Number));
     expect(helper).not.toHaveBeenCalled();
+  });
+
+  it('win32：ipconfig 失败时 fallback 到 PowerShell Clear-DnsClientCache', async () => {
+    const exec = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('requires elevation'))
+      .mockResolvedValueOnce(undefined);
+    const log = jest.fn();
+    const r = await flushOsDnsCache({ platform: 'win32', exec, log });
+    expect(exec).toHaveBeenNthCalledWith(
+      1,
+      system32('ipconfig.exe'),
+      ['/flushdns'],
+      expect.any(Number)
+    );
+    expect(exec).toHaveBeenNthCalledWith(
+      2,
+      powershellPath(),
+      ['-NoProfile', '-NonInteractive', '-Command', 'Clear-DnsClientCache'],
+      expect.any(Number)
+    );
+    expect(r.ok).toBe(true);
+    expect(r.detail).toContain('PowerShell fallback');
   });
 
   it('linux：resolvectl flush-caches', async () => {

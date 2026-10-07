@@ -226,6 +226,7 @@ export function buildRouteConfig(
   // 注意：不要把 FlowZ (主进程) 放在直连里，否则会干扰 FlowZ 自身的 GitHub 核心下载和测速。
   rules.push({
     process_name: ['sing-box', 'sing-box.exe'],
+    process_path: ['sing-box', 'sing-box.exe'],
     action: 'route',
     outbound: 'direct',
   });
@@ -727,7 +728,7 @@ export function buildRouteConfig(
   });
 
   rules.push({
-    domain_suffix: ['doh.pub'],
+    domain_suffix: ['doh.pub', 'myip.ipip.net'],
     action: 'route',
     outbound: 'direct',
   });

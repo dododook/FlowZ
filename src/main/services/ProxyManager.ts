@@ -7456,7 +7456,7 @@ rm -f "$STOPFLAG"
     // 预期噪音（含 ERROR）→ debug：naive 的 UDP-not-supported、出口IP探针连接瞬态关闭。
     if (
       /router: UDP is not supported by outbound/i.test(message) ||
-      /inbound\/http\[probe-(direct|proxy)-in\][\s\S]*use of closed network connection/i.test(
+      /inbound\/http\[probe-(direct|proxy)-in\][\s\S]*(use of closed network connection|read\/write on closed pipe|EOF)/i.test(
         message
       )
     ) {

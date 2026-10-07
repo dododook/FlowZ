@@ -99,7 +99,7 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
         reject(new Error('helper pipe 超时'));
       }, timeoutMs);
       sock.on('connect', () => {
-        sock.end([this.token(), ...rest].join('\n') + '\n');
+        sock.write([this.token(), ...rest].join('\n') + '\n');
       });
       sock.on('data', (d) => {
         buf += d.toString();
@@ -207,13 +207,25 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
   ): Promise<HelperStartResult> {
     try {
       await this.sendCommand(['stop'], 3000).catch(() => '');
-      const resp = await this.sendCommand(
-        ['start', configPath, logPath || '', forward ? '1' : '0', String(process.pid)],
-        8000
-      );
-      const m = resp.match(/^OK (?:started|already) (\d+)/);
-      if (m) return { ok: true, pid: parseInt(m[1], 10) };
-      return { ok: false, error: resp || 'helper 无响应' };
+      // 管道实例生命周期抖动缓冲：给服务侧断开并重新排队 ConnectNamedPipe 留出短延时
+      await new Promise((r) => setTimeout(r, 60));
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 100));
+        try {
+          const resp = await this.sendCommand(
+            ['start', configPath, logPath || '', forward ? '1' : '0', String(process.pid)],
+            8000
+          );
+          const m = resp.match(/^OK (?:started|already) (\d+)/);
+          if (m) return { ok: true, pid: parseInt(m[1], 10) };
+          if (resp && resp.startsWith('ERR')) {
+            return { ok: false, error: resp };
+          }
+        } catch {
+          /* 瞬态管道重连异常，在循环内重试 */
+        }
+      }
+      return { ok: false, error: 'helper 无响应' };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
