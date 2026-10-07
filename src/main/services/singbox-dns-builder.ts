@@ -372,7 +372,7 @@ export function buildDnsConfig(
   const dedupedBootstrap = dedupe(bootstrapDomains);
   dnsRules.push({
     domain: dedupedBootstrap,
-    domain_suffix: dedupedBootstrap.flatMap((d) => [d, `.${d}`]),
+    domain_suffix: dedupedBootstrap,
     // 根治 §3.6：DoH server 自身域名解析统一用 dns-bootstrap（IP-DoH 抗 UDP53 劫持），删原 dns-bootstrap-udp 历史残留
     // （明文 UDP53，违背同段「引入 IP-DoH 避免 UDP53」自定设计；删前全仓库唯一消费点即此）。
     server: 'dns-bootstrap',
@@ -829,16 +829,6 @@ export function buildDnsConfig(
       disable_cache: true,
     } as SingBoxDnsRule);
   }
-
-  // probe-direct-in（本地直连出口探测）键控 DNS 规则：直连探针流量恒走 dns-bootstrap 解析，
-  // 确保解析为真实国内 IP，不受 FakeIP 或全局/分流规则干扰。
-  dnsRules.unshift({
-    inbound: ['probe-direct-in'],
-    query_type: ['A', 'AAAA'],
-    action: 'route',
-    server: 'dns-bootstrap',
-    disable_cache: true,
-  } as SingBoxDnsRule);
 
   dnsConfig.rules = dnsRules;
   return dnsConfig;

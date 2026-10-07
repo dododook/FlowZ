@@ -19,6 +19,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -411,6 +423,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -424,6 +446,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -611,6 +635,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -679,6 +707,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -1038,6 +1078,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -1051,6 +1101,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -1223,6 +1275,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -1282,6 +1338,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -1644,6 +1712,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -1657,6 +1735,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -1830,6 +1910,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -1889,6 +1973,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -2082,6 +2178,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "223.5.5.5/32",
           "223.6.6.6/32",
           "1.12.12.12/32",
+          "120.53.53.53/32",
+          "1.12.34.56/32",
           "119.29.29.29/32",
           "119.28.28.28/32",
           "114.114.114.114/32",
@@ -2282,6 +2380,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -2295,6 +2403,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -2467,6 +2577,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -2526,6 +2640,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -2872,6 +2998,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -2885,6 +3021,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -3059,6 +3197,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -3118,6 +3260,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -3457,6 +3611,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -3470,6 +3634,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -3642,6 +3808,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -3702,6 +3872,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -3992,6 +4174,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -4005,6 +4197,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -4177,6 +4371,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -4237,6 +4435,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -4539,6 +4749,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -4552,6 +4772,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -4724,6 +4946,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -4779,6 +5005,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -5069,6 +5307,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -5082,6 +5330,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -5254,6 +5504,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -5313,6 +5567,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -5691,6 +5957,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -5704,6 +5980,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -5876,6 +6154,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -5935,6 +6217,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -6302,6 +6596,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -6315,6 +6619,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -6487,6 +6793,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -6546,6 +6856,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -6739,6 +7061,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "223.5.5.5/32",
           "223.6.6.6/32",
           "1.12.12.12/32",
+          "120.53.53.53/32",
+          "1.12.34.56/32",
           "119.29.29.29/32",
           "119.28.28.28/32",
           "114.114.114.114/32",
@@ -6946,6 +7270,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -6959,6 +7293,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -7131,6 +7467,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -7190,6 +7530,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -7554,6 +7906,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -7567,6 +7929,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -7739,6 +8103,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -7798,6 +8166,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -8156,6 +8536,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -8169,6 +8559,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -8360,6 +8752,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -8460,6 +8856,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -8808,6 +9216,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -8821,6 +9239,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -8969,6 +9389,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -9028,6 +9452,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -9376,6 +9812,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -9389,6 +9835,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -9561,6 +10009,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -9620,6 +10072,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -9960,6 +10424,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -9973,6 +10447,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -10145,6 +10621,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -10177,6 +10657,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -10530,6 +11022,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -10543,6 +11045,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -10715,6 +11219,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -10777,6 +11285,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -11130,6 +11650,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -11143,6 +11673,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -11317,6 +11849,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -11388,6 +11924,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -11770,6 +12318,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "outbound": "proxy-selector",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -11783,6 +12341,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -11955,6 +12515,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -12014,6 +12578,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -12372,6 +12948,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -12385,6 +12971,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -12564,6 +13152,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -12628,6 +13220,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -12986,6 +13590,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -12999,6 +13613,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -13185,6 +13801,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -13249,6 +13869,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -13597,6 +14229,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -13610,6 +14252,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -13794,6 +14438,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -13853,6 +14501,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -14210,6 +14870,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -14223,6 +14893,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -14395,6 +15067,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -14454,6 +15130,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -14802,6 +15490,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -14815,6 +15513,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -14987,6 +15687,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -15046,6 +15750,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -15422,6 +16138,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -15435,6 +16161,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -15607,6 +16335,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -15667,6 +16399,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -15859,6 +16603,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "outbound": "direct",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -15872,6 +16626,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -16039,6 +16795,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -16071,6 +16831,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -16432,6 +17204,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "outbound": "proxy-selector",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -16445,6 +17227,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -16617,6 +17401,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -16679,6 +17467,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -17071,6 +17871,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -17084,6 +17894,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -17258,6 +18070,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -17318,6 +18134,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -17688,6 +18516,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "timeout": "300ms",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -17701,6 +18539,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -17877,6 +18717,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -17936,6 +18780,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -18306,6 +19162,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "timeout": "300ms",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -18319,6 +19185,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -18496,6 +19364,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -18555,6 +19427,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -18903,6 +19787,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -18916,6 +19810,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -19088,6 +19984,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -19147,6 +20047,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -19507,6 +20419,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -19520,6 +20442,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -19692,6 +20616,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -19746,6 +20674,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -20106,6 +21046,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -20119,6 +21069,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -20291,6 +21243,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -20345,6 +21301,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -20685,6 +21653,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -20698,6 +21676,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -20870,6 +21850,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -20902,6 +21886,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -21380,6 +22376,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -21393,6 +22399,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -21565,6 +22573,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -21631,6 +22643,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -21992,6 +23016,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -22005,6 +23039,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -22177,6 +23213,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
@@ -22237,6 +23277,18 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
         {
           "domain": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "dns.google",
+            "cloudflare-dns.com",
+            "one.one.one.one",
+          ],
+          "domain_suffix": [
+            "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
             "dns.google",
             "cloudflare-dns.com",
             "one.one.one.one",
@@ -22612,6 +23664,16 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "sniff",
         },
         {
+          "action": "reject",
+          "inbound": [
+            "tun-in",
+          ],
+          "process_name": [
+            "sing-box",
+            "sing-box.exe",
+          ],
+        },
+        {
           "action": "route",
           "outbound": "direct",
           "process_name": [
@@ -22625,6 +23687,8 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
             "223.5.5.5/32",
             "223.6.6.6/32",
             "1.12.12.12/32",
+            "120.53.53.53/32",
+            "1.12.34.56/32",
             "119.29.29.29/32",
             "119.28.28.28/32",
             "114.114.114.114/32",
@@ -22797,6 +23861,10 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
           "action": "route",
           "domain_suffix": [
             "doh.pub",
+            "dnspod.cn",
+            "alidns.com",
+            "alidns.net",
+            "ipip.net",
           ],
           "outbound": "direct",
         },
