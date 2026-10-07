@@ -289,7 +289,7 @@ export async function flushOsDnsCache(deps: OsDnsFlushDeps = {}): Promise<OsDnsF
         const detail = `${ipconfigBin} /flushdns`;
         log('info', `已刷新系统 DNS 缓存（${detail}）`);
         return { ok: true, detail };
-      } catch (err) {
+      } catch {
         // 部分 Windows 环境 (如特定权限/策略/PowerShell环境) ipconfig /flushdns 会报权限或未知失败，
         // 降级使用 PowerShell Clear-DnsClientCache 命令刷新系统 DNS 缓存
         const psBin = powershellPath();
