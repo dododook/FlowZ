@@ -1490,7 +1490,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -2718,7 +2718,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -3303,7 +3303,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -3838,7 +3838,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "direct",
       "rule_set": [
@@ -4373,7 +4373,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -4915,7 +4915,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -7400,7 +7400,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -8002,7 +8002,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -8654,7 +8654,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -9222,7 +9222,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -9806,7 +9806,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -10376,7 +10376,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -10976,7 +10976,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -11602,7 +11602,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -12218,7 +12218,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -12832,7 +12832,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -13443,7 +13443,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -14056,7 +14056,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -14648,7 +14648,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -15268,7 +15268,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -15844,7 +15844,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "direct",
       "rules": [
@@ -16271,7 +16271,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -16917,7 +16917,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -18749,7 +18749,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "direct",
       "rule_set": [
@@ -19341,7 +19341,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -19940,7 +19940,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -20531,7 +20531,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -21226,7 +21226,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -21838,7 +21838,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [
@@ -22458,7 +22458,7 @@ exports[`generateSingBoxConfig — characterization 快照（抽取前锁基线�
       },
     ],
     "route": {
-      "auto_detect_interface": true,
+      "auto_detect_interface": false,
       "default_domain_resolver": "dns-bootstrap",
       "final": "proxy-selector",
       "rule_set": [

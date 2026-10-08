@@ -85,6 +85,8 @@ export interface RouteConfigDeps {
   // TUN 下主进程 race server 对这些 IP 的 DoH/UDP 查询若不直连放行 → 进 TUN → 经代理节点 → 节点解析又回 race server → 回环死锁。
   // 故在 hijack-dns 之前直连放行（:53/:443；DoT :853 二期未实现、不放行，见下方 port 注释）。缺省 [] = race off / 无自定义上游（零变化）。
   raceUpstreamIps?: string[];
+  /** macOS TUN 启动前按节点目标路由解析出的上游接口；仅在结果一致且可信时设置。 */
+  defaultInterface?: string;
 }
 
 export function buildRouteConfig(
@@ -304,7 +306,13 @@ export function buildRouteConfig(
     // 核心修复：default_domain_resolver 使用 IP-based DoH 引导解析器 (dns-bootstrap)，
     // 既避免解析 doh.pub 域名时的死循环，又免疫 UDP 53 限速/劫持（dns-bootstrap 同为 IP-based）。
     default_domain_resolver: 'dns-bootstrap',
-    auto_detect_interface: true,
+    // 非 TUN 没有 outbound 回灌风险，交给 OS 按目标地址选择 OpenVPN/EasyConnect 等更具体路由。
+    // TUN 必须绑定上游接口防回环：macOS 若启动前已按实际节点目标解析出一致接口，则显式绑定它；
+    // 否则保留 sing-box 自动检测，绝不以全局关闭换取偶然可用。
+    auto_detect_interface: config.proxyModeType === 'tun' && !deps.defaultInterface,
+    ...(config.proxyModeType === 'tun' && deps.defaultInterface
+      ? { default_interface: deps.defaultInterface }
+      : {}),
     // 如果模式是全局代理 (global/proxy)，则最终出口是所选节点（经 proxy-selector）；direct 模式或 D4/D7 兜底→direct。
     // 地区分流反向（仅 smart + enabled + reverse，如「回国」）：海外应直连 → final 兜底翻为 direct。
     final:
