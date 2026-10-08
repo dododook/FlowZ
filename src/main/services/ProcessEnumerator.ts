@@ -14,7 +14,12 @@ const EXEC_TIMEOUT_MS = 5000;
 function execFileP(
   cmd: string,
   args: string[],
-  opts: { timeout: number; maxBuffer: number; windowsHide?: boolean }
+  opts: {
+    timeout: number;
+    maxBuffer: number;
+    windowsHide?: boolean;
+    env?: NodeJS.ProcessEnv;
+  }
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { ...opts, encoding: 'utf-8' }, (err, stdout) => {
@@ -49,10 +54,19 @@ function aggregate(
 }
 
 async function listMac(): Promise<SystemProcessInfo[]> {
-  // ps comm 即完整可执行路径；basename 为进程名
+  // ps comm 即完整可执行路径；basename 为进程名。
+  // macOS 从 Finder/LaunchServices 启动的 GUI 应用可能继承 C locale；此时 ps 会把 UTF-8
+  // 路径的每个非 ASCII 字节先转义成 `M-fM-...`，Node 之后再按 UTF-8 解码也无法恢复。
+  // 必须在启动 ps 时就强制 UTF-8 locale；LC_ALL 覆盖母进程残留的 LC_CTYPE=C，
+  // LANG 作为不识别 LC_ALL 时的同值兜底。en_US.UTF-8 是 macOS 系统内置 locale。
   const out = await execFileP('/bin/ps', ['-axo', 'comm='], {
     timeout: EXEC_TIMEOUT_MS,
     maxBuffer: 8 * 1024 * 1024,
+    env: {
+      ...process.env,
+      LANG: 'en_US.UTF-8',
+      LC_ALL: 'en_US.UTF-8',
+    },
   });
   const items = out
     .split('\n')

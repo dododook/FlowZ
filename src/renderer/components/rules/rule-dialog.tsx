@@ -214,20 +214,10 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
     // 保留 valuesByType[ct] 桶（再次添加该类型可恢复，且不进入提交）
   };
 
-  // 函数式更新：从 prev 桶读最新值再回写，避免 render 捕获值的陈旧读。
+  // 选择器返回完整勾选集合（含初始化时带入的未运行进程），按结果替换当前桶：既保留历史选择，
+  // 也允许用户取消已保存项；去重由 Set 保证，顺序采用选择器的稳定插入顺序。
   const handleProcessPicked = (ct: RuleType, picked: string[]) => {
-    setValuesByType((prev) => {
-      const lines = parseLines(prev[ct] ?? '');
-      const existing = new Set(lines);
-      const merged = [...lines];
-      for (const p of picked) {
-        if (!existing.has(p)) {
-          merged.push(p);
-          existing.add(p);
-        }
-      }
-      return { ...prev, [ct]: merged.join('\n') };
-    });
+    setValuesByType((prev) => ({ ...prev, [ct]: Array.from(new Set(picked)).join('\n') }));
   };
 
   const toggleValue = (ct: RuleType, v: string) => {
@@ -640,6 +630,7 @@ export function RuleDialog({ open, onOpenChange, mode, rule }: RuleDialogProps) 
           open={pickerType !== null}
           onOpenChange={(o) => !o && setPickerType(null)}
           mode={pickerType === 'processPath' ? 'path' : 'name'}
+          initialSelected={pickerType ? parseLines(valuesOf(pickerType)) : []}
           onAdd={(picked) => {
             if (pickerType) handleProcessPicked(pickerType, picked);
           }}
