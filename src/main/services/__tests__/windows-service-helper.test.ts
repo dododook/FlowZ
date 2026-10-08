@@ -128,4 +128,64 @@ describe('WindowsServiceHelper', () => {
       expect(script).toContain('FlowZ');
     });
   });
+
+  // 真管道不可单测：覆盖 sendCommand 成脚本化应答，专测 startCore 的重试与「旧核残留」守卫。
+  describe('startCore（脚本化管道：重试 + 旧核残留守卫）', () => {
+    class ScriptedHelper extends WindowsServiceHelper {
+      constructor(private readonly handler: (rest: string[]) => string) {
+        super();
+      }
+      protected async sendCommand(rest: string[], _timeoutMs: number): Promise<string> {
+        return this.handler(rest);
+      }
+    }
+
+    it('stop 未确认 + helper 报 already → 不冒充成功（疑似旧核残留）', async () => {
+      const h = new ScriptedHelper((rest) =>
+        rest[0] === 'stop' ? 'ERR stop-failed' : 'OK already 4242'
+      );
+      const r = await h.startCore('C:\\cfg.json', 'C:\\core.log', true);
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain('旧核');
+    });
+
+    it('stop 确认 + start OK started → 成功并返回 pid', async () => {
+      const h = new ScriptedHelper((rest) =>
+        rest[0] === 'stop' ? 'OK stopped 111' : 'OK started 222'
+      );
+      await expect(h.startCore('C:\\cfg.json', 'C:\\core.log', true)).resolves.toEqual({
+        ok: true,
+        pid: 222,
+      });
+    });
+
+    it('start 瞬态失败（管道异常）→ 循环内重试后成功', async () => {
+      let starts = 0;
+      const h = new ScriptedHelper((rest) => {
+        if (rest[0] === 'stop') return 'OK notrunning';
+        starts += 1;
+        if (starts === 1) throw new Error('pipe reset');
+        return 'OK started 333';
+      });
+      await expect(h.startCore('C:\\cfg.json', 'C:\\core.log', true)).resolves.toEqual({
+        ok: true,
+        pid: 333,
+      });
+      expect(starts).toBe(2);
+    });
+
+    it('start 返回 ERR → 立即失败，不重试', async () => {
+      let starts = 0;
+      const h = new ScriptedHelper((rest) => {
+        if (rest[0] === 'stop') return 'OK notrunning';
+        starts += 1;
+        return 'ERR config-path-denied';
+      });
+      await expect(h.startCore('C:\\cfg.json', 'C:\\core.log', true)).resolves.toEqual({
+        ok: false,
+        error: 'ERR config-path-denied',
+      });
+      expect(starts).toBe(1);
+    });
+  });
 });

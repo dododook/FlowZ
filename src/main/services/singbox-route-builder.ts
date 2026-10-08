@@ -229,8 +229,9 @@ export function buildRouteConfig(
     action: 'reject',
   });
 
-  // 1. 强制放行 sing-box 核心进程：防止流量回流死循环
-  // 必须放在最高优先级，确保核心组件的请求能直连物理网卡
+  // 1. 强制放行 sing-box 核心进程：防止流量回流死循环。
+  // 必须紧随 Rule 0（异常回流熔断）之后、先于一切分流/进程规则，确保核心组件的正常请求能直连物理网卡
+  // （Rule 0 先摘掉「核心自身回流进 tun-in」的异常分支，避免它落进本条 direct 后再被重新捕获形成自旋）。
   // 注意：不要把 FlowZ (主进程) 放在直连里，否则会干扰 FlowZ 自身的 GitHub 核心下载和测速。
   rules.push({
     process_name: ['sing-box', 'sing-box.exe'],
@@ -735,6 +736,9 @@ export function buildRouteConfig(
   });
 
   rules.push({
+    // DoH 服务域名（domain_suffix 覆盖动态子域，如 doh-*-pc.doh.pub）恒直连：这些解析器自举必须走
+    // dns-bootstrap 且不经 hijack/FakeIP，否则其自身域名解析会成环。ipip.net 是本地直连出口探针的
+    // 端点（myip.ipip.net，IpInfoService）——它测的是物理直连出口，故强制直连、不得落入代理/final。
     domain_suffix: ['doh.pub', 'dnspod.cn', 'alidns.com', 'alidns.net', 'ipip.net'],
     action: 'route',
     outbound: 'direct',

@@ -90,7 +90,8 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
   }
 
   // ── 命名管道客户端（行协议：token\n cmd\n [args...]，与 helper.go/HelperManager 同款）────────
-  private sendCommand(rest: string[], timeoutMs: number): Promise<string> {
+  // protected 而非 private：便于单测注入脚本化应答覆盖 startCore 的重试/旧核残留守卫（真管道不可单测）。
+  protected sendCommand(rest: string[], timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
       const sock = net.connect(PIPE_PATH);
       let buf = '';
@@ -206,7 +207,14 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
     forward: boolean
   ): Promise<HelperStartResult> {
     try {
-      await this.sendCommand(['stop'], 3000).catch(() => '');
+      // 先停旧核，并**确认**停成功：重试瞬态管道失败。不确认会踩这个坑——stop 静默失败（旧核仍在），
+      // 随后 start 被 helper 判为「OK already <旧pid>」，被误读成「以新配置启动成功」，而实际跑的还是旧核。
+      let stopped = false;
+      for (let i = 0; i < 3 && !stopped; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 100));
+        const resp = await this.sendCommand(['stop'], 3000).catch(() => '');
+        stopped = resp.startsWith('OK');
+      }
       // 管道实例生命周期抖动缓冲：给服务侧断开并重新排队 ConnectNamedPipe 留出短延时
       await new Promise((r) => setTimeout(r, 60));
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -217,7 +225,17 @@ export class WindowsServiceHelper implements IPrivilegedHelper {
             8000
           );
           const m = resp.match(/^OK (?:started|already) (\d+)/);
-          if (m) return { ok: true, pid: parseInt(m[1], 10) };
+          if (m) {
+            // stop 未确认 + helper 报 already ⇒ 这个 pid 极可能是没被杀掉的旧核（非本次新配置）→ 如实报失败，
+            // 不用「OK already」冒充成功。stop 确认过时 already 只可能来自本循环前一次尝试，属正常重连。
+            if (!stopped && /^OK already/.test(resp)) {
+              return {
+                ok: false,
+                error: 'helper 停止旧核未确认（疑似残留旧核），拒判为本次启动成功',
+              };
+            }
+            return { ok: true, pid: parseInt(m[1], 10) };
+          }
           if (resp && resp.startsWith('ERR')) {
             return { ok: false, error: resp };
           }

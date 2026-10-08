@@ -33,6 +33,7 @@ import {
 } from '../../shared/endpoint-routes';
 import { dedupe } from '../../shared/collections';
 import { BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP } from '../../shared/dns';
+import { isPrivateIpv4 } from '../../shared/system-dns';
 import * as os from 'os';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
@@ -261,9 +262,14 @@ export function buildInbounds(
       excludeAddr.push(
         ...dedupe([...BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP]).map((ip) => `${ip}/32`)
       );
-      // 动态排除系统各网卡实际分配生效的上游 DNS（防未知上游公网/私网 DNS 回流死锁）
+      // 动态排除系统网卡上生效的**私网 LAN** 上游 DNS（路由器/DHCP 下发）：strict_route 会把它们的 :53
+      // 逼进 TUN → hijack → 若该解析器又是 dns-local 上游则再打回它自己 → 回流死锁。**只排除私网 IPv4**，
+      // 口径与 pickLanResolverIp 一致——公网/ISP 解析器刻意不排除：其 :53 需保持被 hijack（否则绕过
+      // hijack、丢 FakeIP 且 DNS 泄漏），公网解析器不构成回流（首要保障是 Rule 0 的自身回流熔断 +
+      // 私网直连规则）。去重在下方统一做。
       if (deps.effectiveResolvers && deps.effectiveResolvers.length > 0) {
         for (const rIp of deps.effectiveResolvers) {
+          if (!isPrivateIpv4(rIp)) continue;
           const cidr = hostToExcludeCidr(rIp);
           if (cidr) excludeAddr.push(cidr);
         }

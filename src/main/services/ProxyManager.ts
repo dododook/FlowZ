@@ -1062,7 +1062,10 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
     this.lanResolverForDns = null;
     this.effectiveResolversForTun = [];
     if (config.proxyModeType === 'tun') {
-      if (this.systemDnsManager) {
+      // 动态排除表只有 Windows TUN 消费（singbox-inbounds-builder）。mac/Linux 上读它纯属额外子进程
+      // （macOS scutil --dns / Linux resolvectl），且都落在启核关键路径 → 平台门控，杜绝无谓的重复读取
+      // （macOS 上紧接着的 getLanResolverForDns 还会再读一次同样的来源）。
+      if (process.platform === 'win32' && this.systemDnsManager) {
         this.effectiveResolversForTun =
           (await this.systemDnsManager.getEffectiveResolvers().catch(() => [])) ?? [];
       }
@@ -7463,10 +7466,12 @@ rm -f "$STOPFLAG"
     level: 'debug' | 'info' | 'warn' | 'error' | 'fatal',
     message: string
   ): 'debug' | 'info' | 'warn' | 'error' | 'fatal' {
-    // 预期噪音（含 ERROR）→ debug：naive 的 UDP-not-supported、出口IP探针连接瞬态关闭。
+    // 预期噪音（含 ERROR）→ debug：naive 的 UDP-not-supported、探针 inbound 连接瞬态关闭。
+    // 探针 hardcode 两类 http inbound：出口探针（probe-direct/proxy-in）+ 测速池（probe-in-<k>）。
+    // EOF 加 \b 词界收窄，避免「...EOF...」以外的无关行被误降级（`[\s\S]*` 本就可跨任意距离匹配）。
     if (
       /router: UDP is not supported by outbound/i.test(message) ||
-      /inbound\/http\[probe-(direct|proxy)-in\][\s\S]*(use of closed network connection|read\/write on closed pipe|EOF)/i.test(
+      /inbound\/http\[probe-(?:(?:direct|proxy)-in|in-\d+)\][\s\S]*(use of closed network connection|read\/write on closed pipe|\bEOF\b)/i.test(
         message
       )
     ) {

@@ -98,6 +98,8 @@ describe('flushOsDnsCache', () => {
     );
     expect(r.ok).toBe(true);
     expect(r.detail).toContain('PowerShell fallback');
+    // ipconfig 侧的原始失败必须留痕（否则降级后其真因——如 SystemRoot 误判/命令缺失——永久丢失）。
+    expect(log).toHaveBeenCalledWith('warn', expect.stringContaining('requires elevation'));
   });
 
   it('linux：resolvectl flush-caches', async () => {

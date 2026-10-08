@@ -289,9 +289,17 @@ export async function flushOsDnsCache(deps: OsDnsFlushDeps = {}): Promise<OsDnsF
         const detail = `${ipconfigBin} /flushdns`;
         log('info', `已刷新系统 DNS 缓存（${detail}）`);
         return { ok: true, detail };
-      } catch {
+      } catch (ipconfigErr) {
         // 部分 Windows 环境 (如特定权限/策略/PowerShell环境) ipconfig /flushdns 会报权限或未知失败，
-        // 降级使用 PowerShell Clear-DnsClientCache 命令刷新系统 DNS 缓存
+        // 降级使用 PowerShell Clear-DnsClientCache 命令刷新系统 DNS 缓存。
+        // 记下原始失败（否则失败分类被丢弃：最终 reason 只反映 PowerShell 腿的错误，ipconfig 侧的真因
+        // 如 SystemRoot 误判/命令缺失就永久无处可查）。
+        log(
+          'warn',
+          `ipconfig /flushdns 失败，降级 PowerShell Clear-DnsClientCache：${sanitizeDetail(
+            ipconfigErr instanceof Error ? ipconfigErr.message : String(ipconfigErr)
+          )}`
+        );
         const psBin = powershellPath();
         await exec(
           psBin,
