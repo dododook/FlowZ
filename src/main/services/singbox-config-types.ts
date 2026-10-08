@@ -379,6 +379,7 @@ export interface SingBoxRouteConfig {
   rules: SingBoxRouteRule[];
   default_domain_resolver?: string;
   auto_detect_interface?: boolean;
+  default_interface?: string;
   final?: string;
 }
 
