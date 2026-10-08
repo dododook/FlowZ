@@ -24,6 +24,7 @@
  *  - 其余平台：no-op（`ok:true` + `skipped:true`，与「刷新成功」区分，避免诊断里把 no-op 读成已生效）。
  */
 import { execFile } from 'child_process';
+import { system32, powershellPath } from '../utils/win-system32';
 
 /** 单个外部命令的硬超时：刷缓存命令均为瞬时操作，3s 未归即视为异常（防挂起命令拖住 fire-and-forget 链）。 */
 const EXEC_TIMEOUT_MS = 3000;
@@ -93,6 +94,8 @@ const PERMISSION_DENIED_PATTERNS = [
   'not authorized',
   'permission denied',
   'operation not permitted',
+  '此操作需要提升',
+  'requires elevation',
 ];
 
 /**
@@ -280,10 +283,33 @@ export async function flushOsDnsCache(deps: OsDnsFlushDeps = {}): Promise<OsDnsF
       return { ok: true, detail };
     }
     if (platform === 'win32') {
-      await exec('ipconfig', ['/flushdns'], EXEC_TIMEOUT_MS);
-      const detail = 'ipconfig /flushdns';
-      log('info', `已刷新系统 DNS 缓存（${detail}）`);
-      return { ok: true, detail };
+      try {
+        const ipconfigBin = system32('ipconfig.exe');
+        await exec(ipconfigBin, ['/flushdns'], EXEC_TIMEOUT_MS);
+        const detail = `${ipconfigBin} /flushdns`;
+        log('info', `已刷新系统 DNS 缓存（${detail}）`);
+        return { ok: true, detail };
+      } catch (ipconfigErr) {
+        // 部分 Windows 环境 (如特定权限/策略/PowerShell环境) ipconfig /flushdns 会报权限或未知失败，
+        // 降级使用 PowerShell Clear-DnsClientCache 命令刷新系统 DNS 缓存。
+        // 记下原始失败（否则失败分类被丢弃：最终 reason 只反映 PowerShell 腿的错误，ipconfig 侧的真因
+        // 如 SystemRoot 误判/命令缺失就永久无处可查）。
+        log(
+          'warn',
+          `ipconfig /flushdns 失败，降级 PowerShell Clear-DnsClientCache：${sanitizeDetail(
+            ipconfigErr instanceof Error ? ipconfigErr.message : String(ipconfigErr)
+          )}`
+        );
+        const psBin = powershellPath();
+        await exec(
+          psBin,
+          ['-NoProfile', '-NonInteractive', '-Command', 'Clear-DnsClientCache'],
+          EXEC_TIMEOUT_MS
+        );
+        const detail = 'Clear-DnsClientCache (PowerShell fallback)';
+        log('info', `已刷新系统 DNS 缓存（${detail}）`);
+        return { ok: true, detail };
+      }
     }
     if (platform === 'linux') {
       await exec('resolvectl', ['flush-caches'], EXEC_TIMEOUT_MS);

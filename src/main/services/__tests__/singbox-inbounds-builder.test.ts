@@ -237,6 +237,36 @@ describe('buildInbounds — TUN', () => {
     expect(excl).not.toContain('1.1.1.1/32');
   });
 
+  it('Windows TUN：effectiveResolvers 仅私网 IPv4 进排除表（公网/ISP 保留被 hijack，不排除）', () => {
+    const excl = byTag(
+      withPlatform('win32', () =>
+        buildInbounds(
+          cfg({ proxyModeType: 'tun' }),
+          undefined,
+          deps({ effectiveResolvers: ['192.168.1.1', '8.8.4.4', 'fe80::1'] })
+        )
+      ),
+      'tun-in'
+    ).route_exclude_address as string[];
+    expect(excl).toContain('192.168.1.1/32'); // 私网 LAN 解析器（路由器/DHCP）→ 排除防回流死锁
+    expect(excl).not.toContain('8.8.4.4/32'); // 公网解析器 → 不排除（其 :53 保持被 hijack，丢 FakeIP/泄漏）
+    expect(excl).not.toContain('fe80::1/128'); // 非私网 IPv4（口径同 pickLanResolverIp）→ 不排除
+  });
+
+  it('Windows TUN：bypassLAN 关闭时私网解析器仍被动态排除（防 strict_route 回流）', () => {
+    const excl = byTag(
+      withPlatform('win32', () =>
+        buildInbounds(
+          cfg({ proxyModeType: 'tun', bypassLAN: false }),
+          undefined,
+          deps({ effectiveResolvers: ['10.20.30.40'] })
+        )
+      ),
+      'tun-in'
+    ).route_exclude_address as string[];
+    expect(excl).toContain('10.20.30.40/32');
+  });
+
   it('Windows TUN：下发固定接口名 interface_name=flowz-tun0（缺省，issue #159 适配器释放门控锚点）', () => {
     const ibs = withPlatform('win32', () =>
       buildInbounds(cfg({ proxyModeType: 'tun' }), undefined, deps())

@@ -33,6 +33,7 @@ import {
 } from '../../shared/endpoint-routes';
 import { dedupe } from '../../shared/collections';
 import { BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP } from '../../shared/dns';
+import { isPrivateIpv4 } from '../../shared/system-dns';
 import * as os from 'os';
 
 /** 注入依赖：generateInbounds 原读的实例态。 */
@@ -40,6 +41,8 @@ export interface InboundsDeps {
   probeDirectPort: number | null;
   probeProxyPort: number | null;
   updateInPort: number | null;
+  /** 动态探测到的系统/活动网卡实际分配的生效 DNS 解析器列表（由 SystemDnsManager.getEffectiveResolvers 提供）。 */
+  effectiveResolvers?: string[];
   /** §15 主核测速探测池：K 个 probe-in-k http 入站的端口（allocateProbePorts 3+K 产出）。空/缺省=不注入池。 */
   probePoolPorts?: number[];
   /** 可选日志回调（记「连入来源排除」的 mesh/fakeip/物理 LAN 剔除告警）。缺省（单测）不记。 */
@@ -255,18 +258,29 @@ export function buildInbounds(
     //     本排除表随之自动同步，杜绝「漏同步 → 该上游 :443 命中 TUN CIDR 回流死循环」（#57 类回环）。
     //   · CONTROLLED_TUN_DNS_IP —— TUN 接管时系统 DNS 被强制改成的受控 IP（8.8.8.8），刻意排除出 BOOTSTRAP_DIRECT_DNS_IPS
     //     （否则被直连规则放行、逃逸 hijack），故须【单独并入】此排除表防其回流死循环。
-    // 原硬编码里的 1.1.1.1 是 SoT 外杂项：核心从不据此直连（route-builder 已移除 8.8.8.8/1.1.1.1 的强制直连，见其 line ~316），
-    // 无排除依据，故删除。dedupe 兜受控 IP 与 BOOTSTRAP 意外重叠（当前不变量保证不重叠，仍防御性去重）。
     if (process.platform === 'win32') {
       excludeAddr.push(
         ...dedupe([...BOOTSTRAP_DIRECT_DNS_IPS, CONTROLLED_TUN_DNS_IP]).map((ip) => `${ip}/32`)
       );
+      // 动态排除系统网卡上生效的**私网 LAN** 上游 DNS（路由器/DHCP 下发）：strict_route 会把它们的 :53
+      // 逼进 TUN → hijack → 若该解析器又是 dns-local 上游则再打回它自己 → 回流死锁。**只排除私网 IPv4**，
+      // 口径与 pickLanResolverIp 一致——公网/ISP 解析器刻意不排除：其 :53 需保持被 hijack（否则绕过
+      // hijack、丢 FakeIP 且 DNS 泄漏），公网解析器不构成回流（首要保障是 Rule 0 的自身回流熔断 +
+      // 私网直连规则）。去重在下方统一做。
+      if (deps.effectiveResolvers && deps.effectiveResolvers.length > 0) {
+        for (const rIp of deps.effectiveResolvers) {
+          if (!isPrivateIpv4(rIp)) continue;
+          const cidr = hostToExcludeCidr(rIp);
+          if (cidr) excludeAddr.push(cidr);
+        }
+      }
       // 用户自定义的国内 DNS（IP 型）一并排除，防 WFP 进程匹配失效时回流死循环
       const customDns = getCustomDomesticDnsEndpoint(config);
       if (customDns) {
         const cidr = hostToExcludeCidr(customDns.ip);
         if (cidr) excludeAddr.push(cidr);
       }
+      excludeAddr = dedupe(excludeAddr);
     }
 
     // 节点 IP 排除（防 FlowZ 连节点的流量回流进 TUN 死循环）：Linux 加法态跳过整块（§12）——节点 /32(/128) 进
