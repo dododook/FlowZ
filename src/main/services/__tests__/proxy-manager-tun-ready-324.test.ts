@@ -51,8 +51,9 @@ function makeSvc(): any {
   svc.currentConfig = { proxyModeType: 'tun', servers: [], tunConfig: {} };
   svc.helperManager = { stopCore: jest.fn().mockResolvedValue(undefined) };
   // B4：就绪门的探活腿已从 isProcessAlive（execSync，阻塞 event loop）换成异步版。默认委托到同一个同步桩，
-  //   使各用例既有的 `svc.isProcessAlive = …` 意图逐字保留；个别用例直接改 isProcessAliveAsync 的照旧覆盖本默认。
-  svc.isProcessAliveAsync = async () => svc.isProcessAlive();
+  //   使各用例既有的 `svc.isProcessAlive = …` 意图逐字保留；个别用例直接改 probeCoreLiveness 的照旧覆盖本默认。
+  //   （异步探活自「探活失败 ≠ 已死」修复起改名 probeCoreLiveness 并返回三态，此处按二值桩语义折算。）
+  svc.probeCoreLiveness = async () => (svc.isProcessAlive() ? 'alive' : 'dead');
   // B8：就绪门的探活腿再换一次——零 spawn 的 processExistsNoSpawn（`process.kill(pid, 0)`）。同样委托到
   //   `svc.isProcessAlive` 桩，逐字保留各用例意图；不桩的话真实实现会对着假 pid 1234 判 ESRCH → 全线 'dead'。
   svc.processExistsNoSpawn = () => svc.isProcessAlive();
@@ -258,11 +259,11 @@ describe('B8 — 就绪窗内零 spawn（起核关键路径上不得起进程）
     expect(probe).toHaveBeenCalledTimes(1);
   });
 
-  it('探活腿零 spawn：走 processExistsNoSpawn，绝不碰 isProcessAliveAsync（tasklist）', async () => {
+  it('探活腿零 spawn：走 processExistsNoSpawn，绝不碰异步文本探活腿（tasklist）', async () => {
     const svc = makeSvc();
     armTun(svc);
-    const tasklist = jest.fn(async () => true);
-    svc.isProcessAliveAsync = tasklist; // 起进程的那条腿：本门断言它在起核窗内根本不被调用
+    const tasklist = jest.fn(async () => 'alive' as const);
+    svc.probeCoreLiveness = tasklist; // 起进程的那条腿：本门断言它在起核窗内根本不被调用
     let noSpawnCalls = 0;
     svc.processExistsNoSpawn = () => {
       noSpawnCalls++;
@@ -276,7 +277,7 @@ describe('B8 — 就绪窗内零 spawn（起核关键路径上不得起进程）
     await jest.advanceTimersByTimeAsync(20000);
     await assertion;
     expect(noSpawnCalls).toBeGreaterThan(0);
-    // 变异「isAlive 改回 isProcessAliveAsync」→ 此断言爆（且那条腿在真机上每 500ms 起一次 tasklist）
+    // 变异「isAlive 改回 probeCoreLiveness」→ 此断言爆（且那条腿在真机上每 500ms 起一次 tasklist）
     expect(tasklist).not.toHaveBeenCalled();
   });
 
@@ -875,7 +876,7 @@ describe('issue #324 H2 — performHealthCheck 才是 wrapper 核死的真实检
     svc.singboxPid = 4321;
     svc.pid = 4321;
     svc.logToManager = () => {};
-    svc.isProcessAliveAsync = async () => false; // 核已死
+    svc.probeCoreLiveness = async () => 'dead'; // 核已死
     svc.getProcessExitInfo = () => '';
     svc.stopLogFileWatcher = () => {};
     svc.ensureSystemProxyCleared = async () => {};
@@ -992,9 +993,9 @@ describe('issue #324 M-2 — performHealthCheck 的世代守卫', () => {
     svc.pid = 4321;
     svc.logToManager = () => {};
     const gen = svc.lifecycleGeneration;
-    svc.isProcessAliveAsync = async () => {
+    svc.probeCoreLiveness = async () => {
       svc.lifecycleGeneration = gen + 1; // 探活期间新 start 接管
-      return false;
+      return 'dead';
     };
     const autoRestart = jest.fn();
     svc.attemptAutoRestart = autoRestart;
@@ -1144,12 +1145,13 @@ describe('B4 接线 — 就绪门必须按这三个值调用（复审 High）', 
    * B8 更正：这条门原本钉的是「必须走**异步版** isProcessAliveAsync」。那个判据不够——异步只解决「回调不堵
    * event loop」，而 `uv_spawn` 本身仍在 event loop 线程上同步执行，钱照付。真机实测起核窗（杀软扫 82MB 新核）
    * 内一次 tasklist 要 150–673ms，空载只要 50–80ms。现在的契约更严：就绪门**一个进程都不许起**。
+   * （异步文本探活腿自「探活失败 ≠ 已死」修复起改名 probeCoreLiveness，本断言随之一并改名。）
    */
-  it('探活腿必须走零 spawn 的 processExistsNoSpawn（异步版 tasklist 同样不许碰）', async () => {
+  it('探活腿必须走零 spawn 的 processExistsNoSpawn（异步文本探活同样不许碰）', async () => {
     const svc = armedSvc();
     const noSpawn = jest.fn(() => true);
     svc.processExistsNoSpawn = noSpawn;
-    svc.isProcessAliveAsync = jest.fn(async () => {
+    svc.probeCoreLiveness = jest.fn(async () => {
       throw new Error('就绪门不得起 tasklist（异步版也不行）');
     });
     svc.isProcessAlive = jest.fn(() => {
@@ -1162,9 +1164,9 @@ describe('B4 接线 — 就绪门必须按这三个值调用（复审 High）', 
 
     await svc.waitForCoreReadyOrThrow(1234, svc.lifecycleGeneration);
 
-    // 变异守卫：接线换回 isProcessAliveAsync / isProcessAlive → 桩抛错 → 红
+    // 变异守卫：接线换回 probeCoreLiveness / isProcessAlive → 桩抛错 → 红
     expect(noSpawn).toHaveBeenCalled();
-    expect(svc.isProcessAliveAsync).not.toHaveBeenCalled();
+    expect(svc.probeCoreLiveness).not.toHaveBeenCalled();
     expect(svc.isProcessAlive).not.toHaveBeenCalled();
   });
 });
@@ -1360,7 +1362,9 @@ describe('B6：核日志清空前移到 spawn 之前', () => {
     });
 
     await withPlatformAsync('win32', async () => {
-      await expect(svc.startSingBoxProcess(svc.lifecycleGeneration)).rejects.toThrow('停在这里即可');
+      await expect(svc.startSingBoxProcess(svc.lifecycleGeneration)).rejects.toThrow(
+        '停在这里即可'
+      );
     });
 
     // 变异守卫：把 truncateCoreLogFile() 挪回就绪之后（或删掉）→ order 不再是 ['truncate','launch']
@@ -1385,7 +1389,7 @@ describe('B6：首次就绪探测单独一格（readyProbe0）', () => {
     const tl = withTimeline(svc);
     svc.coreReadyProbe = jest.fn(async () => true);
     svc.adapterPresenceProbe = jest.fn(async () => 'present' as AdapterPresence);
-    svc.isProcessAliveAsync = async () => true;
+    svc.probeCoreLiveness = async () => 'alive';
 
     await svc.waitForCoreReadyOrThrow(4321, svc.lifecycleGeneration);
 

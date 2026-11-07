@@ -186,9 +186,52 @@ const PRIVATE_IP_PATTERNS = [
   /\b169\.254\.\d{1,3}\.\d{1,3}/,
 ];
 
-// promisify(execFile) 提到模块级——isProcessAliveAsync 是每 10s 的周期热路径，
+// promisify(execFile) 提到模块级——probeCoreLiveness 的回落腿是每 10s 的周期热路径，
 // 不应每次调用都内联 require('util').promisify(require('child_process').execFile) 重建包装。
 const healthProbeExecFile = promisify(execFile);
+
+/**
+ * 内核存活**三态**。要害在第三态：探活「给不出结论」必须与「已死」分开。
+ *
+ * 历史缺陷正是把两者并成两态——`catch { return false }` 把一次 tasklist 超时/瞬时失败编码成「核已死」，
+ * 而 false 会立刻触发「清 pid → 扫残留 → 自动重启」的破坏性级联。真机取证（app.log）显示：核被判定已死
+ * 之后 11s，残留清扫的 tasklist 又把**同一个 PID** 列了出来，且 Node 的 'exit' 事件是在 FlowZ 自己
+ * `taskkill /F` 完成后 8–16ms 才到达的——即核一直活着，是那次误判把它杀掉的（taskkill /F 的退出码恰为 1，
+ * 又被 parseExitError 报成「启动失败，请检查配置文件」）。三态化即从源头断开这条链。
+ */
+type CoreLiveness = 'alive' | 'dead' | 'unknown';
+
+/**
+ * 零 spawn 的进程存在性**三态**判定（`process.kill(pid, 0)`：只做权限/存在性检查，不投递信号）。
+ * 本函数是本仓这张 errno 表的**唯一**权威实现，两个消费方各自决定 unknown 怎么落：
+ *   - `processExistsNoSpawn`（起核就绪门）：unknown → **fail-open 判存在**——那道门抓不准时不许下结论；
+ *   - `probeCoreLiveness`（健康检查）：unknown → **本轮跳过**——绝不许据此判死（判死会杀健康核，见上）。
+ * 两者方向相反但都不把 unknown 当「已死」，所以可以共用同一张表。
+ *
+ * 判据（**尤其是 EPERM**）：
+ *  - 不抛 → `alive`；
+ *  - `ESRCH` → `dead`，**唯一可以判「不存在」的情形**；
+ *  - `EPERM` → `alive`。这不是模棱两可：内核先查到进程、再拒绝访问，才会给 EPERM。helper 路径下核由
+ *    LocalSystem 起、FlowZ 非提权，**正是 EPERM 的常见产地**——判成「不存在」会让每次 helper 起核都被
+ *    自己这道检查判死。这条同时化解了「process.kill(pid,0) 对特权进程不可靠」的顾虑：不可靠的是把 EPERM
+ *    读成「已死」，而不是这个系统调用本身（本机实测：pid 4 (System) → EPERM，不存在的 pid → ESRCH）。
+ *  - 其余错误码 → `unknown`（说不了）。
+ *
+ * 成本：本机实测 200 次共 0.40ms（约 2µs/次），对比派生一次 tasklist 约 140ms（杀软扫描期可达 2s+）。
+ * `pid <= 0` 直接 `unknown`：Windows 上 `kill(0, 0)` 会成功返回，不能让它冒充「进程存在」。
+ */
+function probePidLivenessSync(pid: number): CoreLiveness {
+  if (!Number.isInteger(pid) || pid <= 0) return 'unknown';
+  try {
+    process.kill(pid, 0);
+    return 'alive';
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    if (code === 'ESRCH') return 'dead';
+    if (code === 'EPERM') return 'alive';
+    return 'unknown';
+  }
+}
 
 /** OS DNS 缓存刷新的触发来源。`link-change` 由链路变化 watcher 去抖后触发（issue #368），受最小间隔限频。 */
 type DnsFlushContext = 'start' | 'stop' | 'link-change';
@@ -616,6 +659,13 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private lastTimelineFrameAt = 0;
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly HEALTH_CHECK_INTERVAL = 10000; // 10秒检查一次
+  /**
+   * 探活连续无结论（'unknown'）的轮数：供降频告警与「崩溃检测已降级」的可观测性用。
+   * 任何一次给出明确结论（alive/dead）即清零。见 probeCoreLiveness / noteCoreProbeUnknown。
+   */
+  private coreProbeUnknownStreak = 0;
+  /** 连续无结论达此轮数（12 × 10s ≈ 2min）即显式告警检测降级——静默降级比误判更难排查。 */
+  private static readonly PROBE_UNKNOWN_DEGRADE_AFTER = 12;
 
   // issue #159：Windows TUN 重启前等自家 wintun 适配器释放的门控参数。8s 上限覆盖硬杀后驱动回收滞后，
   // 250ms 轮询；探测到消失即早退（常见 1-3s），超时 fail-open 放行交启动 retry（绝不卡死代理）。
@@ -714,6 +764,12 @@ export class ProxyManager extends EventEmitter implements IProxyManager {
   private restartCount: number = 0;
   private lastRestartTime: number = 0;
   private static readonly MAX_RESTART_COUNT = 3; // 最大重启次数
+  /**
+   * 「起核期失败」与「运行中退出」的存活时长分界（配合 parseExitError 的退出码 1）。
+   * 起核（含 check 门控、TUN 建适配器、提权看护）实测 0.15–0.3s 量级，60s 已远超任何起核路径，
+   * 不会把真正的启动失败误判成「运行中退出」。
+   */
+  private static readonly STARTUP_MAX_UPTIME_MS = 60_000;
   private static readonly RESTART_COOLDOWN = 60000; // 重启冷却时间（1分钟内最多重启3次）
   private isRestarting: boolean = false;
   private coreVersion: string = 'unknown';
@@ -6443,28 +6499,18 @@ rm -f "$STOPFLAG"
    * T16 子 commit 2：改 public 供 PlatformPrivilegeService.ctx 回调注入（killOrphans 复核存活用）。
    */
   /**
-   * 零 spawn 的进程存在性判定（`process.kill(pid, 0)`：只做权限/存在性检查，不投递信号）。
+   * 零 spawn 的进程存在性判定（fail-open 版，供起核就绪门用）。
    *
    * 为什么需要它：`isProcessAlive` 走 `execSync`（Windows 上必过 cmd.exe）+ `tasklist`，真机单独量是
    * 81–160ms，但**落在起核路径上时量到 2018–2584ms**——那一刀紧跟着 82MB 的新核启动，杀软正在扫它，
    * 此刻这台机上任何进程创建都被拖慢。零 spawn 版真机 0.1ms。
    *
-   * **判据的三态，尤其是 EPERM**：
-   *  - 不抛 → 存在；
-   *  - `ESRCH` → **确证不存在**（唯一可以判「没有」的情形）；
-   *  - `EPERM` → **存在**。这不是模棱两可：内核先查到进程、再拒绝访问，才会给 EPERM。
-   *    helper 路径下核由 LocalSystem 起、FlowZ 非提权，**正是 EPERM 的常见产地**——判成「不存在」
-   *    会让每次 helper 起核都被自己这道检查判死。
-   *  - 其余错误码 → 说不了 → **fail-open 判存在**。这道检查只为抓「helper 报成功但进程压根没起来」，
-   *    抓不准时绝不能替代它下结论；真死了由就绪门（`waitForCoreReady` 的 dead 分支）兜住。
+   * errno 三态表见 `probePidLivenessSync`（唯一权威实现）。本方法只施加自己的策略：**只有确证不存在
+   * （ESRCH）才返回 false，其余一律 fail-open 判存在**——这道检查只为抓「helper 报成功但进程压根没起来」，
+   * 抓不准时绝不能替代它下结论；真死了由就绪门（`waitForCoreReady` 的 dead 分支）兜住。
    */
   private processExistsNoSpawn(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch (e) {
-      return (e as NodeJS.ErrnoException)?.code !== 'ESRCH';
-    }
+    return probePidLivenessSync(pid) !== 'dead';
   }
 
   isProcessAlive(pid: number): boolean {
@@ -6496,12 +6542,22 @@ rm -f "$STOPFLAG"
   }
 
   /**
-   * 异步版进程探活。原 isProcessAlive 用 execSync 同步阻塞 event loop——
-   * performHealthCheck 每 10s 调一次，Windows tasklist ~50-100ms/次 → 周期性主进程卡顿（拖拽/动画可感）。
-   * 本方法用 execFileAsync 不阻塞，仅供 performHealthCheck（周期热路径）用；同步清理/kill 链仍用 isProcessAlive
-   * （那些是进程已死/停止路径，同步语义 + 短暂阻塞可接受）。判定逻辑与 isProcessAlive 严格一致。
+   * 内核探活（三态）。两级判定：
+   *   1) 零 spawn 系统调用（probePidLivenessSync，与就绪门共用同一张 errno 表）——常态下直接给出结论，
+   *      不再每次派生 tasklist（省 ~140ms/10s，杀软扫描期更省）；
+   *   2) 仅当系统调用给不出结论时，回落到平台命令文本探活（原实现整条保留为第二腿，判定口径逐字未改）。
+   *
+   * **命令文本探活自身失败（超时/被策略禁用/输出解析不出）一律返回 'unknown'，绝不返回 'dead'**——
+   * 这是本修复的核心：把「探不出来」编码成「已死」会引发自伤式重启（详见 CoreLiveness 注释的取证）。
+   *
+   * 仅供 performHealthCheck（周期热路径）用；同步清理/kill 链仍用 isProcessAlive（那些是进程已死/停止
+   * 路径，同步语义 + 短暂阻塞可接受，且失败方向的后果不同——见 isProcessAlive 自身注释）。
    */
-  private async isProcessAliveAsync(pid: number): Promise<boolean> {
+  private async probeCoreLiveness(pid: number): Promise<CoreLiveness> {
+    const bySyscall = probePidLivenessSync(pid);
+    if (bySyscall !== 'unknown') return bySyscall;
+
+    // ── 回落腿：平台命令文本探活（原 isProcessAliveAsync 主体）──
     try {
       if (process.platform === 'win32') {
         // `windowsHide` 与 `timeout` 缺一不可（复审实测：Node 的 execFile 是 `windowsHide: !!options.windowsHide`
@@ -6514,13 +6570,38 @@ rm -f "$STOPFLAG"
           { windowsHide: true, timeout: 3000 }
         );
         const result = String(stdout);
-        return !result.includes('No tasks') && result.includes(String(pid));
+        return !result.includes('No tasks') && result.includes(String(pid)) ? 'alive' : 'dead';
       } else {
         const { stdout } = await healthProbeExecFile('ps', ['-p', String(pid), '-o', 'pid=']);
-        return String(stdout).trim() === String(pid);
+        return String(stdout).trim() === String(pid) ? 'alive' : 'dead';
       }
     } catch {
-      return false;
+      // 命令没能给出答案 ≠ 进程已死。原实现在此处 `return false`，正是把探活失败判成死亡的落点。
+      return 'unknown';
+    }
+  }
+
+  /**
+   * 探活无结论（'unknown'）的记账：既不判死也不判活，本轮健康检查跳过、不动任何状态。
+   * 降频记录（首帧 + 连续满阈值 + 之后每 5min）：tasklist 被策略禁用/长期超时时不能刷屏，
+   * 但也不能静默——「崩溃自动重启的检测已降级」这件事必须能在 app.log 里查到，否则比误判更难排查。
+   */
+  private noteCoreProbeUnknown(pid: number): void {
+    this.coreProbeUnknownStreak++;
+    const streak = this.coreProbeUnknownStreak;
+    if (streak === 1) {
+      this.logToManager(
+        'warn',
+        `sing-box 探活未给出结论（PID: ${pid}）：既未判死也未判活，本轮健康检查跳过、不重启。`
+      );
+    } else if (streak === ProxyManager.PROBE_UNKNOWN_DEGRADE_AFTER) {
+      this.logToManager(
+        'warn',
+        `sing-box 探活已连续 ${streak} 次无结论（约 ${Math.round((streak * ProxyManager.HEALTH_CHECK_INTERVAL) / 1000)}s）：` +
+          '进程探活通道不可用，崩溃自动重启的检测已降级（不会误杀，但可能延迟发现真崩溃）。'
+      );
+    } else if (streak % 30 === 0) {
+      this.logToManager('warn', `sing-box 探活仍无结论（第 ${streak} 次），崩溃检测持续降级中。`);
     }
   }
 
@@ -6634,8 +6715,18 @@ rm -f "$STOPFLAG"
     //   tick 的分支体会对着新 start 执行：清它刚设的 pid、写它的 lastStartupFatal，而地址冲突短路更会直接
     //   emit 'error'+'stopped'+cleanup()，把一次本可能成功的启动打掉并给渲染端发终态卡。
     const healthGen = this.lifecycleGeneration;
-    // 改异步探活（原 execSync 每 10s 阻塞主进程 50-100ms on Windows）。
-    if (!(await this.isProcessAliveAsync(activePid))) {
+    const liveness = await this.probeCoreLiveness(activePid);
+
+    // 三态分流：**只有确认已死**才允许进入破坏性级联（清 pid → 扫残留 → 自动重启）。
+    // 「探不出结论」本轮直接丢弃——不动状态、不重启。这与 getProcessExitInfo 的取向一致：宁可晚一轮
+    // 发现真崩溃（真崩溃时核已不转发，晚 10s 只是晚 10s），也不能把健康核当残留杀掉（那是真断流 + 假弹窗）。
+    if (liveness === 'unknown') {
+      this.noteCoreProbeUnknown(activePid);
+      return;
+    }
+    this.coreProbeUnknownStreak = 0;
+
+    if (liveness === 'dead') {
       // 新 start 已接管 → pid/状态归它管，本 tick 静默让位（同时保护既有自动重启分支与新增的终态短路）。
       if (this.lifecycleGeneration !== healthGen) return;
       // 尝试获取更多退出信息
@@ -6712,8 +6803,9 @@ rm -f "$STOPFLAG"
       }
       return; // 进程已死：不再对账让位（cleanup 已复位或即将重启由 reassert 重建）
     }
-    // 缺陷1 出口让位无帧安全网：STATUS 是 push-on-change、稳态可能不再来帧，若 engage/restore 的 PUT 曾失败则 flag 与
-    // selector 脱节、无后续帧重试 → 每 10s 健康检查读缓存末帧对账一次（幂等，到位则 no-op；核在跑才对账）。
+    // 走到这里即 alive。缺陷1 出口让位无帧安全网：STATUS 是 push-on-change、稳态可能不再来帧，若
+    // engage/restore 的 PUT 曾失败则 flag 与 selector 脱节、无后续帧重试 → 每 10s 健康检查读缓存末帧
+    // 对账一次（幂等，到位则 no-op；核在跑才对账）。
     void this.reconcileLoginFallback(this.selectedExitBackendState());
   }
 
@@ -7326,26 +7418,26 @@ rm -f "$STOPFLAG"
     const info: string[] = [];
 
     try {
-      const fsSync = require('fs');
-      const logFilePath = this.getLogFilePath();
+      // 内核 stdout/stderr（systemProxy / helper 直起）与 TUN 下 singbox.log 的新增内容，都经
+      // handleProcessOutput → parseAndLogLine 汇入 LogManager 的 'sing-box' 通道——它才是「核最后说了什么」
+      // 的权威来源，且与用户在日志页看到的完全一致。
+      // 原实现只读 singbox.log：systemProxy 模式下核未配 log.output → 日志走 stdout，该文件恒为 0 字节
+      // （真机实测），于是每次「已意外退出」都只剩一句无信息量的通用文案，崩溃复盘无据可查。
+      const coreLines = (this.logManager?.getLogs(120) ?? [])
+        .filter((entry) => entry.source === 'sing-box')
+        .map((entry) => entry.message)
+        .slice(-10); // 最后 10 行
 
-      // 读取 sing-box 日志文件的最后几行
-      if (fsSync.existsSync(logFilePath)) {
-        const logContent = fsSync.readFileSync(logFilePath, 'utf-8');
-        const lines = logContent.trim().split('\n');
-        const lastLines = lines.slice(-10); // 最后 10 行
-
-        // 查找错误或警告信息
-        for (const line of lastLines) {
-          const lowerLine = line.toLowerCase();
-          if (
-            lowerLine.includes('error') ||
-            lowerLine.includes('fatal') ||
-            lowerLine.includes('panic') ||
-            lowerLine.includes('failed')
-          ) {
-            info.push(`日志: ${line.substring(0, 200)}`);
-          }
+      // 查找错误或警告信息
+      for (const line of coreLines) {
+        const lowerLine = line.toLowerCase();
+        if (
+          lowerLine.includes('error') ||
+          lowerLine.includes('fatal') ||
+          lowerLine.includes('panic') ||
+          lowerLine.includes('failed')
+        ) {
+          info.push(`日志: ${line.substring(0, 200)}`);
         }
       }
 
@@ -8647,6 +8739,15 @@ rm -f "$STOPFLAG"
     return '未知原因';
   }
 
+  /**
+   * 本腿内核已连续存活的毫秒数；未起核/已清理（startTime 为空）返回 null。
+   * 与 getStatus().uptime 同源：startTime 在 spawn / helper 启动成功处置位，cleanup 处清空——
+   * 退出判定链（handleProcessExit）走在上面的 cleanup 之前，故真实退出路径上恒有值。
+   */
+  private coreUptimeMs(): number | null {
+    return this.startTime ? Date.now() - this.startTime.getTime() : null;
+  }
+
   private parseExitError(code: number): string {
     // 尝试从最后的错误输出中提取错误信息
     if (this.lastErrorOutput) {
@@ -8658,8 +8759,19 @@ rm -f "$STOPFLAG"
 
     // 根据退出码返回通用错误信息
     switch (code) {
-      case 1:
+      case 1: {
+        // 退出码 1 是 sing-box 的通用 fatal 退出码：起核期（配置/端口）与**运行数小时后**的运行时失败
+        // 都给 1。只看退出码会把后者报成「启动失败，请检查配置文件」，把用户和排障者一起指向错误方向
+        // （真机取证：报告者的核已连续运行 6.7–19 小时，日志里却写着「启动失败」；且那次退出码 1 实际
+        // 来自 FlowZ 自己的 taskkill /F）。用本次存活时长把两类分开。
+        const uptimeMs = this.coreUptimeMs();
+        if (uptimeMs !== null && uptimeMs >= ProxyManager.STARTUP_MAX_UPTIME_MS) {
+          const mins = Math.round(uptimeMs / 60000);
+          const ran = mins >= 120 ? `${(mins / 60).toFixed(1)} 小时` : `${mins} 分钟`;
+          return `sing-box 运行中退出（退出码 1，已运行 ${ran}）`;
+        }
         return 'sing-box 启动失败，请检查配置文件';
+      }
       case 2:
         return 'sing-box 配置文件格式错误';
       case 126:
