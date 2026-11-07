@@ -22,6 +22,8 @@ export const BOOTSTRAP_DIRECT_DNS_IPS: readonly string[] = [
   DOH_ALIDNS_IP, // 223.5.5.5（AliDNS IP-DoH 上游）
   '223.6.6.6',
   DOH_DNSPOD_IP, // 1.12.12.12（DNSPod IP-DoH 上游，#57）
+  '120.53.53.53', // DNSPod doh.pub 另一个 Anycast IP
+  '1.12.34.56', // DNSPod doh-*-pc.doh.pub Anycast IP
   '119.29.29.29',
   '119.28.28.28',
   '114.114.114.114',

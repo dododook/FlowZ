@@ -357,12 +357,22 @@ export function buildDnsConfig(
     } as SingBoxDnsRule);
   }
 
-  // 处理基础 DNS 服务的地址解析，确保它们走引导解析器（含用户自定义的 DoH 域名）
-  const bootstrapDomains = ['doh.pub', 'dns.google', 'cloudflare-dns.com', 'one.one.one.one'];
+  // 处理基础 DNS 服务的地址解析，确保它们走引导解析器（含用户自定义的 DoH 域名与公共 DoH 服务泛域名）
+  const bootstrapDomains = [
+    'doh.pub',
+    'dnspod.cn',
+    'alidns.com',
+    'alidns.net',
+    'dns.google',
+    'cloudflare-dns.com',
+    'one.one.one.one',
+  ];
   if (domestic.isDomain) bootstrapDomains.push(domestic.server);
   if (foreign.isDomain) bootstrapDomains.push(foreign.server);
+  const dedupedBootstrap = dedupe(bootstrapDomains);
   dnsRules.push({
-    domain: dedupe(bootstrapDomains),
+    domain: dedupedBootstrap,
+    domain_suffix: dedupedBootstrap,
     // 根治 §3.6：DoH server 自身域名解析统一用 dns-bootstrap（IP-DoH 抗 UDP53 劫持），删原 dns-bootstrap-udp 历史残留
     // （明文 UDP53，违背同段「引入 IP-DoH 避免 UDP53」自定设计；删前全仓库唯一消费点即此）。
     server: 'dns-bootstrap',
